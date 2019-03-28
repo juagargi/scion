@@ -21,6 +21,7 @@ import copy
 import yaml
 import time
 import re
+import math
 
 
 SC = os.environ['SC']
@@ -28,6 +29,18 @@ SC = os.environ['SC']
 # Speed: 1.295 Mbps drop rate: 0.000000
 # groups: (speed) (units) (drop_rate)
 CLIENT_REGEX = re.compile(r'^Speed: (\S+) (\S+) drop rate: (\d*\.\d+|\d+)$')
+
+def bw_class_to_bw(bwClass):
+    'bps = 16×(√2^(c-1))×1000'
+    'Returns the BW in bytes per second'
+    return (2**(bwClass - 1))**(1/2) * 16 * 1000
+
+def split_to_proportion(split):
+    '√2^(−s)'
+    return (2**(-split))**(1/2)
+
+def get_bw(bwClass, split):
+    return math.floor(bw_class_to_bw(bwClass) * (1.0 - split_to_proportion(split)))
 
 
 def check_output(cmd):
@@ -84,24 +97,32 @@ class Server:
     def __exit__(self, ex_type, ex_value, traceback):
         self.stop()
 
-
-
-def run_client(server_ia, client_ia):
+def run_client(server_ia, client_ia, duration=5, bwClass=14, bw=1000*1000, packetSize=2000):
     'Returns the speed'
     cmd = ('./bin/sibra_bandwidth', '-sciondFromIA', 
            '-remote', '{},[127.0.0.1]:4444'.format(server_ia), 
            '-local', '{},[127.0.0.1]:0'.format(client_ia), 
-           '-packetSize', '2000', 
-           '-log.console', 'debug', 
-           '-sibra=T', '-duration', '3',
-           '-bw', '14', 
-           '-bandwidth', '1300000')
+           '-packetSize', str(packetSize),
+           '-log.console', 'debug',
+           '-sibra=T', '-duration', str(duration),
+           '-bw', str(bwClass),
+           '-bandwidth', str(bw))
     out = check_output(cmd)
     lines = out.split('\n')
     for i in range(len(lines)-1, max(len(lines)-5, 0), -1):
         groups = CLIENT_REGEX.findall(lines[i])
         if groups:
-            return float(groups[0][0])
+            speed = float(groups[0][0])
+            if groups[0][1] == 'Kbps':
+                speed *= 1000
+            elif groups[0][1] == 'Mbps':
+                speed *= 1000 * 1000
+            elif groups[0][1] == 'Gbps':
+                speed *= 1000 * 1000 * 1000
+            elif groups[0][1] == 'Tbps':
+                speed *= 1000 * 1000 * 1000 * 1000
+            drops = float(groups[0][2]) / 100
+            return (speed, drops)
     raise Exception('Could not parse sibra_bandwidth client\'s output:\n{}'.format(out))
 
 
@@ -112,6 +133,16 @@ def check_speed(min, speed, max):
         ret = False
     if speed > max:
         print('Invalid speed {} > {}'.format(speed, max))
+        ret = False
+    return ret
+
+def check_drops(min, drops, max):
+    ret = True
+    if drops < min:
+        print('Invalid drops {} < {}'.format(drops, min))
+        ret = False
+    if drops > max:
+        print('Invalid drops {} > {}'.format(drops, max))
         ret = False
     return ret
 
@@ -129,6 +160,11 @@ class Case1:
         d['Down-1-ff00:0:110']['DesiredSize'] = 14
         d['Down-1-ff00:0:110']['MaxSize'] = 20
         d['Down-1-ff00:0:110']['MinSize'] = 14
+        d['Down-1-ff00:0:110']['SplitCls'] = 200
+        d['Up-1-ff00:0:110']['DesiredSize'] = 14
+        d['Up-1-ff00:0:110']['MaxSize'] = 20
+        d['Up-1-ff00:0:110']['MinSize'] = 14
+        d['Up-1-ff00:0:110']['SplitCls'] = 200
         with open(os.path.join(self.sibra_path, 'reservations.json'), 'w') as f:
             json.dump(d, f, indent=4, sort_keys=True)
         m = copy.deepcopy(self.matrix)
@@ -151,10 +187,14 @@ class Case1:
         client_ia = '1-ff00:0:111'
         with Server(server_ia) as server:
             # TODO: remove the sleep and run constantly showpaths until we find one, or timeout
+            # e.g. print(check_output( ('./bin/showpaths', '-sciondFromIA', '-srcIA', '1-ff00:0:111', '-dstIA', '1-ff00:0:110') ))
             time.sleep(8)
-            # print(check_output( ('./bin/showpaths', '-sciondFromIA', '-srcIA', '1-ff00:0:111', '-dstIA', '1-ff00:0:110') ))
-            speed = run_client(server_ia, client_ia)
-            res = check_speed(1.290, speed, 1.299)
+            speed, drops = run_client(server_ia, client_ia, bwClass=14, bw=99000000, duration=10)
+            print('speed: {} \t drops: {}'.format(speed, drops))
+            # target is 1.448 Mbps
+            res = check_speed(1430000, speed, get_bw(14, 200)) # this fails SOMETIMES !
+            # res = check_speed(1410000, speed, 1448000)
+            res = check_drops(0.90, drops, 0.99) and res
         self.backward()
         return True if res else False
 
