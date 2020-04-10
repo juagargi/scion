@@ -23,6 +23,7 @@ import (
 // Lvl2KeyType represents the different types of level 2 DRKeys (AS->AS, AS->host, host->host).
 type Lvl2KeyType uint8
 
+// Lvl2KeyType constants
 const (
 	AS2AS Lvl2KeyType = iota
 	AS2Host

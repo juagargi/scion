@@ -22,6 +22,7 @@ import (
 	"github.com/scionproto/scion/go/lib/infra/modules/db"
 )
 
+// BaseDB defines basic interface
 type BaseDB interface {
 	io.Closer
 	db.LimitSetter
