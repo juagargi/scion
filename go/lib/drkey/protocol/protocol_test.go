@@ -47,7 +47,55 @@ func TestDeriveStandard(t *testing.T) {
 			t.Fatalf("Unexpected lvl2 key for protocol [%s]: %s", proto, hexKey)
 		}
 	}
-	// TODO(juagargi): test as2host and host2host. Get the key values from an authorative source.
+
+	dstHost := addr.HostFromIPStr("127.0.0.1")
+	protoToKey = map[string]string{
+		"foo":  "84e628f7c9318d6831ff4f85827f7af3",
+		"bar":  "f51fa0769a6e3d2b9570eefb788a92c0",
+		"fooo": "d88513be2ff73b11615053540146e960",
+	}
+	for proto, key := range protoToKey {
+		meta := drkey.Lvl2Meta{
+			Protocol: proto,
+			KeyType:  drkey.AS2Host,
+			SrcIA:    lvl1.SrcIA,
+			DstIA:    lvl1.DstIA,
+			DstHost:  dstHost,
+		}
+		lvl2, err := Standard{}.DeriveLvl2(meta, lvl1)
+		if err != nil {
+			t.Fatalf("Lvl2 failed")
+		}
+		hexKey := hex.EncodeToString(lvl2.Key)
+		if hexKey != key {
+			t.Fatalf("Unexpected lvl2 AS->Host key for protocol [%s]: %s", proto, hexKey)
+		}
+	}
+
+	srcHost := addr.HostFromIPStr("127.0.0.2")
+	protoToKey = map[string]string{
+		"foo":  "3ca3190844028277e05ebfaf3c2dd3b0",
+		"bar":  "b0bc9ccbd6ca923bdfbad7d1ad358960",
+		"fooo": "5635ad5283cfe080e2c8e99e6c3306af",
+	}
+	for proto, key := range protoToKey {
+		meta := drkey.Lvl2Meta{
+			Protocol: proto,
+			KeyType:  drkey.Host2Host,
+			SrcIA:    lvl1.SrcIA,
+			DstIA:    lvl1.DstIA,
+			SrcHost:  srcHost,
+			DstHost:  dstHost,
+		}
+		lvl2, err := Standard{}.DeriveLvl2(meta, lvl1)
+		if err != nil {
+			t.Fatalf("Lvl2 failed")
+		}
+		hexKey := hex.EncodeToString(lvl2.Key)
+		if hexKey != key {
+			t.Fatalf("Unexpected lvl2 Host->Host key for protocol [%s]: %s", proto, hexKey)
+		}
+	}
 }
 
 func TestDeriveDelegated(t *testing.T) {
@@ -59,7 +107,7 @@ func TestDeriveDelegated(t *testing.T) {
 			SrcIA:    lvl1.SrcIA,
 			DstIA:    lvl1.DstIA,
 		}
-		lvl2standard, err := Delegated{}.DeriveLvl2(meta, lvl1)
+		lvl2standard, err := Standard{}.DeriveLvl2(meta, lvl1)
 		if err != nil {
 			t.Fatalf("Lvl2 standard failed")
 		}
@@ -174,7 +222,7 @@ func getLvl1(t *testing.T) drkey.Lvl1Key {
 func TestExistingImplementations(t *testing.T) {
 	// we test that we have the four implementations we know for now (standard,deleg,scmp,piskes)
 	if len(KnownDerivations) != 2 {
-		t.Errorf("Wrong number of implementations, expecting 4, got %d", len(KnownDerivations))
+		t.Errorf("Wrong number of implementations, expecting 4, got %d", len(KnownDerivations)+2)
 	}
 	if _, found := KnownDerivations["scmp"]; !found {
 		t.Errorf("\"scmp\" implementation not found")
