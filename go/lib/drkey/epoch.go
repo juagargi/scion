@@ -23,13 +23,13 @@ import (
 
 // Epoch represents a validity period.
 type Epoch struct {
-	Validity scrypto.Validity
+	scrypto.Validity
 }
 
 // Equal returns true if both Epochs are identical.
 func (e Epoch) Equal(other Epoch) bool {
-	return e.Validity.NotBefore.Time == other.Validity.NotBefore.Time &&
-		e.Validity.NotAfter.Time == other.Validity.NotAfter.Time
+	return e.NotBefore.Time == other.NotBefore.Time &&
+		e.NotAfter.Time == other.NotAfter.Time
 }
 
 // NewEpoch constructs an Epoch from its uint32 encoded begin and end parts.
@@ -44,5 +44,5 @@ func NewEpoch(begin, end uint32) Epoch {
 
 // Contains indicates whether the time point is inside this Epoch.
 func (e *Epoch) Contains(t time.Time) bool {
-	return e.Validity.Contains(t)
+	return e.Contains(t)
 }
