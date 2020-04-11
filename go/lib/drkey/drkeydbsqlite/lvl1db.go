@@ -157,7 +157,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 // InsertLvl1Key inserts a first level DRKey and returns the number of affected rows.
 func (b *Lvl1Backend) InsertLvl1Key(ctx context.Context, key drkey.Lvl1Key) error {
 	_, err := b.insertLvl1KeyStmt.ExecContext(ctx, key.SrcIA.I, key.SrcIA.A, key.DstIA.I,
-		key.DstIA.A, uint32(key.Epoch.Begin.Unix()), uint32(key.Epoch.End.Unix()), key.Key)
+		key.DstIA.A, uint32(key.Epoch.NotBefore.Time.Unix()), uint32(key.Epoch.NotAfter.Time.Unix()), key.Key)
 	if err != nil {
 		return err
 	}

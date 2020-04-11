@@ -103,7 +103,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 func (b *Lvl2Backend) InsertLvl2Key(ctx context.Context, key drkey.Lvl2Key) error {
 	_, err := b.insertLvl2KeyStmt.ExecContext(ctx, key.Protocol, key.KeyType, key.SrcIA.I,
 		key.SrcIA.A, key.DstIA.I, key.DstIA.A, key.SrcHost, key.DstHost,
-		uint32(key.Epoch.Begin.Unix()), uint32(key.Epoch.End.Unix()), key.Key)
+		uint32(key.Epoch.NotBefore.Time.Unix()), uint32(key.Epoch.NotAfter.Time.Unix()), key.Key)
 	if err != nil {
 		return err
 	}

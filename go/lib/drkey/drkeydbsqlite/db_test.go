@@ -27,6 +27,7 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/drkey/protocol"
+	"github.com/scionproto/scion/go/lib/scrypto"
 	"github.com/scionproto/scion/go/lib/util"
 )
 
@@ -48,7 +49,12 @@ func TestDRKeyLvl1(t *testing.T) {
 	db, cleanF := newLvl1Database(t)
 	defer cleanF()
 
-	epoch := drkey.Epoch{Begin: time.Now(), End: time.Now().Add(timeOffset * time.Second)}
+	epoch := drkey.Epoch{
+		Validity: scrypto.Validity{
+			NotBefore: util.UnixTime{Time: time.Now()},
+			NotAfter:  util.UnixTime{Time: time.Now().Add(timeOffset * time.Second)},
+		},
+	}
 	sv, err := drkey.DeriveSV(drkey.SVMeta{Epoch: epoch}, asMasterPassword)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -106,7 +112,12 @@ func TestDRKeyLvl2(t *testing.T) {
 
 	srcIA := addr.IAFromRaw(rawSrcIA)
 	dstIA := addr.IAFromRaw(rawDstIA)
-	epoch := drkey.Epoch{Begin: time.Now(), End: time.Now().Add(timeOffset * time.Second)}
+	epoch := drkey.Epoch{
+		Validity: scrypto.Validity{
+			NotBefore: util.UnixTime{Time: time.Now()},
+			NotAfter:  util.UnixTime{Time: time.Now().Add(timeOffset * time.Second)},
+		},
+	}
 	sv, err := drkey.DeriveSV(drkey.SVMeta{Epoch: epoch}, asMasterPassword)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -185,8 +196,10 @@ func TestGetMentionedASes(t *testing.T) {
 		dstIA, _ := addr.IAFromString(p[1].(string))
 		begin := time.Unix(0, 0)
 		epoch := drkey.Epoch{
-			Begin: begin,
-			End:   begin.Add(time.Duration(p[2].(int)) * time.Second),
+			Validity: scrypto.Validity{
+				NotBefore: util.UnixTime{Time: begin},
+				NotAfter:  util.UnixTime{Time: begin.Add(time.Duration(p[2].(int)) * time.Second)},
+			},
 		}
 		sv, err := drkey.DeriveSV(drkey.SVMeta{Epoch: epoch}, asMasterPassword)
 		if err != nil {
