@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package drkey
+package exchange
 
 import (
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/common"
+	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/scrypto"
 )
 
 // EncryptDRKeyLvl1 does the encryption step in the first level key exchange
-func EncryptDRKeyLvl1(drkey Lvl1Key, nonce, pubkey, privkey common.RawBytes) (common.RawBytes, error) {
+func EncryptDRKeyLvl1(drkey drkey.Lvl1Key, nonce, pubkey, privkey []byte) ([]byte, error) {
 	keyLen := len(drkey.Key)
-	msg := make(common.RawBytes, addr.IABytes*2+keyLen)
+	msg := make([]byte, addr.IABytes*2+keyLen)
 	drkey.SrcIA.Write(msg)
 	drkey.DstIA.Write(msg[addr.IABytes:])
 	copy(msg[addr.IABytes*2:], drkey.Key)
@@ -35,19 +35,19 @@ func EncryptDRKeyLvl1(drkey Lvl1Key, nonce, pubkey, privkey common.RawBytes) (co
 }
 
 // DecryptDRKeyLvl1 decrypts the cipher text received during the first level key exchange
-func DecryptDRKeyLvl1(cipher, nonce, pubkey, privkey common.RawBytes) (Lvl1Key, error) {
+func DecryptDRKeyLvl1(cipher, nonce, pubkey, privkey []byte) (drkey.Lvl1Key, error) {
 	msg, err := scrypto.Decrypt(cipher, nonce, pubkey, privkey, scrypto.Curve25519xSalsa20Poly1305)
 	if err != nil {
-		return Lvl1Key{}, err
+		return drkey.Lvl1Key{}, err
 	}
 	srcIA := addr.IAFromRaw(msg[:addr.IABytes])
 	dstIA := addr.IAFromRaw(msg[addr.IABytes : addr.IABytes*2])
 	key := msg[addr.IABytes*2:]
-	return Lvl1Key{
-		Lvl1Meta: Lvl1Meta{
+	return drkey.Lvl1Key{
+		Lvl1Meta: drkey.Lvl1Meta{
 			SrcIA: srcIA,
 			DstIA: dstIA,
 		},
-		Key: DRKey(key),
+		Key: drkey.DRKey(key),
 	}, nil
 }

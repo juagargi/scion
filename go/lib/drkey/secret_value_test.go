@@ -18,21 +18,21 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/scionproto/scion/go/lib/common"
+	"github.com/scionproto/scion/go/lib/xtest"
 )
 
 func TestDeriveSV(t *testing.T) {
 	meta := SVMeta{NewEpoch(0, 1)}
-	asSecret := common.RawBytes{0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7}
-	hexKey := "47bfbb7d94706dc9e79825e5a837b006"
+	asSecret := []byte{0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7}
+	targetKey := xtest.MustParseHexString("47bfbb7d94706dc9e79825e5a837b006")
 
 	got, err := DeriveSV(meta, asSecret)
 	if err != nil {
 		t.Errorf("DeriveSV() error = %v", err)
 		return
 	}
-	if hex.EncodeToString(got.Key) != hexKey {
+	if !got.Key.Equal(targetKey) {
 		t.Fatalf("Unexpected sv key: %s, expected: %s",
-			hex.EncodeToString(got.Key), hexKey)
+			hex.EncodeToString(got.Key), hex.EncodeToString(targetKey))
 	}
 }

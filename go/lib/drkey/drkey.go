@@ -14,13 +14,16 @@
 
 package drkey
 
-import (
-	"github.com/scionproto/scion/go/lib/common"
-)
+import "bytes"
 
 // DRKey represents a raw binary key
-type DRKey common.RawBytes
+type DRKey []byte
 
 func (k DRKey) String() string {
 	return "[redacted key]"
+}
+
+// Equal returns true if both DRKeys are identical
+func (k DRKey) Equal(other DRKey) bool {
+	return bytes.Compare(k, other) == 0
 }

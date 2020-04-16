@@ -22,7 +22,6 @@ import (
 
 	"golang.org/x/crypto/pbkdf2"
 
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/util"
 )
 
@@ -45,12 +44,12 @@ func (sv SV) Equal(other SV) bool {
 }
 
 // DeriveSV constructs a valid SV. asSecret is typically the AS master secret.
-func DeriveSV(meta SVMeta, asSecret common.RawBytes) (SV, error) {
+func DeriveSV(meta SVMeta, asSecret []byte) (SV, error) {
 	msLen := len(asSecret)
 	if msLen == 0 {
 		return SV{}, errors.New("Invalid zero sized secret")
 	}
-	all := make(common.RawBytes, 1+msLen+8)
+	all := make([]byte, 1+msLen+8)
 	copy(all, []byte{byte(msLen)})
 	copy(all[1:], asSecret)
 	binary.LittleEndian.PutUint32(all[msLen+1:], util.TimeToSecs(meta.Epoch.NotBefore.Time))
