@@ -33,23 +33,23 @@ type Standard struct{}
 
 // DeriveLvl2 derives the level 2 DRKey without passing through a delegation secret.
 func (p Standard) DeriveLvl2(meta drkey.Lvl2Meta, key drkey.Lvl1Key) (drkey.Lvl2Key, error) {
-	h, err := scrypto.InitMac(common.RawBytes(key.Key))
+	h, err := scrypto.InitMac([]byte(key.Key))
 	if err != nil {
 		return drkey.Lvl2Key{}, err
 	}
 
 	pLen := 0
 	// add to buffs in reverse order:
-	buffs := []common.RawBytes{}
+	buffs := [][]byte{}
 	switch meta.KeyType {
 	case drkey.Host2Host:
 		if meta.SrcHost.Size() == 0 {
 			return drkey.Lvl2Key{}, errors.New("Level 2 DRKey requires a src host, but it is empty")
 		}
 		b := meta.SrcHost.Pack()
-		buffs = []common.RawBytes{
+		buffs = [][]byte{
 			b,
-			common.RawBytes{byte(len(b))},
+			[]byte{byte(len(b))},
 		}
 		pLen += len(b) + 1
 		fallthrough
@@ -60,20 +60,20 @@ func (p Standard) DeriveLvl2(meta drkey.Lvl2Meta, key drkey.Lvl1Key) (drkey.Lvl2
 		b := meta.DstHost.Pack()
 		buffs = append(buffs,
 			b,
-			common.RawBytes{byte(len(b))})
+			[]byte{byte(len(b))})
 		pLen += len(b) + 1
 		fallthrough
 	case drkey.AS2AS:
-		b := common.RawBytes(meta.Protocol)
+		b := []byte(meta.Protocol)
 		buffs = append(buffs,
-			common.RawBytes{byte(meta.KeyType)},
+			[]byte{byte(meta.KeyType)},
 			b,
-			common.RawBytes{byte(len(b))})
+			[]byte{byte(len(b))})
 		pLen += len(b) + 2
 	default:
 		return drkey.Lvl2Key{}, common.NewBasicError("Unknown DRKey type", nil)
 	}
-	all := make(common.RawBytes, pLen)
+	all := make([]byte, pLen)
 	pLen = 0
 	for i := len(buffs) - 1; i >= 0; i-- {
 		copy(all[pLen:], buffs[i])

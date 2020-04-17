@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/drkey"
+	"github.com/scionproto/scion/go/lib/xtest"
 )
 
 func TestDeriveStandard(t *testing.T) {
@@ -192,30 +192,35 @@ func TestDeriveDelegatedViaDS(t *testing.T) {
 }
 
 func getLvl1(t *testing.T) drkey.Lvl1Key {
-	master0 := common.RawBytes{0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7}
+	meta := drkey.SVMeta{
+		Epoch: drkey.NewEpoch(0, 1),
+	}
+	asSecret := []byte{0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7}
+	svTgtKey := xtest.MustParseHexString("47bfbb7d94706dc9e79825e5a837b006")
 	epoch := drkey.NewEpoch(0, 1)
 	srcIA, _ := addr.IAFromString("1-ff00:0:111")
 	dstIA, _ := addr.IAFromString("1-ff00:0:112")
-	sv, err := drkey.DeriveSV(drkey.SVMeta{
-		Epoch: epoch,
-	}, master0)
+	sv, err := drkey.DeriveSV(meta, asSecret)
 	if err != nil {
-		t.Fatalf("SV failed")
+		t.Errorf("Derive SV failed = %v", err)
 	}
-	if hex.EncodeToString(sv.Key) != "47bfbb7d94706dc9e79825e5a837b006" {
-		t.Fatalf("Unexpected sv: %s", hex.EncodeToString(sv.Key))
+	if bytes.Compare(sv.Key, svTgtKey) != 0 {
+		t.Fatalf("Unexpected sv key: %s, expected: %s",
+			hex.EncodeToString(sv.Key), hex.EncodeToString(svTgtKey))
 	}
+	lvlTgtKey := xtest.MustParseHexString("51663adbc06e55f40a9ad899cf0775e5")
 	lvl1, err := DeriveLvl1(drkey.Lvl1Meta{
 		Epoch: epoch,
 		SrcIA: srcIA,
 		DstIA: dstIA,
 	}, sv)
 	if err != nil {
-		t.Fatalf("Lvl1 failed")
+		t.Errorf("DeriveLvl1 failed = %v", err)
 	}
-	if hex.EncodeToString(lvl1.Key) != "51663adbc06e55f40a9ad899cf0775e5" {
+	if !lvl1.Key.Equal(lvlTgtKey) {
 		t.Fatalf("Unexpected lvl1 key: %s", hex.EncodeToString(lvl1.Key))
 	}
+
 	return lvl1
 }
 

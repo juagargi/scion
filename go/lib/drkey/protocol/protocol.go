@@ -16,7 +16,6 @@ package protocol
 
 import (
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/scrypto"
 )
@@ -38,11 +37,11 @@ var KnownDerivations = make(map[string]Derivation)
 
 // DeriveLvl1 constructs a new level 1 DRKey.
 func DeriveLvl1(meta drkey.Lvl1Meta, sv drkey.SV) (drkey.Lvl1Key, error) {
-	mac, err := scrypto.InitMac(common.RawBytes(sv.Key))
+	mac, err := scrypto.InitMac([]byte(sv.Key))
 	if err != nil {
 		return drkey.Lvl1Key{}, err
 	}
-	all := make(common.RawBytes, addr.IABytes)
+	all := make([]byte, addr.IABytes)
 	meta.DstIA.Write(all)
 	mac.Write(all)
 	return drkey.Lvl1Key{

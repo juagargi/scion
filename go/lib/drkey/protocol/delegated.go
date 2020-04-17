@@ -48,13 +48,13 @@ func (p Delegated) DeriveLvl2(meta drkey.Lvl2Meta, key drkey.Lvl1Key) (drkey.Lvl
 func (p Delegated) DeriveLvl2FromDS(meta drkey.Lvl2Meta, ds drkey.DelegationSecret) (
 	drkey.Lvl2Key, error) {
 
-	h, err := scrypto.InitMac(common.RawBytes(ds.Key))
+	h, err := scrypto.InitMac([]byte(ds.Key))
 	if err != nil {
 		return drkey.Lvl2Key{}, err
 	}
 
 	pLen := 0
-	buffs := []common.RawBytes{}
+	buffs := [][]byte{}
 	// add to buffs in reverse order:
 	switch meta.KeyType {
 	case drkey.Host2Host:
@@ -62,9 +62,9 @@ func (p Delegated) DeriveLvl2FromDS(meta drkey.Lvl2Meta, ds drkey.DelegationSecr
 			return drkey.Lvl2Key{}, errors.New("Level 2 DRKey requires a src host, but it is empty")
 		}
 		b := meta.SrcHost.Pack()
-		buffs = []common.RawBytes{
+		buffs = [][]byte{
 			b,
-			common.RawBytes{byte(len(b))},
+			[]byte{byte(len(b))},
 		}
 		pLen += len(b) + 1
 		fallthrough
@@ -75,7 +75,7 @@ func (p Delegated) DeriveLvl2FromDS(meta drkey.Lvl2Meta, ds drkey.DelegationSecr
 		b := meta.DstHost.Pack()
 		buffs = append(buffs,
 			b,
-			common.RawBytes{byte(len(b))})
+			[]byte{byte(len(b))})
 		pLen += len(b) + 1
 	case drkey.AS2AS:
 		return drkey.Lvl2Key{
@@ -85,7 +85,7 @@ func (p Delegated) DeriveLvl2FromDS(meta drkey.Lvl2Meta, ds drkey.DelegationSecr
 	default:
 		return drkey.Lvl2Key{}, common.NewBasicError("Unknown DRKey type", nil)
 	}
-	all := make(common.RawBytes, pLen)
+	all := make([]byte, pLen)
 	pLen = 0
 	for i := len(buffs) - 1; i >= 0; i-- {
 		copy(all[pLen:], buffs[i])
