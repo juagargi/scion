@@ -171,3 +171,7 @@ func (pq *ChannelPacketQueue) GetPriority() int {
 func (pq *ChannelPacketQueue) GetPacketQueue() PacketQueue {
 	return pq.pktQue
 }
+
+func (pq *ChannelPacketQueue) GetCongestionWarning() *CongestionWarning {
+	return &pq.pktQue.CongestionWarning
+}

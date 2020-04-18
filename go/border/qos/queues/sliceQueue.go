@@ -124,3 +124,7 @@ func (pq *PacketSliceQueue) GetPriority() int {
 func (pq *PacketSliceQueue) GetPacketQueue() PacketQueue {
 	return pq.pktQue
 }
+
+func (pq *PacketSliceQueue) GetCongestionWarning() *CongestionWarning {
+	return &pq.pktQue.CongestionWarning
+}

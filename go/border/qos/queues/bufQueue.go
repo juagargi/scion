@@ -148,3 +148,7 @@ func (pq *PacketBufQueue) GetPriority() int {
 func (pq *PacketBufQueue) GetPacketQueue() PacketQueue {
 	return pq.pktQue
 }
+
+func (pq *PacketBufQueue) GetCongestionWarning() *CongestionWarning {
+	return &pq.pktQue.CongestionWarning
+}

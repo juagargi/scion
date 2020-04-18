@@ -50,6 +50,11 @@ type Action struct {
 	action conf.PoliceAction
 }
 
+type CongestionWarning struct {
+	Approach           int `yaml:"approach"`
+	InformationContent int `yaml:"informationContent"`
+}
+
 type ActionProfile struct {
 	FillLevel int               `yaml:"fill-level"`
 	Prob      int               `yaml:"prob"`
@@ -57,14 +62,15 @@ type ActionProfile struct {
 }
 
 type PacketQueue struct {
-	Name         string
-	ID           int
-	MinBandwidth int
-	MaxBandWidth int
-	PoliceRate   int
-	MaxLength    int
-	Priority     int
-	Profile      []ActionProfile
+	Name              string
+	ID                int
+	MinBandwidth      int
+	MaxBandWidth      int
+	PoliceRate        int
+	MaxLength         int
+	Priority          int
+	CongestionWarning CongestionWarning
+	Profile           []ActionProfile
 }
 
 type PacketQueueInterface interface {
@@ -81,6 +87,7 @@ type PacketQueueInterface interface {
 	GetMinBandwidth() int
 	GetMaxBandwidth() int
 	GetPacketQueue() PacketQueue
+	GetCongestionWarning() *CongestionWarning
 }
 
 // MergeAction merges both PoliceAction together and returns the merged result.
