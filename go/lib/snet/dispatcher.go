@@ -132,6 +132,7 @@ func (h *scmpHandler) handleSCMPRev(hdr *scmp.Hdr, pkt *Packet) error {
 	}
 	//log.Info("Received SCMP revocation", "header", hdr.String(), "payload", scmpPayload.String(),
 	//	"src", pkt.Source)
+	log.Info("Whyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy is this happening?")
 	if h.revocationHandler != nil {
 		h.revocationHandler.RevokeRaw(context.TODO(), info.RawSRev)
 	}

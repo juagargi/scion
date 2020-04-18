@@ -81,7 +81,7 @@ cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_
 cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-3/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-1/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-2/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-1/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_114/br1-ff00_0_114-1/qosConfig.yaml
 
@@ -91,7 +91,7 @@ cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_114/br1-ff00_0_
 echo "Scion started"
 echo ""
 
-sleep 2
+sleep 5
 ./supervisor/supervisor.sh status
 
 #Put last byte of each scionds IP address into IPs array
