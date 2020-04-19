@@ -128,3 +128,7 @@ func (pq *PacketSliceQueue) GetPacketQueue() PacketQueue {
 func (pq *PacketSliceQueue) GetCongestionWarning() *CongestionWarning {
 	return &pq.pktQue.CongestionWarning
 }
+
+func (pq *PacketSliceQueue) GetTockenBucket() *TokenBucket {
+	return &pq.tb
+}

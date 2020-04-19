@@ -39,6 +39,7 @@ func isSCMPGeneralReply(header *scmp.Hdr) bool {
 	return false
 }
 
+//IMP:
 // getSCMPGeneralID returns the 8-byte ID of a SCMP General class packet. The
 // return value is 0 if the packet is (1) SCMP General class with unspecified
 // type, or (2) a non-General SCMP class, or (3) the packet is not SCMP.

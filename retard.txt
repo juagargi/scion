@@ -1,0 +1,665 @@
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 13487, uptime 0:00:21
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 13622, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 13623, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 13485, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 13496, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 13489, uptime 0:00:21
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 13637, uptime 0:00:12
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 13638, uptime 0:00:12
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 13495, uptime 0:00:21
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 13508, uptime 0:00:21
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 13651, uptime 0:00:12
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 13655, uptime 0:00:12
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 13528, uptime 0:00:21
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 13539, uptime 0:00:21
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 13669, uptime 0:00:12
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 13664, uptime 0:00:12
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 13545, uptime 0:00:21
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 13556, uptime 0:00:21
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 13633, uptime 0:00:13
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 13624, uptime 0:00:13
+dispatcher                        RUNNING   pid 13443, uptime 0:00:23
+
+Scmp echo done
+
+Set up bwtest server at port 40004
+
+Set up bwtest server at port 40002
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40006
+
+Set up bwtest client to port 40008
+
+Set up bwtest client to port 40004
+
+Set up bwtest client to port 40006
+
+Set up bwtest client to port 40002
+
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[20]   Done                    scmpEcho $i $j
+[21]   Done                    bwTestServer 19 $i
+[22]   Done                    bwTestServer 19 $i
+[23]   Done                    bwTestServer 19 $i
+[24]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=2.733ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=2.562ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.492ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.488ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.422ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.137193s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 14267, uptime 0:00:21
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 14394, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 14395, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 14269, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 14270, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 14284, uptime 0:00:21
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 14398, uptime 0:00:13
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 14411, uptime 0:00:13
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 14281, uptime 0:00:21
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 14304, uptime 0:00:21
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 14415, uptime 0:00:12
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 14418, uptime 0:00:12
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 14289, uptime 0:00:21
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 14308, uptime 0:00:21
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 14434, uptime 0:00:12
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 14433, uptime 0:00:12
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 14322, uptime 0:00:20
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 14339, uptime 0:00:20
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 14397, uptime 0:00:13
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 14396, uptime 0:00:13
+dispatcher                        RUNNING   pid 14225, uptime 0:00:23
+
+Scmp echo done
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40004
+
+Set up bwtest server at port 40002
+
+Set up bwtest server at port 40006
+
+Set up bwtest client to port 40008
+Set up bwtest client to port 40006
+
+
+Set up bwtest client to port 40002
+Set up bwtest client to port 40004
+
+
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[20]   Done                    scmpEcho $i $j
+[21]   Done                    bwTestServer 19 $i
+[22]   Done                    bwTestServer 19 $i
+[23]   Done                    bwTestServer 19 $i
+[24]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=2.929ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=2.858ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.772ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.677ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.606ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.032423s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 15082, uptime 0:00:22
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 15210, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 15211, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 15085, uptime 0:00:22
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 15086, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 15101, uptime 0:00:21
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 15217, uptime 0:00:13
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 15225, uptime 0:00:13
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 15113, uptime 0:00:21
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 15100, uptime 0:00:21
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 15230, uptime 0:00:13
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 15240, uptime 0:00:13
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 15087, uptime 0:00:21
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 15127, uptime 0:00:21
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 15258, uptime 0:00:13
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 15245, uptime 0:00:13
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 15138, uptime 0:00:21
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 15153, uptime 0:00:21
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 15213, uptime 0:00:13
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 15212, uptime 0:00:13
+dispatcher                        RUNNING   pid 15041, uptime 0:00:24
+
+Scmp echo done
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40004
+
+Set up bwtest server at port 40006
+
+Set up bwtest server at port 40002
+
+Set up bwtest client to port 40004
+
+Set up bwtest client to port 40006
+
+Set up bwtest client to port 40008
+
+Set up bwtest client to port 40002
+
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[1]   Done                    bwTestServer 19 $i
+[2]   Done                    bwTestServer 19 $i
+[3]   Done                    bwTestServer 19 $i
+[4]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=8.34ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=2.475ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.687ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.588ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.594ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.03033s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 15902, uptime 0:00:21
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 15998, uptime 0:00:14
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 15999, uptime 0:00:14
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 15872, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 15870, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 15903, uptime 0:00:21
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 16005, uptime 0:00:14
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 16019, uptime 0:00:13
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 15883, uptime 0:00:21
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 15901, uptime 0:00:21
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 16020, uptime 0:00:13
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 16028, uptime 0:00:13
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 15894, uptime 0:00:21
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 15873, uptime 0:00:21
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 16046, uptime 0:00:13
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 16029, uptime 0:00:13
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 15919, uptime 0:00:21
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 15934, uptime 0:00:21
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 16001, uptime 0:00:14
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 16000, uptime 0:00:14
+dispatcher                        RUNNING   pid 15827, uptime 0:00:24
+
+Scmp echo done
+
+Set up bwtest server at port 40002
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40006
+
+Set up bwtest server at port 40004
+
+Set up bwtest client to port 40002
+
+Set up bwtest client to port 40004
+
+Set up bwtest client to port 40008
+
+Set up bwtest client to port 40006
+
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[20]   Done                    scmpEcho $i $j
+[21]   Done                    bwTestServer 19 $i
+[22]   Done                    bwTestServer 19 $i
+[23]   Done                    bwTestServer 19 $i
+[24]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=3.02ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=2.592ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=3.452ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.564ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.378ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.024473s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 16703, uptime 0:00:21
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 16830, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 16831, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 16704, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 16705, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 16708, uptime 0:00:21
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 16834, uptime 0:00:13
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 16836, uptime 0:00:13
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 16706, uptime 0:00:21
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 16707, uptime 0:00:21
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 16851, uptime 0:00:13
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 16858, uptime 0:00:13
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 16709, uptime 0:00:21
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 16747, uptime 0:00:21
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 16868, uptime 0:00:13
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 16861, uptime 0:00:13
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 16722, uptime 0:00:21
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 16751, uptime 0:00:21
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 16833, uptime 0:00:13
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 16832, uptime 0:00:13
+dispatcher                        RUNNING   pid 16660, uptime 0:00:23
+
+Scmp echo done
+
+Set up bwtest server at port 40002
+
+Set up bwtest server at port 40004
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40006
+
+Set up bwtest client to port 40004
+Set up bwtest client to port 40002
+
+
+Set up bwtest client to port 40008
+
+Set up bwtest client to port 40006
+
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[20]   Done                    scmpEcho $i $j
+[21]   Done                    bwTestServer 19 $i
+[22]   Done                    bwTestServer 19 $i
+[23]   Done                    bwTestServer 19 $i
+[24]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=2.742ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=2.711ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.333ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.518ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.499ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.017993s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 17519, uptime 0:00:22
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 17647, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 17648, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 17520, uptime 0:00:22
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 17539, uptime 0:00:22
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 17533, uptime 0:00:22
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 17651, uptime 0:00:13
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 17658, uptime 0:00:13
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 17567, uptime 0:00:22
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 17552, uptime 0:00:22
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 17668, uptime 0:00:13
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 17677, uptime 0:00:13
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 17518, uptime 0:00:22
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 17522, uptime 0:00:22
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 17698, uptime 0:00:13
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 17681, uptime 0:00:13
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 17572, uptime 0:00:22
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 17578, uptime 0:00:22
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 17650, uptime 0:00:13
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 17649, uptime 0:00:13
+dispatcher                        RUNNING   pid 17475, uptime 0:00:24
+
+Scmp echo done
+
+Set up bwtest server at port 40002
+
+Set up bwtest server at port 40004
+Set up bwtest server at port 40006
+
+
+Set up bwtest server at port 40008
+
+Set up bwtest client to port 40006
+Set up bwtest client to port 40004
+
+Set up bwtest client to port 40008
+
+
+Set up bwtest client to port 40002
+
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[1]   Done                    bwTestServer 19 $i
+[2]   Done                    bwTestServer 19 $i
+[3]   Done                    bwTestServer 19 $i
+[4]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=2.739ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=3.87ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.597ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.582ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.614ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.021836s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 18295, uptime 0:00:21
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 18421, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 18422, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 18296, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 18297, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 18324, uptime 0:00:21
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 18428, uptime 0:00:13
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 18438, uptime 0:00:13
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 18316, uptime 0:00:21
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 18337, uptime 0:00:21
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 18444, uptime 0:00:13
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 18454, uptime 0:00:13
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 18308, uptime 0:00:21
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 18364, uptime 0:00:21
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 18468, uptime 0:00:13
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 18461, uptime 0:00:13
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 18345, uptime 0:00:21
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 18351, uptime 0:00:21
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 18424, uptime 0:00:13
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 18423, uptime 0:00:13
+dispatcher                        RUNNING   pid 18252, uptime 0:00:23
+
+Scmp echo done
+
+Set up bwtest server at port 40002
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40004
+
+Set up bwtest server at port 40006
+
+Set up bwtest client to port 40002
+
+Set up bwtest client to port 40008
+
+Set up bwtest client to port 40004
+
+Set up bwtest client to port 40006
+
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[20]   Done                    scmpEcho $i $j
+[21]   Done                    bwTestServer 19 $i
+[22]   Done                    bwTestServer 19 $i
+[23]   Done                    bwTestServer 19 $i
+[24]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=2.682ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=4.257ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.436ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.534ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.528ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.142481s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 19086, uptime 0:00:20
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 19210, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 19211, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 19079, uptime 0:00:20
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 19091, uptime 0:00:20
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 19100, uptime 0:00:20
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 19217, uptime 0:00:12
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 19225, uptime 0:00:12
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 19108, uptime 0:00:20
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 19106, uptime 0:00:20
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 19231, uptime 0:00:12
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 19242, uptime 0:00:12
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 19078, uptime 0:00:20
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 19119, uptime 0:00:20
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 19252, uptime 0:00:12
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 19248, uptime 0:00:12
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 19080, uptime 0:00:20
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 19121, uptime 0:00:20
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 19213, uptime 0:00:12
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 19212, uptime 0:00:12
+dispatcher                        RUNNING   pid 19035, uptime 0:00:22
+
+Scmp echo done
+
+Set up bwtest server at port 40006
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40002
+
+Set up bwtest server at port 40004
+
+Set up bwtest client to port 40006
+
+Set up bwtest client to port 40008
+
+Set up bwtest client to port 40004
+
+Set up bwtest client to port 40002
+
+================================================
+ERROR: BW Test with server 40002 not successful
+================================================
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[20]   Done                    scmpEcho $i $j
+[21]   Done                    bwTestServer 19 $i
+[22]   Done                    bwTestServer 19 $i
+[23]   Done                    bwTestServer 19 $i
+[24]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=3.117ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=2.732ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.446ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.643ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.369ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.03103s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 19869, uptime 0:00:21
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 19998, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 19999, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 19877, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 19870, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 19882, uptime 0:00:21
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 20002, uptime 0:00:13
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 20011, uptime 0:00:13
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 19886, uptime 0:00:21
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 19896, uptime 0:00:21
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 20018, uptime 0:00:13
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 20024, uptime 0:00:13
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 19892, uptime 0:00:21
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 19917, uptime 0:00:21
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 20046, uptime 0:00:13
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 20031, uptime 0:00:13
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 19894, uptime 0:00:21
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 19908, uptime 0:00:21
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 20001, uptime 0:00:13
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 20000, uptime 0:00:13
+dispatcher                        RUNNING   pid 19824, uptime 0:00:23
+
+Scmp echo done
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40004
+
+Set up bwtest server at port 40006
+
+Set up bwtest server at port 40002
+
+Set up bwtest client to port 40008
+Set up bwtest client to port 40004
+Set up bwtest client to port 40002
+
+
+Set up bwtest client to port 40006
+
+
+================================================
+ERROR: BW Test with server 40004 not successful
+================================================
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+================================================
+ERROR: BW Test with server 40002 not successful
+================================================
+[20]   Done                    scmpEcho $i $j
+[21]   Done                    bwTestServer 19 $i
+[22]   Done                    bwTestServer 19 $i
+[23]   Done                    bwTestServer 19 $i
+[24]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=2.906ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=2.802ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.787ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.557ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=3.281ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.039085s
+Terminating this run of the SCION infrastructure
+Terminating this run of the SCION infrastructure
+Delete old logs
+
+Running the network...
+Scion started
+
+as1-ff00_0_110:br1-ff00_0_110-1   RUNNING   pid 20813, uptime 0:00:21
+as1-ff00_0_110:cs1-ff00_0_110-1   RUNNING   pid 20938, uptime 0:00:13
+as1-ff00_0_110:sd1-ff00_0_110     RUNNING   pid 20939, uptime 0:00:13
+as1-ff00_0_111:br1-ff00_0_111-1   RUNNING   pid 20814, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-2   RUNNING   pid 20836, uptime 0:00:21
+as1-ff00_0_111:br1-ff00_0_111-3   RUNNING   pid 20824, uptime 0:00:21
+as1-ff00_0_111:cs1-ff00_0_111-1   RUNNING   pid 20942, uptime 0:00:13
+as1-ff00_0_111:sd1-ff00_0_111     RUNNING   pid 20943, uptime 0:00:13
+as1-ff00_0_112:br1-ff00_0_112-1   RUNNING   pid 20809, uptime 0:00:21
+as1-ff00_0_112:br1-ff00_0_112-2   RUNNING   pid 20820, uptime 0:00:21
+as1-ff00_0_112:cs1-ff00_0_112-1   RUNNING   pid 20957, uptime 0:00:13
+as1-ff00_0_112:sd1-ff00_0_112     RUNNING   pid 20965, uptime 0:00:13
+as1-ff00_0_113:br1-ff00_0_113-1   RUNNING   pid 20857, uptime 0:00:21
+as1-ff00_0_113:br1-ff00_0_113-2   RUNNING   pid 20867, uptime 0:00:21
+as1-ff00_0_113:cs1-ff00_0_113-1   RUNNING   pid 20982, uptime 0:00:13
+as1-ff00_0_113:sd1-ff00_0_113     RUNNING   pid 20970, uptime 0:00:13
+as1-ff00_0_114:br1-ff00_0_114-1   RUNNING   pid 20876, uptime 0:00:21
+as1-ff00_0_114:br1-ff00_0_114-2   RUNNING   pid 20886, uptime 0:00:21
+as1-ff00_0_114:cs1-ff00_0_114-1   RUNNING   pid 20941, uptime 0:00:13
+as1-ff00_0_114:sd1-ff00_0_114     RUNNING   pid 20940, uptime 0:00:13
+dispatcher                        RUNNING   pid 20769, uptime 0:00:23
+
+Scmp echo done
+
+Set up bwtest server at port 40008
+
+Set up bwtest server at port 40002
+
+Set up bwtest server at port 40004
+
+Set up bwtest server at port 40006
+
+Set up bwtest client to port 40002
+
+Set up bwtest client to port 40006
+
+Set up bwtest client to port 40008
+
+Set up bwtest client to port 40004
+
+================================================
+ERROR: BW Test with server 40008 not successful
+================================================
+================================================
+ERROR: BW Test with server 40002 not successful
+================================================
+================================================
+ERROR: BW Test with server 40004 not successful
+================================================
+================================================
+ERROR: BW Test with server 40006 not successful
+================================================
+[1]   Done                    bwTestServer 19 $i
+[2]   Done                    bwTestServer 19 $i
+[3]   Done                    bwTestServer 19 $i
+[4]   Done                    bwTestServer 19 $i
+Using path:
+  Hops: [1-ff00:0:110 1>11 1-ff00:0:111 13>31 1-ff00:0:113 32>42 1-ff00:0:114] MTU: 1400, NextHop: 127.0.0.17:31038
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=0 time=2.797ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=1 time=2.965ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=2 time=2.765ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=3 time=2.518ms
+112 bytes from 1-ff00:0:114,[127.0.0.228] scmp_seq=4 time=2.572ms
+
+--- 1-ff00:0:114,[127.0.0.228:0] statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4.02345s
+Terminating this run of the SCION infrastructure

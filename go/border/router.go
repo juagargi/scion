@@ -78,6 +78,10 @@ func (r *Router) Start() {
 		defer log.HandlePanic()
 		rctrl.Control(r.sRevInfoQ, cfg.General.ReconnectToDispatcher)
 	}()
+	go func() {
+		defer log.HandlePanic()
+		r.bscNotify()
+	}()
 }
 
 // ReloadConfig handles reloading the configuration when SIGHUP is received.

@@ -80,6 +80,10 @@ func (qosConfig *Configuration) GetNotification() chan *queues.NPkt {
 	return qosConfig.notifications
 }
 
+func (q *QosConfiguration) GetNotification() chan *queues.NPkt {
+	return q.notifications
+}
+
 // SetAndInitSchedul is necessary to set up
 // a mock scheduler for testing. Do not use for anything else.
 func (qosConfig *Configuration) SetAndInitSchedul(sched scheduler.SchedulerInterface) {
@@ -197,7 +201,7 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 	switch act {
 	case conf.PASS:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
-		qosConfig.SendNotification(qp) //MS: remove later
+		qosConfig.SendNotification(qp) //MS: Used for testing
 	case conf.NOTIFY:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
 		qosConfig.SendNotification(qp)
@@ -215,26 +219,6 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 
 // SendNotification is needed for the part of @stygerma
 func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) {
-	rc := queues.RegularClassRule{}
-	config := qosConfig.GetConfig()
-
-	rule := rc.GetRuleForPacket(config, qp.Rp)
-	np := queues.NPkt{Rule: rule, Qpkt: qp}
-	log.Debug("Send notification method in router")
-
-	queueNo := 0
-	if rule != nil {
-		queueNo = rule.QueueNumber
-	}
-
-	restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
-	log.Debug("restrictions on information content", "restriction", restriction)
-	np.Qpkt.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
-
-	select {
-	case qosConfig.notifications <- &np:
-	default:
-	}
 }
 
 func (qosConfig *Configuration) dropPacket(qp *queues.QPkt) {

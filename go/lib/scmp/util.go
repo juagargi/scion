@@ -58,6 +58,8 @@ func ParseInfo(b common.RawBytes, ct ClassType) (Info, error) {
 		fallthrough
 	case ct == ClassType{C_General, T_G_RecordPathReply}:
 		return InfoRecordPathFromRaw(b)
+	case ct == ClassType{C_General, T_G_BasicCongWarn}:
+		return InfoBscCWFromRaw(b)
 	case ct == ClassType{C_Routing, T_R_OversizePkt}:
 		fallthrough
 	case ct == ClassType{C_CmnHdr, T_C_BadPktLen}:

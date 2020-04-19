@@ -6,8 +6,8 @@ deleteLogs() {
     cd logs 
     rm *.log 
     rm *.OUT
-    cd Demo
-    rm *.txt
+    #cd Demo
+    #rm *.txt
     cd $SC
 }
 
@@ -26,7 +26,7 @@ findAS() {
 scmpEcho() {
     findAS $2
     sourceAS=$?
-    ./bin/scmp "echo" -local 1-ff00:0:11$sourceAS,[127.0.0.228] -remote 1-ff00:0:11$1,[127.0.0.228] -sciond 127.0.0.$2:30255 -c 5 >> logs/Demo/echoFrom11${sourceAS}To11$1.txt &
+    ./bin/scmp "echo" -remote 1-ff00:0:11$1,[127.0.0.228] -sciond 127.0.0.$2:30255 -c 5 >> logs/Demo/echoFrom11${sourceAS}To11$1.txt & #-local 1-ff00:0:11$sourceAS,[127.0.0.228]
     local pid=$!
     wait $pid
     firstLine=$(head -n 1 logs/Demo/echoFrom11${sourceAS}To11$1.txt)
@@ -51,7 +51,7 @@ bwTestClient() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,5Mbps -sc 0,0,?,1Mbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
+    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,5Mbps -sc 10,1000,?,4kbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
     local pid=$!
     echo "Set up bwtest client to port 4000$3"
     echo ""
@@ -139,7 +139,7 @@ jobs
 killall bwtestserver
 killall bwtestclient
 
-./bin/scmp "echo" -local 1-ff00:0:110,[127.0.0.228] -remote 1-ff00:0:114,[127.0.0.228] -sciond 127.0.0.19:30255 -c 5 
+./bin/scmp "echo" -remote 1-ff00:0:114,[127.0.0.228] -sciond 127.0.0.19:30255 -c 5  #-local 1-ff00:0:110,[127.0.0.228] 
 
 
 ./scion.sh stop 

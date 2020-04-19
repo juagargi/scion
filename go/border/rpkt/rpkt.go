@@ -382,3 +382,7 @@ func (rp *RtrPkt) ErrStrf(desc string) func() string {
 		return rp.ErrStr(desc)
 	}
 }
+
+func (rp *RtrPkt) GetPathIdx() int {
+	return rp.idxs.path
+}

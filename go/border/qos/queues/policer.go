@@ -26,6 +26,7 @@ type TokenBucket struct {
 	tokens       int // One token is 1B
 	lastRefill   time.Time
 	mutex        *sync.Mutex
+	CurrBW       int
 }
 
 func (tb *TokenBucket) Init(maxBandwidth int) {
@@ -40,9 +41,9 @@ func (tb *TokenBucket) refill() {
 	now := time.Now()
 	timeSinceLastUpdate := now.Sub(tb.lastRefill).Milliseconds()
 
-	if timeSinceLastUpdate > 20 {
-
+	if timeSinceLastUpdate > 1 {
 		newTokens := ((tb.maxBandWidth) * int(timeSinceLastUpdate)) / (1000)
+		tb.CurrBW = newTokens //TODO: assign correct value
 		tb.lastRefill = now
 
 		if tb.tokens+newTokens > tb.maxBandWidth {

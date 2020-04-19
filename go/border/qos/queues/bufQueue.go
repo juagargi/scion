@@ -152,3 +152,7 @@ func (pq *PacketBufQueue) GetPacketQueue() PacketQueue {
 func (pq *PacketBufQueue) GetCongestionWarning() *CongestionWarning {
 	return &pq.pktQue.CongestionWarning
 }
+
+func (pq *PacketBufQueue) GetTockenBucket() *TokenBucket {
+	return &pq.tb
+}
