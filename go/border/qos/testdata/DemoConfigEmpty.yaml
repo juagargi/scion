@@ -1,6 +1,6 @@
 Scheduler:
     Latency: 0
-    Bandwidth: 100Mbps
+    Bandwidth: 50Mbps
 Queues:
     -
         name: 'General Queue, all SCMP lives here'

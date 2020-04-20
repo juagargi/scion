@@ -100,7 +100,7 @@ func NewCustomNetworkWithPR(ia addr.IA, pktDispatcher PacketDispatcherService) *
 // destination is in a remote AS.
 //
 // The context is used for connection setup, it doesn't affect the returned
-// connection.
+// connection. //IMP: Dial used in bwtestclient
 func (n *SCIONNetwork) Dial(ctx context.Context, network string, listen *net.UDPAddr,
 	remote *UDPAddr, svc addr.HostSVC) (*Conn, error) {
 
