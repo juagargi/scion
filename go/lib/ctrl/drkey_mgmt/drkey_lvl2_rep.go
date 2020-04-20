@@ -42,8 +42,8 @@ func NewLvl2RepFromKey(key drkey.Lvl2Key, timestamp time.Time) *Lvl2Rep {
 	return &Lvl2Rep{
 		TimestampRaw: util.TimeToSecs(timestamp),
 		DRKeyRaw:     common.RawBytes(key.Key),
-		EpochBegin:   util.TimeToSecs(key.Epoch.Begin),
-		EpochEnd:     util.TimeToSecs(key.Epoch.End),
+		EpochBegin:   util.TimeToSecs(key.Epoch.NotBefore.Time),
+		EpochEnd:     util.TimeToSecs(key.Epoch.NotAfter.Time),
 	}
 }
 
