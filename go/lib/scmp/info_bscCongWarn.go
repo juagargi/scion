@@ -61,7 +61,7 @@ func (i *InfoBscCW) Write(b common.RawBytes) (int, error) {
 	common.Order.PutUint64(b[16:], i.QueueFullness)
 	common.Order.PutUint64(b[24:], uint64(i.ConsIngress))
 	common.Order.PutUint64(b[32:], i.Violation)
-	if _, err := (i.Path.Raw).WritePld(b[40:i.Path.Raw.Len()]); err != nil {
+	if _, err := (i.Path.Raw).WritePld(b[40:]); err != nil {
 		return 0, err
 	}
 	if i.Path.InfOff < 0 {

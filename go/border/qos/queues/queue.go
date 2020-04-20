@@ -50,6 +50,11 @@ type Action struct {
 	action conf.PoliceAction
 }
 
+func (a *Action) GetReason() int {
+	reason := a.reason
+	return int(reason)
+}
+
 type CongestionWarning struct {
 	Approach           int `yaml:"approach"`
 	InformationContent int `yaml:"informationContent"`
@@ -88,7 +93,7 @@ type PacketQueueInterface interface {
 	GetMaxBandwidth() int
 	GetPacketQueue() PacketQueue
 	GetCongestionWarning() *CongestionWarning
-	GetTockenBucket() *TokenBucket
+	GetTokenBucket() *TokenBucket
 }
 
 // MergeAction merges both PoliceAction together and returns the merged result.

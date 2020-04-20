@@ -15,6 +15,7 @@
 package qos
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -219,6 +220,28 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 
 // SendNotification is needed for the part of @stygerma
 func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) {
+	qp.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
+
+	rc := queues.RegularClassRule{}
+	config := qosConfig.GetConfig()
+
+	rule := rc.GetRuleForPacket(config, qp.Rp)
+	np := queues.NPkt{Rule: rule, Qpkt: qp}
+	log.Debug("Send notification method in router")
+
+	queueNo := 0
+	if rule != nil {
+		queueNo = rule.QueueNumber
+	}
+
+	restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
+	fmt.Printf("restrictions on information content restriction %v", restriction)
+	np.Qpkt.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
+
+	select {
+	case qosConfig.notifications <- &np:
+	default:
+	}
 }
 
 func (qosConfig *Configuration) dropPacket(qp *queues.QPkt) {

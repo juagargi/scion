@@ -32,6 +32,7 @@ go_library(
         "//go/lib/env:go_default_library",
         "//go/lib/fatal:go_default_library",
         "//go/lib/infra/modules/itopo:go_default_library",
+        "//go/lib/l4:go_default_library",
         "//go/lib/layers:go_default_library",
         "//go/lib/log:go_default_library",
         "//go/lib/overlay/conn:go_default_library",

@@ -386,3 +386,7 @@ func (rp *RtrPkt) ErrStrf(desc string) func() string {
 func (rp *RtrPkt) GetPathIdx() int {
 	return rp.idxs.path
 }
+
+func (rp *RtrPkt) GetL4Hdr() l4.L4Header {
+	return rp.l4
+}

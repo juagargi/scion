@@ -160,6 +160,6 @@ func (pq *CustomPacketQueue) GetCongestionWarning() *CongestionWarning {
 	return &pq.pktQue.CongestionWarning
 }
 
-func (pq *CustomPacketQueue) GetTockenBucket() *TokenBucket {
+func (pq *CustomPacketQueue) GetTokenBucket() *TokenBucket {
 	return &pq.tb
 }
