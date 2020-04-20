@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/proto"
@@ -30,18 +29,18 @@ var _ proto.Cerealizable = (*Lvl2Rep)(nil)
 
 // Lvl2Rep encodes the level 2 key response from a CS to an endhost.
 type Lvl2Rep struct {
-	TimestampRaw uint32          `capnp:"timestamp"`
-	DRKeyRaw     common.RawBytes `capnp:"drkey"`
+	TimestampRaw uint32 `capnp:"timestamp"`
+	DRKeyRaw     []byte `capnp:"drkey"`
 	EpochBegin   uint32
 	EpochEnd     uint32
-	Misc         common.RawBytes
+	Misc         []byte
 }
 
 // NewLvl2RepFromKey constructs a level 2 response from a standard level 2 key.
 func NewLvl2RepFromKey(key drkey.Lvl2Key, timestamp time.Time) *Lvl2Rep {
 	return &Lvl2Rep{
 		TimestampRaw: util.TimeToSecs(timestamp),
-		DRKeyRaw:     common.RawBytes(key.Key),
+		DRKeyRaw:     []byte(key.Key),
 		EpochBegin:   util.TimeToSecs(key.Epoch.NotBefore.Time),
 		EpochEnd:     util.TimeToSecs(key.Epoch.NotAfter.Time),
 	}

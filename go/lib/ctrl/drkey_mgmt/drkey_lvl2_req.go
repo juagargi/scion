@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/proto"
@@ -32,7 +31,7 @@ var _ proto.Cerealizable = (*Lvl2Req)(nil)
 // Host represents a host part of a level 2 drkey.
 type Host struct {
 	Type addr.HostAddrType // uint8
-	Host common.RawBytes
+	Host []byte
 }
 
 // NewHost returns a new Host from an addr.HostAddr.
@@ -64,10 +63,8 @@ type Lvl2Req struct {
 	DstIARaw   addr.IAInt `capnp:"dstIA"`
 	SrcHost    Host
 	DstHost    Host
-	Misc       common.RawBytes
+	Misc       []byte
 }
-
-// TODO(juagargi) it seems that we don't use Misc
 
 // NewLvl2ReqFromMeta constructs a level 2 request from a standard level 2 meta info.
 func NewLvl2ReqFromMeta(meta drkey.Lvl2Meta, valTime time.Time) Lvl2Req {

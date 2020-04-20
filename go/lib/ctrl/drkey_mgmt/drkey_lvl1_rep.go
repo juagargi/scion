@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/proto"
@@ -34,8 +33,8 @@ type Lvl1Rep struct {
 	DstIARaw     addr.IAInt `capnp:"dstIA"`
 	EpochBegin   uint32
 	EpochEnd     uint32
-	Cipher       common.RawBytes
-	Nonce        common.RawBytes
+	Cipher       []byte
+	Nonce        []byte
 	CertVerDst   uint64
 	TimestampRaw uint32 `capnp:"timestamp"`
 }
