@@ -22,6 +22,7 @@ import (
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/drkey"
+	"github.com/scionproto/scion/go/lib/scrypto"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/proto"
 )
@@ -35,7 +36,7 @@ type Lvl1Rep struct {
 	EpochEnd     uint32
 	Cipher       []byte
 	Nonce        []byte
-	CertVerDst   uint64
+	CertVerDst   scrypto.Version
 	TimestampRaw uint32 `capnp:"timestamp"`
 }
 
