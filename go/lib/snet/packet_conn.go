@@ -109,6 +109,8 @@ type PacketInfo struct {
 	Payload  common.Payload
 }
 
+var _ PacketConn = (*SCIONPacketConn)(nil)
+
 // SCIONAddress is the fully-specified address of a host.
 type SCIONAddress struct {
 	IA   addr.IA

@@ -109,14 +109,14 @@ func (r *Router) createBscSCMPNotification(qp *queues.QPkt,
 	sp.L4 = scmp.NewHdr(scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}, sp.Pld.Len())
 	log.Debug("Created SPkt reply", "sp", sp, "Pkt ID", id)
 	reply, err := qp.Rp.CreateReply(sp)
-	if logEnabledBsc {
-		srcIA, _ := reply.SrcIA()
-		srcHost, _ := reply.SrcHost()
-		DstIA, _ := reply.DstIA()
-		DstHost, _ := reply.DstHost()
-		log.Debug("Created RPkt reply", "SrcIA", srcIA, "SrcHost",
-			srcHost, "DstIA", DstIA, "DstHost", DstHost, "Pkt ID", id)
-	}
+	// if logEnabledBsc {
+	// 	srcIA, _ := reply.SrcIA()
+	// 	srcHost, _ := reply.SrcHost()
+	// 	DstIA, _ := reply.DstIA()
+	// 	DstHost, _ := reply.DstHost()
+	// 	log.Debug("Created RPkt reply", "SrcIA", srcIA, "SrcHost",
+	// 		srcHost, "DstIA", DstIA, "DstHost", DstHost, "Pkt ID", id)
+	// }
 	return reply, err, id
 }
 

@@ -115,6 +115,9 @@ func (h *scmpHandler) Handle(pkt *Packet) error {
 	if hdr.Class == scmp.C_Path && hdr.Type == scmp.T_P_RevokedIF {
 		return h.handleSCMPRev(hdr, pkt)
 	}
+	if hdr.Class == scmp.C_General && hdr.Type == scmp.T_G_BasicCongWarn {
+		log.Debug("CW received ", "src", pkt.Source)
+	}
 	log.Debug("Ignoring scmp packet", "hdr", hdr, "src", pkt.Source)
 	return nil
 }
