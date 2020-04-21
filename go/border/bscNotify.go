@@ -3,10 +3,13 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/scionproto/scion/go/border/qos/queues"
 	"github.com/scionproto/scion/go/border/rpkt"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
+	"github.com/scionproto/scion/go/lib/l4"
 	"github.com/scionproto/scion/go/lib/layers"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/scmp"
@@ -25,7 +28,7 @@ func (r *Router) bscNotify() {
 			DstHost, _ := np.Qpkt.Rp.DstHost()
 			log.Debug("New notification packet", "SrcIA", srcIA, "SrcHost",
 			srcHost, "DstIA", DstIA, "DstHost", DstHost)*/
-			log.Debug("New notification packet", "NPkt", np, "Pkt ID", np.Qpkt.Rp.Id)
+			log.Debug("New notification packet", "NPkt", np, "Pkt ID", np.Qpkt.Rp.Id, "L4hdr", fmt.Sprintf("%s", np.Qpkt.Rp.GetL4Hdr()))
 		}
 		bscCW := r.createBscCongWarn(np)
 		if logEnabledBsc {
@@ -61,13 +64,15 @@ func (r *Router) sendBscNotificationSCMP(qp *queues.QPkt, info *scmp.InfoBscCW) 
 		pub := qp.Rp.Ctx.Conf.BR.InternalAddr
 		routerAddr := addr.HostFromIP(pub.IP)
 		pld, _ := notification.Payload(false)
-		l4, _ := notification.L4Hdr(false)
+		l4hdr, _ := notification.L4Hdr(false)
+		cwpld := pld.(*scmp.CWPayload)
+		quotedl4, _ := l4.UDPFromRaw(cwpld.L4Hdr)
 		log.Debug("New SCMP Notification", "SrcIA", srcIA, "SrcHost",
 			srcHost, "DstIA", DstIA, "DstHost", DstHost, "\n RtrAddr", routerAddr,
 			"CurrBW", r.qosConfig.GetQueue(qp.QueueNo).GetTokenBucket().CurrBW,
 			"Pkt ID", id,
-			"\n L4", l4,
-			"\n Congestion Warning", pld) //
+			"\n L4", l4hdr,
+			"\n Congestion Warning", pld, "\n L4Hdr", quotedl4) //,
 	}
 	notification.Route()
 
@@ -91,32 +96,27 @@ func (r *Router) createBscSCMPNotification(qp *queues.QPkt,
 	if err != nil {
 		return nil, err, ""
 	}
-	// log.Debug("We getting here???????????????????????? 1")
 	sp.HBHExt = make([]common.Extension, 0, common.ExtnMaxHBH+1)
 	/*MS: We classify the congestion warning as not erroneous and don't need the
 	Basic congestion warning to be HBH*/
-	// log.Debug("We getting here???????????????????????? 2")
 	ext := &layers.ExtnSCMP{Error: false, HopByHop: false}
-	// log.Debug("We getting here???????????????????????? 3")
 	sp.HBHExt = append(sp.HBHExt, ext)
-	// log.Debug("We getting here???????????????????????? 4")
+
 	//TODO (stygerma): Add SPSE with DRKey
 
-	sp.Pld = scmp.NotifyPld(info)
-	// log.Debug("We getting here???????????????????????? 5")
+	sp.Pld = scmp.NotifyPld(info, qp.Rp.L4Type, qp.Rp.GetRaw)
+
 	sp.L4 = scmp.NewHdr(scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}, sp.Pld.Len())
 	log.Debug("Created SPkt reply", "sp", sp, "Pkt ID", id)
 	reply, err := qp.Rp.CreateReply(sp)
-	// log.Debug("We getting here???????????????????????? 6")
-	// log.Debug("What do we have here?", "Rpkt", reply.String())
-	// if logEnabledBsc {
-	// 	srcIA, _ := reply.SrcIA()
-	// 	srcHost, _ := reply.SrcHost()
-	// 	DstIA, _ := reply.DstIA()
-	// 	DstHost, _ := reply.DstHost()
-	// 	log.Debug("Created RPkt reply", "SrcIA", srcIA, "SrcHost",
-	// 		srcHost, "DstIA", DstIA, "DstHost", DstHost, "Pkt ID", id)
-	// }
+	if logEnabledBsc {
+		srcIA, _ := reply.SrcIA()
+		srcHost, _ := reply.SrcHost()
+		DstIA, _ := reply.DstIA()
+		DstHost, _ := reply.DstHost()
+		log.Debug("Created RPkt reply", "SrcIA", srcIA, "SrcHost",
+			srcHost, "DstIA", DstIA, "DstHost", DstHost, "Pkt ID", id)
+	}
 	return reply, err, id
 }
 

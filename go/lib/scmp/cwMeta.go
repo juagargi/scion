@@ -8,15 +8,16 @@ import (
 	"gopkg.in/restruct.v1"
 )
 
-//Q: Which headers should we include if any at all?
+//Q: Which headers should we include if any at all? Should include the L4hdr
+//such that the dispatcher can read out the original source host port
 type CWMeta struct {
-	InfoLen uint8
-	// L4HdrLen uint8
-	// L4Proto  common.L4ProtocolType
+	InfoLen  uint8
+	L4HdrLen uint8
+	L4Proto  common.L4ProtocolType
 }
 
 const (
-	CWMetaLen = 1
+	CWMetaLen = 3
 )
 
 func CWMetaFromRaw(b []byte) (*CWMeta, error) {
@@ -36,7 +37,7 @@ func (m *CWMeta) Copy() *CWMeta {
 	if m == nil {
 		return nil
 	}
-	return &CWMeta{InfoLen: m.InfoLen} //, L4HdrLen: m.L4HdrLen, L4Proto: m.L4Proto,
+	return &CWMeta{InfoLen: m.InfoLen, L4HdrLen: m.L4HdrLen, L4Proto: m.L4Proto}
 }
 
 func (m *CWMeta) Write(b common.RawBytes) error {
@@ -50,6 +51,6 @@ func (m *CWMeta) Write(b common.RawBytes) error {
 
 func (m *CWMeta) String() string {
 	return fmt.Sprintf(
-		"CW=%d", m.InfoLen) //L4Hdr=%d L4Proto=%v		//, m.L4HdrLen, m.L4Proto,
+		"CW=%d L4Hdr=%d L4Proto=%v", m.InfoLen, m.L4HdrLen, m.L4Proto)
 
 }

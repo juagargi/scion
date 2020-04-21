@@ -23,6 +23,7 @@ var (
 	quoteAll   = append(quoteBasic, RawPathHdr, RawExtHdrs)
 	quotePath  = append(quoteBasic, RawPathHdr)
 	quoteExts  = append(quoteBasic, RawExtHdrs)
+	// quoteL4    = []RawBlock{RawL4Hdr}
 )
 
 func classTypeQuotes(ct ClassType) []RawBlock {
@@ -37,6 +38,8 @@ func classTypeQuotes(ct ClassType) []RawBlock {
 		return quotePath
 	case ct.Class == C_Ext:
 		return quoteExts
+	// case ct == ClassType{C_General, T_G_BasicCongWarn}:
+	// 	return quoteL4
 	default:
 		return nil
 	}
