@@ -69,10 +69,10 @@ func (r *Router) sendBscNotificationSCMP(qp *queues.QPkt, info *scmp.InfoBscCW) 
 		quotedl4, _ := l4.UDPFromRaw(cwpld.L4Hdr)
 		log.Debug("New SCMP Notification", "SrcIA", srcIA, "SrcHost",
 			srcHost, "DstIA", DstIA, "DstHost", DstHost, "\n RtrAddr", routerAddr,
-			"CurrBW", r.qosConfig.GetQueue(qp.QueueNo).GetTokenBucket().CurrBW,
+			"CurrBW", r.qosConfig.GetConfig().Queues[qp.QueueNo].GetTokenBucket().CurrBW,
 			"Pkt ID", id,
 			"\n L4", l4hdr,
-			"\n Congestion Warning", pld, "\n L4Hdr", quotedl4) //,
+			"\n Congestion Warning", pld, "\n L4Hdr", quotedl4) //,r.qosConfig.GetQueue(qp.QueueNo).GetTokenBucket().CurrBW
 	}
 	notification.Route()
 
@@ -121,8 +121,8 @@ func (r *Router) createBscSCMPNotification(qp *queues.QPkt,
 }
 
 func (r *Router) createBscCongWarn(np *queues.NPkt) *scmp.InfoBscCW {
-	restrictionPrint := r.qosConfig.GetQueue(np.Qpkt.QueueNo).GetCongestionWarning()
-	testing := r.qosConfig.GetQueue(np.Qpkt.QueueNo).GetMinBandwidth()
+	restrictionPrint := r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning()
+	testing := r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetMinBandwidth()
 	restriction := 3
 	if logEnabledBsc {
 		log.Debug("restrictions on information content", "restriction", restrictionPrint, "MinBW", testing)
@@ -139,16 +139,16 @@ func (r *Router) createBscCongWarn(np *queues.NPkt) *scmp.InfoBscCW {
 		HopOff: np.Qpkt.Rp.CmnHdr.HopFOffBytes() - (np.Qpkt.Rp).GetPathIdx()}
 	if logEnabledBsc {
 		log.Debug("InfoBscCW", "ConsIngress", common.IFIDType(np.Qpkt.Rp.Ingress.IfID),
-			"QueueLength", (r.qosConfig.GetQueue(np.Qpkt.QueueNo)).GetLength(), "CurrBW",
-			r.qosConfig.GetQueue(np.Qpkt.QueueNo).GetTokenBucket().CurrBW, "QueueFullness",
-			r.qosConfig.GetQueue(np.Qpkt.QueueNo).GetFillLevel(), "Violation", np.Qpkt.Act.GetReason())
+			"QueueLength", (r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo]).GetLength(), "CurrBW",
+			r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetTokenBucket().CurrBW, "QueueFullness",
+			r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetFillLevel(), "Violation", np.Qpkt.Act.GetReason())
 	}
 	if restriction > 0 {
-		bscCW.QueueLength = uint64(r.qosConfig.GetQueue(np.Qpkt.QueueNo).GetLength())
+		bscCW.QueueLength = uint64(r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetLength())
 	}
 	if restriction > 1 {
-		bscCW.CurrBW = uint64(r.qosConfig.GetQueue(np.Qpkt.QueueNo).GetTokenBucket().CurrBW)
-		bscCW.QueueFullness = uint64(r.qosConfig.GetQueue(np.Qpkt.QueueNo).GetFillLevel())
+		bscCW.CurrBW = uint64(r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetTokenBucket().CurrBW)
+		bscCW.QueueFullness = uint64(r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetFillLevel())
 	}
 	if restriction > 2 {
 		bscCW.Violation = uint64(np.Qpkt.Act.GetReason())
