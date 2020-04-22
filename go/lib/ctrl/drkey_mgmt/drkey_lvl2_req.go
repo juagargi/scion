@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/proto"
@@ -31,7 +32,7 @@ var _ proto.Cerealizable = (*Lvl2Req)(nil)
 // Host represents a host part of a level 2 drkey.
 type Host struct {
 	Type addr.HostAddrType // uint8
-	Host []byte
+	Host common.RawBytes
 }
 
 // NewHost returns a new Host from an addr.HostAddr.
@@ -63,7 +64,7 @@ type Lvl2Req struct {
 	DstIARaw   addr.IAInt `capnp:"dstIA"`
 	SrcHost    Host
 	DstHost    Host
-	Misc       []byte
+	Misc       common.RawBytes
 }
 
 // NewLvl2ReqFromMeta constructs a level 2 request from a standard level 2 meta info.
@@ -80,33 +81,34 @@ func NewLvl2ReqFromMeta(meta drkey.Lvl2Meta, valTime time.Time) Lvl2Req {
 }
 
 // ProtoId returns the proto ID.
-func (r *Lvl2Req) ProtoId() proto.ProtoIdType {
+func (c *Lvl2Req) ProtoId() proto.ProtoIdType {
 	return proto.DRKeyLvl2Req_TypeID
 }
 
 // SrcIA returns the source IA (fast path).
-func (r *Lvl2Req) SrcIA() addr.IA {
-	return r.SrcIARaw.IA()
+func (c *Lvl2Req) SrcIA() addr.IA {
+	return c.SrcIARaw.IA()
 }
 
 // DstIA returns the destination IA (slow path).
-func (r *Lvl2Req) DstIA() addr.IA {
-	return r.DstIARaw.IA()
+func (c *Lvl2Req) DstIA() addr.IA {
+	return c.DstIARaw.IA()
 }
 
 // ValTime returns the validity time of the requested DRKey.
-func (r *Lvl2Req) ValTime() time.Time {
-	return util.SecsToTime(r.ValTimeRaw)
+func (c *Lvl2Req) ValTime() time.Time {
+	return util.SecsToTime(c.ValTimeRaw)
 }
 
-func (r *Lvl2Req) ToMeta() drkey.Lvl2Meta {
+// ToMeta returns metadata of the requested Lvl2 DRKey.
+func (c *Lvl2Req) ToMeta() drkey.Lvl2Meta {
 	return drkey.Lvl2Meta{
-		KeyType:  drkey.Lvl2KeyType(r.ReqType),
-		Protocol: r.Protocol,
-		SrcIA:    r.SrcIA(),
-		DstIA:    r.DstIA(),
-		SrcHost:  r.SrcHost.ToHostAddr(),
-		DstHost:  r.DstHost.ToHostAddr(),
+		KeyType:  drkey.Lvl2KeyType(c.ReqType),
+		Protocol: c.Protocol,
+		SrcIA:    c.SrcIA(),
+		DstIA:    c.DstIA(),
+		SrcHost:  c.SrcHost.ToHostAddr(),
+		DstHost:  c.DstHost.ToHostAddr(),
 	}
 }
 
