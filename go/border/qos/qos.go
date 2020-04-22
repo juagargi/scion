@@ -81,10 +81,6 @@ func (qosConfig *Configuration) GetNotification() chan *queues.NPkt {
 	return qosConfig.notifications
 }
 
-func (q *QosConfiguration) GetNotification() chan *queues.NPkt {
-	return q.notifications
-}
-
 // SetAndInitSchedul is necessary to set up
 // a mock scheduler for testing. Do not use for anything else.
 func (qosConfig *Configuration) SetAndInitSchedul(sched scheduler.SchedulerInterface) {
