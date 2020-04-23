@@ -70,9 +70,9 @@ func (r *Router) setup() error {
 		return err
 	}
 	// Initialize the qos subsystem
-	if err = r.initQosFromConfig(conf); err != nil {
-		return err
-	}
+	// if err = r.initQosFromConfig(conf); err != nil {
+	// 	return err
+	// }
 	// Initialize itopo.
 	itopo.Init(
 		&itopo.Config{

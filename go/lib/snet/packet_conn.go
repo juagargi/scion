@@ -215,7 +215,7 @@ func (c *SCIONPacketConn) readFrom(pkt *Packet, ov *net.UDPAddr) error {
 	n, lastHopNetAddr, err := c.conn.ReadFrom(pkt.Bytes)
 	if err != nil {
 		metrics.M.DispatcherErrors().Inc()
-		return common.NewBasicError("Reliable socket read error", err)
+		return common.NewBasicError("Reliable socket read error", err) //IMP: appears often
 	}
 	metrics.M.ReadBytes().Add(float64(n))
 	metrics.M.ReadPackets().Inc()

@@ -51,7 +51,7 @@ bwTestClient() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,50Mbps -sc 10,1000,?,50Mbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
+    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,500kbps -sc 10,1000,?,500kbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
     local pid=$!
     echo "Set up bwtest client to port 4000$3"
     echo ""
@@ -75,15 +75,15 @@ killall bwtestserver
 killall bwtestclient
 
 
-cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-1/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-1/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-2/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-3/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-3/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-1/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-2/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-1/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_114/br1-ff00_0_114-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_114/br1-ff00_0_114-1/qosConfig.yaml
 
 #./build_demo.sh
 

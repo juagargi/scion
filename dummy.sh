@@ -1,5 +1,5 @@
 #!/bin/bash
 
-for i in {1..10};do
+for i in {1..20};do
     ./basic_bwtest.sh >> dummy.txt
 done

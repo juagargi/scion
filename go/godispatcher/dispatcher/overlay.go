@@ -107,16 +107,46 @@ func ComputeSCMPDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination,
 			Type:  header.Type.Name(header.Class),
 		},
 	).Inc()
+	log.Debug("Got packet with scmp hdr", "scmp type", header.Type.Name(header.Class))
+
 	if packet.DstHost.Type() != addr.HostTypeIPv4 && packet.DstHost.Type() != addr.HostTypeIPv6 {
 		return nil, common.NewBasicError(ErrUnsupportedSCMPDestination, nil,
 			"type", packet.DstHost.Type())
 	}
+	// if header.Class == scmp.C_General && header.Type == scmp.T_G_BasicCongWarn {
+	// 	log.Debug("CW packet received !!", "pkt", packet)
+	// 	return ComputeSCMPCWDestination(packet, header)
+	// } else
 	if header.Class == scmp.C_General {
 		return ComputeSCMPGeneralDestination(packet, header)
 	} else {
 		return ComputeSCMPErrorDestination(packet, header)
 	}
 }
+
+// func ComputeSCMPCWDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
+// 	cwPayload := packet.Pld.(*scmp.CWPayload)
+// 	//scmpPayload := packet.Pld.(*scmp.Payload)
+// 	switch cwPayload.Meta.L4Proto {
+// 	case common.L4UDP:
+// 		quotedUDPHeader, err := l4.UDPFromRaw(cwPayload.L4Hdr)
+// 		if err != nil {
+// 			return nil, common.NewBasicError(ErrMalformedL4Quote, nil, "err", err)
+// 		}
+// 		return &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort)}, nil
+// 	case common.L4SCMP:
+// 		//TODO: change this
+// 		id, err := getQuotedSCMPGeneralID(scmpPayload)
+// 		id := uint64(1)
+// 		if id == 0 {
+// 			return nil, common.NewBasicError(ErrMalformedL4Quote, err)
+// 		}
+// 		return &SCMPAppDestination{ID: id}, nil
+// 	default:
+// 		return nil, common.NewBasicError(ErrUnsupportedQuotedL4Type, nil,
+// 			"type", cwPayload.Meta.L4Proto)
+// 	}
+// }
 
 func ComputeSCMPGeneralDestination(s *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
 	id := getSCMPGeneralID(s)

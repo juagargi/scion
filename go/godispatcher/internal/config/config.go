@@ -46,7 +46,7 @@ type Dispatcher struct {
 	ApplicationSocket string `toml:"application_socket,omitempty"`
 	// Socket file permissions when created; read from octal. (default 0770)
 	SocketFileMode util.FileMode `toml:"socket_file_mode,omitempty"`
-	// OverlayPort is the native port opened by the dispatcher (default 30041)
+	// OverlayPort is the native port opened by the dispatcher (default 30041) //IMP: Dispatcher overlay port
 	OverlayPort int `toml:"underlay_port,omitempty"`
 	// DeleteSocket specifies whether the dispatcher should delete the
 	// socket file prior to attempting to create a new one.
