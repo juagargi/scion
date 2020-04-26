@@ -1,0 +1,66 @@
+Scheduler:
+    Latency: 0
+    Bandwidth: 20Mbps
+Queues:
+    -
+        name: 'General Queue'
+        id: 0
+        CIR: 30
+        PIR: 70
+        policeRate: 50000000
+        maxLength: 4096
+        priority: 5
+        congestionWarning: {approach: 0, informationContent: 25}
+        profile:
+            - {fill-level: 20, prob: 10, action: 0}
+            - {fill-level: 50, prob: 20, action: 1}
+            - {fill-level: 80, prob: 50, action: 2}
+    -
+        name: 'Speedy Queue'
+        id: 1
+        CIR: 0
+        PIR: 70
+        policeRate: 50Mbps
+        maxLength: 4096
+        priority: 1
+        congestionWarning: {approach: 11, informationContent: 27}
+        profile:
+            - {fill-level: 30, prob: 10, action: 0}
+            - {fill-level: 60, prob: 20, action: 1}
+            - {fill-level: 90, prob: 50, action: 2}
+    -
+        name: 'Droppy Queue'
+        id: 2
+        CIR: 50
+        PIR: 80
+        policeRate: 5000000
+        maxLength: 4096
+        priority: 1
+        congestionWarning: {approach: 22, informationContent: 29}
+        profile:
+            - {fill-level: 0, prob: 0, action: 2}
+Rules:
+    -
+        name: 'Test rule'
+        priority: 0
+        sourceAs: '2-ff00:0:212'
+        destinationAs: '1-ff00:0:110'
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 1, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 1
+    -
+        name: 'Drop Test Rule'
+        priority: 1
+        sourceAs: '1-ff00:0:110'
+        destinationAs: '1-ff00:0:111'
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 1, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 2

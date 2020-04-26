@@ -1,4 +1,4 @@
-// Copyright 2016 ETH Zurich
+// Copyright 2020 ETH Zurich
 // Copyright 2018 ETH Zurich, Anapaya Systems
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,7 @@ import (
 
 	"github.com/scionproto/scion/go/border/brconf"
 	"github.com/scionproto/scion/go/border/internal/metrics"
+	"github.com/scionproto/scion/go/border/qos"
 	"github.com/scionproto/scion/go/border/rcmn"
 	"github.com/scionproto/scion/go/border/rctrl"
 	"github.com/scionproto/scion/go/border/rctx"
@@ -35,6 +36,7 @@ import (
 
 const processBufCnt = 128
 
+// Router struct
 type Router struct {
 	// Id is the SCION element ID, e.g. "br4-ff00:0:2f".
 	Id string
@@ -49,8 +51,12 @@ type Router struct {
 	// setCtxMtx serializes modifications to the router context. Topology updates
 	// can be caused by a SIGHUP reload.
 	setCtxMtx sync.Mutex
+	// qosConfig holds all data structures and state required for the quality of service
+	// subsystem in the router
+	qosConfig qos.Configuration
 }
 
+// NewRouter returns a new router
 func NewRouter(id, confDir string) (*Router, error) {
 	r := &Router{Id: id, confDir: confDir}
 	if err := r.setup(); err != nil {
@@ -62,6 +68,8 @@ func NewRouter(id, confDir string) (*Router, error) {
 // Start sets up networking, and starts go routines for handling the main packet
 // processing as well as various other router functions.
 func (r *Router) Start() {
+
+	log.Info("My id is", "r.Id", r.Id)
 	go func() {
 		defer log.HandlePanic()
 		r.PacketError()
@@ -100,7 +108,6 @@ func (r *Router) handleSock(s *rctx.Sock, stop, stopped chan struct{}) {
 		for i := 0; i < n; i++ {
 			rp := pkts[i].(*rpkt.RtrPkt)
 			r.processPacket(rp)
-			rp.Release()
 			pkts[i] = nil
 		}
 	}
@@ -168,9 +175,20 @@ func (r *Router) processPacket(rp *rpkt.RtrPkt) {
 		metrics.Process.Pkts(l).Inc()
 		return
 	}
+
+	r.qosConfig.QueuePacket(rp)
+}
+
+func (r *Router) forwardPacket(rp *rpkt.RtrPkt) {
+	defer rp.Release()
+
 	// Forward the packet. Packets destined to self are forwarded to the local dispatcher.
 	if err := rp.Route(); err != nil {
 		r.handlePktError(rp, err, "Error routing packet")
+		l := metrics.ProcessLabels{
+			IntfIn:  metrics.IntfToLabel(rp.Ingress.IfID),
+			IntfOut: metrics.Drop,
+		}
 		l.Result = metrics.ErrRoute
 		metrics.Process.Pkts(l).Inc()
 	}

@@ -1,0 +1,107 @@
+# Queues
+Queues :
+    -
+        name: "General Queue"
+        id: 0
+        CIR: 30 #Previously named min-bandwidth
+        PIR: 70 #Previously named max-bandwidth
+        policeRate: 50000000 #50Mbit/s
+        maxLength: 1024
+        priority: 5
+        profile:
+            - 
+                fill-level: 20
+                prob: 10
+                action: 0
+            - 
+                fill-level: 50
+                prob: 20
+                action: 1
+            - 
+                fill-level: 80
+                prob: 50
+                action: 2
+    -
+        name: "Speedy Queue"
+        id: 1
+        CIR: 0 #Previously named min-bandwidth
+        PIR: 70 #Previously named max-bandwidth
+        policeRate: 5000000 #5Mbit/s
+        maxLength: 1024
+        priority: 1
+        profile:
+            - 
+                fill-level: 20
+                prob: 10
+                action: 0
+            - 
+                fill-level: 50
+                prob: 20
+                action: 1
+            - 
+                fill-level: 80
+                prob: 50
+                action: 2
+    -
+        name: "Droppy Queue"
+        id: 2
+        CIR: 50 #Previously named min-bandwidth
+        PIR: 80 #Previously named max-bandwidth
+        policeRate: 5000000 #5Mbit/s
+        maxLength: 1024
+        priority: 1
+        profile:
+            - 
+                fill-level: 0
+                prob: 25 # drop each packet with a probability of 25
+                action: 2
+# Rules
+Rules :
+    - 
+        name: "Test rule"
+        priority: 0
+        sourceAs: "2-ff00:0:212"
+        sourceMatchMode: 0
+        nextHopAs: ""
+        nextHopMatchMode : 0 
+        destinationAs: "1-ff00:0:110"
+        destinationMatchMode: 0
+        L4Type:
+            - 0
+            - 1
+            - 6
+            - 17
+            - 222
+        queueNumber: 1
+    - 
+        name: "Lower Priority Rule"
+        priority: 1
+        sourceAs: "1-ff00:0:110"
+        sourceMatchMode: 0
+        nextHopAs: ""
+        nextHopMatchMode : 0 
+        destinationAs: "1-ff00:0:111"
+        destinationMatchMode: 0
+        L4Type:
+            # - 0
+            - 1
+            # - 6
+            # - 17
+            # - 222
+        queueNumber: 2
+    - 
+        name: "Higher Priority Rule"
+        priority: 2
+        sourceAs: "1-ff00:0:110"
+        sourceMatchMode: 0
+        nextHopAs: ""
+        nextHopMatchMode : 0 
+        destinationAs: "1-ff00:0:111"
+        destinationMatchMode: 0
+        L4Type:
+            # - 0
+            - 1
+            # - 6
+            # - 17
+            # - 222
+        queueNumber: 15

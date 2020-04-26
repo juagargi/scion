@@ -1,0 +1,29 @@
+Scheduler:
+    Latency: 0
+    Bandwidth: 20Mbps
+Queues:
+    -
+        name: 'General Queue, all SCMP lives here'
+        id: 0
+        CIR: 10
+        PIR: 20
+        policeRate: 500Mbps
+        maxLength: 2048
+        priority: 1
+        congestionWarning: {approach: 0, informationContent: 25}
+        profile:
+            - {fill-level: 80, prob: 80, action: 3}
+Rules:
+    -
+        name: 'Useless Rule'
+        priority: 1
+        sourceAs: '113-ff00:0:110'
+        sourceMatchMode: 0
+        destinationAs: '100-ff00:0:989'
+        destinationMatchMode: 1
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 0

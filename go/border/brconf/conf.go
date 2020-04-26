@@ -20,6 +20,7 @@ package brconf
 import (
 	"path/filepath"
 
+	"github.com/scionproto/scion/go/border/qos/conf"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/keyconf"
@@ -38,6 +39,8 @@ type BRConf struct {
 	BR *topology.BRInfo
 	// MasterKeys holds the local AS master keys.
 	MasterKeys keyconf.Master
+	// QosConfig is the configuration loaded from the config file
+	ExternalQosConfig conf.ExternalConfig
 	// Dir is the configuration directory.
 	Dir string
 }
@@ -51,6 +54,9 @@ func Load(id, confDir string) (*BRConf, error) {
 		return nil, err
 	}
 	if err := conf.loadMasterKeys(); err != nil {
+		return nil, err
+	}
+	if err := conf.loadQos(); err != nil {
 		return nil, err
 	}
 	return conf, nil
@@ -67,6 +73,16 @@ func WithNewTopo(id string, topo topology.Topology, oldConf *BRConf) (*BRConf, e
 		return nil, common.NewBasicError("Unable to initialize topo", err)
 	}
 	return conf, nil
+}
+
+func (cfg *BRConf) loadQos() error {
+	qosPath := filepath.Join(cfg.Dir, "qosConfig.yaml")
+	var err error
+	cfg.ExternalQosConfig, err = conf.LoadConfig(qosPath)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // loadTopo loads the topology from the config directory and initializes the

@@ -1,0 +1,144 @@
+Scheduler:
+    Latency: 0
+    Bandwidth: 50Mbps
+Queues:
+    -
+        name: 'General Queue, all SCMP lives here'
+        id: 0
+        CIR: 10
+        PIR: 10
+        policeRate: 500Mbps
+        maxLength: 512
+        priority: 1
+        congestionWarning: {approach: 0, informationContent: 25}
+        profile:
+            - {fill-level: 50, prob: 10, action: 3}
+            - {fill-level: 75, prob: 20, action: 3}
+            - {fill-level: 80, prob: 50, action: 3}
+    -
+        name: 'Priority'
+        id: 1
+        CIR: 40
+        PIR: 40
+        policeRate: 500Mbps
+        maxLength: 512
+        priority: 4
+        congestionWarning: {approach: 11, informationContent: 27}
+        profile:
+            - {fill-level: 80, prob: 20, action: 3}
+            - {fill-level: 90, prob: 90, action: 3}
+    -
+        name: 'Transit Traffic Level 1'
+        id: 2
+        CIR: 20
+        PIR: 20
+        policeRate: 500Mbps
+        maxLength: 512
+        priority: 2
+        congestionWarning: {approach: 22, informationContent: 29}
+        profile:
+            - {fill-level: 80, prob: 20, action: 3}
+            - {fill-level: 90, prob: 90, action: 3}
+    -
+        name: 'TO AS112'
+        id: 3
+        CIR: 30
+        PIR: 30
+        policeRate: 500Mbps
+        maxLength: 512
+        priority: 2
+        congestionWarning: {approach: 11, informationContent: 27}
+        profile:
+            - {fill-level: 80, prob: 20, action: 3}
+            - {fill-level: 90, prob: 90, action: 3}
+    -
+        name: 'Always empty'
+        id: 3
+        CIR: 0
+        PIR: 0
+        policeRate: 500Mbps
+        maxLength: 100
+        priority: 0
+        congestionWarning: {approach: 11, informationContent: 27}
+        profile:
+            - {fill-level: 80, prob: 20, action: 3}
+            - {fill-level: 90, prob: 90, action: 3}
+Rules:
+    -
+        name: 'FROM AS110 TO ANY ON Queue=1'
+        priority: 1
+        sourceAs: '1-ff00:0:110'
+        sourceMatchMode: 0
+        destinationAs: '100-ff00:0:989'
+        destinationMatchMode: 4
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 1
+    -
+        name: 'FROM ANY TO AS110 ON Queue=1'
+        priority: 1
+        sourceAs: '100-ff00:0:989'
+        sourceMatchMode: 4
+        destinationAs: '1-ff00:0:110'
+        destinationMatchMode: 0
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 1
+    -
+        name: 'FROM AS112 ON Queue=2'
+        priority: 2
+        sourceAs: '1-ff00:0:112'
+        sourceMatchMode: 0
+        destinationAs: '100-ff00:0:989'
+        destinationMatchMode: 4
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 2
+    -
+        name: 'TO AS112 ON Queue=2'
+        priority: 2
+        sourceAs: '100-ff00:0:989'
+        sourceMatchMode: 4
+        destinationAs: '1-ff00:0:112'
+        destinationMatchMode: 0
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 2
+    -
+        name: 'FROM AS113 ON Queue=2'
+        priority: 2
+        sourceAs: '1-ff00:0:113'
+        sourceMatchMode: 0
+        destinationAs: '100-ff00:0:989'
+        destinationMatchMode: 4
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 1
+    -
+        name: 'TO AS113 ON Queue=2'
+        priority: 2
+        sourceAs: '100-ff00:0:989'
+        sourceMatchMode: 4
+        destinationAs: '1-ff00:0:113'
+        destinationMatchMode: 0
+        L4Type:
+            - {Protocol: 0, Extension: -1}
+            - {Protocol: 6, Extension: -1}
+            - {Protocol: 17, Extension: -1}
+            - {Protocol: 222, Extension: -1}
+        queueNumber: 1

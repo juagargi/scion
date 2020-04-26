@@ -99,6 +99,14 @@ func (r *Ring) Write(entries EntryList, block bool) (int, bool) {
 	return n, blocked
 }
 
+// Readable returns the number of ready to be read packets.
+func (r *Ring) Readable() int {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	return r.readable
+}
+
 // Read copies entries from the internal ring buffer. If block is true, then
 // Read will block until it is able to read at least one entry (or the Ring
 // is closed). Otherwise it will return immediately if there's no entries

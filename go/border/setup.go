@@ -23,6 +23,7 @@ import (
 	"github.com/syndtr/gocapability/capability"
 
 	"github.com/scionproto/scion/go/border/brconf"
+	"github.com/scionproto/scion/go/border/qos"
 	"github.com/scionproto/scion/go/border/rctx"
 	"github.com/scionproto/scion/go/border/rpkt"
 	"github.com/scionproto/scion/go/lib/common"
@@ -68,6 +69,10 @@ func (r *Router) setup() error {
 	if conf, err = r.loadNewConfig(); err != nil {
 		return err
 	}
+	// Initialize the qos subsystem
+	if err = r.initQosFromConfig(conf); err != nil {
+		return err
+	}
 	// Initialize itopo.
 	itopo.Init(
 		&itopo.Config{
@@ -89,6 +94,12 @@ func (r *Router) setup() error {
 	}
 	cfg.Metrics.StartPrometheus()
 	return nil
+}
+
+func (r *Router) initQosFromConfig(config *brconf.BRConf) error {
+	var err error
+	r.qosConfig, err = qos.InitQos(config.ExternalQosConfig, r.forwardPacket)
+	return err
 }
 
 // clearCapabilities drops unnecessary capabilities after startup

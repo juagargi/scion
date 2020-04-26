@@ -1,0 +1,41 @@
+Scheduler:
+    Latency: 0
+    Bandwidth: 100Mbps
+Queues:
+    -
+        name: 'SCMP Messages'
+        id: 0
+        CIR: 10
+        PIR: 25
+        policeRate: 500Mbps
+        maxLength: 1024
+        priority: 2
+        congestionWarning: {approach: 0, informationContent: 25}
+        profile:
+            - {fill-level: 50, prob: 10, action: 3}
+            - {fill-level: 75, prob: 20, action: 3}
+            - {fill-level: 80, prob: 50, action: 3}
+    -
+      name: 'SCMP Messages'
+      id: 1
+      CIR: 10
+      PIR: 25
+      policeRate: 500Mbps
+      maxLength: 1024
+      priority: 10
+      congestionWarning: {approach: 0, informationContent: 25}
+      profile:
+          - {fill-level: 50, prob: 10, action: 3}
+          - {fill-level: 75, prob: 20, action: 3}
+          - {fill-level: 80, prob: 50, action: 3}
+Rules:
+    -
+        name: 'SCMP on Queue 1'
+        priority: 1
+        sourceAs: '1-ff00:0:110'
+        sourceMatchMode: 4
+        destinationAs: '1-ff00:0:110'
+        destinationMatchMode: 4
+        L4Type:
+            - {Protocol: 1, Extension: -1}
+        queueNumber: 1

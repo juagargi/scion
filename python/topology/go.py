@@ -20,6 +20,7 @@
 import os
 import toml
 import yaml
+from shutil import copyfile
 
 # SCION
 from lib.util import write_file
@@ -80,6 +81,7 @@ class GoGenerator(object):
                 base = topo_id.base_dir(self.args.output_dir)
                 br_conf = self._build_br_conf(topo_id, topo["ISD_AS"], base, k, v)
                 write_file(os.path.join(base, k, BR_CONFIG_NAME), toml.dumps(br_conf))
+                self._copy_qos_conf(os.path.join(base, k, BR_CONFIG_NAME), base, k)
 
     def _build_br_conf(self, topo_id, ia, base, name, v):
         config_dir = '/share/conf' if self.args.docker else os.path.join(base, name)
@@ -94,6 +96,11 @@ class GoGenerator(object):
             },
         }
         return raw_entry
+
+    def _copy_qos_conf(self, path, base, name):
+        dest_file = '/share/conf/qosConfig.yaml' if self.args.docker else os.path.join(base, name, 'qosConfig.yaml')
+        src_file = 'go/border/qos/testdata/StandardConfig.yaml'
+        copyfile(src_file, dest_file)
 
     def generate_control_service(self):
         for topo_id, topo in self.args.topo_dicts.items():
