@@ -15,7 +15,6 @@
 package qos
 
 import (
-	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -223,15 +222,15 @@ func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) {
 
 	rule := rc.GetRuleForPacket(config, qp.Rp)
 	np := queues.NPkt{Rule: rule, Qpkt: qp}
-	log.Debug("Send notification method in router")
+	// log.Debug("Send notification method in router")
 
-	queueNo := 0
-	if rule != nil {
-		queueNo = rule.QueueNumber
-	}
+	// queueNo := 0
+	// if rule != nil {
+	// 	queueNo = rule.QueueNumber
+	// }
 
-	restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
-	fmt.Printf("restrictions on information content restriction %v", restriction)
+	// restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
+	// fmt.Printf("restrictions on information content restriction %v", restriction)
 	np.Qpkt.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
 
 	select {
