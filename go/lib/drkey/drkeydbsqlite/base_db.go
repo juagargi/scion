@@ -20,6 +20,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/scionproto/scion/go/lib/common"
+	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/infra/modules/db"
 )
 
@@ -28,45 +29,7 @@ const (
 	unableToExecuteStmt = "Unable to execute stmt"
 )
 
-const (
-	// Lvl1SchemaVersion is the version of the SQLite schema understood by this backend.
-	// Whenever changes to the schema are made, this version number should be increased
-	// to prevent data corruption between incompatible database schemas.
-	Lvl1SchemaVersion = 1
-	// Lvl1Schema is the SQLite database layout.
-	Lvl1Schema = `
-	CREATE TABLE DRKeyLvl1 (
-		SrcIsdID 	INTEGER NOT NULL,
-		SrcAsID 	INTEGER NOT NULL,
-		DstIsdID 	INTEGER NOT NULL,
-		DstAsID 	INTEGER NOT NULL,
-		EpochBegin 	INTEGER NOT NULL,
-		EpochEnd 	INTEGER NOT NULL,
-		Key 		TEXT NOT NULL,
-		PRIMARY KEY (SrcIsdID, SrcAsID, DstIsdID, DstAsID, EpochBegin)
-	);`
-
-	// Lvl2SchemaVersion is the version of the SQLite schema understood by this backend.
-	// Whenever changes to the schema are made, this version number should be increased
-	// to prevent data corruption between incompatible database schemas.
-	Lvl2SchemaVersion = 1
-	// Lvl2Schema is the SQLite database layout.
-	Lvl2Schema = `
-	CREATE TABLE DRKeyLvl2 (
-		Protocol	TEXT NOT NULL,
-		Type		INTEGER NOT NULL,
-		SrcIsdID 	INTEGER NOT NULL,
-		SrcAsID 	INTEGER NOT NULL,
-		DstIsdID 	INTEGER NOT NULL,
-		DstAsID 	INTEGER NOT NULL,
-		SrcHostIP 	TEXT,
-        DstHostIP	TEXT,
-        EpochBegin  INTEGER NOT NULL,
-        EpochEnd    INTEGER NOT NULL,
-		Key 		TEXT NOT NULL,
-		PRIMARY KEY (Protocol, Type, SrcIsdID, SrcAsID, DstIsdID, DstAsID, SrcHostIP, DstHostIP, EpochBegin)
-	);`
-)
+var _ drkey.BaseDB = (*dbBaseBackend)(nil)
 
 // dbBaseBackend is the common part of all level backends.
 type dbBaseBackend struct {

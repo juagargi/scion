@@ -24,6 +24,29 @@ import (
 	"github.com/scionproto/scion/go/lib/drkey"
 )
 
+const (
+	// Lvl2SchemaVersion is the version of the SQLite schema understood by this backend.
+	// Whenever changes to the schema are made, this version number should be increased
+	// to prevent data corruption between incompatible database schemas.
+	Lvl2SchemaVersion = 1
+	// Lvl2Schema is the SQLite database layout.
+	Lvl2Schema = `
+	CREATE TABLE DRKeyLvl2 (
+		Protocol	TEXT NOT NULL,
+		Type		INTEGER NOT NULL,
+		SrcIsdID 	INTEGER NOT NULL,
+		SrcAsID 	INTEGER NOT NULL,
+		DstIsdID 	INTEGER NOT NULL,
+		DstAsID 	INTEGER NOT NULL,
+		SrcHostIP 	TEXT,
+        DstHostIP	TEXT,
+        EpochBegin  INTEGER NOT NULL,
+        EpochEnd    INTEGER NOT NULL,
+		Key 		TEXT NOT NULL,
+		PRIMARY KEY (Protocol, Type, SrcIsdID, SrcAsID, DstIsdID, DstAsID, SrcHostIP, DstHostIP, EpochBegin)
+	);`
+)
+
 var _ drkey.Lvl2DB = (*Lvl2Backend)(nil)
 
 // Lvl2Backend implements a level 2 drkey DB with sqlite.
@@ -67,7 +90,7 @@ AND EpochBegin<=? AND ?<EpochEnd
 func (b *Lvl2Backend) GetLvl2Key(ctx context.Context, key drkey.Lvl2Meta, valTime uint32) (drkey.Lvl2Key, error) {
 	var epochBegin int
 	var epochEnd int
-	var bytes common.RawBytes
+	var bytes []byte
 
 	err := b.getLvl2KeyStmt.QueryRowContext(ctx, key.Protocol, key.KeyType, key.SrcIA.I,
 		key.SrcIA.A, key.DstIA.I, key.DstIA.A, key.SrcHost, key.DstHost, valTime,

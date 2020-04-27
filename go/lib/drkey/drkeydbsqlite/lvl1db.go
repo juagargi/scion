@@ -25,6 +25,25 @@ import (
 	"github.com/scionproto/scion/go/lib/drkey"
 )
 
+const (
+	// Lvl1SchemaVersion is the version of the SQLite schema understood by this backend.
+	// Whenever changes to the schema are made, this version number should be increased
+	// to prevent data corruption between incompatible database schemas.
+	Lvl1SchemaVersion = 1
+	// Lvl1Schema is the SQLite database layout.
+	Lvl1Schema = `
+	CREATE TABLE DRKeyLvl1 (
+		SrcIsdID 	INTEGER NOT NULL,
+		SrcAsID 	INTEGER NOT NULL,
+		DstIsdID 	INTEGER NOT NULL,
+		DstAsID 	INTEGER NOT NULL,
+		EpochBegin 	INTEGER NOT NULL,
+		EpochEnd 	INTEGER NOT NULL,
+		Key 		TEXT NOT NULL,
+		PRIMARY KEY (SrcIsdID, SrcAsID, DstIsdID, DstAsID, EpochBegin)
+	);`
+)
+
 var _ drkey.Lvl1DB = (*Lvl1Backend)(nil)
 
 // Lvl1Backend implements a level 1 drkey DB with sqlite.
@@ -129,7 +148,7 @@ AND EpochBegin<=? AND ?<EpochEnd
 // valid and returns the corresponding first level DRKey.
 func (b *Lvl1Backend) GetLvl1Key(ctx context.Context, key drkey.Lvl1Meta, valTime uint32) (drkey.Lvl1Key, error) {
 	var epochBegin, epochEnd int
-	var bytes common.RawBytes
+	var bytes []byte
 	err := b.getLvl1KeyStmt.QueryRowContext(ctx, key.SrcIA.I, key.SrcIA.A,
 		key.DstIA.I, key.DstIA.A, valTime, valTime).Scan(&epochBegin, &epochEnd, &bytes)
 	if err != nil {

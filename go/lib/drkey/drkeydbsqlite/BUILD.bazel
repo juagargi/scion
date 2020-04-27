@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "go_default_library",
     srcs = [
-        "common.go",
+        "base_db.go",
         "lvl1db.go",
         "lvl2db.go",
     ],
@@ -26,6 +26,7 @@ go_test(
         "//go/lib/addr:go_default_library",
         "//go/lib/drkey:go_default_library",
         "//go/lib/drkey/protocol:go_default_library",
+        "//go/lib/scrypto:go_default_library",
         "//go/lib/util:go_default_library",
     ],
 )
