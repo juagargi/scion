@@ -1,4 +1,4 @@
-// Copyright 2018 ETH Zurich
+// Copyright 2020 ETH Zurich
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,9 +15,10 @@
 package exchange
 
 import (
-	"bytes"
-	"encoding/hex"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/drkey"
@@ -29,39 +30,19 @@ import (
 func TestSuiteDRKeyLvl1(t *testing.T) {
 	lvl1 := genLvl1Key(t)
 	sndPubKey, sndPrivKey, err := scrypto.GenKeyPair(scrypto.Curve25519xSalsa20Poly1305)
-	if err != nil {
-		t.Errorf("GenKeyPair failed = %v", err)
-	}
+	require.NoError(t, err)
 	rcvPubKey, rcvPrivKey, err := scrypto.GenKeyPair(scrypto.Curve25519xSalsa20Poly1305)
-	if err != nil {
-		t.Errorf("GenKeyPair failed = %v", err)
-	}
+	require.NoError(t, err)
 	nonce, err := scrypto.Nonce(24)
-	if err != nil {
-		t.Errorf("Nonce failed = %v", err)
-	}
+	require.NoError(t, err)
 	cipherMsg, err := EncryptDRKeyLvl1(lvl1, nonce, rcvPubKey, sndPrivKey)
-	if err != nil {
-		t.Errorf("EncryptDRKeyLvl1 failed = %v", err)
-	}
+	require.NoError(t, err)
 	gotLvl1, err := DecryptDRKeyLvl1(cipherMsg, nonce, sndPubKey, rcvPrivKey)
-	if err != nil {
-		t.Errorf("DecryptDRKeyLvl1 failed = %v", err)
-	}
+	require.NoError(t, err)
 
-	if !(lvl1.Lvl1Meta.SrcIA.Equal(gotLvl1.Lvl1Meta.SrcIA)) {
-		t.Fatalf("Lvl1 Src IA mismatch %s != %s",
-			lvl1.Lvl1Meta.SrcIA.String(), gotLvl1.Lvl1Meta.SrcIA.String())
-	}
-	if !(lvl1.Lvl1Meta.DstIA.Equal(gotLvl1.Lvl1Meta.DstIA)) {
-		t.Fatalf("Lvl1 Dst IA mismatch %s != %s",
-			lvl1.Lvl1Meta.DstIA.String(), gotLvl1.Lvl1Meta.DstIA.String())
-	}
-	if !lvl1.Key.Equal(gotLvl1.Key) {
-		t.Fatalf("Key mismatch sent: %s, received: %s",
-			hex.EncodeToString(lvl1.Key), hex.EncodeToString(gotLvl1.Key))
-	}
-
+	assert.Equal(t, lvl1.Lvl1Meta.SrcIA, gotLvl1.Lvl1Meta.SrcIA)
+	assert.Equal(t, lvl1.Lvl1Meta.DstIA, gotLvl1.Lvl1Meta.DstIA)
+	assert.Equal(t, lvl1.Key, gotLvl1.Key)
 }
 
 func genLvl1Key(t *testing.T) drkey.Lvl1Key {
@@ -73,26 +54,18 @@ func genLvl1Key(t *testing.T) drkey.Lvl1Key {
 	epoch := drkey.NewEpoch(0, 1)
 	srcIA, _ := addr.IAFromString("1-ff00:0:111")
 	dstIA, _ := addr.IAFromString("1-ff00:0:112")
+
 	sv, err := drkey.DeriveSV(meta, asSecret)
-	if err != nil {
-		t.Errorf("Derive SV failed = %v", err)
-	}
-	if bytes.Compare(sv.Key, svTgtKey) != 0 {
-		t.Fatalf("Unexpected sv key: %s, expected: %s",
-			hex.EncodeToString(sv.Key), hex.EncodeToString(svTgtKey))
-	}
+	require.NoError(t, err)
+	require.Equal(t, []byte(sv.Key), svTgtKey)
 	lvlTgtKey := xtest.MustParseHexString("51663adbc06e55f40a9ad899cf0775e5")
 	lvl1, err := protocol.DeriveLvl1(drkey.Lvl1Meta{
 		Epoch: epoch,
 		SrcIA: srcIA,
 		DstIA: dstIA,
 	}, sv)
-	if err != nil {
-		t.Errorf("DeriveLvl1 failed = %v", err)
-	}
-	if !lvl1.Key.Equal(lvlTgtKey) {
-		t.Fatalf("Unexpected lvl1 key: %s", hex.EncodeToString(lvl1.Key))
-	}
+	require.NoError(t, err)
+	require.Equal(t, []byte(lvl1.Key), lvlTgtKey)
 
 	return lvl1
 }
