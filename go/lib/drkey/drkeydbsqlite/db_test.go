@@ -15,14 +15,14 @@
 package drkeydbsqlite
 
 import (
-	"bytes"
 	"context"
-	"encoding/hex"
 	"io/ioutil"
 	"net"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/drkey"
@@ -56,50 +56,31 @@ func TestDRKeyLvl1(t *testing.T) {
 		},
 	}
 	sv, err := drkey.DeriveSV(drkey.SVMeta{Epoch: epoch}, asMasterPassword)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
+
 	drkeyLvl1, err := protocol.DeriveLvl1(drkey.Lvl1Meta{
 		Epoch: epoch,
 		SrcIA: addr.IAFromRaw(rawSrcIA),
 		DstIA: addr.IAFromRaw(rawDstIA)}, sv)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
-	//
 	err = db.InsertLvl1Key(ctx, drkeyLvl1)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 	// same key again. It should be okay.
 	err = db.InsertLvl1Key(ctx, drkeyLvl1)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
+
 	newKey, err := db.GetLvl1Key(ctx, drkeyLvl1.Lvl1Meta, util.TimeToSecs(time.Now()))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if bytes.Compare(drkeyLvl1.Key, newKey.Key) != 0 {
-		t.Fatalf("Keys should be identical. Expected: %s. Got: %s",
-			hex.EncodeToString(drkeyLvl1.Key), hex.EncodeToString(newKey.Key))
-	}
+	require.NoError(t, err)
+	require.Equal(t, drkeyLvl1.Key, newKey.Key)
 
 	rows, err := db.RemoveOutdatedLvl1Keys(ctx, util.TimeToSecs(time.Now().Add(-timeOffset*time.Second)))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if rows != 0 {
-		t.Fatalf("Expecting 0 rows. Got %d", rows)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, 0, rows)
+
 	rows, err = db.RemoveOutdatedLvl1Keys(ctx, util.TimeToSecs(time.Now().Add(2*timeOffset*time.Second)))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if rows != 1 {
-		t.Fatalf("Expecting 0 rows. Got %d", rows)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
 
 }
 
@@ -119,17 +100,13 @@ func TestDRKeyLvl2(t *testing.T) {
 		},
 	}
 	sv, err := drkey.DeriveSV(drkey.SVMeta{Epoch: epoch}, asMasterPassword)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 	drkeyLvl1, err := protocol.DeriveLvl1(drkey.Lvl1Meta{
 		Epoch: epoch,
 		SrcIA: srcIA,
 		DstIA: dstIA,
 	}, sv)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	standardImpl := protocol.Standard{}
 	drkeyLvl2, err := standardImpl.DeriveLvl2(drkey.Lvl2Meta{
@@ -141,42 +118,24 @@ func TestDRKeyLvl2(t *testing.T) {
 		SrcHost:  addr.HostFromIP(SrcHostIP),
 		DstHost:  addr.HostFromIP(DstHostIP),
 	}, drkeyLvl1)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	err = db.InsertLvl2Key(ctx, drkeyLvl2)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 	err = db.InsertLvl2Key(ctx, drkeyLvl2)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	newKey, err := db.GetLvl2Key(ctx, drkeyLvl2.Lvl2Meta, util.TimeToSecs(time.Now()))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if bytes.Compare(drkeyLvl2.Key, newKey.Key) != 0 {
-		t.Fatalf("Keys should be identical. Expected: %s. Got: %s",
-			hex.EncodeToString(drkeyLvl2.Key), hex.EncodeToString(newKey.Key))
-	}
+	require.NoError(t, err)
+	require.Equal(t, drkeyLvl2.Key, newKey.Key)
 
 	rows, err := db.RemoveOutdatedLvl2Keys(ctx, util.TimeToSecs(time.Now().Add(-timeOffset*time.Second)))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if rows != 0 {
-		t.Fatalf("Expecting 0 rows. Got %d", rows)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, 0, rows)
+
 	rows, err = db.RemoveOutdatedLvl2Keys(ctx, util.TimeToSecs(time.Now().Add(2*timeOffset*time.Second)))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if rows != 1 {
-		t.Fatalf("Expecting 1 rows. Got %d", rows)
-	}
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
 }
 
 func TestGetMentionedASes(t *testing.T) {
@@ -202,57 +161,34 @@ func TestGetMentionedASes(t *testing.T) {
 			},
 		}
 		sv, err := drkey.DeriveSV(drkey.SVMeta{Epoch: epoch}, asMasterPassword)
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
+		require.NoError(t, err)
+
 		key, err := protocol.DeriveLvl1(drkey.Lvl1Meta{
 			Epoch: epoch,
 			SrcIA: srcIA,
 			DstIA: dstIA,
 		}, sv)
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
+		require.NoError(t, err)
+
 		err = db.InsertLvl1Key(ctx, key)
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
+		require.NoError(t, err)
 	}
 
 	list, err := db.GetLvl1SrcASes(ctx)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
+
 	expected := []addr.IA{
 		ia("1-ff00:0:111"),
 		ia("2-ff00:0:211"),
 	}
-	if !equalIASlices(expected, list) {
-		t.Fatalf("Wrong list. Expected: %v. Got: %v", expected, list)
-	}
 
 	list, err = db.GetValidLvl1SrcASes(ctx, 3)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err)
+
 	expected = []addr.IA{
 		ia("1-ff00:0:111"),
 	}
-	if !equalIASlices(expected, list) {
-		t.Fatalf("Wrong list. Expected: %v. Got: %v", expected, list)
-	}
-}
-
-func equalIASlices(a, b []addr.IA) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !a[i].Equal(b[i]) {
-			return false
-		}
-	}
-	return true
+	require.Equal(t, expected, list)
 }
 
 func ia(iaStr string) addr.IA {
@@ -265,17 +201,13 @@ func ia(iaStr string) addr.IA {
 
 func newLvl1Database(t *testing.T) (*Lvl1Backend, func()) {
 	file, err := ioutil.TempFile("", "db-test-")
-	if err != nil {
-		t.Fatalf("unable to create temp file")
-	}
+	require.NoError(t, err)
 	name := file.Name()
-	if err := file.Close(); err != nil {
-		t.Fatalf("unable to close temp file")
-	}
+	err = file.Close()
+	require.NoError(t, err)
 	db, err := NewLvl1Backend(name)
-	if err != nil {
-		t.Fatalf("unable to initialize database")
-	}
+	require.NoError(t, err)
+
 	return db, func() {
 		db.Close()
 		os.Remove(name)
@@ -284,17 +216,13 @@ func newLvl1Database(t *testing.T) (*Lvl1Backend, func()) {
 
 func newLvl2Database(t *testing.T) (*Lvl2Backend, func()) {
 	file, err := ioutil.TempFile("", "db-test-")
-	if err != nil {
-		t.Fatalf("unable to create temp file")
-	}
+	require.NoError(t, err)
 	name := file.Name()
-	if err := file.Close(); err != nil {
-		t.Fatalf("unable to close temp file")
-	}
+	err = file.Close()
+	require.NoError(t, err)
 	db, err := NewLvl2Backend(name)
-	if err != nil {
-		t.Fatalf("unable to initialize database")
-	}
+	require.NoError(t, err)
+
 	return db, func() {
 		db.Close()
 		os.Remove(name)
