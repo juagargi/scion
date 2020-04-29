@@ -16,7 +16,7 @@ import (
 	"github.com/scionproto/scion/go/lib/spath"
 )
 
-const logEnabledBsc = false
+const logEnabledBsc = true
 
 func (r *Router) bscNotify() {
 	for np := range r.qosConfig.GetNotification() {
@@ -126,11 +126,10 @@ func (r *Router) createBscSCMPNotification(qp *queues.QPkt,
 }
 
 func (r *Router) createBscCongWarn(np *queues.NPkt) *scmp.InfoBscCW {
-	restrictionPrint := r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning()
 	testing := r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetMinBandwidth()
-	restriction := 3
+	restriction := r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().InformationContent
 	if logEnabledBsc {
-		log.Debug("restrictions on information content", "restriction", restrictionPrint, "MinBW", testing)
+		log.Debug("restrictions on information content", "restriction", restriction, "MinBW", testing)
 	}
 	if restriction > 3 {
 		log.Error("Unable to create congestion warning", "restriction on information content", restriction)

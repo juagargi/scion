@@ -10,7 +10,7 @@ Queues:
         policeRate: 500Mbps
         maxLength: 512
         priority: 1
-        congestionWarning: {approach: 0, informationContent: 25}
+        congestionWarning: {approach: 0, informationContent: 3}
         profile:
             - {fill-level: 50, prob: 10, action: 3}
             - {fill-level: 75, prob: 20, action: 3}
@@ -23,7 +23,7 @@ Queues:
         policeRate: 500Mbps
         maxLength: 512
         priority: 4
-        congestionWarning: {approach: 11, informationContent: 27}
+        congestionWarning: {approach: 0, informationContent: 3}
         profile:
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}
@@ -35,7 +35,7 @@ Queues:
         policeRate: 500Mbps
         maxLength: 512
         priority: 2
-        congestionWarning: {approach: 22, informationContent: 29}
+        congestionWarning: {approach: 0, informationContent: 3}
         profile:
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}
@@ -47,7 +47,7 @@ Queues:
         policeRate: 500Mbps
         maxLength: 512
         priority: 2
-        congestionWarning: {approach: 11, informationContent: 27}
+        congestionWarning: {approach: 0, informationContent: 3}
         profile:
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}
@@ -59,7 +59,7 @@ Queues:
         policeRate: 500Mbps
         maxLength: 100
         priority: 0
-        congestionWarning: {approach: 11, informationContent: 27}
+        congestionWarning: {approach: 0, informationContent: 3}
         profile:
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}

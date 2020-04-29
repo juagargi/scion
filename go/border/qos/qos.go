@@ -197,18 +197,14 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 	switch act {
 	case conf.PASS:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
-		log.Debug("Action is PASS")
 	case conf.NOTIFY:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
 		qosConfig.SendNotification(qp)
-		log.Debug("Action is NOTIFY")
 	case conf.DROPNOTIFY:
 		qosConfig.dropPacket(qp)
 		qosConfig.SendNotification(qp)
-		log.Debug("Action is DROPNOTIFY")
 	case conf.DROP:
 		qosConfig.dropPacket(qp)
-		log.Debug("Action is DROP")
 	default:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
 	}
@@ -227,13 +223,13 @@ func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) { //COMP:
 	np := queues.NPkt{Rule: rule, Qpkt: qp}
 	log.Debug("Send notification method in router")
 
-	// // queueNo := 0
-	// // if rule != nil {
-	// // 	queueNo = rule.QueueNumber
-	// // }
+	queueNo := 0
+	if rule != nil {
+		queueNo = rule.QueueNumber
+	}
 
-	// // restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
-	// // fmt.Printf("restrictions on information content restriction %v", restriction)
+	restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
+	log.Debug("restrictions on information content", "restriction", restriction)
 	// // np.Qpkt.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
 
 	qosConfig.notifications <- &np
@@ -311,18 +307,24 @@ func convertExternalToInteral(extConf conf.ExternalConfig) (queues.InternalRoute
 
 func convertExternalToInteralQueue(extQueue conf.ExternalPacketQueue) queues.PacketQueue {
 	pq := queues.PacketQueue{
-		Name:         extQueue.Name,
-		ID:           extQueue.ID,
-		MinBandwidth: extQueue.MinBandwidth,
-		MaxBandWidth: extQueue.MaxBandWidth,
-		PoliceRate:   convStringToNumber(extQueue.PoliceRate),
-		MaxLength:    extQueue.MaxLength,
-		Priority:     extQueue.Priority,
-		Profile:      convertActionProfiles(extQueue.Profile),
+		Name:              extQueue.Name,
+		ID:                extQueue.ID,
+		MinBandwidth:      extQueue.MinBandwidth,
+		MaxBandWidth:      extQueue.MaxBandWidth,
+		PoliceRate:        convStringToNumber(extQueue.PoliceRate),
+		MaxLength:         extQueue.MaxLength,
+		Priority:          extQueue.Priority,
+		CongestionWarning: convertCongestionWarning(extQueue.CongestionWarning),
+		Profile:           convertActionProfiles(extQueue.Profile),
 	}
 
 	return pq
 }
+
+func convertCongestionWarning(externalCW conf.CongestionWarning) queues.CongestionWarning {
+	return queues.CongestionWarning{Approach: externalCW.Approach, InformationContent: externalCW.InformationContent}
+}
+
 func convertActionProfiles(externalActionProfile []conf.ActionProfile) []queues.ActionProfile {
 	ret := make([]queues.ActionProfile, 0)
 	for _, prof := range externalActionProfile {

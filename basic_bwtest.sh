@@ -51,7 +51,7 @@ bwTestClient() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,500kbps -sc 10,1000,?,500kbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
+    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,15Mbps -sc 10,1000,?,15Mbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
     local pid=$!
     echo "Set up bwtest client to port 4000$3"
     echo ""
@@ -82,7 +82,7 @@ cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_114/br1-ff00_0_114-1
 ./scion.sh stop 
 
 #initConfigs
-#deleteLogs
+deleteLogs
 killall bwtestserver
 killall bwtestclient
 
