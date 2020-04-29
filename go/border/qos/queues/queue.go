@@ -55,6 +55,14 @@ func (a *Action) GetReason() int {
 	return int(reason)
 }
 
+func (a *Action) SetAction(newAction conf.PoliceAction) {
+	a.action = newAction
+}
+
+func (a *Action) GetAction() conf.PoliceAction {
+	return a.action
+}
+
 type CongestionWarning struct {
 	Approach           int `yaml:"approach"`
 	InformationContent int `yaml:"informationContent"`

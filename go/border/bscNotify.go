@@ -16,7 +16,7 @@ import (
 	"github.com/scionproto/scion/go/lib/spath"
 )
 
-const logEnabledBsc = true
+const logEnabledBsc = false
 
 func (r *Router) bscNotify() {
 	for np := range r.qosConfig.GetNotification() {
@@ -30,13 +30,18 @@ func (r *Router) bscNotify() {
 			srcHost, "DstIA", DstIA, "DstHost", DstHost)*/
 			log.Debug("New notification packet", "NPkt", np, "Pkt ID", np.Qpkt.Rp.Id, "L4hdr", fmt.Sprintf("%s", np.Qpkt.Rp.GetL4Hdr()))
 		}
+		// np.Qpkt.Rp.RefInc(-1)
 		bscCW := r.createBscCongWarn(np)
 		if logEnabledBsc {
 			log.Debug("Created basic congestion warning", "bscCW", bscCW, "Pkt ID", np.Qpkt.Rp.Id)
 		}
 		r.sendBscNotificationSCMP(np.Qpkt, bscCW)
 		np.Qpkt.Rp.RefInc(-1)
-		//}
+		// //}
+		//Release packet if it's action is DROPNOTIFY
+		if uint8(np.Qpkt.Act.GetAction()) == 3 {
+			np.Qpkt.Rp.Release()
+		}
 	}
 
 }

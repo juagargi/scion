@@ -12,9 +12,9 @@ Queues:
         priority: 1
         congestionWarning: {approach: 0, informationContent: 25}
         profile:
-            - {fill-level: 50, prob: 10, action: 1}
-            - {fill-level: 75, prob: 20, action: 1}
-            - {fill-level: 80, prob: 50, action: 1}
+            - {fill-level: 50, prob: 10, action: 3}
+            - {fill-level: 75, prob: 20, action: 3}
+            - {fill-level: 80, prob: 50, action: 3}
     -
         name: 'Priority'
         id: 1
@@ -25,8 +25,8 @@ Queues:
         priority: 4
         congestionWarning: {approach: 11, informationContent: 27}
         profile:
-            - {fill-level: 80, prob: 20, action: 1}
-            - {fill-level: 90, prob: 90, action: 1}
+            - {fill-level: 80, prob: 20, action: 3}
+            - {fill-level: 90, prob: 90, action: 3}
     -
         name: 'Transit Traffic Level 1'
         id: 2
@@ -37,8 +37,8 @@ Queues:
         priority: 2
         congestionWarning: {approach: 22, informationContent: 29}
         profile:
-            - {fill-level: 80, prob: 20, action: 1}
-            - {fill-level: 90, prob: 90, action: 1}
+            - {fill-level: 80, prob: 20, action: 3}
+            - {fill-level: 90, prob: 90, action: 3}
     -
         name: 'TO AS112'
         id: 3
@@ -49,8 +49,8 @@ Queues:
         priority: 2
         congestionWarning: {approach: 11, informationContent: 27}
         profile:
-            - {fill-level: 80, prob: 20, action: 1}
-            - {fill-level: 90, prob: 90, action: 1}
+            - {fill-level: 80, prob: 20, action: 3}
+            - {fill-level: 90, prob: 90, action: 3}
     -
         name: 'Always empty'
         id: 3
@@ -61,8 +61,8 @@ Queues:
         priority: 0
         congestionWarning: {approach: 11, informationContent: 27}
         profile:
-            - {fill-level: 80, prob: 20, action: 1}
-            - {fill-level: 90, prob: 90, action: 1}
+            - {fill-level: 80, prob: 20, action: 3}
+            - {fill-level: 90, prob: 90, action: 3}
 Rules:
     -
         name: 'FROM AS110 TO ANY ON Queue=1'

@@ -197,15 +197,18 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 	switch act {
 	case conf.PASS:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
-		qosConfig.SendNotification(qp) //MS: Used for testing
+		log.Debug("Action is PASS")
 	case conf.NOTIFY:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
 		qosConfig.SendNotification(qp)
+		log.Debug("Action is NOTIFY")
 	case conf.DROPNOTIFY:
 		qosConfig.dropPacket(qp)
 		qosConfig.SendNotification(qp)
+		log.Debug("Action is DROPNOTIFY")
 	case conf.DROP:
 		qosConfig.dropPacket(qp)
+		log.Debug("Action is DROP")
 	default:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
 	}
@@ -214,33 +217,35 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 }
 
 // SendNotification is needed for the part of @stygerma
-func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) {
+func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) { //COMP:
 	qp.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
-
+	// defer qp.Rp.RefInc(-1)
 	rc := queues.RegularClassRule{}
 	config := qosConfig.GetConfig()
 
 	rule := rc.GetRuleForPacket(config, qp.Rp)
 	np := queues.NPkt{Rule: rule, Qpkt: qp}
-	// log.Debug("Send notification method in router")
+	log.Debug("Send notification method in router")
 
-	// queueNo := 0
-	// if rule != nil {
-	// 	queueNo = rule.QueueNumber
-	// }
+	// // queueNo := 0
+	// // if rule != nil {
+	// // 	queueNo = rule.QueueNumber
+	// // }
 
-	// restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
-	// fmt.Printf("restrictions on information content restriction %v", restriction)
-	np.Qpkt.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
+	// // restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
+	// // fmt.Printf("restrictions on information content restriction %v", restriction)
+	// // np.Qpkt.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
 
-	select {
-	case qosConfig.notifications <- &np:
-	default:
-	}
+	qosConfig.notifications <- &np
 }
 
 func (qosConfig *Configuration) dropPacket(qp *queues.QPkt) {
-	defer qp.Rp.Release()
+	// In the case of a DROPNOTIFY action we release the packet in the Notify method
+	// after creating the notification packet
+	if uint8(qp.Act.GetAction()) == 2 {
+		defer qp.Rp.Release()
+	}
+	// defer qp.Rp.Release() //COMP
 
 	qosConfig.droppedPackets++
 	log.Info("Dropping packet", "qosConfig.droppedPackets", qosConfig.droppedPackets)
