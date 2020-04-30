@@ -8,3 +8,4 @@ rm *.OUT
 cd Demo
 rm *.txt
 cd $SC
+rm dummy.txt

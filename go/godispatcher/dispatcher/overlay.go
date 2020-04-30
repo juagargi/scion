@@ -114,11 +114,10 @@ func ComputeSCMPDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination,
 		return nil, common.NewBasicError(ErrUnsupportedSCMPDestination, nil,
 			"type", packet.DstHost.Type())
 	}
-	// if header.Class == scmp.C_General && header.Type == scmp.T_G_BasicCongWarn {
-	// 	log.Debug("CW packet received !!", "pkt", packet)
-	// 	return ComputeSCMPCWDestination(packet, header)
-	// } else
-	if header.Class == scmp.C_General {
+	if header.Class == scmp.C_General && header.Type == scmp.T_G_BasicCongWarn {
+		log.Debug("CW packet received !!", "pkt", packet)
+		return ComputeSCMPCWDestination(packet, header)
+	} else if header.Class == scmp.C_General {
 		return ComputeSCMPGeneralDestination(packet, header)
 	} else {
 		return ComputeSCMPErrorDestination(packet, header)
@@ -126,16 +125,16 @@ func ComputeSCMPDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination,
 }
 
 func ComputeSCMPCWDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
-	cwPayload := packet.Pld.(*scmp.CWPayload)
+	pld := packet.Pld.(*scmp.Payload)
 	//scmpPayload := packet.Pld.(*scmp.Payload)
-	switch cwPayload.Meta.L4Proto {
+	switch pld.Meta.L4Proto {
 	case common.L4UDP:
-		quotedUDPHeader, err := l4.UDPFromRaw(cwPayload.L4Hdr)
+		quotedUDPHeader, err := l4.UDPFromRaw(pld.L4Hdr)
 		if err != nil {
 			return nil, common.NewBasicError(ErrMalformedL4Quote, nil, "err", err)
 		}
-		return &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort)}, nil
-	//Leave this for now as this would need handling of CW SCMPs for all applications
+		return &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort) + 1}, nil
+	//Leave this for now as this would need handling of all kinds of SCMPs for all applications
 	// case common.L4SCMP:
 	// 	//TODO: change this
 	// 	id, err := getQuotedSCMPGeneralID(scmpPayload)
@@ -146,7 +145,7 @@ func ComputeSCMPCWDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destinatio
 	// 	return &SCMPAppDestination{ID: id}, nil
 	default:
 		return nil, common.NewBasicError(ErrUnsupportedQuotedL4Type, nil,
-			"type", cwPayload.Meta.L4Proto)
+			"type", pld.Meta.L4Proto)
 	}
 }
 

@@ -146,7 +146,7 @@ func (p Prober) GetStatuses(ctx context.Context,
 
 func (p Prober) send(scionConn *snet.Conn, path snet.Path) error {
 	addr := &snet.SVCAddr{
-		IA:      p.DstIA, //IMP: only requires the destination IA and no IP or port numbers
+		IA:      p.DstIA,
 		Path:    path.Path(),
 		NextHop: path.OverlayNextHop(),
 		SVC:     addr.SvcNone,

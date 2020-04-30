@@ -229,7 +229,7 @@ func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) { //COMP:
 	}
 
 	restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
-	log.Debug("restrictions on information content", "restriction", restriction)
+	//log.Debug("restrictions on information content", "restriction", restriction)
 	// // np.Qpkt.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
 
 	qosConfig.notifications <- &np

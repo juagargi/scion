@@ -41,7 +41,7 @@ bwTestServer() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/bwtestserver -p 4000$2 >> $SC/logs/Demo/bwTestServerAt4000$2.txt &
+    ./bin/demoappserver -p 4000$2 >> $SC/logs/Demo/bwTestServerAt4000$2.txt &
     cd $SC
     echo "Set up bwtest server at port 4000$2"
     echo ""
@@ -51,7 +51,7 @@ bwTestClient() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,5Mbps -sc 10,1000,?,5Mbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
+    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,8Mbps -sc 10,1000,?,6Mbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
     local pid=$!
     echo "Set up bwtest client to port 4000$3"
     echo ""
@@ -82,8 +82,9 @@ cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2
 
 #initConfigs
 deleteLogs
-killall bwtestserver
-killall bwtestclient
+killall demoappserver
+killall demoappclient
+
 
 
 
@@ -95,7 +96,7 @@ killall bwtestclient
 echo "Scion started"
 echo ""
 
-sleep 10
+sleep 5
 ./supervisor/supervisor.sh status
 ./bin/showpaths -dstIA 1-ff00:0:112 -sciond 127.0.0.44:30255
 
@@ -126,12 +127,12 @@ echo "Scmp echo done"
 echo ""
 
 for i in 2 4 6 8; do
-    bwTestServer 20 $i & #$1:end of IP of sciond, $2: port 
+    bwTestServer 20 $i & #$1:last byte of IP of sciond, $2: port 
 done
 sleep 2
 
 for i in 2 4 6 8; do
-    bwTestClient  44 0 $i & #$1: end of IP of sciond, $2: AS of server, $3: Port of server
+    bwTestClient  44 0 $i & #$1: last byte of IP of sciond, $2: AS of server, $3: Port of server
     pids[${i}]=$!
     sleep 0.4 #May be necessary
 done 
@@ -142,10 +143,11 @@ done
 jobs
 
 
-killall bwtestserver
-killall bwtestclient
+killall demoappserver
+killall demoappclient
 
 ./bin/scmp "echo" -remote 1-ff00:0:113,[127.0.0.228] -sciond 127.0.0.20:30255 -c 5  #-local 1-ff00:0:110,[127.0.0.228] 
 
 
 ./scion.sh stop 
+play -q -n synth 0.1 tri  1000.0 

@@ -139,9 +139,6 @@ func (r *Router) createBscSCMPNotification(qp *queues.QPkt,
 func (r *Router) createBscCongWarn(np *queues.NPkt) *scmp.InfoBscCW {
 	testing := r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetMinBandwidth()
 	restriction := r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().InformationContent
-	if logEnabledBsc {
-		log.Debug("restrictions on information content", "restriction", restriction, "MinBW", testing)
-	}
 	if restriction > 3 {
 		log.Error("Unable to create congestion warning", "restriction on information content", restriction)
 		return nil

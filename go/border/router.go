@@ -180,7 +180,11 @@ func (r *Router) processPacket(rp *rpkt.RtrPkt) {
 		return
 	}
 
-	r.qosConfig.QueuePacket(rp)
+	if r.Id == "br1-ff00_0_111-1" || r.Id == "br1-ff00_0_0_111-2" || r.Id == "br1-ff00_0_112-1" || r.Id == "br1-ff00_0_0_112-2" {
+		r.qosConfig.QueuePacket(rp)
+	} else {
+		r.forwardPacket(rp)
+	}
 }
 
 func (r *Router) forwardPacket(rp *rpkt.RtrPkt) {
