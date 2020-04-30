@@ -79,7 +79,7 @@ func (r *Router) sendBscNotificationSCMP(qp *queues.QPkt, info *scmp.InfoBscCW) 
 		routerAddr := addr.HostFromIP(pub.IP)
 		pld, _ := notification.Payload(false)
 		l4hdr, _ := notification.L4Hdr(false)
-		cwpld := pld.(*scmp.CWPayload)
+		cwpld := pld.(*scmp.Payload)
 		quotedl4, _ := l4.UDPFromRaw(cwpld.L4Hdr)
 		log.Debug("New SCMP Notification", "SrcIA", srcIA, "SrcHost",
 			srcHost, "DstIA", DstIA, "DstHost", DstHost, "\n RtrAddr", routerAddr,
@@ -118,7 +118,9 @@ func (r *Router) createBscSCMPNotification(qp *queues.QPkt,
 
 	//TODO (stygerma): Add SPSE with DRKey
 
-	sp.Pld = scmp.NotifyPld(info, qp.Rp.L4Type, qp.Rp.GetRaw)
+	//TODO: receive the classtype as a parameter for this function according to the approach of the considered queue
+	ct = scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}
+	sp.Pld = scmp.PldFromQuotes(ct, info, qp.Rp.L4Type, qp.Rp.GetRaw)
 
 	sp.L4 = scmp.NewHdr(scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}, sp.Pld.Len())
 	log.Debug("Created SPkt reply", "sp", sp, "Pkt ID", id)
