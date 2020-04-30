@@ -214,7 +214,7 @@ func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) {
 
 func (qosConfig *Configuration) dropPacket(qp *queues.QPkt) {
 	defer qp.Rp.Release()
-	qosConfig.SendNotification(qp)
+
 	qosConfig.droppedPackets++
 	log.Info("Dropping packet", "qosConfig.droppedPackets", qosConfig.droppedPackets)
 	var queLen = make([]int, len(*qosConfig.GetQueues()))
