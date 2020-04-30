@@ -51,7 +51,7 @@ bwTestClient() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,15Mbps -sc 10,1000,?,15Mbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
+    ./bin/bwtestclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,5Mbps -sc 10,1000,?,5Mbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
     local pid=$!
     echo "Set up bwtest client to port 4000$3"
     echo ""
@@ -133,7 +133,7 @@ sleep 2
 for i in 2 4 6 8; do
     bwTestClient  52 0 $i & #$1: end of IP of sciond, $2: AS of server, $3: Port of server
     pids[${i}]=$!
-    sleep 0.3 #May be necessary
+    sleep 0.4 #May be necessary
 done 
 
 for pid in ${pids[*]}; do

@@ -87,6 +87,7 @@ func ComputeDestination(packet *spkt.ScnPkt) (Destination, error) {
 }
 
 func ComputeUDPDestination(packet *spkt.ScnPkt, header *l4.UDP) (Destination, error) {
+	//log.Debug("Got UDP packet", "pkt", packet)
 	switch packet.DstHost.Type() {
 	case addr.HostTypeIPv4, addr.HostTypeIPv6:
 		return &UDPDestination{IP: packet.DstHost.IP(), Port: int(header.DstPort)}, nil
@@ -124,31 +125,33 @@ func ComputeSCMPDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination,
 	}
 }
 
-// func ComputeSCMPCWDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
-// 	cwPayload := packet.Pld.(*scmp.CWPayload)
-// 	//scmpPayload := packet.Pld.(*scmp.Payload)
-// 	switch cwPayload.Meta.L4Proto {
-// 	case common.L4UDP:
-// 		quotedUDPHeader, err := l4.UDPFromRaw(cwPayload.L4Hdr)
-// 		if err != nil {
-// 			return nil, common.NewBasicError(ErrMalformedL4Quote, nil, "err", err)
-// 		}
-// 		return &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort)}, nil
-// 	case common.L4SCMP:
-// 		//TODO: change this
-// 		id, err := getQuotedSCMPGeneralID(scmpPayload)
-// 		id := uint64(1)
-// 		if id == 0 {
-// 			return nil, common.NewBasicError(ErrMalformedL4Quote, err)
-// 		}
-// 		return &SCMPAppDestination{ID: id}, nil
-// 	default:
-// 		return nil, common.NewBasicError(ErrUnsupportedQuotedL4Type, nil,
-// 			"type", cwPayload.Meta.L4Proto)
-// 	}
-// }
+func ComputeSCMPCWDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
+	cwPayload := packet.Pld.(*scmp.CWPayload)
+	//scmpPayload := packet.Pld.(*scmp.Payload)
+	switch cwPayload.Meta.L4Proto {
+	case common.L4UDP:
+		quotedUDPHeader, err := l4.UDPFromRaw(cwPayload.L4Hdr)
+		if err != nil {
+			return nil, common.NewBasicError(ErrMalformedL4Quote, nil, "err", err)
+		}
+		return &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort)}, nil
+	//Leave this for now as this would need handling of CW SCMPs for all applications
+	// case common.L4SCMP:
+	// 	//TODO: change this
+	// 	id, err := getQuotedSCMPGeneralID(scmpPayload)
+	// 	id := uint64(1)
+	// 	if id == 0 {
+	// 		return nil, common.NewBasicError(ErrMalformedL4Quote, err)
+	// 	}
+	// 	return &SCMPAppDestination{ID: id}, nil
+	default:
+		return nil, common.NewBasicError(ErrUnsupportedQuotedL4Type, nil,
+			"type", cwPayload.Meta.L4Proto)
+	}
+}
 
 func ComputeSCMPGeneralDestination(s *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
+	log.Debug("Got SCMP General packet", "pkt", s)
 	id := getSCMPGeneralID(s)
 	if id == 0 {
 		return nil, common.NewBasicError("Invalid SCMP ID", nil, "id", id)

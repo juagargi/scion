@@ -30,7 +30,16 @@ func (r *Router) bscNotify() {
 			srcHost, "DstIA", DstIA, "DstHost", DstHost)*/
 			log.Debug("New notification packet", "NPkt", np, "Pkt ID", np.Qpkt.Rp.Id, "L4hdr", fmt.Sprintf("%s", np.Qpkt.Rp.GetL4Hdr()))
 		}
-		// np.Qpkt.Rp.RefInc(-1)
+
+		//Don't answer CW SCMPs to avoid creating traffic loops
+		l4hdrType := np.Qpkt.Rp.L4Type
+		if l4hdrType == common.L4SCMP {
+			l4hdr := np.Qpkt.Rp.GetL4Hdr().(*scmp.Hdr)
+			if l4hdr.Class == scmp.C_General && l4hdr.Type == scmp.T_G_BasicCongWarn {
+				continue
+			}
+		}
+
 		bscCW := r.createBscCongWarn(np)
 		if logEnabledBsc {
 			log.Debug("Created basic congestion warning", "bscCW", bscCW, "Pkt ID", np.Qpkt.Rp.Id)
