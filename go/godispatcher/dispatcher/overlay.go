@@ -71,6 +71,7 @@ func (dp *NetToRingDataplane) Run() error {
 			continue
 		}
 		metrics.M.NetReadPkts(metrics.IncomingPacket{Result: metrics.PacketResultOk}).Inc()
+		//log.Debug("Got this paket and will send it to following dest", "pkt", pkt, "dst", dst)
 		dst.Send(dp, pkt)
 	}
 }
@@ -90,7 +91,14 @@ func ComputeUDPDestination(packet *spkt.ScnPkt, header *l4.UDP) (Destination, er
 	//log.Debug("Got UDP packet", "pkt", packet)
 	switch packet.DstHost.Type() {
 	case addr.HostTypeIPv4, addr.HostTypeIPv6:
-		return &UDPDestination{IP: packet.DstHost.IP(), Port: int(header.DstPort)}, nil
+		dest := &UDPDestination{IP: packet.DstHost.IP(), Port: int(header.DstPort)}
+		if dest.Port == 40002 || dest.Port == 40005 || dest.Port == 40008 || dest.Port == 40011 {
+			//log.Debug("got a bwtestinitilazier packet", "pkt", packet, "dst", dest)
+		}
+		if dest.Port == 1033 {
+			log.Debug("packet to first client")
+		}
+		return dest, nil
 	case addr.HostTypeSVC:
 		return SVCDestination(packet.DstHost.(addr.HostSVC)), nil
 	default:
@@ -108,14 +116,11 @@ func ComputeSCMPDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination,
 			Type:  header.Type.Name(header.Class),
 		},
 	).Inc()
-	log.Debug("Got packet with scmp hdr", "scmp type", header.Type.Name(header.Class))
-
 	if packet.DstHost.Type() != addr.HostTypeIPv4 && packet.DstHost.Type() != addr.HostTypeIPv6 {
 		return nil, common.NewBasicError(ErrUnsupportedSCMPDestination, nil,
 			"type", packet.DstHost.Type())
 	}
 	if header.Class == scmp.C_General && header.Type == scmp.T_G_BasicCongWarn {
-		log.Debug("CW packet received !!", "pkt", packet)
 		return ComputeSCMPCWDestination(packet, header)
 	} else if header.Class == scmp.C_General {
 		return ComputeSCMPGeneralDestination(packet, header)
@@ -126,14 +131,16 @@ func ComputeSCMPDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination,
 
 func ComputeSCMPCWDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
 	pld := packet.Pld.(*scmp.Payload)
-	//scmpPayload := packet.Pld.(*scmp.Payload)
 	switch pld.Meta.L4Proto {
 	case common.L4UDP:
 		quotedUDPHeader, err := l4.UDPFromRaw(pld.L4Hdr)
 		if err != nil {
 			return nil, common.NewBasicError(ErrMalformedL4Quote, nil, "err", err)
 		}
-		return &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort) + 1}, nil
+		addr := &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort) + 1}
+		log.Debug("CW packet received !!", "pkt", packet, "sentTo", addr)
+
+		return addr, nil
 	//Leave this for now as this would need handling of all kinds of SCMPs for all applications
 	// case common.L4SCMP:
 	// 	//TODO: change this
@@ -150,7 +157,7 @@ func ComputeSCMPCWDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destinatio
 }
 
 func ComputeSCMPGeneralDestination(s *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
-	log.Debug("Got SCMP General packet", "pkt", s)
+	//log.Debug("Got SCMP General packet", "pkt", s)
 	id := getSCMPGeneralID(s)
 	if id == 0 {
 		return nil, common.NewBasicError("Invalid SCMP ID", nil, "id", id)
@@ -205,6 +212,9 @@ func (d *UDPDestination) Send(dp *NetToRingDataplane, pkt *respool.Packet) {
 		log.Warn("destination address not found", "ia", pkt.Info.DstIA,
 			"udpAddr", (*net.UDPAddr)(d))
 		return
+	}
+	if d.Port == 40002 || d.Port == 40005 || d.Port == 40008 || d.Port == 40011 || d.Port == 1042 || d.Port == 1036 || d.Port == 1039 || d.Port == 1045 {
+		log.Debug("got a bwtestinitilazier packet", "routing entry", routingEntry, "pkt", pkt)
 	}
 	sendPacket(routingEntry, pkt)
 }

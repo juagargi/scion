@@ -223,8 +223,16 @@ func (sched *RateRoundRobinScheduler) dequeuePackets(queue queues.PacketQueueInt
 			sched.cirBuckets[queueNo].ForceTake(pktLen)
 
 			sched.pirBuckets[queueNo].ForceTake(pktLen)
+			if uint8(qp.Act.GetAction()) == 1 { //TODO: find smarter way
+				qp.Forward = true
+				break
+			}
 			forwarder(qp.Rp)
 			break
+		}
+		if uint8(qp.Act.GetAction()) == 1 { //TODO: find smarter way
+			qp.Forward = true
+			continue
 		}
 		forwarder(qp.Rp)
 	}

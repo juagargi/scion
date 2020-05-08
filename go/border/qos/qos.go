@@ -24,7 +24,9 @@ import (
 	"github.com/scionproto/scion/go/border/qos/queues"
 	"github.com/scionproto/scion/go/border/qos/scheduler"
 	"github.com/scionproto/scion/go/border/rpkt"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/log"
+	"github.com/scionproto/scion/go/lib/scmp"
 )
 
 const maxNotificationCount = 1024
@@ -221,16 +223,34 @@ func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) { //COMP:
 
 	rule := rc.GetRuleForPacket(config, qp.Rp)
 	np := queues.NPkt{Rule: rule, Qpkt: qp}
-	log.Debug("Send notification method in router")
 
-	queueNo := 0
-	if rule != nil {
-		queueNo = rule.QueueNumber
-	}
+	// queueNo := 0
+	// if rule != nil {
+	// 	queueNo = rule.QueueNumber
+	// }
 
-	restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
+	// restriction := qosConfig.config.Queues[queueNo].GetCongestionWarning().InformationContent
 	//log.Debug("restrictions on information content", "restriction", restriction)
 	// // np.Qpkt.Rp.RefInc(1) //should avoid the packet being dropped before we can create the scmp notification
+
+	//Don't answer CW SCMPs to avoid creating traffic loops
+	l4hdrType := np.Qpkt.Rp.L4Type
+
+	if l4hdrType == common.L4SCMP {
+		l4hdr, _ := np.Qpkt.Rp.L4Hdr(false)
+		// scmphdr, ok := l4hdr.(*scmp.Hdr)
+
+		_, ok := l4hdr.(*scmp.Hdr)
+		// if scmphdr.Class == scmp.C_General && scmphdr.Type == scmp.T_G_BasicCongWarn && ok == true {
+		// 	np.Qpkt.Rp.RefInc(-1)
+		// 	return
+		// }
+		if ok {
+			np.Qpkt.Rp.RefInc(-1)
+			return
+		}
+	}
+	log.Debug("Send notification method in router", "packet id", np.Qpkt.Rp.Id)
 
 	qosConfig.notifications <- &np
 }

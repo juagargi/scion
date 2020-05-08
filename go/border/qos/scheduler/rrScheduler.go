@@ -58,6 +58,10 @@ func (sched *RoundRobinScheduler) Dequeue(queue queues.PacketQueueInterface,
 	for !(sched.tb.Take(qp.Rp.Bytes().Len())) {
 		time.Sleep(1 * time.Millisecond)
 	}
+	if uint8(qp.Act.GetAction()) == 1 { //TODO: find smarter way
+		qp.Forward = true
+		return
+	}
 
 	forwarder(qp.Rp)
 }

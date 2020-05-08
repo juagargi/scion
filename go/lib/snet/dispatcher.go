@@ -99,6 +99,7 @@ type scmpHandler struct {
 
 func (h *scmpHandler) Handle(pkt *Packet) error {
 	hdr, ok := pkt.L4Header.(*scmp.Hdr)
+	//log.Debug("Got a SCMP packet in the dispatcher!!!!!!!!!!!!!!!!!!!!!!!!!!", "pkt", pkt.PacketInfo)
 	if !ok {
 		return common.NewBasicError("scmp handler invoked with non-scmp packet", nil, "pkt", pkt)
 	}

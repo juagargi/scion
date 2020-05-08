@@ -23,6 +23,12 @@ findAS() {
     return $AS
 }
 
+findISDAS() {
+    address=`grep $1 gen/sciond_addresses.json`
+    clientISDAS=${address:5:12}
+    #return $AS
+}
+
 scmpEcho() {
     findAS $2
     sourceAS=$?
@@ -41,41 +47,44 @@ bwTestServer() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/demoappserver -p 4000$2 >> $SC/logs/Demo/bwTestServerAt4000$2.txt &
+    ./bin/demoappserver -p 400$2 &
     cd $SC
-    echo "Set up bwtest server at port 4000$2"
+    echo "Set up bwtest server at port 400$2"
     echo ""
 }
 
 bwTestClient() {
+    clientISDAS=""
+    findISDAS $1
+    echo $clientISDAS
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:4000$3 -cs 10,1000,?,8Mbps -sc 10,1000,?,6Mbps >> $SC/logs/Demo/bwTestClientTo4000$3.txt &
+    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,10Mbps -sc 10,4,?,1kbps -iter 15 -client $clientISDAS -stopVal 1 -smart 1 &
     local pid=$!
-    echo "Set up bwtest client to port 4000$3"
+    echo "Set up bwtest client to port 400$3"
     echo ""
     wait $pid
     cd $SC
-    firstLine=$(<logs/Demo/bwTestClientTo4000$3.txt)
+    firstLine=$(<logs/Demo/bwTestClientTo400$3.txt)
     #echo $firstLine
-    if [[ "$firstLine" == *"Fatal error"* ]]; then #TODO: Seems to be working
+    if [[ "$firstLine" == *"Fatal error"* ]]; then 
         echo "================================================"
-        echo "ERROR: BW Test with server 4000$3 not successful"
+        echo "ERROR: BW Test with server 400$3 not successful"
         echo "================================================"
     fi
     
 }
 
 initConfigs() {
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-1/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-2/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-1/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-2/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-1/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-2/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-1/qosConfig.yaml
-cp go/border/qos/testdata/DemoConfig.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
 }
 
 ./scion.sh stop 
@@ -96,9 +105,9 @@ killall demoappclient
 echo "Scion started"
 echo ""
 
-sleep 5
+sleep 3
 ./supervisor/supervisor.sh status
-./bin/showpaths -dstIA 1-ff00:0:112 -sciond 127.0.0.44:30255
+./bin/showpaths -dstIA 1-ff00:0:110 -sciond 127.0.0.44:30255
 
 #Put last byte of each scionds IP address into IPs array
 for i in 0 1 2 3; do
@@ -126,15 +135,17 @@ echo ""
 echo "Scmp echo done"
 echo ""
 
-for i in 2 4 6 8; do
-    bwTestServer 20 $i & #$1:last byte of IP of sciond, $2: port 
+for i in 02 05 08 11; do #2 4 6 8
+    bwTestServer 20 $i >> $SC/logs/Demo/bwTestServerAt400$i.txt & #$1:last byte of IP of sciond, $2: port 
 done
 sleep 2
 
-for i in 2 4 6 8; do
-    bwTestClient  44 0 $i & #$1: last byte of IP of sciond, $2: AS of server, $3: Port of server
-    pids[${i}]=$!
-    sleep 0.4 #May be necessary
+count=0
+for i in 02 05 08 11; do
+    bwTestClient  44 0 $i >> $SC/logs/Demo/bwTestClientTo400$i.txt & #$1: last byte of IP of sciond, $2: AS of server, $3: Port of server
+    pids[${count}]=$!
+    count=$((count+1))
+    sleep 0.3 
 done 
 
 for pid in ${pids[*]}; do
@@ -147,7 +158,7 @@ killall demoappserver
 killall demoappclient
 
 ./bin/scmp "echo" -remote 1-ff00:0:113,[127.0.0.228] -sciond 127.0.0.20:30255 -c 5  #-local 1-ff00:0:110,[127.0.0.228] 
-
+./bin/showpaths -dstIA 1-ff00:0:110 -sciond 127.0.0.44:30255
 
 ./scion.sh stop 
 play -q -n synth 0.1 tri  1000.0 

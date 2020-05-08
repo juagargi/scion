@@ -92,6 +92,10 @@ func (sched *WeightedRoundRobinScheduler) Dequeue(
 
 		sched.logger.lastRound[queueNo]++
 		sched.logger.total[queueNo]++
+		if uint8(qp.Act.GetAction()) == 1 { //TODO: find smarter way
+			qp.Forward = true
+			return
+		}
 		forwarder(qp.Rp)
 	}
 }

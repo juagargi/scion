@@ -7,4 +7,4 @@ for i in {1..10};do
     echo "$i"
     echo ""
 done
-play -q -n synth 0.1 tri  1000.0 
+#play -q -n synth 0.1 tri  1000.0 

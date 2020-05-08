@@ -197,7 +197,7 @@ func (c *SCIONPacketConn) ReadFrom(pkt *Packet, ov *net.UDPAddr) error {
 				return common.NewBasicError("scmp packet received, but no handler found", nil,
 					"scmp.Hdr", scmpHdr, "src", pkt.Source)
 			}
-			if err := c.scmpHandler.Handle(pkt); err != nil {
+			if err := c.scmpHandler.Handle(pkt); err != nil { //IMP:
 				// Return error intact s.t. applications can handle custom
 				// error types returned by SCMP handlers.
 				return err

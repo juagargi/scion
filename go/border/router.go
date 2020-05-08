@@ -172,6 +172,23 @@ func (r *Router) processPacket(rp *rpkt.RtrPkt) {
 		metrics.Process.Pkts(l).Inc()
 		return
 	}
+	if r.Id == "br1-ff00_0_110-1" || r.Id == "br1-ff00_0_0_110-2" || r.Id == "br1-ff00_0_113-1" || r.Id == "br1-ff00_0_0_113-2" {
+		dst, _ := rp.DstHost()
+		// if dst == 40002 || dst == 40005 || dst == 40008 || dst == 400011 || dst == 40004 || dst == 40007 || dst == 40010 || dst == 1036 || dst == 1039 || dst == 1042 || dst == 1045 {
+		// 	log.Debug("packet that goes to not remoted connection from demoapp", "pkt", rp.String())
+		// }
+		localHost := [4]byte{127, 0, 0, 1}
+		dstIP := dst.IP()
+		for i, _ := range dstIP {
+			if dstIP[i] == localHost[i] && i == 3 {
+				// log.Debug("packet that goes to not remoted connection from demoapp", "pkt", rp.String())
+			} else if dstIP[i] == localHost[i] {
+				continue
+			} else {
+				break
+			}
+		}
+	}
 	// Process the packet, if a previous step has registered a relevant hook for doing so.
 	if err := rp.Process(); err != nil {
 		r.handlePktError(rp, err, "Error processing packet")
@@ -180,10 +197,10 @@ func (r *Router) processPacket(rp *rpkt.RtrPkt) {
 		return
 	}
 
-	if r.Id == "br1-ff00_0_111-1" || r.Id == "br1-ff00_0_0_111-2" || r.Id == "br1-ff00_0_112-1" || r.Id == "br1-ff00_0_0_112-2" {
-		r.qosConfig.QueuePacket(rp)
-	} else {
+	if r.Id == "br1-ff00_0_113-1" || r.Id == "br1-ff00_0_0_113-2" { //|| r.Id == "br1-ff00_0_112-1" || r.Id == "br1-ff00_0_0_112-2" {
 		r.forwardPacket(rp)
+	} else {
+		r.qosConfig.QueuePacket(rp)
 	}
 }
 

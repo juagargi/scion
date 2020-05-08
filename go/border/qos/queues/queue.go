@@ -27,6 +27,7 @@ type QPkt struct {
 	QueueNo int
 	Act     Action
 	Rp      *rpkt.RtrPkt
+	Forward bool
 }
 
 // NPkt is the representation of a router packet used when sending notifications
