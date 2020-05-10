@@ -21,44 +21,29 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDelegationListDefaults(t *testing.T) {
 	var cfg DelegationList
 	cfg.InitDefaults()
-	if cfg == nil {
-		t.Errorf("InitDefaults should have initialized the map, but did not")
-	}
-	if len(cfg) != 0 {
-		t.Errorf("InitDefaults should leave the map empty but is not: %+v", cfg)
-	}
+	require.NotNil(t, cfg)
+	require.Empty(t, cfg)
 }
 
 func TestDelegationListSyntax(t *testing.T) {
 	var cfg DelegationList
 	sample1 := `piskes = ["1.1.1.1"]`
 	meta, err := toml.Decode(sample1, &cfg)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if len(meta.Undecoded()) != 0 {
-		t.Fatalf("Should be empty but it's not: %+v", meta.Undecoded())
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("Unexpected validation error: %v", err)
-	}
+	require.NoError(t, err)
+	require.Empty(t, meta.Undecoded())
+	require.NoError(t, cfg.Validate())
 
 	sample2 := `piskes = ["not an address"]`
 	meta, err = toml.Decode(sample2, &cfg)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if len(meta.Undecoded()) != 0 {
-		t.Fatalf("Should be empty but it's not: %+v", meta.Undecoded())
-	}
-	if err := cfg.Validate(); err == nil {
-		t.Fatalf("Expected validation error but got none")
-	}
+	require.NoError(t, err)
+	require.Empty(t, meta.Undecoded())
+	require.Error(t, cfg.Validate())
 }
 
 func TestToMapPerHost(t *testing.T) {
@@ -66,47 +51,27 @@ func TestToMapPerHost(t *testing.T) {
 	sample := `piskes = ["1.1.1.1", "2.2.2.2"]
 	scmp = ["1.1.1.1"]`
 	toml.Decode(sample, &cfg)
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("Unexpected validation error: %v", err)
-	}
+	require.NoError(t, cfg.Validate())
 	m := cfg.ToMapPerHost()
-	if len(m) != 2 {
-		t.Fatalf("The map should contain the two hosts. Map: %v", m)
-	}
+	require.Len(t, m, 2)
 
 	var rawIP [16]byte
 	copy(rawIP[:], net.ParseIP("1.1.1.1").To16())
-	if len(m[rawIP]) != 2 {
-		t.Fatalf("Expecting 2 protocols for 1.1.1.1. Content: %+v", m[rawIP])
-	}
-	if _, found := m[rawIP]["piskes"]; !found {
-		t.Fatalf("Expected to find piskes for 1.1.1.1 but not. Content: %+v", m[rawIP])
-	}
-	if _, found := m[rawIP]["scmp"]; !found {
-		t.Fatalf("Expected to find scmp for 1.1.1.1 but not. Content: %+v", m[rawIP])
-	}
+	require.Len(t, m[rawIP], 2)
+	require.Contains(t, m[rawIP], "piskes")
+	require.Contains(t, m[rawIP], "scmp")
 
 	copy(rawIP[:], net.ParseIP("2.2.2.2").To16())
-	if len(m[rawIP]) != 1 {
-		t.Fatalf("Expecting 1 protocol for 2.2.2.2 ; Content: %+v", m[rawIP])
-	}
-	if _, found := m[rawIP]["piskes"]; !found {
-		t.Fatalf("Expected to find piskes for 2.2.2.2 but not. Content: %+v", m[rawIP])
-	}
+	require.Len(t, m[rawIP], 1)
+	require.Contains(t, m[rawIP], "piskes")
 }
 
 func TestInitDRKeyDBDefaults(t *testing.T) {
 	var cfg DRKeyDBConf
 	cfg.InitDefaults()
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-	if string(cfg.Backend()) != "sqlite" {
-		t.Errorf("Unexpected configuration value: %v", cfg.Backend())
-	}
-	if cfg.Connection() != "" {
-		t.Errorf("Unexpected configuration value: %v", cfg.Connection())
-	}
+	require.NoError(t, cfg.Validate())
+	require.EqualValues(t, "sqlite", cfg.Backend())
+	require.Empty(t, cfg.Connection())
 }
 
 func TestNewLvl1DB(t *testing.T) {
@@ -119,12 +84,8 @@ func TestNewLvl1DB(t *testing.T) {
 		db.Close()
 		os.Remove(cfg.Connection())
 	}()
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if db == nil {
-		t.Fatal("Returned DB is nil")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, db)
 }
 
 func TestNewLvl2DB(t *testing.T) {
@@ -137,22 +98,15 @@ func TestNewLvl2DB(t *testing.T) {
 		db.Close()
 		os.Remove(cfg.Connection())
 	}()
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if db == nil {
-		t.Fatal("Returned DB is nil")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, db)
 }
 
 func tempFile(t *testing.T) string {
 	file, err := ioutil.TempFile("", "db-test-")
-	if err != nil {
-		t.Fatalf("unable to create temp file")
-	}
+	require.NoError(t, err)
 	name := file.Name()
-	if err := file.Close(); err != nil {
-		t.Fatalf("unable to close temp file")
-	}
+	err = file.Close()
+	require.NoError(t, err)
 	return name
 }
