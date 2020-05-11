@@ -52,7 +52,7 @@ func (pq *PacketBufQueue) canDequeue() bool {
 }
 
 func (pq *PacketBufQueue) GetFillLevel() int {
-	return pq.GetLength() / pq.pktQue.MaxLength
+	return int(float64(pq.GetLength()) / float64(pq.pktQue.MaxLength) * 100)
 }
 
 func (pq *PacketBufQueue) GetLength() int {

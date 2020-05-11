@@ -15,7 +15,6 @@
 package queues
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -379,8 +378,6 @@ func (*RegularClassRule) GetRuleForPacket(
 	sources[0] = exactAndRangeSourceMatches
 	sources[1] = asOnlySourceRules
 	sources[2] = isdOnlySourceRules
-	// sources[3] = interfaceIncomingRules
-	fmt.Println("Interface Rules", interfaceIncomingRules)
 
 	destinations[0] = exactAndRangeDestinationMatches
 	destinations[1] = asOnlyDestinationRules
@@ -393,8 +390,6 @@ func (*RegularClassRule) GetRuleForPacket(
 	maskDas = make([]bool, len(destinationAnySourceRules))
 	maskLf = make([]bool, len(l4OnlyRules))
 	maskIntf = make([]bool, len(l4OnlyRules))
-
-	fmt.Println("We have matched", matched)
 
 	matchL4Type(maskMatched, &matched, l4t, extensions)
 	matchL4Type(maskSad, &sourceAnyDestinationMatches, l4t, extensions)

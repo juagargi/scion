@@ -39,7 +39,7 @@ func (pq *ChannelPacketQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mut
 	// pq.length = 0
 	pq.tb = TokenBucket{}
 	pq.tb.Init(pq.pktQue.PoliceRate)
-	pq.queue = make(chan *QPkt, pq.pktQue.MaxLength+100)
+	pq.queue = make(chan *QPkt, pq.pktQue.MaxLength+1)
 }
 
 func (pq *ChannelPacketQueue) Enqueue(rp *QPkt) {
@@ -61,7 +61,7 @@ func (pq *ChannelPacketQueue) canDequeue() bool {
 
 func (pq *ChannelPacketQueue) GetFillLevel() int {
 
-	return int(len(pq.queue)) / int(pq.pktQue.MaxLength)
+	return int(float64(len(pq.queue)) / float64(pq.pktQue.MaxLength) * 100)
 }
 
 func (pq *ChannelPacketQueue) GetLength() int {
@@ -102,7 +102,7 @@ func (pq *ChannelPacketQueue) PopMultiple(number int) []*QPkt {
 
 func (pq *ChannelPacketQueue) CheckAction() conf.PoliceAction {
 
-	if pq.pktQue.MaxLength-100 <= pq.GetLength() {
+	if pq.pktQue.MaxLength <= pq.GetLength() {
 		log.Debug("Queue is at max capacity", "queueNo", pq.pktQue.ID)
 		return conf.DROPNOTIFY
 	}

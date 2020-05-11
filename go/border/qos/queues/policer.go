@@ -61,8 +61,11 @@ func (tb *TokenBucket) Available(amount int) bool {
 	return false
 }
 
+func (tb *TokenBucket) GetMaxBandwidth() int {
+	return tb.maxBandWidth
+}
+
 func (tb *TokenBucket) GetAvailable() int {
-	tb.refill()
 	return tb.tokens
 }
 
@@ -101,5 +104,4 @@ func (tb *TokenBucket) PoliceBucket(qp *QPkt) conf.PoliceAction {
 	}
 
 	return qp.Act.action
-
 }
