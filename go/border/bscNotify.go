@@ -18,49 +18,51 @@ const logEnabledBsc = true
 
 func (r *Router) bscNotify() {
 	for np := range r.qosConfig.GetNotification() {
-		//if r.config.Queues[np.Qpkt.QueueNo].GetCongestionWarning().Approach == 0 {
-		// if logEnabledBsc {
-		// 	/*srcIA, _ := np.Qpkt.Rp.SrcIA()
-		// 	srcHost, _ := np.Qpkt.Rp.SrcHost()
-		// 	DstIA, _ := np.Qpkt.Rp.DstIA()
-		// 	DstHost, _ := np.Qpkt.Rp.DstHost()
-		// 	log.Debug("New notification packet", "SrcIA", srcIA, "SrcHost",
-		// 	srcHost, "DstIA", DstIA, "DstHost", DstHost)*/
-		// 	log.Debug("New notification packet", "NPkt", np, "Pkt ID", np.Qpkt.Rp.Id, "L4hdr", fmt.Sprintf("%s", np.Qpkt.Rp.GetL4Hdr()))
-		// }
-		// go func(np *queues.NPkt) {
-		bscCW := r.createBscCongWarn(np)
-		// if logEnabledBsc {
-		// 	log.Debug("Created basic congestion warning", "bscCW", bscCW, "Pkt ID", np.Qpkt.Rp.Id)
-		// }
-		r.sendBscNotificationSCMP(np.Qpkt, bscCW)
-		np.Qpkt.Rp.RefInc(-1)
-		// //}
+		if r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().Approach == 0 {
+			// if logEnabledBsc {
+			// 	/*srcIA, _ := np.Qpkt.Rp.SrcIA()
+			// 	srcHost, _ := np.Qpkt.Rp.SrcHost()
+			// 	DstIA, _ := np.Qpkt.Rp.DstIA()
+			// 	DstHost, _ := np.Qpkt.Rp.DstHost()
+			// 	log.Debug("New notification packet", "SrcIA", srcIA, "SrcHost",
+			// 	srcHost, "DstIA", DstIA, "DstHost", DstHost)*/
+			// 	log.Debug("New notification packet", "NPkt", np, "Pkt ID", np.Qpkt.Rp.Id, "L4hdr", fmt.Sprintf("%s", np.Qpkt.Rp.GetL4Hdr()))
+			// }
+			// go func(np *queues.NPkt) {
+			bscCW := r.createBscCongWarn(np)
+			// if logEnabledBsc {
+			// 	log.Debug("Created basic congestion warning", "bscCW", bscCW, "Pkt ID", np.Qpkt.Rp.Id)
+			// }
+			r.sendBscNotificationSCMP(np.Qpkt, bscCW)
+			np.Qpkt.Rp.RefInc(-1)
 
-		if uint8(np.Qpkt.Act.GetAction()) == 1 && np.Qpkt.Forward == true {
-			r.forwardPacket(np.Qpkt.Rp)
+			if uint8(np.Qpkt.Act.GetAction()) == 1 && np.Qpkt.Forward == true {
+				r.forwardPacket(np.Qpkt.Rp)
+			}
+
+			//Release packet if it's action is DROPNOTIFY
+			if uint8(np.Qpkt.Act.GetAction()) == 3 {
+				np.Qpkt.Rp.Release()
+			}
+			// }(np)
 		}
-
-		//Release packet if it's action is DROPNOTIFY
-		if uint8(np.Qpkt.Act.GetAction()) == 3 {
-			np.Qpkt.Rp.Release()
-		}
-		// }(np)
-
 	}
 
 }
 
 func (r *Router) sendBscNotificationSCMP(qp *queues.QPkt, info *scmp.InfoBscCW) {
-	// if logEnabledBsc {
-	// 	srcIA, _ := qp.Rp.SrcIA()
-	// 	srcHost, _ := qp.Rp.SrcHost()
-	// 	DstIA, _ := qp.Rp.DstIA()
-	// 	DstHost, _ := qp.Rp.DstHost()
-	// 	log.Debug("New queueing packet", "SrcIA", srcIA, "SrcHost",
-	// 		srcHost, "DstIA", DstIA, "DstHost", DstHost, "QNo", qp.QueueNo, "Pkt ID",
-	// 		qp.Rp.Id)
-	// }
+	if logEnabledBsc {
+		srcIA, _ := qp.Rp.SrcIA()
+		srcHost, _ := qp.Rp.SrcHost()
+		DstIA, _ := qp.Rp.DstIA()
+		DstHost, _ := qp.Rp.DstHost()
+		CurrIF, _ := qp.Rp.IFCurr()
+		NextIF, _ := qp.Rp.IFNext()
+		Consdir, _ := qp.Rp.ConsDirFlag()
+		log.Debug("New queueing packet\n", "SrcIA", srcIA, "SrcHost",
+			srcHost, "DstIA", DstIA, "DstHost", DstHost, "\nQNo", qp.QueueNo, "Pkt ID",
+			qp.Rp.Id, "Current IF", *CurrIF, "NextIF", *NextIF, "cons dir ", *Consdir)
+	}
 	notification, err, id := r.createBscSCMPNotification(qp, scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}, info)
 	if err != nil {
 		log.Error("unable to create notification SCMP", "err", err, "id", id)
@@ -117,10 +119,10 @@ func (r *Router) createBscSCMPNotification(qp *queues.QPkt,
 	//TODO (stygerma): Add SPSE with DRKey
 
 	//TODO: receive the classtype as a parameter for this function according to the approach of the considered queue
-	ct = scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}
+	// ct = scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}
 	sp.Pld = scmp.PldFromQuotes(ct, info, qp.Rp.L4Type, qp.Rp.GetRaw)
 
-	sp.L4 = scmp.NewHdr(scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}, sp.Pld.Len())
+	sp.L4 = scmp.NewHdr(ct, sp.Pld.Len())
 	// log.Debug("Created SPkt reply", "sp", sp, "Pkt ID", id)
 	reply, err := qp.Rp.CreateReply(sp) //HERE
 	// if logEnabledBsc {
@@ -165,7 +167,6 @@ func (r *Router) createBscCongWarn(np *queues.NPkt) *scmp.InfoBscCW {
 	}
 	if restriction > 2 {
 		bscCW.Violation = uint64(np.Qpkt.Act.GetReason())
-		//bscCW.ClassRule = np.Qpkt.Act.Rule
 	}
 	//bscCW := &scmp.InfoBscCW{}
 	return bscCW

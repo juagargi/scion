@@ -76,7 +76,11 @@ bwTestClient() {
     
 }
 
-initConfigs() {
+
+./scion.sh stop 
+
+find gen/ISD1 -name qosConfig.yaml -delete
+
 cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-1/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-2/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-1/qosConfig.yaml
@@ -85,15 +89,14 @@ cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_
 cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-2/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-1/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
-}
 
-./scion.sh stop 
-
-#initConfigs
 deleteLogs
 killall demoappserver
 killall demoappclient
 
+#sed -i '{N; s+defer log\.HandlePanic()\n.*r\.stochNotify()+\/\/defer log\.HandlePanic()\n\t\t\/\/r\.stochNotify()+g'} go/border/router.go
+
+./scion.sh build 
 
 
 
@@ -156,6 +159,13 @@ jobs
 
 killall demoappserver
 killall demoappclient
+
+echo "Amount of packets dropped:" >> logs/Demo/result.txt
+grep -ow 'Dropping' logs/br*.log | wc -l >> logs/Demo/result.txt
+echo "" >> logs/Demo/result.txt
+echo "Amount of SCMP congestion warning messages:" >> logs/Demo/result.txt
+grep -ow 'Notification' logs/br*.log | wc -l >> logs/Demo/result.txt
+echo "" >> logs/Demo/result.txt
 
 ./bin/scmp "echo" -remote 1-ff00:0:113,[127.0.0.228] -sciond 127.0.0.20:30255 -c 5  #-local 1-ff00:0:110,[127.0.0.228] 
 ./bin/showpaths -dstIA 1-ff00:0:110 -sciond 127.0.0.44:30255

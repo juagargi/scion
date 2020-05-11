@@ -10,8 +10,10 @@ go_library(
         "info.go",
         "info_bscCongWarn.go",
         "info_recordpath.go",
+        "info_stochCongWarn.go",
         "info_traceroute.go",
         "meta.go",
+        "pid.go",
         "pld.go",
         "scmp.go",
         "util.go",
@@ -27,5 +29,6 @@ go_library(
         "//go/lib/spath:go_default_library",
         "//go/lib/util:go_default_library",
         "@in_gopkg_restruct_v1//:go_default_library",
+        "//go/lib/log:go_default_library",
     ],
 )

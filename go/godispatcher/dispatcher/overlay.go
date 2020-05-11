@@ -120,7 +120,7 @@ func ComputeSCMPDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination,
 		return nil, common.NewBasicError(ErrUnsupportedSCMPDestination, nil,
 			"type", packet.DstHost.Type())
 	}
-	if header.Class == scmp.C_General && header.Type == scmp.T_G_BasicCongWarn {
+	if header.Class == scmp.C_General && (header.Type == scmp.T_G_BasicCongWarn || header.Type == scmp.T_G_StochasticCongWarn) {
 		return ComputeSCMPCWDestination(packet, header)
 	} else if header.Class == scmp.C_General {
 		return ComputeSCMPGeneralDestination(packet, header)

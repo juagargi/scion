@@ -52,6 +52,7 @@ const (
 	T_G_RecordPathRequest
 	T_G_RecordPathReply
 	T_G_BasicCongWarn
+	T_G_StochasticCongWarn
 )
 
 // C_Routing types
@@ -107,7 +108,8 @@ const (
 
 var typeNameMap = map[Class][]string{
 	C_General: {"UNSPECIFIED", "ECHO_REQUEST", "ECHO_REPLY", "TRACE_ROUTE_REQUEST",
-		"TRACE_ROUTE_REPLY", "RECORD_PATH_REQUEST", "RECORD_PATH_REPLY", "BASIC_CONG_WARN"},
+		"TRACE_ROUTE_REPLY", "RECORD_PATH_REQUEST", "RECORD_PATH_REPLY",
+		"BASIC_CONG_WARN", "STOCHASTIC_CONG_WARN"},
 	C_Routing: {"UNREACH_NET", "UNREACH_HOST", "L2_ERROR", "UNREACH_PROTO",
 		"UNREACH_PORT", "UNKNOWN_HOST", "BAD_HOST", "OVERSIZE_PKT", "ADMIN_DENIED"},
 	C_CmnHdr: {"BAD_VERSION", "BAD_DST_TYPE", "BAD_SRC_TYPE",

@@ -60,7 +60,7 @@ bwTestClient() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,10Mbps -sc 10,4,?,1kbps -iter 15 -client $clientISDAS -stopVal 1 -smart 1 &
+    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,10Mbps -sc 10,4,?,1kbps -iter 10 -client $clientISDAS -stopVal 1 -smart 1 &
     local pid=$!
     echo "Set up bwtest client to port 400$3"
     echo ""
@@ -76,7 +76,7 @@ bwTestClient() {
     
 }
 
-initConfigs() {
+initConfigBasic() {
 cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-1/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-2/qosConfig.yaml
 cp go/border/qos/testdata/DemoConfigBasic.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-1/qosConfig.yaml
@@ -87,9 +87,21 @@ cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_
 cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
 }
 
+initConfigStoch() {
+cp go/border/qos/testdata/DemoConfigStoch.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigStoch.yaml gen/ISD1/ASff00_0_110/br1-ff00_0_110-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigStoch.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigStoch.yaml gen/ISD1/ASff00_0_111/br1-ff00_0_111-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigStoch.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigStoch.yaml gen/ISD1/ASff00_0_112/br1-ff00_0_112-2/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-1/qosConfig.yaml
+cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
+}
+
 ./scion.sh stop 
 
-#initConfigs
+initConfigBasic
+#initConfigStoch
 deleteLogs
 killall demoappserver
 killall demoappclient
@@ -105,7 +117,7 @@ killall demoappclient
 echo "Scion started"
 echo ""
 
-sleep 3
+sleep 5
 ./supervisor/supervisor.sh status
 ./bin/showpaths -dstIA 1-ff00:0:110 -sciond 127.0.0.44:30255
 
@@ -156,6 +168,13 @@ jobs
 
 killall demoappserver
 killall demoappclient
+
+echo "Amount of packets dropped:" >> logs/Demo/result.txt
+grep -ow 'Dropping' logs/br*.log | wc -l >> logs/Demo/result.txt
+echo "" >> logs/Demo/result.txt
+echo "Amount of SCMP congestion warning messages:" >> logs/Demo/result.txt
+grep -ow 'Notification' logs/br*.log | wc -l >> logs/Demo/result.txt
+echo "" >> logs/Demo/result.txt
 
 ./bin/scmp "echo" -remote 1-ff00:0:113,[127.0.0.228] -sciond 127.0.0.20:30255 -c 5  #-local 1-ff00:0:110,[127.0.0.228] 
 ./bin/showpaths -dstIA 1-ff00:0:110 -sciond 127.0.0.44:30255

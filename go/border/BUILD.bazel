@@ -13,6 +13,7 @@ go_library(
         "router.go",
         "setup.go",
         "setup-posix.go",
+        "stochasticNotify.go",
     ],
     importpath = "github.com/scionproto/scion/go/border",
     visibility = ["//visibility:private"],

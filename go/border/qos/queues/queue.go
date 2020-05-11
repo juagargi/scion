@@ -20,6 +20,7 @@ import (
 
 	"github.com/scionproto/scion/go/border/qos/conf"
 	"github.com/scionproto/scion/go/border/rpkt"
+	"github.com/scionproto/scion/go/lib/scmp"
 )
 
 // QPkt is the representation of a router packet in the qos subsystem
@@ -103,6 +104,7 @@ type PacketQueueInterface interface {
 	GetPacketQueue() PacketQueue
 	GetCongestionWarning() *CongestionWarning
 	GetTokenBucket() *TokenBucket
+	GetPID() *scmp.PID
 }
 
 // MergeAction merges both PoliceAction together and returns the merged result.
