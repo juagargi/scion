@@ -49,7 +49,7 @@ func (pq *PacketBufQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mutTb *
 		return &QPkt{}
 	}, pq.pktQue.Name)
 	if pq.pktQue.CongestionWarning.Approach == 2 {
-		pq.pid = scmp.PID{FactorProportional: .1, FactorIntegral: .5,
+		pq.pid = scmp.PID{FactorProportional: .5, FactorIntegral: 0.6,
 			FactorDerivative: .1, LastUpdate: time.Now(), SetPoint: 70,
 			Min: 60, Max: 90}
 	}

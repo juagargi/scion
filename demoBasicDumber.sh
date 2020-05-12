@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#source demoNoAction.sh
+
 deleteLogs() {
     echo "Delete old logs"
     echo ""
@@ -53,7 +55,7 @@ bwTestServer() {
     echo ""
 }
 
-bwTestClient() {
+bwTestClientDumb() {
     clientISDAS=""
     findISDAS $1
     echo $clientISDAS
@@ -61,6 +63,29 @@ bwTestClient() {
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
     ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,9Mbps -sc 10,4,?,1kbps -iter 10 -client $clientISDAS -stopVal 1 -smart 0 &
+    local pid=$!
+    echo "Set up bwtest client to port 400$3"
+    echo ""
+    wait $pid
+    cd $SC
+    firstLine=$(<logs/Demo/bwTestClientTo400$3.txt)
+    #echo $firstLine
+    if [[ "$firstLine" == *"Fatal error"* ]]; then 
+        echo "================================================"
+        echo "ERROR: BW Test with server 400$3 not successful"
+        echo "================================================"
+    fi
+    
+}
+
+bwTestClientSmart() {
+    clientISDAS=""
+    findISDAS $1
+    echo $clientISDAS
+    SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
+    export SCION_DAEMON_ADDRESS 
+    cd $GOPATH
+    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,9Mbps -sc 10,4,?,1kbps -iter 10 -client $clientISDAS -stopVal 1 -smart 1 &
     local pid=$!
     echo "Set up bwtest client to port 400$3"
     echo ""
@@ -97,11 +122,13 @@ killall demoappclient
 
 #sed -i '{N; s+defer log\.HandlePanic()\n.*r\.stochNotify()+\/\/defer log\.HandlePanic()\n\t\t\/\/r\.stochNotify()+g'} go/border/router.go
 
+for i in $(find gen/ISD1 -name qosConfig.yaml); do
+    sed -i -e 's/approach: [0-9]/approach: 0/g' $i
+done
+
 #./scion.sh build 
 
-for i in $(find gen/ISD1 -name qosConfig.yaml); do
-    sed -i -e 's/approach: [0-9]/approach: 5/g' $i
-done
+
 
 
 #./build_demo.sh
@@ -147,12 +174,14 @@ done
 sleep 2
 
 count=0
-for i in 02 05 08 11; do
-    bwTestClient  44 0 $i >> $SC/logs/Demo/bwTestClientTo400$i.txt & #$1: last byte of IP of sciond, $2: AS of server, $3: Port of server
+for i in 02 05 08; do
+    bwTestClientDumb  44 0 $i >> $SC/logs/Demo/bwTestClientTo400$i.txt & #$1: last byte of IP of sciond, $2: AS of server, $3: Port of server
     pids[${count}]=$!
     count=$((count+1))
     sleep 0.3 
 done 
+bwTestClientSmart  44 0 11 >> $SC/logs/Demo/bwTestClientTo40011.txt &
+pids[${count}]=$!
 
 for pid in ${pids[*]}; do
     wait $pid

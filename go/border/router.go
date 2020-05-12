@@ -79,8 +79,8 @@ func (r *Router) Start() {
 		rctrl.Control(r.sRevInfoQ, cfg.General.ReconnectToDispatcher)
 	}()
 	go func() {
-		// defer log.HandlePanic()
-		// r.bscNotify()
+		defer log.HandlePanic()
+		r.bscNotify()
 
 	}()
 	go func() {

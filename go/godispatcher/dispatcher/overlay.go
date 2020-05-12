@@ -110,6 +110,8 @@ func ComputeUDPDestination(packet *spkt.ScnPkt, header *l4.UDP) (Destination, er
 // ComputeSCMPDestination decides which application to send the SCMP packet to. It also increments
 // SCMP-related metrics.
 func ComputeSCMPDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destination, error) {
+	log.Debug("SCMP packet received", "packet", packet)
+
 	metrics.M.SCMPReadPkts(
 		metrics.SCMP{
 			Class: header.Class.String(),

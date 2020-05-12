@@ -49,8 +49,8 @@ func (pq *CustomPacketQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mutT
 	pq.head = 0
 	pq.tail = 0
 	pq.mask = pq.pktQue.MaxLength - 1
-	if pq.pktQue.CongestionWarning.Approach == 2 { //TODO: uncomment when congestionWarning is correctly assigned in pktQue
-		pq.pid = scmp.PID{FactorProportional: .1, FactorIntegral: .3,
+	if pq.pktQue.CongestionWarning.Approach == 2 {
+		pq.pid = scmp.PID{FactorProportional: .5, FactorIntegral: 0.6,
 			FactorDerivative: .3, LastUpdate: time.Now(), SetPoint: 70,
 			Min: 60, Max: 90}
 	}

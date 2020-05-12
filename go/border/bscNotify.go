@@ -51,18 +51,18 @@ func (r *Router) bscNotify() {
 }
 
 func (r *Router) sendBscNotificationSCMP(qp *queues.QPkt, info *scmp.InfoBscCW) {
-	if logEnabledBsc {
-		srcIA, _ := qp.Rp.SrcIA()
-		srcHost, _ := qp.Rp.SrcHost()
-		DstIA, _ := qp.Rp.DstIA()
-		DstHost, _ := qp.Rp.DstHost()
-		CurrIF, _ := qp.Rp.IFCurr()
-		NextIF, _ := qp.Rp.IFNext()
-		Consdir, _ := qp.Rp.ConsDirFlag()
-		log.Debug("New queueing packet\n", "SrcIA", srcIA, "SrcHost",
-			srcHost, "DstIA", DstIA, "DstHost", DstHost, "\nQNo", qp.QueueNo, "Pkt ID",
-			qp.Rp.Id, "Current IF", *CurrIF, "NextIF", *NextIF, "cons dir ", *Consdir)
-	}
+	// if logEnabledBsc {
+	// 	srcIA, _ := qp.Rp.SrcIA()
+	// 	srcHost, _ := qp.Rp.SrcHost()
+	// 	DstIA, _ := qp.Rp.DstIA()
+	// 	DstHost, _ := qp.Rp.DstHost()
+	// 	CurrIF, _ := qp.Rp.IFCurr()
+	// 	NextIF, _ := qp.Rp.IFNext()
+	// 	Consdir, _ := qp.Rp.ConsDirFlag()
+	// 	log.Debug("New queueing packet\n", "SrcIA", srcIA, "SrcHost",
+	// 		srcHost, "DstIA", DstIA, "DstHost", DstHost, "\nQNo", qp.QueueNo, "Pkt ID",
+	// 		qp.Rp.Id, "Current IF", *CurrIF, "NextIF", *NextIF, "cons dir ", *Consdir)
+	// }
 	notification, err, id := r.createBscSCMPNotification(qp, scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}, info)
 	if err != nil {
 		log.Error("unable to create notification SCMP", "err", err, "id", id)

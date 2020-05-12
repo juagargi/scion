@@ -22,7 +22,8 @@ const (
 
 func (r *Router) stochNotify() {
 	for np := range r.qosConfig.GetNotification() {
-		if r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().Approach == 2 { //TODO: remove when congestionWarning fields are read out correctly
+		// log.Debug("New packet in notify method", "pkt id", np.Qpkt.Rp.Id)
+		if r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().Approach == 2 {
 			queueFullness := float64(r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetFillLevel())
 			switchingPoint, output := (r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetPID()).NewControlUpdate(queueFullness)
 			probs := r.calculateProbs(np.Qpkt, switchingPoint)
@@ -38,7 +39,7 @@ func (r *Router) stochNotify() {
 					r.forwardPacket(np.Qpkt.Rp)
 				}
 
-				//Release packet if it's action is DROPNOTIFY
+				//Release packet if its action is DROPNOTIFY
 				if uint8(np.Qpkt.Act.GetAction()) == 3 {
 					np.Qpkt.Rp.Release()
 				}
@@ -123,7 +124,7 @@ func (r *Router) createStochSCMPNotification(qp *queues.QPkt,
 
 	sp.Pld = scmp.PldFromQuotes(ct, info, qp.Rp.L4Type, qp.Rp.GetRaw)
 	sp.L4 = scmp.NewHdr(ct, sp.Pld.Len())
-	log.Debug("Created SPkt reply", "sp", sp, "Pkt ID", id)
+	// log.Debug("Created SPkt reply", "sp", sp, "Pkt ID", id)
 	reply, err := qp.Rp.CreateReply(sp)
 	if logEnabledStoch {
 		srcIA, _ := reply.SrcIA()
@@ -164,8 +165,7 @@ func (r *Router) createStochCongWarn(np *queues.NPkt) *scmp.InfoStochCW {
 }
 
 func (r *Router) calculateProbs(qp *queues.QPkt, switchingPoint int) int {
-	//queueFullness := (r.config.Queues[qp.QueueNo]).GetFillLevel() //TODO: uncomment when queues fill up more realistically
-	queueFullness := rand.Intn(100)
+	queueFullness := (r.qosConfig.GetConfig().Queues[qp.QueueNo]).GetFillLevel()
 	if queueFullness <= switchingPoint {
 		return queueFullness
 	}

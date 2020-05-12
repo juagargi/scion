@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#source demoNoAction.sh
+
 deleteLogs() {
     echo "Delete old logs"
     echo ""
@@ -60,7 +62,7 @@ bwTestClient() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,9Mbps -sc 10,4,?,1kbps -iter 10 -client $clientISDAS -stopVal 1 -smart 0 &
+    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,9Mbps -sc 10,4,?,1kbps -iter 10 -client $clientISDAS -stopVal 1 -smart 1 &
     local pid=$!
     echo "Set up bwtest client to port 400$3"
     echo ""
@@ -97,11 +99,13 @@ killall demoappclient
 
 #sed -i '{N; s+defer log\.HandlePanic()\n.*r\.stochNotify()+\/\/defer log\.HandlePanic()\n\t\t\/\/r\.stochNotify()+g'} go/border/router.go
 
+for i in $(find gen/ISD1 -name qosConfig.yaml); do
+    sed -i -e 's/approach: [0-9]/approach: 0/g' $i
+done
+
 #./scion.sh build 
 
-for i in $(find gen/ISD1 -name qosConfig.yaml); do
-    sed -i -e 's/approach: [0-9]/approach: 5/g' $i
-done
+
 
 
 #./build_demo.sh

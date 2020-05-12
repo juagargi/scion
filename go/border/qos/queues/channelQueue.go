@@ -46,7 +46,7 @@ func (pq *ChannelPacketQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mut
 	pq.tb.Init(pq.pktQue.PoliceRate)
 	pq.queue = make(chan *QPkt, pq.pktQue.MaxLength+1)
 	if pq.pktQue.CongestionWarning.Approach == 2 {
-		pq.pid = scmp.PID{FactorProportional: .1, FactorIntegral: .3,
+		pq.pid = scmp.PID{FactorProportional: .5, FactorIntegral: 0.6,
 			FactorDerivative: .3, LastUpdate: time.Now(), SetPoint: 70,
 			Min: 60, Max: 90}
 	}

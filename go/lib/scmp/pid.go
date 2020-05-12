@@ -4,18 +4,19 @@ package scmp
 
 import (
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/scionproto/scion/go/lib/log"
 )
 
 const (
-	logEnabledPID = false
+	logEnabledPID = true
 )
 
+var firstTime = true
+
 type PID struct {
-	PrevQF             float64
+	PrevError          float64
 	Integral           float64
 	FactorProportional float64
 	FactorIntegral     float64
@@ -64,10 +65,16 @@ func (pid *PID) getMinMax() (float64, float64) {
 }
 
 func (pid *PID) NewControlUpdate(queueFullness float64) (int, []string) {
-	//TODO: remove next line and replace variable in line after and at the end of the function that when queuefullness takes more realistic values
-	queueFullnessTemp := float64(rand.Intn(100))
-	err := pid.SetPoint - float64(queueFullnessTemp)
-	timeDiff := float64((time.Now().Sub(pid.LastUpdate)).Seconds())
+	//Disregard first run as time difference is enormous
+	var derivative float64
+	if firstTime {
+		pid.LastUpdate = time.Now()
+		pid.PrevError = 0
+		firstTime = false
+		return 0, nil
+	}
+	err := pid.SetPoint - float64(queueFullness)
+	timeDiff := float64((time.Now().Sub(pid.LastUpdate)).Nanoseconds() / 1000000)
 
 	var s []string
 	if logEnabledPID {
@@ -86,8 +93,9 @@ func (pid *PID) NewControlUpdate(queueFullness float64) (int, []string) {
 	if logEnabledPID {
 		s = append(s, fmt.Sprintf("\n Proportional: %v Integral: %v", proportional, integral))
 	}
-
-	derivative := pid.FactorDerivative * (pid.PrevQF - err) / timeDiff
+	if timeDiff != 0 {
+		derivative = pid.FactorDerivative * (pid.PrevError - err) / timeDiff
+	}
 	pid.LastUpdate = time.Now()
 	output := proportional + integral + derivative
 	if output < pid.Min {
@@ -97,9 +105,9 @@ func (pid *PID) NewControlUpdate(queueFullness float64) (int, []string) {
 	}
 
 	if logEnabledPID {
-		s = append(s, fmt.Sprintf("\n Derivative: %v, Result: %v, New QF: %v", derivative, queueFullnessTemp, output))
+		s = append(s, fmt.Sprintf("\n Derivative: %v, Result: %v", derivative, output))
 	}
 
-	pid.PrevQF = queueFullnessTemp
+	pid.PrevError = err
 	return int(output), s
 }
