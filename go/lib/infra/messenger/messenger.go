@@ -738,8 +738,8 @@ func (m *Messenger) SendDRKeyLvl1Reply(ctx context.Context, msg *drkey_mgmt.Lvl1
 		return err
 	}
 	logger := log.FromCtx(ctx)
-	logger.Debug("[Messenger] Sending Notify", "type", infra.DRKeyLvl1Request, "to", a, "id", id)
-	return m.getFallbackRequester(infra.DRKeyLvl1Request).Notify(ctx, pld, a)
+	logger.Debug("[Messenger] Sending Notify", "type", infra.DRKeyLvl1Reply, "to", a, "id", id)
+	return m.getFallbackRequester(infra.DRKeyLvl1Reply).Notify(ctx, pld, a)
 }
 
 func (m *Messenger) GetDRKeyLvl2(ctx context.Context, msg *drkey_mgmt.Lvl2Req, a net.Addr,
@@ -778,8 +778,8 @@ func (m *Messenger) SendDRKeyLvl2Reply(ctx context.Context, msg *drkey_mgmt.Lvl2
 		return err
 	}
 	logger := log.FromCtx(ctx)
-	logger.Debug("[Messenger] Sending Notify", "type", infra.DRKeyLvl2Request, "to", a, "id", id)
-	return m.getFallbackRequester(infra.DRKeyLvl2Request).Notify(ctx, pld, a)
+	logger.Debug("[Messenger] Sending Notify", "type", infra.DRKeyLvl2Reply, "to", a, "id", id)
+	return m.getFallbackRequester(infra.DRKeyLvl2Reply).Notify(ctx, pld, a)
 }
 
 // sendMessage sends payload msg of type expectedType to address a, using id.
