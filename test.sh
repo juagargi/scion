@@ -57,10 +57,10 @@
 #echo "yeah"
 #grep 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt 
 
-singleTime() {
+#singleTime() {
 #echo "single Time"
 #echo ""
-lines=$(grep 'Approximated operation time' logs/Demo/bwTestClientTo400$1.txt | wc -l) #| grep -o "[0-9]*\.*[0-9]*"
+#lines=$(grep 'Approximated operation time' logs/Demo/bwTestClientTo400$1.txt | wc -l) #| grep -o "[0-9]*\.*[0-9]*"
 #echo $lines
 #if [ "$lines" -ne "$2" ]; then 
 #    echo "Iteration $2 with server $1 did not end successfully"
@@ -69,15 +69,15 @@ lines=$(grep 'Approximated operation time' logs/Demo/bwTestClientTo400$1.txt | w
 #fi
 #echo "yeah"
 #echo ""
-time$1=$(grep -m$2 'Approximated operation time' logs/Demo/bwTestClientTo400$1.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
+#time$1=$(grep -m$2 'Approximated operation time' logs/Demo/bwTestClientTo400$1.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
 #echo $thisTime
 #return $thisTime
 }
 
-add() { n="$@"; bc <<< "${n// /+}"; };
+#add() { n="$@"; bc <<< "${n// /+}"; };
 
-checkEntry() {
-    entry02=$(grep 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt | wc -l) #| grep -o "[0-9]*\.*[0-9]*"
+#checkEntry() {
+ #   entry02=$(grep 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt | wc -l) #| grep -o "[0-9]*\.*[0-9]*"
 #    echo $lines
 #    if [ "$lines" -ne "$1" ]; then 
 #    echo "Iteration $1 with server $1 did not end successfully"
@@ -86,33 +86,39 @@ checkEntry() {
 #fi
 }
 
-addTimes() {
-entry02=$(grep 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt | wc -l) 
-echo $entry02
-if [ "$entry02" -ne "$1" ]; then
-    time02=0
-    echo "Iteration $1 with server 40002 did not end successsfully"
-else
-    time02=$(grep -m$1 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
-fi
-#echo $time02
+#addTimes() {
+#entry02=$(grep 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt | wc -l) 
+#echo $entry02
+#if [ "$entry02" -ne "$1" ]; then
+#    time02=0
+#    echo "Iteration $1 with server 40002 did not end successsfully"
+#else
+#    time02=$(grep -m$1 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
+#fi
+##echo $time02
+#
+#time05=$(grep -m$1 'Approximated operation time' logs/Demo/bwTestClientTo40005.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
+##echo $time05
+#
+#time08=$(grep -m$1 'Approximated operation time' logs/Demo/bwTestClientTo40008.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
+##echo $time08
+#
+#time11=$(grep -m$1 'Approximated operation time' logs/Demo/bwTestClientTo40011.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
+##echo $time11
+#
+#add $time02 $time05 $time08 $time11
+#echo $alltimes
+#}
+#
+#addTimes 1
+#
+#
+##temp=$(grep -m3 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
+##echo $temp
+#
+#
 
-time05=$(grep -m$1 'Approximated operation time' logs/Demo/bwTestClientTo40005.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
-#echo $time05
-
-time08=$(grep -m$1 'Approximated operation time' logs/Demo/bwTestClientTo40008.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
-#echo $time08
-
-time11=$(grep -m$1 'Approximated operation time' logs/Demo/bwTestClientTo40011.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
-#echo $time11
-
-add $time02 $time05 $time08 $time11
-echo $alltimes
-}
-
-addTimes 1
-
-
-#temp=$(grep -m3 'Approximated operation time' logs/Demo/bwTestClientTo40002.txt | grep -o "[0-9]*\.*[0-9]*" | tail -n1)
-#echo $temp
-
+SCION_DAEMON_ADDRESS=127.0.0.20:30255
+export SCION_DAEMON_ADDRESS 
+cd $GOPATH
+./bin/demoappserver -p 40002 

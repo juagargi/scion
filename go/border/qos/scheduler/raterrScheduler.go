@@ -223,18 +223,33 @@ func (sched *RateRoundRobinScheduler) dequeuePackets(queue queues.PacketQueueInt
 			sched.cirBuckets[queueNo].ForceTake(pktLen)
 
 			sched.pirBuckets[queueNo].ForceTake(pktLen)
-			if uint8(qp.Act.GetAction()) == 1 { //TODO: find smarter way
+			qp.Mtx.Lock()
+			if (uint8(qp.Act.GetAction()) == 1) && !qp.Forward { //TODO: find smarter way uint8(qp.Act.GetAction()) == 0 ||
+				// if !qp.Forward {
 				qp.Forward = true
+				qp.Mtx.Unlock()
+				log.Debug("Packet in raterrScheduler frowarding enabled", "id", qp.Rp.Id)
 				break
 			}
+
+			qp.Mtx.Unlock()
 			forwarder(qp.Rp)
+			log.Debug("Packet in raterrScheduler forwarded", "id", qp.Rp.Id)
 			break
 		}
-		if uint8(qp.Act.GetAction()) == 1 { //TODO: find smarter way
+		qp.Mtx.Lock()
+		if (uint8(qp.Act.GetAction()) == 1) && !qp.Forward { //TODO: find smarter way uint8(qp.Act.GetAction()) == 0 ||
+			// if !qp.Forward {
 			qp.Forward = true
+			qp.Mtx.Unlock()
+			log.Debug("Packet in raterrScheduler forwarding enabled", "id", qp.Rp.Id)
+
 			continue
 		}
+		qp.Mtx.Unlock()
 		forwarder(qp.Rp)
+		log.Debug("Packet in raterrScheduler forwarded", "id", qp.Rp.Id)
+
 	}
 
 	sched.logger.lastRound[queueNo] += j

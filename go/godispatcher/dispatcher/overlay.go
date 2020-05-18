@@ -139,7 +139,7 @@ func ComputeSCMPCWDestination(packet *spkt.ScnPkt, header *scmp.Hdr) (Destinatio
 		if err != nil {
 			return nil, common.NewBasicError(ErrMalformedL4Quote, nil, "err", err)
 		}
-		addr := &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort) + 1}
+		addr := &UDPDestination{IP: packet.DstHost.IP(), Port: int(quotedUDPHeader.SrcPort)}
 		log.Debug("CW packet received !!", "pkt", packet, "sentTo", addr)
 
 		return addr, nil

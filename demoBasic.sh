@@ -62,7 +62,7 @@ bwTestClient() {
     SCION_DAEMON_ADDRESS=127.0.0.$1:30255 
     export SCION_DAEMON_ADDRESS 
     cd $GOPATH
-    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,9Mbps -sc 10,4,?,1kbps -iter 10 -client $clientISDAS -stopVal 1 -smart 1 &
+    ./bin/demoappclient -s 1-ff00:0:11$2,[127.0.0.1]:400$3 -cs 10,1000,?,1Mbps -sc 10,4,?,1kbps -iter 10 -client $clientISDAS -stopVal 1 -smart 1 &
     local pid=$!
     echo "Set up bwtest client to port 400$3"
     echo ""
@@ -93,7 +93,7 @@ bwTestClient() {
 #cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-1/qosConfig.yaml
 #cp go/border/qos/testdata/DemoConfigEmpty.yaml gen/ISD1/ASff00_0_113/br1-ff00_0_113-2/qosConfig.yaml
 
-#deleteLogs
+deleteLogs
 killall demoappserver
 killall demoappclient
 
@@ -115,7 +115,7 @@ done
 echo "Scion started"
 echo ""
 
-sleep 3
+sleep 30
 ./supervisor/supervisor.sh status
 ./bin/showpaths -dstIA 1-ff00:0:110 -sciond 127.0.0.44:30255
 
@@ -144,6 +144,8 @@ wait
 echo ""
 echo "Scmp echo done"
 echo ""
+
+sleep 30
 
 for i in 02 05 08 11; do #2 4 6 8
     bwTestServer 20 $i >> $SC/logs/Demo/bwTestServerAt400$i.txt & #$1:last byte of IP of sciond, $2: port 

@@ -7,9 +7,7 @@ import (
 
 	"github.com/scionproto/scion/go/border/qos/queues"
 	"github.com/scionproto/scion/go/border/rpkt"
-	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
-	"github.com/scionproto/scion/go/lib/l4"
 	"github.com/scionproto/scion/go/lib/layers"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/scmp"
@@ -21,9 +19,10 @@ const (
 )
 
 func (r *Router) stochNotify() {
-	for np := range r.qosConfig.GetNotification() {
+	for np := range r.qosConfig.GetStochNotification() {
 		// log.Debug("New packet in notify method", "pkt id", np.Qpkt.Rp.Id)
-		if r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().Approach == 2 {
+		go func(np *queues.NPkt) {
+
 			queueFullness := float64(r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetFillLevel())
 			switchingPoint, output := (r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetPID()).NewControlUpdate(queueFullness)
 			probs := r.calculateProbs(np.Qpkt, switchingPoint)
@@ -33,18 +32,32 @@ func (r *Router) stochNotify() {
 			if random <= probs {
 				stochCW := r.createStochCongWarn(np)
 				r.sendStochNotificationSCMP(np.Qpkt, stochCW)
-				np.Qpkt.Rp.RefInc(-1)
+				// np.Qpkt.Rp.RefInc(-1)
 
-				if uint8(np.Qpkt.Act.GetAction()) == 1 && np.Qpkt.Forward == true {
-					r.forwardPacket(np.Qpkt.Rp)
-				}
+				// if uint8(np.Qpkt.Act.GetAction()) == 1 && np.Qpkt.Forward == true {
+				// 	r.forwardPacket(np.Qpkt.Rp)
+				// }
 
-				//Release packet if its action is DROPNOTIFY
-				if uint8(np.Qpkt.Act.GetAction()) == 3 {
-					np.Qpkt.Rp.Release()
-				}
+				// //Release packet if its action is DROPNOTIFY
+				// if uint8(np.Qpkt.Act.GetAction()) == 3 {
+				// 	np.Qpkt.Rp.Release()
+				// }
+				// np.Qpkt.Rp.Free(np.Qpkt.Rp)
+
 			}
-		}
+		}(np)
+		// np.Qpkt.Rp.RefInc(-1)
+
+		// if uint8(np.Qpkt.Act.GetAction()) == 1 && np.Qpkt.Forward == true {
+		// 	r.forwardPacket(np.Qpkt.Rp)
+		// }
+
+		// //Release packet if its action is DROPNOTIFY
+		// if uint8(np.Qpkt.Act.GetAction()) == 3 {
+		// 	np.Qpkt.Rp.Release()
+		// }
+
+		// }
 	}
 }
 
@@ -63,37 +76,44 @@ func (r *Router) sendStochNotificationSCMP(qp *queues.QPkt, info scmp.Info) {
 		log.Error("unable to create notification SCMP", "err", err, "id", id)
 		return
 	}
+
+	var forwarded bool
+	if uint8(qp.Act.GetAction()) == 0 || uint8(qp.Act.GetAction()) == 1 {
+		qp.Mtx.Lock()
+		if qp.Forward {
+			log.Debug("Packet in Notify forwarded", "id", qp.Rp.Id)
+			r.forwardPacket(qp.Rp)
+			// qp.Mtx.Unlock()
+			forwarded = true
+		} else {
+			qp.Forward = true
+			qp.Mtx.Unlock()
+			log.Debug("Packet in Notify forwarding enabled", "id", qp.Rp.Id)
+			forwarded = true
+		}
+
+	}
+
+	// Release packet if it's action is DROPNOTIFY
+	if !forwarded {
+		if uint8(qp.Act.GetAction()) == 3 {
+			qp.Rp.Release()
+			log.Debug("Packet in Notify released", "id", qp.Rp.Id)
+		}
+	}
 	if logEnabledStoch {
 		srcIA, _ := notification.SrcIA()
 		srcHost, _ := notification.SrcHost()
 		DstIA, _ := notification.DstIA()
 		DstHost, _ := notification.DstHost()
-		pub := qp.Rp.Ctx.Conf.BR.InternalAddr
-		routerAddr := addr.HostFromIP(pub.IP)
 		pld, _ := notification.Payload(false)
 		l4, _ := notification.L4Hdr(false)
 		log.Debug("New SCMP Notification", "SrcIA", srcIA, "SrcHost",
-			srcHost, "DstIA", DstIA, "DstHost", DstHost, "\n RtrAddr", routerAddr,
-			"CurrBW", r.qosConfig.GetConfig().Queues[qp.QueueNo].GetTokenBucket().CurrBW, "Pkt ID", id,
+			srcHost, "DstIA", DstIA, "DstHost", DstHost, "Pkt ID", id,
 			"\n L4", l4,
 			"\n Congestion Warning", pld)
 	}
-	srcIA, _ := notification.SrcIA()
-	srcHost, _ := notification.SrcHost()
-	DstIA, _ := notification.DstIA()
-	DstHost, _ := notification.DstHost()
-	pub := qp.Rp.Ctx.Conf.BR.InternalAddr
-	routerAddr := addr.HostFromIP(pub.IP)
-	pld, _ := notification.Payload(false)
-	l4hdr, _ := notification.L4Hdr(false)
-	cwpld := pld.(*scmp.Payload)
-	quotedl4, _ := l4.UDPFromRaw(cwpld.L4Hdr)
-	log.Debug("New SCMP Notification", "SrcIA", srcIA, "SrcHost",
-		srcHost, "DstIA", DstIA, "DstHost", DstHost, "\n RtrAddr", routerAddr,
-		"CurrBW", r.qosConfig.GetConfig().Queues[qp.QueueNo].GetTokenBucket().CurrBW,
-		"Pkt ID", id,
-		"\n L4", l4hdr,
-		"\n Congestion Warning", pld, "\n L4Hdr", quotedl4, "HBH extension", notification.HBHExt, "id", id)
+
 	notification.Route()
 
 }
@@ -146,11 +166,21 @@ func (r *Router) createStochCongWarn(np *queues.NPkt) *scmp.InfoStochCW {
 	}
 	stochCW := &scmp.InfoStochCW{}
 	stochCW.ConsIngress = common.IFIDType(np.Qpkt.Rp.Ingress.IfID)
-	stochCW.Path = &spath.Path{
-		Raw:    np.Qpkt.Rp.Raw[(np.Qpkt.Rp).GetPathIdx():np.Qpkt.Rp.CmnHdr.HdrLenBytes()],
-		InfOff: np.Qpkt.Rp.CmnHdr.InfoFOffBytes() - (np.Qpkt.Rp).GetPathIdx(),
-		HopOff: np.Qpkt.Rp.CmnHdr.HopFOffBytes() - (np.Qpkt.Rp).GetPathIdx()}
 
+	srcIA, err := np.Qpkt.Rp.SrcIA()
+	if err != nil {
+		log.Error("Unable to fetch Source IA of packet", "err", err)
+		return nil
+	}
+
+	if srcIA.Equal(np.Qpkt.Rp.Ctx.Conf.IA) {
+		stochCW.Path = &spath.Path{}
+	} else {
+		stochCW.Path = &spath.Path{
+			Raw:    np.Qpkt.Rp.Raw[(np.Qpkt.Rp).GetPathIdx():np.Qpkt.Rp.CmnHdr.HdrLenBytes()],
+			InfOff: np.Qpkt.Rp.CmnHdr.InfoFOffBytes() - (np.Qpkt.Rp).GetPathIdx(),
+			HopOff: np.Qpkt.Rp.CmnHdr.HopFOffBytes() - (np.Qpkt.Rp).GetPathIdx()}
+	}
 	if restriction > 0 {
 		stochCW.QueueLength = uint64(r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetLength())
 	}

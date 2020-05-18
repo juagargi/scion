@@ -5,7 +5,6 @@ package main
 import (
 	"github.com/scionproto/scion/go/border/qos/queues"
 	"github.com/scionproto/scion/go/border/rpkt"
-	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/l4"
 	"github.com/scionproto/scion/go/lib/layers"
@@ -17,72 +16,88 @@ import (
 const logEnabledBsc = true
 
 func (r *Router) bscNotify() {
-	for np := range r.qosConfig.GetNotification() {
-		if r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().Approach == 0 {
-			// if logEnabledBsc {
-			// 	/*srcIA, _ := np.Qpkt.Rp.SrcIA()
-			// 	srcHost, _ := np.Qpkt.Rp.SrcHost()
-			// 	DstIA, _ := np.Qpkt.Rp.DstIA()
-			// 	DstHost, _ := np.Qpkt.Rp.DstHost()
-			// 	log.Debug("New notification packet", "SrcIA", srcIA, "SrcHost",
-			// 	srcHost, "DstIA", DstIA, "DstHost", DstHost)*/
-			// 	log.Debug("New notification packet", "NPkt", np, "Pkt ID", np.Qpkt.Rp.Id, "L4hdr", fmt.Sprintf("%s", np.Qpkt.Rp.GetL4Hdr()))
-			// }
-			// go func(np *queues.NPkt) {
+	for np := range r.qosConfig.GetBasicNotification() {
+		// if r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().Approach == 0 {
+		// if logEnabledBsc {
+		// 	/*srcIA, _ := np.Qpkt.Rp.SrcIA()
+		// 	srcHost, _ := np.Qpkt.Rp.SrcHost()
+		// 	DstIA, _ := np.Qpkt.Rp.DstIA()
+		// 	DstHost, _ := np.Qpkt.Rp.DstHost()
+		// 	log.Debug("New notification packet", "SrcIA", srcIA, "SrcHost",
+		// 	srcHost, "DstIA", DstIA, "DstHost", DstHost)*/
+		// 	log.Debug("New notification packet", "NPkt", np, "Pkt ID", np.Qpkt.Rp.Id, "L4hdr", fmt.Sprintf("%s", np.Qpkt.Rp.GetL4Hdr()))
+		// }
+		go func(np *queues.NPkt) {
 			bscCW := r.createBscCongWarn(np)
 			// if logEnabledBsc {
 			// 	log.Debug("Created basic congestion warning", "bscCW", bscCW, "Pkt ID", np.Qpkt.Rp.Id)
 			// }
 			r.sendBscNotificationSCMP(np.Qpkt, bscCW)
-			np.Qpkt.Rp.RefInc(-1)
+			// np.Qpkt.Rp.RefInc(-1)
 
-			if uint8(np.Qpkt.Act.GetAction()) == 1 && np.Qpkt.Forward == true {
-				r.forwardPacket(np.Qpkt.Rp)
-			}
-
-			//Release packet if it's action is DROPNOTIFY
-			if uint8(np.Qpkt.Act.GetAction()) == 3 {
-				np.Qpkt.Rp.Release()
-			}
-			// }(np)
-		}
+		}(np)
+		// }
 	}
 
 }
 
 func (r *Router) sendBscNotificationSCMP(qp *queues.QPkt, info *scmp.InfoBscCW) {
-	// if logEnabledBsc {
-	// 	srcIA, _ := qp.Rp.SrcIA()
-	// 	srcHost, _ := qp.Rp.SrcHost()
-	// 	DstIA, _ := qp.Rp.DstIA()
-	// 	DstHost, _ := qp.Rp.DstHost()
-	// 	CurrIF, _ := qp.Rp.IFCurr()
-	// 	NextIF, _ := qp.Rp.IFNext()
-	// 	Consdir, _ := qp.Rp.ConsDirFlag()
-	// 	log.Debug("New queueing packet\n", "SrcIA", srcIA, "SrcHost",
-	// 		srcHost, "DstIA", DstIA, "DstHost", DstHost, "\nQNo", qp.QueueNo, "Pkt ID",
-	// 		qp.Rp.Id, "Current IF", *CurrIF, "NextIF", *NextIF, "cons dir ", *Consdir)
-	// }
+	if logEnabledBsc {
+		srcIA, _ := qp.Rp.SrcIA()
+		srcHost, _ := qp.Rp.SrcHost()
+		DstIA, _ := qp.Rp.DstIA()
+		DstHost, _ := qp.Rp.DstHost()
+		CurrIF, _ := qp.Rp.IFCurr()
+		NextIF, _ := qp.Rp.IFNext()
+		Consdir, _ := qp.Rp.ConsDirFlag()
+		log.Debug("New queueing packet\n", "SrcIA", srcIA, "SrcHost",
+			srcHost, "DstIA", DstIA, "DstHost", DstHost, "\nQNo", qp.QueueNo, "Pkt ID",
+			qp.Rp.Id, "Current IF", *CurrIF, "NextIF", *NextIF, "cons dir ", *Consdir, "l4hdrType", qp.Rp.L4Type)
+	}
 	notification, err, id := r.createBscSCMPNotification(qp, scmp.ClassType{Class: scmp.C_General, Type: scmp.T_G_BasicCongWarn}, info)
 	if err != nil {
 		log.Error("unable to create notification SCMP", "err", err, "id", id)
 		return
 	}
+
+	var forwarded bool
+	if uint8(qp.Act.GetAction()) == 0 || uint8(qp.Act.GetAction()) == 1 {
+		qp.Mtx.Lock()
+		if qp.Forward {
+			log.Debug("Packet in Notify forwarded", "id", qp.Rp.Id)
+			r.forwardPacket(qp.Rp)
+			// qp.Mtx.Unlock()
+			forwarded = true
+		} else {
+			qp.Forward = true
+			qp.Mtx.Unlock()
+			log.Debug("Packet in Notify forwarding enabled", "id", qp.Rp.Id)
+			forwarded = true
+		}
+
+	}
+
+	// Release packet if it's action is DROPNOTIFY
+	if !forwarded {
+		if uint8(qp.Act.GetAction()) == 3 {
+			qp.Rp.Release()
+			log.Debug("Packet in Notify released", "id", qp.Rp.Id)
+		}
+	}
+
 	if logEnabledBsc {
 		srcIA, _ := notification.SrcIA()
 		srcHost, _ := notification.SrcHost()
 		DstIA, _ := notification.DstIA()
 		DstHost, _ := notification.DstHost()
-		pub := qp.Rp.Ctx.Conf.BR.InternalAddr
-		routerAddr := addr.HostFromIP(pub.IP)
 		pld, _ := notification.Payload(false)
 		l4hdr, _ := notification.L4Hdr(false)
 		cwpld := pld.(*scmp.Payload)
 		quotedl4, _ := l4.UDPFromRaw(cwpld.L4Hdr)
+		// ifNext, _ := notification.IFNext()
 		log.Debug("New SCMP Notification", "SrcIA", srcIA, "SrcHost",
-			srcHost, "DstIA", DstIA, "DstHost", DstHost, "\n RtrAddr", routerAddr,
-			"CurrBW", r.qosConfig.GetConfig().Queues[qp.QueueNo].GetTokenBucket().CurrBW,
-			"Pkt ID", id,
+			srcHost, "DstIA", DstIA, "DstHost", DstHost,
+			"Pkt ID", id, "l4 hdr type", notification.L4Type,
 			"\n L4", l4hdr,
 			"\n Congestion Warning", pld, "\n L4Hdr", quotedl4, "HBH extension", notification.HBHExt, "id", id) //,r.qosConfig.GetQueue(qp.QueueNo).GetTokenBucket().CurrBW
 	}
@@ -148,10 +163,21 @@ func (r *Router) createBscCongWarn(np *queues.NPkt) *scmp.InfoBscCW {
 	}
 	bscCW := &scmp.InfoBscCW{}
 	bscCW.ConsIngress = common.IFIDType(np.Qpkt.Rp.Ingress.IfID)
-	bscCW.Path = &spath.Path{
-		Raw:    np.Qpkt.Rp.Raw[(np.Qpkt.Rp).GetPathIdx():np.Qpkt.Rp.CmnHdr.HdrLenBytes()],
-		InfOff: np.Qpkt.Rp.CmnHdr.InfoFOffBytes() - (np.Qpkt.Rp).GetPathIdx(),
-		HopOff: np.Qpkt.Rp.CmnHdr.HopFOffBytes() - (np.Qpkt.Rp).GetPathIdx()}
+
+	srcIA, err := np.Qpkt.Rp.SrcIA()
+	if err != nil {
+		log.Error("Unable to fetch Source IA of packet", "err", err)
+		return nil
+	}
+
+	if srcIA.Equal(np.Qpkt.Rp.Ctx.Conf.IA) {
+		bscCW.Path = &spath.Path{}
+	} else {
+		bscCW.Path = &spath.Path{
+			Raw:    np.Qpkt.Rp.Raw[(np.Qpkt.Rp).GetPathIdx():np.Qpkt.Rp.CmnHdr.HdrLenBytes()],
+			InfOff: np.Qpkt.Rp.CmnHdr.InfoFOffBytes() - (np.Qpkt.Rp).GetPathIdx(),
+			HopOff: np.Qpkt.Rp.CmnHdr.HopFOffBytes() - (np.Qpkt.Rp).GetPathIdx()}
+	}
 	// if logEnabledBsc {
 	// 	log.Debug("InfoBscCW", "ConsIngress", common.IFIDType(np.Qpkt.Rp.Ingress.IfID),
 	// 		"QueueLength", (r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo]).GetLength(), "CurrBW",

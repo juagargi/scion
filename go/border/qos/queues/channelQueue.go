@@ -132,6 +132,7 @@ func (pq *ChannelPacketQueue) CheckAction() conf.PoliceAction {
 	}
 
 	level := pq.GetFillLevel()
+	log.Debug("Filllevel of channelpacketqueue", "level", level)
 
 	for j := len(pq.pktQue.Profile) - 1; j >= 0; j-- {
 		if level >= pq.pktQue.Profile[j].FillLevel {

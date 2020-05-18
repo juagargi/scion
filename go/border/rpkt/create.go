@@ -265,11 +265,11 @@ func (rp *RtrPkt) replyEgress(dir rcmn.Dir, dst *net.UDPAddr, ifid common.IFIDTy
 
 		return err
 	}
-	if err := rp.validateLocalIF(rp.ifNext); err != nil {
-		log.Debug("Unable validateLocalIF ", "err", err)
+	// if err := rp.validateLocalIF(rp.ifNext); err != nil {
+	// 	log.Debug("Unable validateLocalIF ", "err", err)
 
-		return err
-	}
+	// 	return err
+	// }
 	if _, ok := rp.Ctx.Conf.BR.IFs[*rp.ifNext]; ok {
 		// Egress interface is on this BR
 		// Re-inject to process the reply as an "Egress br"

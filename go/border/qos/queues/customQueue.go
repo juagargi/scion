@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/go/border/qos/conf"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/scmp"
 )
 
@@ -134,6 +135,8 @@ func (pq *CustomPacketQueue) PopMultiple(number int) []*QPkt {
 
 func (pq *CustomPacketQueue) CheckAction() conf.PoliceAction {
 	level := pq.GetFillLevel()
+	log.Debug("Filllevel of custompacketqueue", "level", level)
+
 	for j := len(pq.pktQue.Profile) - 1; j >= 0; j-- {
 		if level >= pq.pktQue.Profile[j].FillLevel {
 			if rand.Intn(100) < (pq.pktQue.Profile[j].Prob) {

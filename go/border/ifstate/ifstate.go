@@ -97,6 +97,7 @@ func Process(ifStates *path_mgmt.IFStateInfos) {
 	cl := metrics.ControlLabels{Result: metrics.Success}
 	ctx := rctx.Get()
 	for _, info := range ifStates.Infos {
+		// log.Debug("Path management thing", "ifStates", ifStates)
 		var rawSRev common.RawBytes
 		ifid := common.IFIDType(info.IfID)
 		if info.SRevInfo != nil {

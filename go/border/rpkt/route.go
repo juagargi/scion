@@ -25,6 +25,7 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/assert"
 	"github.com/scionproto/scion/go/lib/common"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/ringbuf"
 	"github.com/scionproto/scion/go/lib/scmp"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -62,9 +63,11 @@ func (rp *RtrPkt) Route() error {
 	rp.RefInc(len(rp.Egress))
 	// Call all egress functions.
 	for _, epair := range rp.Egress {
-		epair.S.Ring.Write(ringbuf.EntryList{&EgressRtrPkt{rp, epair.Dst}}, true)
+		n, _ := epair.S.Ring.Write(ringbuf.EntryList{&EgressRtrPkt{rp, epair.Dst}}, true)
 		l.IntfOut = epair.S.Label
 		metrics.Process.Pkts(l).Inc()
+		log.Debug("Packet written to ringbuffer", "id", rp.Id, "n", n)
+
 	}
 	return nil
 }
