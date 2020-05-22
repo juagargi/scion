@@ -31,7 +31,10 @@ import (
 	"github.com/scionproto/scion/go/lib/scmp"
 )
 
-const maxNotificationCount = 5120
+const (
+	maxNotificationCount = 5120
+	sendNotification     = true
+)
 
 // Configuration contains the configuration of the qos subsystem
 type Configuration struct {
@@ -80,12 +83,12 @@ func (qosConfig *Configuration) GetConfig() *queues.InternalRouterConfig {
 
 // GetNotification returns a pointer to the notification channel which contains
 // all messages caused by the profile configuration
-func (qosConfig *Configuration) GetBasicNotification() chan *queues.NPkt {
-	return qosConfig.basicNotifications
+func (qosConfig *Configuration) GetBasicNotification() *chan *queues.NPkt {
+	return &qosConfig.basicNotifications
 }
 
-func (qosConfig *Configuration) GetStochNotification() chan *queues.NPkt {
-	return qosConfig.stochNotifications
+func (qosConfig *Configuration) GetStochNotification() *chan *queues.NPkt {
+	return &qosConfig.stochNotifications
 }
 
 // SetAndInitSchedul is necessary to set up
@@ -207,7 +210,6 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 	switch act {
 	case conf.PASS:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
-		// qosConfig.SendNotification(qp)
 	case conf.NOTIFY:
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
 		qosConfig.SendNotification(qp)
@@ -394,18 +396,18 @@ func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) { //COMP:
 		qosConfig.stochNotifications <- &np
 	}
 	log.Debug("channel length", "len", len(qosConfig.basicNotifications))
-	// np.Qpkt.Rp.RefInc(-1)
 
 }
 
 func (qosConfig *Configuration) dropPacket(qp *queues.QPkt) {
 	// In the case of a DROPNOTIFY action we release the packet in the Notify method
 	// after creating the notification packet
-	if uint8(qp.Act.GetAction()) == 2 {
+	if uint8(qp.Act.GetAction()) == 2 && sendNotification {
 		defer qp.Rp.Release()
 	}
-	// defer qp.Rp.Release() //COMP
-
+	if !sendNotification {
+		defer qp.Rp.Release()
+	} //COMP
 	qosConfig.droppedPackets++
 	log.Info("Dropping packet", "qosConfig.droppedPackets", qosConfig.droppedPackets)
 	var queLen = make([]int, len(*qosConfig.GetQueues()))

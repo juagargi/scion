@@ -16,7 +16,8 @@ import (
 const logEnabledBsc = true
 
 func (r *Router) bscNotify() {
-	for np := range r.qosConfig.GetBasicNotification() {
+	for {
+		np := <-*r.qosConfig.GetBasicNotification()
 		// if r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo].GetCongestionWarning().Approach == 0 {
 		// if logEnabledBsc {
 		// 	/*srcIA, _ := np.Qpkt.Rp.SrcIA()

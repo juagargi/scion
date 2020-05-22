@@ -215,9 +215,6 @@ func (d *UDPDestination) Send(dp *NetToRingDataplane, pkt *respool.Packet) {
 			"udpAddr", (*net.UDPAddr)(d))
 		return
 	}
-	if d.Port == 40002 || d.Port == 40005 || d.Port == 40008 || d.Port == 40011 || d.Port == 1042 || d.Port == 1036 || d.Port == 1039 || d.Port == 1045 {
-		log.Debug("got a bwtestinitilazier packet", "routing entry", routingEntry, "pkt", pkt)
-	}
 	sendPacket(routingEntry, pkt)
 }
 

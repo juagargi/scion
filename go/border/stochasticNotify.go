@@ -8,6 +8,7 @@ import (
 	"github.com/scionproto/scion/go/border/qos/queues"
 	"github.com/scionproto/scion/go/border/rpkt"
 	"github.com/scionproto/scion/go/lib/common"
+	"github.com/scionproto/scion/go/lib/l4"
 	"github.com/scionproto/scion/go/lib/layers"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/scmp"
@@ -19,7 +20,8 @@ const (
 )
 
 func (r *Router) stochNotify() {
-	for np := range r.qosConfig.GetStochNotification() {
+	for {
+		np := <-*r.qosConfig.GetStochNotification()
 		// log.Debug("New packet in notify method", "pkt id", np.Qpkt.Rp.Id)
 		go func(np *queues.NPkt) {
 
@@ -113,6 +115,21 @@ func (r *Router) sendStochNotificationSCMP(qp *queues.QPkt, info scmp.Info) {
 			"\n L4", l4,
 			"\n Congestion Warning", pld)
 	}
+
+	srcIA, _ := notification.SrcIA()
+	srcHost, _ := notification.SrcHost()
+	DstIA, _ := notification.DstIA()
+	DstHost, _ := notification.DstHost()
+	pld, _ := notification.Payload(false)
+	l4hdr, _ := notification.L4Hdr(false)
+	cwpld := pld.(*scmp.Payload)
+	quotedl4, _ := l4.UDPFromRaw(cwpld.L4Hdr)
+	// ifNext, _ := notification.IFNext()
+	log.Debug("New SCMP Notification", "SrcIA", srcIA, "SrcHost",
+		srcHost, "DstIA", DstIA, "DstHost", DstHost,
+		"Pkt ID", id, "l4 hdr type", notification.L4Type,
+		"\n L4", l4hdr,
+		"\n Congestion Warning", pld, "\n L4Hdr", quotedl4, "HBH extension", notification.HBHExt, "id", id) //,r.qosConfig.GetQueue(qp.QueueNo).GetTokenBucket().CurrBW
 
 	notification.Route()
 

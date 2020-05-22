@@ -23,7 +23,7 @@ wait 2
 
 echo "finished scmp echo"
 
-SCION_DAEMON_ADDRESS='127.0.0.19:30255'
+SCION_DAEMON_ADDRESS='127.0.0.20:30255'
 export SCION_DAEMON_ADDRESS 
 #for i in 02 04 06 08 10
 #do
@@ -59,9 +59,9 @@ echo "about to set up bwtest client"
 
 cd $GOPATH
 
-SCION_DAEMON_ADDRESS='127.0.0.52:30255' 
+SCION_DAEMON_ADDRESS='127.0.0.44:30255' 
 export SCION_DAEMON_ADDRESS 
-./bin/bwtestclient -s 1-ff00:0:110,[127.0.0.1]:40000 -cs 10,1000,?,5Mbps -sc 0,0,?,1Mbps &
+./bin/bwtestclient -s 1-ff00:0:110,[127.0.0.1]:40000 -cs 10,1000,?,5Mbps -sc 0,0,?,1Mbps & >> logs/Demo/test.txt
 pid1=$!
 
 ./bin/bwtestclient -s 1-ff00:0:110,[127.0.0.1]:40002 -cs 10,1000,?,5Mbps -sc 0,0,?,1Mbps &

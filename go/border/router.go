@@ -205,7 +205,6 @@ func (r *Router) processPacket(rp *rpkt.RtrPkt) {
 	if r.Id == "br1-ff00_0_113-1" || r.Id == "br1-ff00_0_0_113-2" { //|| r.Id == "br1-ff00_0_112-1" || r.Id == "br1-ff00_0_0_112-2" {
 		r.forwardPacket(rp)
 	} else {
-		log.Debug("Packet about to be enqueued", "id", rp.Id)
 		r.qosConfig.QueuePacket(rp)
 	}
 }
