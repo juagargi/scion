@@ -250,7 +250,7 @@ func (qosConfig *Configuration) SendNotification(qp *queues.QPkt) { //COMP:
 		// 	return
 		// }
 		if ok {
-			if scmphdr.Class == scmp.C_General && scmphdr.Type == scmp.T_G_BasicCongWarn && ok {
+			if scmphdr.Class == scmp.C_General && (scmphdr.Type == scmp.T_G_BasicCongWarn || scmphdr.Type == scmp.T_G_StochasticCongWarn) && ok {
 				log.Debug("CW packet should not be notified", "l4", l4hdrType, "scmp hdr", scmphdr)
 
 				if uint8(np.Qpkt.Act.GetAction()) == 0 || uint8(np.Qpkt.Act.GetAction()) == 1 { //

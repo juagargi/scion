@@ -301,7 +301,7 @@ for i in {0..4}; do
     pids[${count}]=$!
     count=$((count+1))
 done 
-echo "Started all clients for this run" >> logs/Demo.control.txt
+echo "Started all clients for this run" >> logs/control.txt
 
 for pid in ${pids[*]}; do
     wait $pid
@@ -425,7 +425,7 @@ for i in {0..4}; do
     pids[${count}]=$!
     count=$((count+1))
 done 
-echo "Started all clients for this run" >> logs/Demo.control.txt
+echo "Started all clients for this run" >> logs/control.txt
 
 for pid in ${pids[*]}; do
     wait $pid
@@ -533,7 +533,7 @@ for i in {0..4}; do
     pids[${count}]=$!
     count=$((count+1))
 done 
-echo "Started all clients for this run" >> logs/Demo.control.txt
+echo "Started all clients for this run" >> logs/control.txt
 
 for pid in ${pids[*]}; do
     wait $pid

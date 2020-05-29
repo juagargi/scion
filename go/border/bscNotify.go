@@ -10,7 +10,6 @@ import (
 	"github.com/scionproto/scion/go/lib/layers"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/scmp"
-	"github.com/scionproto/scion/go/lib/spath"
 )
 
 const logEnabledBsc = true
@@ -62,7 +61,7 @@ func (r *Router) sendBscNotificationSCMP(qp *queues.QPkt, info *scmp.InfoBscCW) 
 	}
 
 	var forwarded bool
-	if uint8(qp.Act.GetAction()) == 0 || uint8(qp.Act.GetAction()) == 1 {
+	if uint8(qp.Act.GetAction()) == 1 {
 		qp.Mtx.Lock()
 		if qp.Forward {
 			log.Debug("Packet in Notify forwarded", "id", qp.Rp.Id)
@@ -165,20 +164,20 @@ func (r *Router) createBscCongWarn(np *queues.NPkt) *scmp.InfoBscCW {
 	bscCW := &scmp.InfoBscCW{}
 	bscCW.ConsIngress = common.IFIDType(np.Qpkt.Rp.Ingress.IfID)
 
-	srcIA, err := np.Qpkt.Rp.SrcIA()
-	if err != nil {
-		log.Error("Unable to fetch Source IA of packet", "err", err)
-		return nil
-	}
+	// srcIA, err := np.Qpkt.Rp.SrcIA()
+	// if err != nil {
+	// 	log.Error("Unable to fetch Source IA of packet", "err", err)
+	// 	return nil
+	// }
 
-	if srcIA.Equal(np.Qpkt.Rp.Ctx.Conf.IA) {
-		bscCW.Path = &spath.Path{}
-	} else {
-		bscCW.Path = &spath.Path{
-			Raw:    np.Qpkt.Rp.Raw[(np.Qpkt.Rp).GetPathIdx():np.Qpkt.Rp.CmnHdr.HdrLenBytes()],
-			InfOff: np.Qpkt.Rp.CmnHdr.InfoFOffBytes() - (np.Qpkt.Rp).GetPathIdx(),
-			HopOff: np.Qpkt.Rp.CmnHdr.HopFOffBytes() - (np.Qpkt.Rp).GetPathIdx()}
-	}
+	// if srcIA.Equal(np.Qpkt.Rp.Ctx.Conf.IA) {
+	// 	bscCW.Path = &spath.Path{}
+	// } else {
+	// 	bscCW.Path = &spath.Path{
+	// 		Raw:    np.Qpkt.Rp.Raw[(np.Qpkt.Rp).GetPathIdx():np.Qpkt.Rp.CmnHdr.HdrLenBytes()],
+	// 		InfOff: np.Qpkt.Rp.CmnHdr.InfoFOffBytes() - (np.Qpkt.Rp).GetPathIdx(),
+	// 		HopOff: np.Qpkt.Rp.CmnHdr.HopFOffBytes() - (np.Qpkt.Rp).GetPathIdx()}
+	// }
 	// if logEnabledBsc {
 	// 	log.Debug("InfoBscCW", "ConsIngress", common.IFIDType(np.Qpkt.Rp.Ingress.IfID),
 	// 		"QueueLength", (r.qosConfig.GetConfig().Queues[np.Qpkt.QueueNo]).GetLength(), "CurrBW",
