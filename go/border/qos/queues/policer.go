@@ -54,6 +54,10 @@ func (tb *TokenBucket) refill() {
 }
 
 func (tb *TokenBucket) Available(amount int) bool {
+
+	if tb.tokens > amount {
+		return true
+	}
 	tb.refill()
 	if tb.tokens > amount {
 		return true
@@ -76,10 +80,16 @@ func (tb *TokenBucket) GetAll() int {
 }
 
 func (tb *TokenBucket) ForceTake(no int) {
+	tb.refill()
 	tb.tokens -= no
 }
 
 func (tb *TokenBucket) Take(no int) bool {
+
+	if tb.tokens-no > 0 {
+		tb.tokens -= no
+		return true
+	}
 	tb.refill()
 	if tb.tokens-no > 0 {
 		tb.tokens -= no

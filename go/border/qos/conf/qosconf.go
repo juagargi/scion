@@ -26,7 +26,7 @@ type ActionProfile struct {
 	Action    PoliceAction `yaml:"action"`
 }
 
-// ExternalPacketQueue is the configuration loaded from the configuraiton file
+// ExternalPacketQueue is the configuration loaded from the configuration file
 type ExternalPacketQueue struct {
 	Name         string          `yaml:"name"`
 	ID           int             `yaml:"id"`
@@ -44,9 +44,10 @@ type ExternalProtocolMatchType struct {
 	Extension    int `yaml:"Extension"`
 }
 
-// ExternalClassRule contains a rule for matching packets
+// ExternalClassRule contains a rule for matching packets loaded from the configuration file
+// note that these fields (at least the string types) need to be exported.
+// Otherwise the yaml unmarshal will fail.
 type ExternalClassRule struct {
-	// This is currently means the ID of the sending border router
 	Name                 string                      `yaml:"name"`
 	Priority             int                         `yaml:"priority"`
 	SourceAs             string                      `yaml:"sourceAs"`
@@ -84,8 +85,6 @@ func LoadConfig(path string) (ExternalConfig, error) {
 		log.Error("Loading the config file has failed", "error", err)
 		return ExternalConfig{}, err
 	}
-
-	log.Info("Config File is", "ec", ec)
 
 	return ec, nil
 }

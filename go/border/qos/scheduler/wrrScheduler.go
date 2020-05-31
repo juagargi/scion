@@ -22,7 +22,7 @@ import (
 	"github.com/scionproto/scion/go/lib/log"
 )
 
-// This is a deficit round robin dequeuer.
+// This is a weighted round robin dequeuer.
 // Queues with higher priority will have more packets dequeued at the same time.
 
 type WeightedRoundRobinScheduler struct {
@@ -42,8 +42,12 @@ func (sched *WeightedRoundRobinScheduler) Init(routerConfig *queues.InternalRout
 
 	sched.quantumSum = 0
 	sched.totalLength = len(routerConfig.Queues)
+	var messageLen int
+	for i := 0; i < len(routerConfig.Queues); i++ {
+		messageLen += routerConfig.Queues[i].GetCapacity()
+	}
 
-	sched.messages = make(chan bool, 100)
+	sched.messages = make(chan bool, messageLen)
 
 	sched.logger = initLogger(sched.totalLength)
 
@@ -58,13 +62,15 @@ func getNoPacketsToDequeue(totalLength int, priority int, totalPriority int) int
 	return priority
 }
 
-func (sched *WeightedRoundRobinScheduler) Dequeue(queue queues.PacketQueueInterface,
+func (sched *WeightedRoundRobinScheduler) Dequeue(
+	queue queues.PacketQueueInterface,
 	forwarder func(rp *rpkt.RtrPkt), queueNo int) {
 
-	nopkts := getNoPacketsToDequeue(sched.totalQueueLength, queue.GetPriority(), sched.quantumSum)
-	pktToDequeue := nopkts
-
 	var qp *queues.QPkt
+
+	pktToDequeue := getNoPacketsToDequeue(sched.totalQueueLength,
+		queue.GetPriority(),
+		sched.quantumSum)
 
 	sched.logger.attempted[queueNo] += pktToDequeue
 
@@ -81,7 +87,7 @@ func (sched *WeightedRoundRobinScheduler) Dequeue(queue queues.PacketQueueInterf
 		sched.reportedTokens += pktLen
 
 		for !(sched.tb.Take(pktLen)) {
-			time.Sleep(1 * time.Millisecond)
+			time.Sleep(30 * time.Millisecond)
 		}
 
 		sched.logger.lastRound[queueNo]++
@@ -122,7 +128,7 @@ func (sched *WeightedRoundRobinScheduler) UpdateIncoming(queueNo int) {
 func (sched *WeightedRoundRobinScheduler) showLog(routerConfig queues.InternalRouterConfig) {
 
 	sched.logger.iterations++
-	if time.Now().Sub(sched.logger.t0) > time.Duration(1*time.Second) {
+	if time.Now().Sub(sched.logger.t0) > time.Duration(10*time.Second) {
 
 		var queLen = make([]int, sched.totalLength)
 		for i := 0; i < sched.totalLength; i++ {
@@ -135,9 +141,14 @@ func (sched *WeightedRoundRobinScheduler) showLog(routerConfig queues.InternalRo
 			sched.logger.lastRound, "deqAttempted",
 			sched.logger.attempted, "deqTotal",
 			sched.logger.total, "currQueueLen", queLen)
-		log.Debug("SPEED", "Mbps", float64(sched.reportedTokens)/1000000.0*8.0, "MBps", float64(sched.reportedTokens)/1000000.0)
+		log.Debug("SPEED",
+			"Mbps", float64(sched.reportedTokens)/1000000.0*8.0,
+			"MBps", float64(sched.reportedTokens)/1000000.0)
 		sched.reportedTokens = 0
-		log.Debug("Bucket", "tokens Mbps", float64(sched.tb.GetAvailable())/1000000.0*8.0, "MBps", float64(sched.tb.GetAvailable())/1000000.0, "allwed MBps", float64(sched.tb.GetMaxBandwidth())/1000000.0)
+		log.Debug("Bucket",
+			"tokens Mbps", float64(sched.tb.GetAvailable())/1000000.0*8.0,
+			"MBps", float64(sched.tb.GetAvailable())/1000000.0,
+			"allowed MBps", float64(sched.tb.GetMaxBandwidth())/1000000.0)
 		for i := 0; i < len(sched.logger.lastRound); i++ {
 			sched.logger.lastRound[i] = 0
 		}

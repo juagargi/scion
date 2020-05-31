@@ -38,6 +38,7 @@ type Configuration struct {
 	worker         workerConfiguration
 	workerChannels [](chan *queues.QPkt)
 	Forwarder      func(rp *rpkt.RtrPkt)
+	Classifier     queues.ClassRuleInterface
 
 	droppedPackets int
 }
@@ -93,18 +94,21 @@ func InitQos(extConf conf.ExternalConfig, forwarder func(rp *rpkt.RtrPkt)) (
 	qConfig := Configuration{}
 	var err error
 	if err = ConvExternalToInternalConfig(&qConfig, extConf); err != nil {
-		log.Error("InitQos: Initialising the classification data structures has failed", "error", err)
+		log.Error("InitQos: Initialising the classification data structures has failed",
+			"error", err)
 	}
 	if err = InitClassification(&qConfig); err != nil {
-		log.Error("InitQos: Initialising the classification data structures has failed", "error", err)
+		log.Error("InitQos: Initialising the classification data structures has failed",
+			"error", err)
 	}
 	if err = initScheduler(&qConfig, forwarder); err != nil {
-		log.Error("InitQos: Initialising the scheduler has failed", "error", err)
+		log.Error("InitQos: Initialising the scheduler has failed",
+			"error", err)
 	}
 	if err = initWorkers(&qConfig); err != nil {
-		log.Error("InitQos: Initialising the workers has failed", "error", err)
+		log.Error("InitQos: Initialising the workers has failed",
+			"error", err)
 	}
-
 	return qConfig, err
 }
 
@@ -123,16 +127,19 @@ func InitClassification(qConfig *Configuration) error {
 	qConfig.config.Rules = *queues.RulesToMap(qConfig.config.Rules.RulesList)
 	qConfig.config.Rules.CrCache.Init(256)
 
+	qConfig.Classifier = &queues.CachelessClassRule{}
+	qConfig.Classifier.Init(len(qConfig.config.Rules.RulesList))
+
 	return nil
 }
 
 func initScheduler(qConfig *Configuration, forwarder func(rp *rpkt.RtrPkt)) error {
 	qConfig.notifications = make(chan *queues.NPkt, maxNotificationCount)
 	qConfig.Forwarder = forwarder
-	// qConfig.schedul = &scheduler.RoundRobinScheduler{}
+
 	qConfig.schedul = &scheduler.WeightedRoundRobinScheduler{}
-	// qConfig.schedul = &scheduler.RateRoundRobinScheduler{}
 	qConfig.schedul.Init(&qConfig.config)
+
 	go qConfig.schedul.Dequeuer(&qConfig.config, qConfig.Forwarder)
 
 	return nil
@@ -155,8 +162,8 @@ func initWorkers(qConfig *Configuration) error {
 // QueuePacket is called from router.go and is the first step in the qos subsystem
 // it is thread safe (necessary bc. of multiple sockets in the border router).
 func (qosConfig *Configuration) QueuePacket(rp *rpkt.RtrPkt) {
-	rc := queues.RegularClassRule{}
 	config := qosConfig.GetConfig()
+	rc := qosConfig.Classifier
 
 	rule := rc.GetRuleForPacket(config, rp)
 
@@ -185,7 +192,7 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 	polAct := qosConfig.config.Queues[queueNo].Police(qp)
 	profAct := qosConfig.config.Queues[queueNo].CheckAction()
 
-	act := queues.ReturnAction(polAct, profAct)
+	act := queues.MergeAction(polAct, profAct)
 
 	switch act {
 	case conf.PASS:
@@ -202,10 +209,7 @@ func putOnQueue(qosConfig *Configuration, queueNo int, qp *queues.QPkt) {
 		qosConfig.config.Queues[queueNo].Enqueue(qp)
 	}
 
-	select {
-	case *qosConfig.schedul.GetMessages() <- true:
-	default:
-	}
+	*qosConfig.schedul.GetMessages() <- true
 }
 
 // SendNotification is needed for the part of @stygerma

@@ -27,6 +27,7 @@ import (
 // ClassRuleInterface allows to get the rule matchting rp from implementing structs
 type ClassRuleInterface interface {
 	GetRuleForPacket(config *InternalRouterConfig, rp *rpkt.RtrPkt) *InternalClassRule
+	Init(noRules int)
 }
 
 // ProtocolMatchType is combination of l4protocol and extension type
@@ -79,7 +80,10 @@ const (
 )
 
 // RegularClassRule implements ClassRuleInterface
-type RegularClassRule struct{}
+type RegularClassRule struct {
+	maskMatched, maskSad, maskDas, maskLf, maskIntf []bool
+	extensions                                      []common.ExtnType
+}
 
 var _ ClassRuleInterface = (*RegularClassRule)(nil)
 
@@ -120,7 +124,7 @@ func ConvClassRuleToInternal(cr conf.ExternalClassRule) (InternalClassRule, erro
 }
 
 // RulesToMap converts a list of internal class rules
-//  (converted by ConvClassRuleToInternal) to a struct of maps of rules
+// (converted by ConvClassRuleToInternal) to a struct of maps of rules
 // which can be used to match packets
 func RulesToMap(crs []InternalClassRule) *MapRules {
 	sourceRules := make(map[addr.IA][]*InternalClassRule)
@@ -242,7 +246,6 @@ func RulesToMap(crs []InternalClassRule) *MapRules {
 	}
 
 	return &mp
-
 }
 
 func getMatchRuleTypeFromRule(
@@ -303,33 +306,43 @@ func getMatchRuleTypeFromRule(
 		matchModeField)
 }
 
-var returnRule *InternalClassRule
-var exactAndRangeSourceMatches []*InternalClassRule
-var exactAndRangeDestinationMatches []*InternalClassRule
-var sourceAnyDestinationMatches []*InternalClassRule
-var destinationAnySourceRules []*InternalClassRule
-var asOnlySourceRules []*InternalClassRule
-var asOnlyDestinationRules []*InternalClassRule
-var isdOnlySourceRules, isdOnlyDestinationRules, interfaceIncomingRules, interfaceOutgoingRules, matched, l4OnlyRules []*InternalClassRule
-var maskMatched, maskSad, maskDas, maskLf, maskIntf []bool
-var srcAddr, dstAddr addr.IA
-var extensions []common.ExtnType
-var l4t common.L4ProtocolType
-var intf uint64
-var ext common.Extension
-
 var emptyRule = &InternalClassRule{
 	Name:        "default",
 	Priority:    0,
 	QueueNumber: 0,
 }
 
+func (rc *RegularClassRule) Init(noRules int) {
+	rc.extensions = make([]common.ExtnType, 255)
+
+	rc.maskMatched = make([]bool, noRules)
+	rc.maskSad = make([]bool, noRules)
+	rc.maskDas = make([]bool, noRules)
+	rc.maskLf = make([]bool, noRules)
+	rc.maskIntf = make([]bool, noRules)
+}
+
 // GetRuleForPacket returns the rule for rp
-func (*RegularClassRule) GetRuleForPacket(
+func (rc *RegularClassRule) GetRuleForPacket(
 	config *InternalRouterConfig, rp *rpkt.RtrPkt) *InternalClassRule {
 
 	var sources [3][]*InternalClassRule
 	var destinations [3][]*InternalClassRule
+	var returnRule *InternalClassRule
+	var exactAndRangeSourceMatches []*InternalClassRule
+	var exactAndRangeDestinationMatches []*InternalClassRule
+	var sourceAnyDestinationMatches []*InternalClassRule
+	var destinationAnySourceRules []*InternalClassRule
+	var asOnlySourceRules []*InternalClassRule
+	var asOnlyDestinationRules []*InternalClassRule
+	var isdOnlySourceRules []*InternalClassRule
+	var isdOnlyDestinationRules []*InternalClassRule
+	var interfaceIncomingRules []*InternalClassRule
+	var matched []*InternalClassRule
+	var l4OnlyRules []*InternalClassRule
+	var srcAddr, dstAddr addr.IA
+	var l4t common.L4ProtocolType
+	var intf uint64
 
 	srcAddr, _ = rp.SrcIA()
 	dstAddr, _ = rp.DstIA()
@@ -340,11 +353,11 @@ func (*RegularClassRule) GetRuleForPacket(
 	e2eext := rp.E2EExt
 	for k := 0; k < len(hbhext); k++ {
 		ext, _ := hbhext[k].GetExtn()
-		extensions = append(extensions, ext.Type())
+		rc.extensions = append(rc.extensions, ext.Type())
 	}
 	for k := 0; k < len(e2eext); k++ {
 		ext, _ := e2eext[k].GetExtn()
-		extensions = append(extensions, ext.Type())
+		rc.extensions = append(rc.extensions, ext.Type())
 	}
 
 	entry := cacheEntry{srcAddress: srcAddr, dstAddress: dstAddr, intf: intf, l4type: l4t}
@@ -352,7 +365,7 @@ func (*RegularClassRule) GetRuleForPacket(
 	returnRule = config.Rules.CrCache.Get(entry)
 
 	if returnRule != nil {
-		if matchRuleL4Type(returnRule, extensions) {
+		if matchRuleL4ExtensionType(returnRule, rc.extensions) {
 			return returnRule
 		}
 	}
@@ -385,51 +398,54 @@ func (*RegularClassRule) GetRuleForPacket(
 
 	matched = intersectListsRules(sources, destinations)
 
-	maskMatched = make([]bool, len(matched))
-	maskSad = make([]bool, len(sourceAnyDestinationMatches))
-	maskDas = make([]bool, len(destinationAnySourceRules))
-	maskLf = make([]bool, len(l4OnlyRules))
-	maskIntf = make([]bool, len(l4OnlyRules))
-
-	matchL4Type(maskMatched, &matched, l4t, extensions)
-	matchL4Type(maskSad, &sourceAnyDestinationMatches, l4t, extensions)
-	matchL4Type(maskDas, &destinationAnySourceRules, l4t, extensions)
-	matchL4Type(maskLf, &l4OnlyRules, l4t, extensions)
-	matchL4Type(maskIntf, &interfaceIncomingRules, l4t, extensions)
+	matchL4Type(rc.maskMatched, &matched, l4t, rc.extensions)
+	matchL4Type(rc.maskSad, &sourceAnyDestinationMatches, l4t, rc.extensions)
+	matchL4Type(rc.maskDas, &destinationAnySourceRules, l4t, rc.extensions)
+	matchL4Type(rc.maskLf, &l4OnlyRules, l4t, rc.extensions)
+	matchL4Type(rc.maskIntf, &interfaceIncomingRules, l4t, rc.extensions)
 
 	max := -1
-	max, returnRule = getRuleWithPrevMax(returnRule, maskMatched, matched, max)
-	max, returnRule = getRuleWithPrevMax(returnRule, maskSad, sourceAnyDestinationMatches, max)
-	max, returnRule = getRuleWithPrevMax(returnRule, maskDas, destinationAnySourceRules, max)
-	max, returnRule = getRuleWithPrevMax(returnRule, maskIntf, interfaceIncomingRules, max)
-	_, returnRule = getRuleWithPrevMax(returnRule, maskLf, l4OnlyRules, max)
+	max, returnRule = getRuleWithPrevMax(returnRule, rc.maskMatched, matched, max)
+	max, returnRule = getRuleWithPrevMax(returnRule, rc.maskSad, sourceAnyDestinationMatches, max)
+	max, returnRule = getRuleWithPrevMax(returnRule, rc.maskDas, destinationAnySourceRules, max)
+	max, returnRule = getRuleWithPrevMax(returnRule, rc.maskIntf, interfaceIncomingRules, max)
+	_, returnRule = getRuleWithPrevMax(returnRule, rc.maskLf, l4OnlyRules, max)
 
 	config.Rules.CrCache.Put(entry, returnRule)
 
 	return returnRule
 }
 
-func matchRuleL4Type(rule *InternalClassRule, extensions []common.ExtnType) bool {
+// matchRuleL4ExtensionType checks whether the rule includes one of the given extension types
+// -1 means that any extension type will return true.
+func matchRuleL4ExtensionType(rule *InternalClassRule, extensions []common.ExtnType) bool {
 
 	for i := 0; i < len(rule.L4Type); i++ {
 		if rule.L4Type[i].extension == -1 {
 			return true
 		}
 		for k := 0; k < len(extensions); k++ {
-			if uint8(rule.L4Type[i].extension) == extensions[k].Type {
+			if uint8(rule.L4Type[i].extension) == extensions[k].Type &&
+				rule.L4Type[i].baseProtocol == extensions[k].Class {
 				return true
 			}
 		}
 	}
-
 	return false
 }
 
+// matchL4Type returns all rules that match the l4 type and the extension type given.
+// It sets mask to true if the match succeeds.
 func matchL4Type(
 	mask []bool,
 	list *[]*InternalClassRule,
 	l4t common.L4ProtocolType,
 	extensions []common.ExtnType) {
+
+	for i := 0; i < len(mask); i++ {
+		mask[i] = false
+
+	}
 
 	for i := 0; i < len(*list); i++ {
 		if (*list)[i] == nil {
@@ -438,7 +454,7 @@ func matchL4Type(
 
 		for j := 0; j < len((*list)[i].L4Type); j++ {
 			if (*list)[i].L4Type[j].baseProtocol == l4t {
-				if matchRuleL4Type((*list)[i], extensions) {
+				if matchRuleL4ExtensionType((*list)[i], extensions) {
 					mask[i] = true
 					break
 				}
@@ -447,6 +463,9 @@ func matchL4Type(
 	}
 }
 
+// getRuleWithPrevMax returns the rule from list which has a priority higher than the previous
+// maximum priority.
+// Only rules where mask is true are checked.
 func getRuleWithPrevMax(
 	returnRule *InternalClassRule,
 	mask []bool,
@@ -470,16 +489,10 @@ func getRuleWithPrevMax(
 	return prevMax, returnRule
 }
 
-var matches = make([]*InternalClassRule, 10)
-
-func unionRules(a []*InternalClassRule, b []*InternalClassRule) []*InternalClassRule {
-
-	return append(a, b...)
-}
-
 func intersectListsRules(
 	a [3][]*InternalClassRule,
 	b [3][]*InternalClassRule) []*InternalClassRule {
+	var matches = make([]*InternalClassRule, 10)
 	for i := 0; i < len(matches); i++ {
 		matches[i] = nil
 	}
@@ -503,22 +516,6 @@ func intersectListsRules(
 						k++
 					}
 				}
-			}
-		}
-	}
-	return matches
-}
-
-func intersectRules(a []*InternalClassRule, b []*InternalClassRule) []*InternalClassRule {
-	for i := 0; i < len(matches); i++ {
-		matches[i] = nil
-	}
-	k := 0
-	for i := 0; i < len(a); i++ {
-		for j := 0; j < len(b); j++ {
-			if a[i] == b[j] {
-				matches[k] = a[i]
-				k++
 			}
 		}
 	}

@@ -2,10 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_test(
     name = "go_default_test",
-    srcs = [
-        "classRule_test.go",
-        "queue_test.go",
-    ],
+    srcs = ["classRule_test.go"],
     data = glob(["testdata/**"]),
     embed = [":go_default_library"],
     deps = [
@@ -17,7 +14,6 @@ go_test(
         "//go/lib/l4:go_default_library",
         "//go/lib/log:go_default_library",
         "//go/lib/spkt:go_default_library",
-        "@com_github_inconshreveable_log15//:go_default_library",
     ],
 )
 
@@ -30,11 +26,9 @@ go_library(
         "classRuleCache.go",
         "classRuleWoCache.go",
         "customQueue.go",
-        "parallelClassRule.go",
         "policer.go",
         "qosConfig.go",
         "queue.go",
-        "semiParallelClassRule.go",
         "sliceQueue.go",
     ],
     importpath = "github.com/scionproto/scion/go/border/qos/queues",

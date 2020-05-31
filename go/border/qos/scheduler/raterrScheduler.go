@@ -9,7 +9,7 @@ import (
 	"github.com/scionproto/scion/go/lib/log"
 )
 
-// This is also a deficit round robin dequeuer. But instead of the priority
+// This is also a weighted round robin dequeuer. But instead of the priority
 // field it uses the min-bandwidth field for the minimum number of packets to dequeue.
 // If there are fewer than the minimal value of packets to dequeue, the remaining min-bandwidth
 // will be put onto a surplus counter and another queue might use more than its min-bandwidth
@@ -46,7 +46,12 @@ func (sched *RateRoundRobinScheduler) Init(routerConfig *queues.InternalRouterCo
 
 	sched.logger = initLogger(sched.totalLength)
 
-	sched.messages = make(chan bool, 20)
+	var messageLen int
+	for i := 0; i < len(routerConfig.Queues); i++ {
+		messageLen += routerConfig.Queues[i].GetCapacity()
+	}
+
+	sched.messages = make(chan bool, messageLen)
 
 	sched.schedulerSurplus = surplus{0, make([]int, sched.totalLength), -1}
 	sched.schedulerSurplusMtx = &sync.Mutex{}
@@ -68,14 +73,11 @@ func (sched *RateRoundRobinScheduler) Init(routerConfig *queues.InternalRouterCo
 	sched.pirBuckets = make([]queues.TokenBucket, sched.totalLength)
 
 	for i := 0; i < sched.totalLength; i++ {
-		// bw := float64(routerConfig.Queues[i].GetMinBandwidth()) / float64(sched.quantumSum)
 		bw := float64(routerConfig.Queues[i].GetMinBandwidth()) / 100.0
 		log.Debug("Init bucket with", "int(maxBW * bw)", int(float64(maxBW)*bw), "bw", bw)
 		sched.cirBuckets[i].Init(int(float64(maxBW) * bw))
-		// sched.cirBuckets[i].Init(maxBW)
 	}
 	for i := 0; i < sched.totalLength; i++ {
-		// bw := float64(routerConfig.Queues[i].GetMaxBandwidth()) / float64(sched.quantumSum)
 		bw := float64(routerConfig.Queues[i].GetMaxBandwidth()) / 100.0
 		log.Debug("Init bucket with", "int(maxBW * bw)", int(float64(maxBW)*bw), "bw", bw)
 		sched.pirBuckets[i].Init(int(float64(maxBW) * bw))
@@ -97,7 +99,7 @@ func (sched *RateRoundRobinScheduler) Dequeuer(routerConfig *queues.InternalRout
 		for i := 0; i < sched.totalLength; i++ {
 			_ = <-sched.jobs
 		}
-		sched.LogUpdate(*routerConfig)
+		sched.showLog(*routerConfig)
 
 		for time.Now().Sub(t0) < sleepDuration {
 			time.Sleep(time.Duration(sched.sleepDuration/10) * time.Microsecond)
@@ -105,10 +107,10 @@ func (sched *RateRoundRobinScheduler) Dequeuer(routerConfig *queues.InternalRout
 	}
 }
 
-func (sched *RateRoundRobinScheduler) LogUpdate(routerConfig queues.InternalRouterConfig) {
+func (sched *RateRoundRobinScheduler) showLog(routerConfig queues.InternalRouterConfig) {
 
 	sched.logger.iterations++
-	if time.Now().Sub(sched.logger.t0) > time.Duration(5*time.Second) {
+	if time.Now().Sub(sched.logger.t0) > time.Duration(10*time.Second) {
 
 		var queLen = make([]int, sched.totalLength)
 		for i := 0; i < sched.totalLength; i++ {

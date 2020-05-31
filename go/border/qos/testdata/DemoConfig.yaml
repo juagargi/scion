@@ -39,30 +39,6 @@ Queues:
         profile:
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}
-    -
-        name: 'TO AS112'
-        id: 3
-        CIR: 30
-        PIR: 30
-        policeRate: 500Mbps
-        maxLength: 512
-        priority: 2
-        congestionWarning: {approach: 11, informationContent: 27}
-        profile:
-            - {fill-level: 80, prob: 20, action: 3}
-            - {fill-level: 90, prob: 90, action: 3}
-    -
-        name: 'Always empty'
-        id: 3
-        CIR: 0
-        PIR: 0
-        policeRate: 500Mbps
-        maxLength: 100
-        priority: 0
-        congestionWarning: {approach: 11, informationContent: 27}
-        profile:
-            - {fill-level: 80, prob: 20, action: 3}
-            - {fill-level: 90, prob: 90, action: 3}
 Rules:
     -
         name: 'FROM AS110 TO ANY ON Queue=1'

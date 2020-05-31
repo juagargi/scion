@@ -22,6 +22,8 @@ import (
 	"github.com/scionproto/scion/go/lib/ringbuf"
 )
 
+// PacketBufQueue is a queue based on the ringbuffer from go/lib/ringbuf/rinbguf.go
+// it is not used because channelQueue.go is faster.
 type PacketBufQueue struct {
 	pktQue   PacketQueue
 	mutex    *sync.Mutex
@@ -32,6 +34,8 @@ type PacketBufQueue struct {
 
 var _ PacketQueueInterface = (*PacketBufQueue)(nil)
 
+// InitQueue initializes the queue.
+// This needs to be called before the queue is used.
 func (pq *PacketBufQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mutTb *sync.Mutex) {
 	pq.pktQue = que
 	pq.mutex = mutQue
@@ -43,6 +47,7 @@ func (pq *PacketBufQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mutTb *
 	}, pq.pktQue.Name)
 }
 
+// Enqueue enqueues a single pointer to a QPkt
 func (pq *PacketBufQueue) Enqueue(rp *QPkt) {
 	pq.bufQueue.Write(ringbuf.EntryList{rp}, false)
 }
@@ -51,20 +56,32 @@ func (pq *PacketBufQueue) canDequeue() bool {
 	return pq.GetLength() > 0
 }
 
+// GetFillLevel returns the filllevel of the queue in percent
 func (pq *PacketBufQueue) GetFillLevel() int {
 	return int(float64(pq.GetLength()) / float64(pq.pktQue.MaxLength) * 100)
 }
 
+// GetCapacity returns the capacity i.e. the maximum number of
+// items on this queue
+func (pq *PacketBufQueue) GetCapacity() int {
+	return pq.pktQue.MaxLength
+}
+
+// GetLength returns the number of packets currently on the queue
+// It is thread safe as the underlying ring buffer is thread safe as well.
 func (pq *PacketBufQueue) GetLength() int {
 	return pq.bufQueue.Readable()
 }
 
+// Pop returns the packet from the front of the queue and removes it from the queue
 func (pq *PacketBufQueue) Pop() *QPkt {
 	pkts := make(ringbuf.EntryList, 1)
 	_, _ = pq.bufQueue.Read(pkts, false)
 	return pkts[0].(*QPkt)
 }
 
+// PopMultiple returns multiple packets from the front of the queue
+// and removes them from the queue
 func (pq *PacketBufQueue) PopMultiple(number int) []*QPkt {
 	pkts := make(ringbuf.EntryList, number)
 	_, _ = pq.bufQueue.Read(pkts, false)
@@ -95,22 +112,39 @@ func (pq *PacketBufQueue) CheckAction() conf.PoliceAction {
 	return conf.PASS
 }
 
+// Police returns the decision from the policer whether the packet can be enqueued or dequeued.
+// Section 3.2.2 and 4.4 of the report contain a more detailed description of the policer
 func (pq *PacketBufQueue) Police(qp *QPkt) conf.PoliceAction {
 	return pq.tb.PoliceBucket(qp)
 }
 
+// GetMinBandwidth returns the minimum bandwidth / committed information rate associated with this
+// queue as configured in the configuration file.
+// This is used for the two-rate three-color conditioned scheduler.
+// For a more detailed description check the two-rate three-color Conditioned Scheduler paragraph in section 3.2.4 of the report.
 func (pq *PacketBufQueue) GetMinBandwidth() int {
 	return pq.pktQue.MinBandwidth
 }
 
+// GetMaxBandwidth returns the maximum bandwidth / peak information rate associated with this
+// queue as configured in the configuration file.
+// This is used for the two-rate three-color conditioned scheduler.
+// For a more detailed description check the two-rate three-color Conditioned Scheduler paragraph
+// in section 3.2.4 of the report.
 func (pq *PacketBufQueue) GetMaxBandwidth() int {
 	return pq.pktQue.MaxBandWidth
 }
 
+// GetPriority returns the priority associated with this queue as configured in the
+// configuration file.
+// This is used for the weighted round robin scheduler.
+// For a more deatiled description check the wheighted round robin scheduler paragraph in
+// section 3.2.4 of the report.
 func (pq *PacketBufQueue) GetPriority() int {
 	return pq.pktQue.Priority
 }
 
+// GetPacketQueue returns the PacketQueue struct associated with this queue
 func (pq *PacketBufQueue) GetPacketQueue() PacketQueue {
 	return pq.pktQue
 }

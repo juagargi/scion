@@ -98,7 +98,8 @@ class GoGenerator(object):
         return raw_entry
 
     def _copy_qos_conf(self, path, base, name):
-        dest_file = '/share/conf/qosConfig.yaml' if self.args.docker else os.path.join(base, name, 'qosConfig.yaml')
+        pt = '/share/conf/qosConfig.yaml'
+        dest_file = pt if self.args.docker else os.path.join(base, name, 'qosConfig.yaml')
         src_file = 'go/border/qos/testdata/StandardConfig.yaml'
         copyfile(src_file, dest_file)
 
