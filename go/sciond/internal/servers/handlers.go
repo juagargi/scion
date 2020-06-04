@@ -20,7 +20,9 @@ import (
 	"net"
 	"time"
 
+	"github.com/scionproto/scion/go/lib/ctrl/drkey_mgmt"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
+	"github.com/scionproto/scion/go/lib/drkeystorage"
 	"github.com/scionproto/scion/go/lib/hostinfo"
 	"github.com/scionproto/scion/go/lib/infra"
 	"github.com/scionproto/scion/go/lib/infra/modules/itopo"
@@ -30,6 +32,7 @@ import (
 	"github.com/scionproto/scion/go/lib/revcache"
 	"github.com/scionproto/scion/go/lib/sciond"
 	"github.com/scionproto/scion/go/lib/serrors"
+	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/proto"
 	"github.com/scionproto/scion/go/sciond/internal/fetcher"
 	"github.com/scionproto/scion/go/sciond/internal/metrics"
@@ -324,6 +327,45 @@ func (h *RevNotificationHandler) verifySRevInfo(ctx context.Context,
 	}
 	err = segverifier.VerifyRevInfo(ctx, h.VerifierFactory.NewVerifier(), nil, sRevInfo)
 	return info, err
+}
+
+// DrKeyLvl2RequestHandler represents the shared global state for the handling of all
+// DrKeyLvl2Request queries. The SCIOND API spawns a goroutine with method Handle
+// for each DrKeyLvl2Request it receives.
+type DrKeyLvl2RequestHandler struct {
+	Store drkeystorage.ClientStore
+}
+
+func (h *DrKeyLvl2RequestHandler) Handle(ctx context.Context, conn net.Conn,
+	src net.Addr, pld *sciond.Pld) {
+
+	defer conn.Close()
+	req := pld.DRKeyLvl2Req
+	metricsDone := metrics.DRKeyLvl2Requests.Start()
+	logger := log.FromCtx(ctx)
+	logger.Debug("[DrKeyLvl2RequestHandler] Received request", "req", req)
+	workCtx, workCancelF := context.WithTimeout(ctx, DefaultWorkTimeout)
+	defer workCancelF()
+
+	key, err := h.Store.GetLvl2Key(workCtx, req.ToMeta(), util.SecsToTime(req.ValTimeRaw))
+	if err != nil {
+		logger.Error("Error sending DRKey lvl2 request via messenger", "err", err)
+		metricsDone(metrics.ErrDB)
+		return
+	}
+
+	replyToSend := &sciond.Pld{
+		Id:           pld.Id,
+		Which:        proto.SCIONDMsg_Which_drkeyLvl2Rep,
+		DRKeyLvl2Rep: drkey_mgmt.NewLvl2RepFromKey(key, time.Now()),
+	}
+	if err := sciond.Send(replyToSend, conn); err != nil {
+		logger.Warn("Unable to reply to client", "client", src, "err", err, "reply", replyToSend)
+		metricsDone(metrics.ErrNetwork)
+	} else {
+		logger.Trace("Sent reply", "DRKeyLvl2Rep", drkey_mgmt.Lvl2Rep{})
+		metricsDone(metrics.OkSuccess)
+	}
 }
 
 // isValid is a placeholder. It should return true if and only if revocation
