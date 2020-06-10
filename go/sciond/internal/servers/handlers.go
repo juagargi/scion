@@ -16,6 +16,7 @@ package servers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/proto"
+	"github.com/scionproto/scion/go/sciond/internal/drkey"
 	"github.com/scionproto/scion/go/sciond/internal/fetcher"
 	"github.com/scionproto/scion/go/sciond/internal/metrics"
 )
@@ -342,6 +344,7 @@ func (h *DrKeyLvl2RequestHandler) Handle(ctx context.Context, conn net.Conn,
 	defer conn.Close()
 	req := pld.DRKeyLvl2Req
 	metricsDone := metrics.DRKeyLvl2Requests.Start()
+	label := metrics.OkSuccess
 	logger := log.FromCtx(ctx)
 	logger.Debug("[DrKeyLvl2RequestHandler] Received request", "req", req)
 	workCtx, workCancelF := context.WithTimeout(ctx, DefaultWorkTimeout)
@@ -349,9 +352,21 @@ func (h *DrKeyLvl2RequestHandler) Handle(ctx context.Context, conn net.Conn,
 
 	key, err := h.Store.GetLvl2Key(workCtx, req.ToMeta(), util.SecsToTime(req.ValTimeRaw))
 	if err != nil {
-		logger.Error("Error sending DRKey lvl2 request via messenger", "err", err)
-		metricsDone(metrics.ErrDB)
-		return
+		if errors.Is(err, drkey.ErrDB) {
+			label = metrics.ErrDB
+		} else {
+			switch {
+			case errors.Is(err, drkey.ErrMessenger):
+				label = metrics.ErrNetwork
+			case errors.Is(err, drkey.ErrInsertDB):
+				label = metrics.ErrDB
+			default:
+				label = metrics.ErrNotClassified
+			}
+			logger.Error("Error getting Lvl2Key", "err", err)
+			metricsDone(label)
+			return
+		}
 	}
 
 	replyToSend := &sciond.Pld{
@@ -364,7 +379,7 @@ func (h *DrKeyLvl2RequestHandler) Handle(ctx context.Context, conn net.Conn,
 		metricsDone(metrics.ErrNetwork)
 	} else {
 		logger.Trace("Sent reply", "DRKeyLvl2Rep", drkey_mgmt.Lvl2Rep{})
-		metricsDone(metrics.OkSuccess)
+		metricsDone(label)
 	}
 }
 

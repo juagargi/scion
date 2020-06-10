@@ -21,14 +21,21 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/ctrl/drkey_mgmt"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/drkeystorage"
 	"github.com/scionproto/scion/go/lib/infra/messenger"
 	"github.com/scionproto/scion/go/lib/log"
+	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/util"
+)
+
+// Drkey fetching errors.
+var (
+	ErrDB        = serrors.New("error with DB")
+	ErrInsertDB  = serrors.New("error inserting in DB")
+	ErrMessenger = serrors.New("error with Messenger")
 )
 
 type DRKeyLvl2Requester interface {
@@ -66,7 +73,7 @@ func (s *ClientStore) GetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 		return k, err
 	}
 	if err != sql.ErrNoRows {
-		return drkey.Lvl2Key{}, common.NewBasicError("Cannot retrieve key from DB", err)
+		return drkey.Lvl2Key{}, serrors.Wrap(ErrDB, err)
 	}
 	logger.Trace("[DRKey ClientStore] Level 2 key not stored. Requesting it to CS")
 	// if not, ask our CS for it
@@ -74,12 +81,12 @@ func (s *ClientStore) GetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 	csAddress := &snet.SVCAddr{IA: s.ia, SVC: addr.SvcCS}
 	rep, err := s.requester.GetDRKeyLvl2(ctx, &req, csAddress, messenger.NextId())
 	if err != nil {
-		return drkey.Lvl2Key{},
-			common.NewBasicError("Error sending DRKey lvl2 request via messenger", err)
+		return drkey.Lvl2Key{}, serrors.Wrap(ErrMessenger, err)
 	}
 	k = rep.ToKey(meta)
 	if err = s.db.InsertLvl2Key(ctx, k); err != nil {
-		logger.Error("[DRKey ClientStore] Could not insert level 2 in DB", err)
+		logger.Error("[DRKey ClientStore] Could not insert level 2 in DB", "error", err)
+		return k, serrors.Wrap(ErrInsertDB, err)
 	}
 	return k, nil
 }
