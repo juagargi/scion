@@ -200,7 +200,8 @@ func (m *Messenger) GetDRKeyLvl2(ctx context.Context, msg *drkey_mgmt.Lvl2Req, a
 		"msg_id", id, "request", msg, "peer", a)
 	replyCtrlPld, err := m.Client.Request(ctx, pld, a)
 	if err != nil {
-		return nil, serrors.WrapStr("[tcp-msger] request error", err, "req_type", infra.DRKeyLvl2Request)
+		return nil, serrors.WrapStr("[tcp-msger] request error", err,
+			"req_type", infra.DRKeyLvl2Request)
 	}
 	_, replyMsg, err := messenger.Validate(replyCtrlPld)
 	if err != nil {
