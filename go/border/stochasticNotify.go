@@ -49,6 +49,7 @@ func (r *Router) stochNotify() {
 			var forwarded bool
 			if uint8(np.Qpkt.Act.GetAction()) == 1 {
 				np.Qpkt.Mtx.Lock()
+				defer np.Qpkt.Mtx.Unlock()
 				if np.Qpkt.Forward {
 					log.Debug("Packet in Notify forwarded", "id", np.Qpkt.Rp.Id)
 					r.forwardPacket(np.Qpkt.Rp)
@@ -56,7 +57,7 @@ func (r *Router) stochNotify() {
 					forwarded = true
 				} else {
 					np.Qpkt.Forward = true
-					qp.Mtx.Unlock()
+					// qp.Mtx.Unlock()
 					log.Debug("Packet in Notify forwarding enabled", "id", np.Qpkt.Rp.Id)
 					forwarded = true
 				}
