@@ -58,8 +58,7 @@ PathType
     The PathType specifies the SCION path type with up to 256 different types.
     The format of each path type is independent of each other. The initially
     proposed SCION path types are Empty (0), SCION (1), OneHopPath (2), EPIC (3)
-    and COLIBRI (4). Here, we only specify the Empty, SCION and OneHopPath path
-    types.
+    and COLIBRI (4).
 DT/DL/ST/SL
     DT/ST and DL/SL encode host-address type and host-address length,
     respectively, for destination/ source. The possible host address length
@@ -424,7 +423,7 @@ a forwarding path. Currently, it's only used for bootstrapping beaconing between
 neighboring ASes.
 
 A OneHopPath has exactly one info field and two hop fields with the speciality
-that the second hop field is not known apriori, but is instead created by the
+that the second hop field is not known a priori, but is instead created by the
 corresponding BR upon processing of the OneHopPath::
 
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -462,10 +461,8 @@ The length of the `InfoField` is variable, and is computed in
 :ref:`colibri-forwarding-process`.
 
 
-
 Packet Timestamp
 ----------------
-Same as the `PacketTimestamp` in EPIC-HP.
 ::
 
      0                   1                   2                   3
@@ -477,30 +474,30 @@ Same as the `PacketTimestamp` in EPIC-HP.
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 TsRel
-  A 4-byte timestamp relative to the (segment) Timestamp in the
-  first Info Field. TsRel is calculated by the source host as
-  follows:
+  A 4-byte timestamp relative to the Expiration Tick in the InfoField minus 16
+  seconds. The timestamp only needs to be set for `C=0` in the InfoField,
+  otherwise it can contain arbitrary data.
+  TsRel is calculated by the source host as follows:
 
 .. math::
     \begin{align}
-        \text{Timestamp}_{\mu s} &= \text{Timestamp [s]}
-            \times 10^6 \\
-        \text{Ts} &= \text{current unix timestamp [$\mu$s]}  \\
-        \text{q} &= \left\lceil\left(\frac{24 \times 60 \times 60
-            \times 10^6}{2^{32}}\right)\right\rceil\text{$\mu$s}
-            = \text{21 $\mu$s}\\
+        \text{Timestamp}_{ns} &= (4\times \text{ExpirationTick} - 16)
+            \times 10^9 \\
+        \text{Ts} &= \text{current unix timestamp [ns]}  \\
+        \text{q} &= \left\lceil\left(\frac{16
+            \times 10^9}{2^{32}}\right)\right\rceil\text{ns}
+            = \text{4 ns}\\
         \text{TsRel} &= \text{max} \left\{0,
-            \frac{\text{Ts - Timestamp}_{$\mu$s}}
+            \frac{\text{Ts - Timestamp}_{ns}}
             {\text{q}} -1 \right\} \\
-        \textit{Get back the time when} &\textit{the packet
+        \textit{Get back the time when }&\textit{the packet
         was timestamped:} \\
-        \text{Ts} &= \text{Timestamp}_{$\mu$s} + (1 + \text{TsRel})
+        \text{Ts} &= \text{Timestamp}_{ns} + (1 + \text{TsRel})
             \times \text{q}
     \end{align}
-
-TsRel has a precision of :math:`\text{21 $\mu$s}` and covers at least
-one day (1 day and 63 minutes). When sending packets at high speeds
-(more than one packet every :math:`\text{21 $\mu$s}`) or when using
+TsRel has a precision of :math:`\text{4 ns}` and covers at least
+17 seconds. When sending packets at high speeds
+(more than one packet every :math:`\text{4 ns}`) or when using
 multiple cores, collisions may occur in TsRel. To solve this
 problem, the source further identifies the packet using PckId.
 
@@ -518,26 +515,21 @@ PckId
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 CoreID
-  Unique identifier representing one of the cores of the source
-  host.
+  Unique identifier representing one of the cores of the source host.
 
 CoreCounter
   Current value of the core counter belonging to the core specified
-  by CoreID. Every time a core sends an EPIC packet, it increases
+  by CoreID. Every time a core sends a COLIBRI packet, it increases
   its core counter (modular addition by 1).
 
 Note that the Packet Timestamp is at the very beginning of the
 header, this allows other components (like the replay suppression
 system) to access it without having to go through any parsing
-overhead. To achieve an even higher precision of the timestamp, the
-source is free to allocate additional bits from the PckId to TsRel
-for this purpose.
+overhead.
 
-
-
-InfoField
+Info Field
 ---------
-The only Info Field has the following format::
+The only info field has the following format::
 
      0                   1                   2                   3
      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -563,7 +555,7 @@ r
 (R)everse
     This packet travels in the reverse direction of the reservation.
     If `R` is set, `C` must be set as well. Otherwise the packet is invalid.
-    This flag is set everytime the COLIBRI service sends back a response.
+    This flag is set every time the COLIBRI service sends back a response.
 
 (S)egment Reservation
     This is a Segment Reservation Packet.
@@ -588,7 +580,7 @@ Expiration Tick
     \text{Expiration Tick}` seconds after Unix epoch.
 
 BWCls
-    The bandwitdh class this reservation has.
+    The bandwidth class this reservation has.
 
 RLC
     The Request Latency Class this reservation has.
@@ -644,9 +636,6 @@ The Hop Field has the following format::
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                              MAC                              |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-
-
 
 Hop Field MAC Computation
 -------------------------
