@@ -29,6 +29,7 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	sc_grpc "github.com/scionproto/scion/go/pkg/grpc"
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
+	dkpb "github.com/scionproto/scion/go/pkg/proto/drkey"
 	"github.com/scionproto/scion/go/pkg/trust"
 )
 
@@ -77,7 +78,7 @@ func (f DRKeyFetcher) GetLvl1FromOtherCS(ctx context.Context,
 	return lvl1Key, nil
 }
 
-func lvl1reqToProtoRequest(req ctrl.Lvl1Req) (*cppb.DRKeyLvl1Request, error) {
+func lvl1reqToProtoRequest(req ctrl.Lvl1Req) (*dkpb.DRKeyLvl1Request, error) {
 	valTime, err := ptypes.TimestampProto(req.ValTime)
 	if err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func lvl1reqToProtoRequest(req ctrl.Lvl1Req) (*cppb.DRKeyLvl1Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &cppb.DRKeyLvl1Request{
+	return &dkpb.DRKeyLvl1Request{
 		DstIA:     uint64(req.DstIA.IAInt()),
 		ValTime:   valTime,
 		Timestamp: timestamp,
@@ -94,7 +95,7 @@ func lvl1reqToProtoRequest(req ctrl.Lvl1Req) (*cppb.DRKeyLvl1Request, error) {
 }
 
 // getLvl1KeyFromReply decrypts and extracts the level 1 drkey from the reply.
-func getLvl1KeyFromReply(rep *cppb.DRKeyLvl1Response) (drkey.Lvl1Key, error) {
+func getLvl1KeyFromReply(rep *dkpb.DRKeyLvl1Response) (drkey.Lvl1Key, error) {
 	key := rep.Drkey
 	srcIA := addr.IAFromRaw(key[:addr.IABytes])
 	dstIA := addr.IAFromRaw(key[addr.IABytes : addr.IABytes*2])

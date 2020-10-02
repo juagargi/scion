@@ -32,6 +32,7 @@ import (
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
+	dkpb "github.com/scionproto/scion/go/pkg/proto/drkey"
 )
 
 // DRKeyServer keeps track of the level 1 drkey keys. It is backed by a drkey.DB .
@@ -47,7 +48,7 @@ var _ cppb.DRKeyLvl2ServiceServer = &DRKeyServer{}
 
 // DRKeyLvl1 handle a level 1 request and returns a level 1 response.
 func (d *DRKeyServer) DRKeyLvl1(ctx context.Context,
-	req *cppb.DRKeyLvl1Request) (*cppb.DRKeyLvl1Response, error) {
+	req *dkpb.DRKeyLvl1Request) (*dkpb.DRKeyLvl1Response, error) {
 	logger := log.FromCtx(ctx)
 	peer, ok := peer.FromContext(ctx)
 	if !ok {
@@ -83,7 +84,7 @@ func (d *DRKeyServer) DRKeyLvl1(ctx context.Context,
 	return resp, nil
 }
 
-func requestToLvl1Req(req *cppb.DRKeyLvl1Request) (ctrl.Lvl1Req, error) {
+func requestToLvl1Req(req *dkpb.DRKeyLvl1Request) (ctrl.Lvl1Req, error) {
 	valTime, err := ptypes.Timestamp(req.ValTime)
 	if err != nil {
 		return ctrl.Lvl1Req{}, err
@@ -100,7 +101,7 @@ func requestToLvl1Req(req *cppb.DRKeyLvl1Request) (ctrl.Lvl1Req, error) {
 	}, nil
 }
 
-func keyToLvl1Resp(drkey drkey.Lvl1Key) (*cppb.DRKeyLvl1Response, error) {
+func keyToLvl1Resp(drkey drkey.Lvl1Key) (*dkpb.DRKeyLvl1Response, error) {
 	epochBegin, err := ptypes.TimestampProto(drkey.Epoch.NotBefore)
 	if err != nil {
 		return nil, err
@@ -119,7 +120,7 @@ func keyToLvl1Resp(drkey drkey.Lvl1Key) (*cppb.DRKeyLvl1Response, error) {
 	drkey.DstIA.Write(rawKey[addr.IABytes:])
 	copy(rawKey[addr.IABytes*2:], drkey.Key)
 
-	return &cppb.DRKeyLvl1Response{
+	return &dkpb.DRKeyLvl1Response{
 		DstIA:      uint64(drkey.DstIA.IAInt()),
 		EpochBegin: epochBegin,
 		EpochEnd:   epochEnd,
@@ -130,7 +131,7 @@ func keyToLvl1Resp(drkey drkey.Lvl1Key) (*cppb.DRKeyLvl1Response, error) {
 
 // DRKeyLvl2 handles a level 2 drkey request and returns a level 2 response.
 func (d *DRKeyServer) DRKeyLvl2(ctx context.Context,
-	req *cppb.DRKeyLvl2Request) (*cppb.DRKeyLvl2Response, error) {
+	req *dkpb.DRKeyLvl2Request) (*dkpb.DRKeyLvl2Response, error) {
 	peer, _ := peer.FromContext(ctx)
 	logger := log.FromCtx(ctx)
 
@@ -249,7 +250,7 @@ func (d *DRKeyServer) validateLvl2Req(req ctrl.Lvl2Req, peerAddr net.Addr) error
 	return nil
 }
 
-func requestToLvl2Req(req *cppb.DRKeyLvl2Request) (ctrl.Lvl2Req, error) {
+func requestToLvl2Req(req *dkpb.DRKeyLvl2Request) (ctrl.Lvl2Req, error) {
 	valTime, err := ptypes.Timestamp(req.ValTime)
 	if err != nil {
 		return ctrl.Lvl2Req{}, err
@@ -273,7 +274,7 @@ func requestToLvl2Req(req *cppb.DRKeyLvl2Request) (ctrl.Lvl2Req, error) {
 	}, nil
 }
 
-func keyToLvl2Resp(drkey drkey.Lvl2Key) (*cppb.DRKeyLvl2Response, error) {
+func keyToLvl2Resp(drkey drkey.Lvl2Key) (*dkpb.DRKeyLvl2Response, error) {
 	epochBegin, err := ptypes.TimestampProto(drkey.Epoch.NotBefore)
 	if err != nil {
 		return nil, err
@@ -287,7 +288,7 @@ func keyToLvl2Resp(drkey drkey.Lvl2Key) (*cppb.DRKeyLvl2Response, error) {
 		return nil, err
 	}
 
-	return &cppb.DRKeyLvl2Response{
+	return &dkpb.DRKeyLvl2Response{
 		EpochBegin: epochBegin,
 		EpochEnd:   epochEnd,
 		Drkey:      []byte(drkey.Key),
