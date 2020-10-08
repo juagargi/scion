@@ -102,7 +102,7 @@ func TestLvl1KeyFetching(t *testing.T) {
 	clientCreds := trust.NewClientCredentials(clientConf)
 
 	conn, err := grpc.DialContext(context.Background(),
-		"1-ff00:0:112",
+		"1-ff00:0:111",
 		grpc.WithTransportCredentials(clientCreds),
 		grpc.WithContextDialer(dialer(serverCreds, drkeyServ)),
 	)
