@@ -42,6 +42,8 @@ type ServiceStore struct {
 	Fetcher      Fetcher
 }
 
+var _ drkeystorage.ServiceStore = (*ServiceStore)(nil)
+
 // GetLvl1Key returns the level 1 drkey from the local DB or if not found, by asking any CS in
 // the source AS of the key.
 func (s *ServiceStore) GetLvl1Key(ctx context.Context, meta drkey.Lvl1Meta,

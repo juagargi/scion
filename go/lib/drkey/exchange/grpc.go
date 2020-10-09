@@ -26,7 +26,7 @@ import (
 func ValitadePeerWithCert(peer *peer.Peer, ia addr.IA) error {
 	tlsInfo, ok := peer.AuthInfo.(credentials.TLSInfo)
 	if !ok {
-		return serrors.New("not TLS credentials provided",
+		return serrors.New("auth info is not of type TLS info",
 			"peer", peer, "authType", peer.AuthInfo.AuthType())
 	}
 	chain := tlsInfo.State.PeerCertificates

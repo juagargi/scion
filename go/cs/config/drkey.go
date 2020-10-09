@@ -66,7 +66,6 @@ func NewDRKeyConfig() *DRKeyConfig {
 func (cfg *DRKeyConfig) InitDefaults() {
 	cfg.enabled = true
 	if cfg.EpochDuration.Duration == 0 {
-		cfg.enabled = false
 		cfg.EpochDuration.Duration = DefaultEpochDuration
 	}
 	if cfg.MaxReplyAge.Duration == 0 {

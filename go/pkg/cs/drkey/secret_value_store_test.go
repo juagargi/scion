@@ -21,10 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/util"
-	"github.com/scionproto/scion/go/lib/xtest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,18 +125,4 @@ func TestSecretValueFactory(t *testing.T) {
 	k, _ = fac.GetSecretValue(now)
 	require.NotEqual(t, savedCurrSV.Key, k.Key)
 	require.Equal(t, savedCurrSV.Epoch.NotAfter, k.Epoch.NotBefore)
-}
-
-func TestDeriveLvl1Key(t *testing.T) {
-	srcIA, _ := addr.IAFromString("1-ff00:0:112")
-	dstIA, _ := addr.IAFromString("1-ff00:0:111")
-	expectedKey := xtest.MustParseHexString("87ee10bcc9ef1501783949a267f8ec6b")
-
-	store := ServiceStore{
-		LocalIA:      srcIA,
-		SecretValues: GetSecretValueTestFactory(),
-	}
-	lvl1Key, err := store.DeriveLvl1(dstIA, time.Now())
-	require.NoError(t, err)
-	require.EqualValues(t, expectedKey, lvl1Key.Key)
 }

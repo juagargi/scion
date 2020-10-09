@@ -27,6 +27,7 @@ import (
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/scrypto/cppki"
 	"github.com/scionproto/scion/go/lib/serrors"
+	csdrkey "github.com/scionproto/scion/go/pkg/cs/drkey"
 	sc_grpc "github.com/scionproto/scion/go/pkg/grpc"
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
 	dkpb "github.com/scionproto/scion/go/pkg/proto/drkey"
@@ -38,6 +39,8 @@ type DRKeyFetcher struct {
 	Dialer sc_grpc.Dialer
 	Router trust.Router
 }
+
+var _ csdrkey.Fetcher = (*DRKeyFetcher)(nil)
 
 // GetLvl1FromOtherCS queries a CS for a level 1 key.
 func (f DRKeyFetcher) GetLvl1FromOtherCS(ctx context.Context,
