@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package drkey
+package test
 
 import (
 	"time"
@@ -20,6 +20,7 @@ import (
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/drkeystorage"
 	"github.com/scionproto/scion/go/lib/util"
+	csdrkey "github.com/scionproto/scion/go/pkg/cs/drkey"
 )
 
 func getTestMasterSecret() []byte {
@@ -29,7 +30,7 @@ func getTestMasterSecret() []byte {
 // SecretValueTestFactory works as a SecretValueFactory but uses a user-controlled-variable instead
 // of time.Now when calling GetSecretValue.
 type SecretValueTestFactory struct {
-	SecretValueFactory
+	csdrkey.SecretValueFactory
 	Now time.Time
 }
 
@@ -39,7 +40,7 @@ func (f *SecretValueTestFactory) GetSecretValue(t time.Time) (drkey.SV, error) {
 
 func GetSecretValueTestFactory() drkeystorage.SecretValueFactory {
 	return &SecretValueTestFactory{
-		SecretValueFactory: *NewSecretValueFactory(getTestMasterSecret(), 10*time.Second),
+		SecretValueFactory: *csdrkey.NewSecretValueFactory(getTestMasterSecret(), 10*time.Second),
 		Now:                util.SecsToTime(0),
 	}
 }

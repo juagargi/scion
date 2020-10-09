@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package drkey
+package drkey_test
 
 import (
 	"context"
@@ -21,9 +21,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/util"
-	"github.com/stretchr/testify/require"
+	csdrkey "github.com/scionproto/scion/go/pkg/cs/drkey"
 )
 
 // waitCondWithTimeout waits for the condition cond and return true, or timeout and return false.
@@ -48,28 +50,26 @@ func TestSecretValueStoreTicker(t *testing.T) {
 	var m sync.Mutex
 	cond := sync.NewCond(&m)
 	m.Lock()
-	c := NewSecretValueStore(time.Millisecond)
-	c.mutex.Lock()
+	c := csdrkey.NewSecretValueStore(time.Millisecond)
 	// This timeNowFcn is used to mock time.Now() to test expiring entries in the tests below.
 	// This _has_ to be called by the cleanup function. Therefore, we can (ab-)use this to check
 	// that the background cleaner is indeed running.
-	c.timeNowFcn = func() time.Time {
+	testTimeNowFunc := func() time.Time {
 		cond.Broadcast()
 		return time.Unix(0, 0)
 	}
-	c.mutex.Unlock()
+	c.SetTimeNowFunction(testTimeNowFunc)
 	ret := waitCondWithTimeout(time.Minute, cond)
 	require.True(t, ret)
 }
 
 func TestSecretValueStore(t *testing.T) {
-	c := NewSecretValueStore(time.Hour)
+	c := csdrkey.NewSecretValueStore(time.Hour)
 	var now atomic.Value
-	c.mutex.Lock()
-	c.timeNowFcn = func() time.Time {
+	testTimeNowFunc := func() time.Time {
 		return now.Load().(time.Time)
 	}
-	c.mutex.Unlock()
+	c.SetTimeNowFunction(testTimeNowFunc)
 	now.Store(time.Unix(10, 0))
 
 	k1 := drkey.SV{
@@ -77,11 +77,11 @@ func TestSecretValueStore(t *testing.T) {
 		Key:    drkey.DRKey([]byte{1, 2, 3}),
 	}
 	c.Set(1, k1)
-	c.cleanExpired()
+	c.CleanExpired()
 	k, found := c.Get(1)
 	require.True(t, found)
 	require.Equal(t, k1, k)
-	require.Len(t, c.cache, 1)
+	require.Len(t, c.Cache(), 1)
 
 	k2 := drkey.SV{
 		SVMeta: drkey.SVMeta{Epoch: drkey.NewEpoch(11, 13)},
@@ -89,23 +89,23 @@ func TestSecretValueStore(t *testing.T) {
 	}
 	now.Store(time.Unix(12, 0).Add(-1 * time.Nanosecond))
 	c.Set(2, k2)
-	require.Len(t, c.cache, 2)
-	c.cleanExpired()
-	require.Len(t, c.cache, 2)
+	require.Len(t, c.Cache(), 2)
+	c.CleanExpired()
+	require.Len(t, c.Cache(), 2)
 	now.Store(time.Unix(12, 1))
-	c.cleanExpired()
-	require.Len(t, c.cache, 1)
+	c.CleanExpired()
+	require.Len(t, c.Cache(), 1)
 	_, found = c.Get(1)
 	require.False(t, found)
 }
 
 func TestSecretValueFactory(t *testing.T) {
 	master := []byte{}
-	fac := NewSecretValueFactory(master, 10*time.Second)
+	fac := csdrkey.NewSecretValueFactory(master, 10*time.Second)
 	_, err := fac.GetSecretValue(time.Now())
 	require.Error(t, err)
 	master = []byte{0, 1, 2, 3}
-	fac = NewSecretValueFactory(master, 10*time.Second)
+	fac = csdrkey.NewSecretValueFactory(master, 10*time.Second)
 	k, err := fac.GetSecretValue(util.SecsToTime(10))
 	require.NoError(t, err)
 	require.EqualValues(t, 10, k.Epoch.NotBefore.Unix())

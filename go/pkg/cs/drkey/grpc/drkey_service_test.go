@@ -21,7 +21,7 @@ import (
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"
-	cs_drkey "github.com/scionproto/scion/go/pkg/cs/drkey"
+	"github.com/scionproto/scion/go/pkg/cs/drkey/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +31,7 @@ func TestDeriveLvl2Key(t *testing.T) {
 	k := xtest.MustParseHexString("c584cad32613547c64823c756651b6f5") // just a level 1 key
 	expectedKey := xtest.MustParseHexString("b90ceff1586e5b5cc3313445df18f271")
 
-	sv, err := cs_drkey.GetSecretValueTestFactory().GetSecretValue(util.SecsToTime(0))
+	sv, err := test.GetSecretValueTestFactory().GetSecretValue(util.SecsToTime(0))
 	require.NoError(t, err)
 
 	lvl1Key := drkey.Lvl1Key{

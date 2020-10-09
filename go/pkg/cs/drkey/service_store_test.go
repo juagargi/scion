@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package drkey
+package drkey_test
 
 import (
 	"testing"
@@ -20,6 +20,8 @@ import (
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/xtest"
+	"github.com/scionproto/scion/go/pkg/cs/drkey"
+	"github.com/scionproto/scion/go/pkg/cs/drkey/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,9 +30,9 @@ func TestDeriveLvl1Key(t *testing.T) {
 	dstIA, _ := addr.IAFromString("1-ff00:0:111")
 	expectedKey := xtest.MustParseHexString("87ee10bcc9ef1501783949a267f8ec6b")
 
-	store := ServiceStore{
+	store := drkey.ServiceStore{
 		LocalIA:      srcIA,
-		SecretValues: GetSecretValueTestFactory(),
+		SecretValues: test.GetSecretValueTestFactory(),
 	}
 	lvl1Key, err := store.DeriveLvl1(dstIA, time.Now())
 	require.NoError(t, err)

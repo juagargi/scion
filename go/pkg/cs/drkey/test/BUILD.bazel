@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["testcommons.go"],
+    importpath = "github.com/scionproto/scion/go/pkg/cs/drkey/test",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//go/lib/drkey:go_default_library",
+        "//go/lib/drkeystorage:go_default_library",
+        "//go/lib/util:go_default_library",
+        "//go/pkg/cs/drkey:go_default_library",
+    ],
+)
