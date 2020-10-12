@@ -99,10 +99,6 @@ func lvl1reqToProtoRequest(req ctrl.Lvl1Req) (*dkpb.DRKeyLvl1Request, error) {
 
 // getLvl1KeyFromReply decrypts and extracts the level 1 drkey from the reply.
 func getLvl1KeyFromReply(rep *dkpb.DRKeyLvl1Response) (drkey.Lvl1Key, error) {
-	key := rep.Drkey
-	srcIA := addr.IAFromRaw(key[:addr.IABytes])
-	dstIA := addr.IAFromRaw(key[addr.IABytes : addr.IABytes*2])
-	rawKey := key[addr.IABytes*2:]
 
 	epochBegin, err := ptypes.Timestamp(rep.EpochBegin)
 	if err != nil {
@@ -120,10 +116,10 @@ func getLvl1KeyFromReply(rep *dkpb.DRKeyLvl1Response) (drkey.Lvl1Key, error) {
 	}
 	return drkey.Lvl1Key{
 		Lvl1Meta: drkey.Lvl1Meta{
-			SrcIA: srcIA,
-			DstIA: dstIA,
+			SrcIA: addr.IAInt(rep.SrcIA).IA(),
+			DstIA: addr.IAInt(rep.DstIA).IA(),
 			Epoch: epoch,
 		},
-		Key: drkey.DRKey(rawKey),
+		Key: drkey.DRKey(rep.Drkey),
 	}, nil
 }

@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/xtest"
 	"github.com/scionproto/scion/go/pkg/cs/drkey"
 	"github.com/scionproto/scion/go/pkg/cs/drkey/test"
@@ -26,8 +25,8 @@ import (
 )
 
 func TestDeriveLvl1Key(t *testing.T) {
-	srcIA, _ := addr.IAFromString("1-ff00:0:112")
-	dstIA, _ := addr.IAFromString("1-ff00:0:111")
+	srcIA := xtest.MustParseIA("1-ff00:0:112")
+	dstIA := xtest.MustParseIA("1-ff00:0:111")
 	expectedKey := xtest.MustParseHexString("87ee10bcc9ef1501783949a267f8ec6b")
 
 	store := drkey.ServiceStore{

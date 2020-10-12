@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package grpc
+package grpc_test
 
 import (
 	"context"
@@ -32,6 +32,7 @@ import (
 	mock_st "github.com/scionproto/scion/go/lib/drkeystorage/mock_drkeystorage"
 	"github.com/scionproto/scion/go/lib/scrypto/cppki"
 	"github.com/scionproto/scion/go/lib/xtest"
+	dk_grpc "github.com/scionproto/scion/go/pkg/cs/drkey/grpc"
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
 	"github.com/scionproto/scion/go/pkg/trust"
 	"github.com/scionproto/scion/go/pkg/trust/mock_trust"
@@ -82,7 +83,7 @@ func TestLvl1KeyFetching(t *testing.T) {
 	loader.EXPECT().LoadX509KeyPair().AnyTimes().Return(&tlsCert, nil)
 	mgr := trust.NewTLSCryptoManager(loader, mgrdb)
 
-	drkeyServ := &DRKeyServer{
+	drkeyServ := &dk_grpc.DRKeyServer{
 		Store: lvl1db,
 	}
 
@@ -112,7 +113,7 @@ func TestLvl1KeyFetching(t *testing.T) {
 	client := cppb.NewDRKeyLvl1ServiceClient(conn)
 
 	lvl1req := pb_ctrl.NewLvl1Req(ia111, time.Now())
-	req, err := lvl1reqToProtoRequest(lvl1req)
+	req, err := dk_grpc.Lvl1reqToProtoRequest(lvl1req)
 	require.NoError(t, err)
 	_, err = client.DRKeyLvl1(context.Background(), req)
 	require.NoError(t, err)

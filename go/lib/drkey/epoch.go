@@ -36,8 +36,8 @@ func (e Epoch) Equal(other Epoch) bool {
 func NewEpoch(begin, end uint32) Epoch {
 	return Epoch{
 		cppki.Validity{
-			NotBefore: util.SecsToTime(begin),
-			NotAfter:  util.SecsToTime(end),
+			NotBefore: util.SecsToTime(begin).UTC(),
+			NotAfter:  util.SecsToTime(end).UTC(),
 		},
 	}
 }

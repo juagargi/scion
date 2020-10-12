@@ -114,17 +114,13 @@ func keyToLvl1Resp(drkey drkey.Lvl1Key) (*dkpb.DRKeyLvl1Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	keyLen := len(drkey.Key)
-	rawKey := make([]byte, addr.IABytes*2+keyLen)
-	drkey.SrcIA.Write(rawKey)
-	drkey.DstIA.Write(rawKey[addr.IABytes:])
-	copy(rawKey[addr.IABytes*2:], drkey.Key)
 
 	return &dkpb.DRKeyLvl1Response{
 		DstIA:      uint64(drkey.DstIA.IAInt()),
+		SrcIA:      uint64(drkey.SrcIA.IAInt()),
 		EpochBegin: epochBegin,
 		EpochEnd:   epochEnd,
-		Drkey:      rawKey,
+		Drkey:      []byte(drkey.Key),
 		Timestamp:  now,
 	}, nil
 }

@@ -15,12 +15,16 @@
 package test
 
 import (
+	"testing"
 	"time"
 
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/drkeystorage"
 	"github.com/scionproto/scion/go/lib/util"
+	"github.com/scionproto/scion/go/lib/xtest"
 	csdrkey "github.com/scionproto/scion/go/pkg/cs/drkey"
+	"github.com/stretchr/testify/require"
 )
 
 func getTestMasterSecret() []byte {
@@ -34,7 +38,7 @@ type SecretValueTestFactory struct {
 	Now time.Time
 }
 
-func (f *SecretValueTestFactory) GetSecretValue(t time.Time) (drkey.SV, error) {
+func (f *SecretValueTestFactory) GetSecretValue(_ time.Time) (drkey.SV, error) {
 	return f.SecretValueFactory.GetSecretValue(f.Now)
 }
 
@@ -43,4 +47,35 @@ func GetSecretValueTestFactory() drkeystorage.SecretValueFactory {
 		SecretValueFactory: *csdrkey.NewSecretValueFactory(getTestMasterSecret(), 10*time.Second),
 		Now:                util.SecsToTime(0),
 	}
+}
+
+func GetInputToDeriveLvl2Key(t *testing.T) (drkey.Lvl2Meta, drkey.Lvl1Key) {
+	srcIA := xtest.MustParseIA("1-ff00:0:1")
+	dstIA := xtest.MustParseIA("1-ff00:0:2")
+	k := xtest.MustParseHexString("c584cad32613547c64823c756651b6f5") // just a level 1 key
+
+	sv, err := GetSecretValueTestFactory().GetSecretValue(util.SecsToTime(0))
+	require.NoError(t, err)
+
+	lvl1Key := drkey.Lvl1Key{
+		Key: k,
+		Lvl1Meta: drkey.Lvl1Meta{
+			Epoch: sv.Epoch,
+			SrcIA: srcIA,
+			DstIA: dstIA,
+		},
+	}
+
+	var srcHost addr.HostAddr = addr.HostNone{}
+	var dstHost addr.HostAddr = addr.HostNone{}
+	meta := drkey.Lvl2Meta{
+		KeyType:  drkey.AS2AS,
+		Protocol: "scmp",
+		Epoch:    lvl1Key.Epoch,
+		SrcIA:    srcIA,
+		DstIA:    dstIA,
+		SrcHost:  srcHost,
+		DstHost:  dstHost,
+	}
+	return meta, lvl1Key
 }

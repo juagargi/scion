@@ -33,14 +33,16 @@ message DRKeyLvl1Request{
 message DRKeyLvl1Response{
     // Dst ISD-AS of the DRKey
     uint64 dstIA = 1;
+    // src ISD-AS of the DRKey
+    uint64 srcIA = 2; 
     // Begin of validity period of DRKey
-    google.protobuf.Timestamp epochBegin = 2;
+    google.protobuf.Timestamp epochBegin = 3;
     // End of validity period of DRKey
-    google.protobuf.Timestamp epochEnd = 3;
+    google.protobuf.Timestamp epochEnd = 4;
     // Lvl1 DRKey
-    bytes drkey = 4;
+    bytes drkey = 5;
     // Creation time of this reply
-    google.protobuf.Timestamp timestamp = 5;
+    google.protobuf.Timestamp timestamp = 6;
 }
 
 message DRKeyLvl2Request{

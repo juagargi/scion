@@ -12,25 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package grpc_test
+package grpc
 
-import (
-	"testing"
-
-	"github.com/stretchr/testify/require"
-
-	"github.com/scionproto/scion/go/lib/xtest"
-	dk_grpc "github.com/scionproto/scion/go/pkg/cs/drkey/grpc"
-	"github.com/scionproto/scion/go/pkg/cs/drkey/test"
+var (
+	DeriveLvl2            = deriveLvl2
+	Lvl1reqToProtoRequest = lvl1reqToProtoRequest
+	RequestToLvl1Req      = requestToLvl1Req
+	KeyToLvl1Resp         = keyToLvl1Resp
+	GetLvl1KeyFromReply   = getLvl1KeyFromReply
+	RequestToLvl2Req      = requestToLvl2Req
+	KeyToLvl2Resp         = keyToLvl2Resp
 )
-
-func TestDeriveLvl2Key(t *testing.T) {
-
-	expectedKey := xtest.MustParseHexString("b90ceff1586e5b5cc3313445df18f271")
-
-	meta, lvl1Key := test.GetInputToDeriveLvl2Key(t)
-
-	lvl2Key, err := dk_grpc.DeriveLvl2(meta, lvl1Key)
-	require.NoError(t, err)
-	require.EqualValues(t, expectedKey, lvl2Key.Key)
-}
