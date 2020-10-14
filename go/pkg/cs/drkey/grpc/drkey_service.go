@@ -128,8 +128,12 @@ func keyToLvl1Resp(drkey drkey.Lvl1Key) (*dkpb.DRKeyLvl1Response, error) {
 // DRKeyLvl2 handles a level 2 drkey request and returns a level 2 response.
 func (d *DRKeyServer) DRKeyLvl2(ctx context.Context,
 	req *dkpb.DRKeyLvl2Request) (*dkpb.DRKeyLvl2Response, error) {
-	peer, _ := peer.FromContext(ctx)
 	logger := log.FromCtx(ctx)
+	peer, ok := peer.FromContext(ctx)
+	if !ok {
+		logger.Error("[DRKey ServiceStore] Cannot retrieve peer from ctx")
+		return nil, serrors.New("retrieving peer information from ctx")
+	}
 
 	parsedReq, err := requestToLvl2Req(req)
 	if err != nil {

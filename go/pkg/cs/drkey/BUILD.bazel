@@ -31,9 +31,13 @@ go_test(
     embed = [":go_default_library"],
     deps = [
         "//go/lib/drkey:go_default_library",
+        "//go/lib/drkey/drkeydbsqlite:go_default_library",
         "//go/lib/util:go_default_library",
         "//go/lib/xtest:go_default_library",
+        "//go/pkg/cs/drkey/mock_drkey:go_default_library",
         "//go/pkg/cs/drkey/test:go_default_library",
+        "@com_github_golang_mock//gomock:go_default_library",
+        "@com_github_stretchr_testify//assert:go_default_library",
         "@com_github_stretchr_testify//require:go_default_library",
     ],
 )
