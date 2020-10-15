@@ -25,7 +25,6 @@ go_library(
         "//go/pkg/proto/drkey:go_default_library",
         "//go/pkg/trust:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
-        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//peer:go_default_library",
     ],
 )

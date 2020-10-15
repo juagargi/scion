@@ -18,9 +18,6 @@ import (
 	"context"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/peer"
-
 	"github.com/golang/protobuf/ptypes"
 	"github.com/scionproto/scion/go/lib/addr"
 	ctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
@@ -66,9 +63,7 @@ func (f DRKeyFetcher) GetLvl1FromOtherCS(ctx context.Context,
 	}
 
 	// Use client to request lvl1 key, get Lvl1Rep
-	peer := new(peer.Peer)
-	callOptions := append(sc_grpc.RetryProfile, grpc.Peer(peer))
-	rep, err := client.DRKeyLvl1(ctx, req, callOptions...)
+	rep, err := client.DRKeyLvl1(ctx, req)
 	if err != nil {
 		return drkey.Lvl1Key{}, serrors.WrapStr("requesting level 1 key", err)
 	}
