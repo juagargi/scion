@@ -75,7 +75,6 @@ func TestGetLvl1Key(t *testing.T) {
 	defer mctrl.Finish()
 
 	fetcher := mock_drkey.NewMockFetcher(mctrl)
-	// ctx context.Context, srcIA, dstIA addr.IA, valTime time.Time
 	firstCall := fetcher.EXPECT().GetLvl1FromOtherCS(gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).Return(firstLvl1Key, nil)
 	fetcher.EXPECT().GetLvl1FromOtherCS(gomock.Any(), gomock.Any(), gomock.Any(),
@@ -88,15 +87,18 @@ func TestGetLvl1Key(t *testing.T) {
 	}
 
 	// it must fetch first key from remote
-	rcvKey1, err := store.GetLvl1Key(context.Background(), firstLvl1Key.Lvl1Meta, util.SecsToTime(0).UTC())
+	rcvKey1, err := store.GetLvl1Key(context.Background(), firstLvl1Key.Lvl1Meta,
+		util.SecsToTime(0).UTC())
 	require.NoError(t, err)
 	assert.Equal(t, firstLvl1Key, rcvKey1)
 	// it must not fetch key from remote and return previous key
-	rcvKey2, err := store.GetLvl1Key(context.Background(), firstLvl1Key.Lvl1Meta, util.SecsToTime(1).UTC())
+	rcvKey2, err := store.GetLvl1Key(context.Background(), firstLvl1Key.Lvl1Meta,
+		util.SecsToTime(1).UTC())
 	require.NoError(t, err)
 	assert.Equal(t, firstLvl1Key, rcvKey2)
 	// it must fetch second key from remote
-	rcvKey3, err := store.GetLvl1Key(context.Background(), firstLvl1Key.Lvl1Meta, util.SecsToTime(3).UTC())
+	rcvKey3, err := store.GetLvl1Key(context.Background(), firstLvl1Key.Lvl1Meta,
+		util.SecsToTime(3).UTC())
 	require.NoError(t, err)
 	assert.Equal(t, secondLvl1Key, rcvKey3)
 }

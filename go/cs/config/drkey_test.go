@@ -23,9 +23,10 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/scionproto/scion/go/pkg/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/scionproto/scion/go/pkg/storage"
 )
 
 func TestInitDefaults(t *testing.T) {

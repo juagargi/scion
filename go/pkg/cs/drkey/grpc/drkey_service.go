@@ -19,9 +19,9 @@ import (
 	"net"
 	"time"
 
+	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/peer"
 
-	"github.com/golang/protobuf/ptypes"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
 	ctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
@@ -95,7 +95,7 @@ func requestToLvl1Req(req *dkpb.DRKeyLvl1Request) (ctrl.Lvl1Req, error) {
 	}
 
 	return ctrl.Lvl1Req{
-		DstIA:     addr.IAInt(req.DstIA).IA(),
+		DstIA:     addr.IAInt(req.Dst_IA).IA(),
 		ValTime:   valTime,
 		Timestamp: timestamp,
 	}, nil
@@ -116,8 +116,8 @@ func keyToLvl1Resp(drkey drkey.Lvl1Key) (*dkpb.DRKeyLvl1Response, error) {
 	}
 
 	return &dkpb.DRKeyLvl1Response{
-		DstIA:      uint64(drkey.DstIA.IAInt()),
-		SrcIA:      uint64(drkey.SrcIA.IAInt()),
+		Dst_IA:     uint64(drkey.DstIA.IAInt()),
+		Src_IA:     uint64(drkey.SrcIA.IAInt()),
 		EpochBegin: epochBegin,
 		EpochEnd:   epochEnd,
 		Drkey:      []byte(drkey.Key),
@@ -196,15 +196,16 @@ func deriveLvl2(meta drkey.Lvl2Meta, lvl1Key drkey.Lvl1Key) (
 
 	der, found := protocol.KnownDerivations[meta.Protocol]
 	if !found {
-		return drkey.Lvl2Key{}, serrors.New("no derivation found for protocol", "protocol", meta.Protocol)
+		return drkey.Lvl2Key{}, serrors.New("no derivation found for protocol",
+			"protocol", meta.Protocol)
 	}
 	return der.DeriveLvl2(meta, lvl1Key)
 }
 
-// validateLvl2Req checks that the requester is in the destination of the key if AS2Host or host2host,
-// and checks that the requester is authorized as to get a DS if AS2AS (AS2AS == DS).
+// validateLvl2Req checks that the requester is in the destination of the key
+// if AS2Host or host2host, and checks that the requester is authorized as to
+// get a DS if AS2AS (AS2AS == DS).
 func (d *DRKeyServer) validateLvl2Req(req ctrl.Lvl2Req, peerAddr net.Addr) error {
-	// TODO(juagargi) do the checks depending on the key type
 	tcpAddr, ok := peerAddr.(*net.TCPAddr)
 	if !ok {
 		return serrors.New("invalid peer address type, expected *net.TCPAddr",
@@ -260,8 +261,8 @@ func requestToLvl2Req(req *dkpb.DRKeyLvl2Request) (ctrl.Lvl2Req, error) {
 		Protocol: req.Protocol,
 		ReqType:  req.ReqType,
 		ValTime:  valTime,
-		SrcIA:    addr.IAInt(req.SrcIA).IA(),
-		DstIA:    addr.IAInt(req.DstIA).IA(),
+		SrcIA:    addr.IAInt(req.Src_IA).IA(),
+		DstIA:    addr.IAInt(req.Dst_IA).IA(),
 		SrcHost: ctrl.Host{
 			Type: addr.HostAddrType(req.SrcHost.Type),
 			Host: req.SrcHost.Host,

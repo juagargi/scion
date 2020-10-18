@@ -18,13 +18,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/drkeystorage"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"
 	csdrkey "github.com/scionproto/scion/go/pkg/cs/drkey"
-	"github.com/stretchr/testify/require"
 )
 
 func getTestMasterSecret() []byte {

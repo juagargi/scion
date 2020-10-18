@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
+
 	"github.com/scionproto/scion/go/lib/addr"
 	ctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/drkey"
@@ -86,7 +87,7 @@ func lvl1reqToProtoRequest(req ctrl.Lvl1Req) (*dkpb.DRKeyLvl1Request, error) {
 		return nil, err
 	}
 	return &dkpb.DRKeyLvl1Request{
-		DstIA:     uint64(req.DstIA.IAInt()),
+		Dst_IA:    uint64(req.DstIA.IAInt()),
 		ValTime:   valTime,
 		Timestamp: timestamp,
 	}, nil
@@ -111,8 +112,8 @@ func getLvl1KeyFromReply(rep *dkpb.DRKeyLvl1Response) (drkey.Lvl1Key, error) {
 	}
 	return drkey.Lvl1Key{
 		Lvl1Meta: drkey.Lvl1Meta{
-			SrcIA: addr.IAInt(rep.SrcIA).IA(),
-			DstIA: addr.IAInt(rep.DstIA).IA(),
+			SrcIA: addr.IAInt(rep.Src_IA).IA(),
+			DstIA: addr.IAInt(rep.Dst_IA).IA(),
 			Epoch: epoch,
 		},
 		Key: drkey.DRKey(rep.Drkey),

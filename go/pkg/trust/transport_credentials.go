@@ -53,7 +53,8 @@ func NewClientCredentials(conf *tls.Config) credentials.TransportCredentials {
 // ClientHandshake extends the embedded TransportCredentials callback by verifying the peer's name
 // and the information provided in the certificate. Upon error the connection is closed and a
 // non-temporary error is returned.
-func (c *ClientCredentials) ClientHandshake(ctx context.Context, authority string, rawConn net.Conn) (_ net.Conn, _ credentials.AuthInfo, err error) {
+func (c *ClientCredentials) ClientHandshake(ctx context.Context, authority string,
+	rawConn net.Conn) (_ net.Conn, _ credentials.AuthInfo, err error) {
 	conn, authInfo, err := c.TransportCredentials.ClientHandshake(ctx, authority, rawConn)
 	if err != nil {
 		return nil, nil, err
@@ -61,11 +62,16 @@ func (c *ClientCredentials) ClientHandshake(ctx context.Context, authority strin
 	tlsInfo, ok := authInfo.(credentials.TLSInfo)
 	if !ok {
 		conn.Close()
-		return nil, nil, &nonTempWrapper{serrors.New("authInfo should be type tlsInfo and is", "authInfoType", authInfo.AuthType())}
+		return nil, nil, &nonTempWrapper{
+			serrors.New("authInfo should be type tlsInfo and is",
+				"authInfoType", authInfo.AuthType()),
+		}
 	}
 	if err = verifyConnection(tlsInfo.State); err != nil {
 		conn.Close()
-		return nil, nil, &nonTempWrapper{serrors.WrapStr("verifying connection in client handshake", err)}
+		return nil, nil, &nonTempWrapper{
+			serrors.WrapStr("verifying connection in client handshake", err),
+		}
 	}
 	return conn, tlsInfo, nil
 }

@@ -18,13 +18,15 @@ option go_package = "github.com/scionproto/scion/go/pkg/proto/control_plane";
 
 package proto.control_plane.v1;
 
-import "proto/drkey/v1/mgmt.proto";
+import "proto/drkey/mgmt/v1/mgmt.proto";
 
 service DRKeyLvl1Service{
-    rpc DRKeyLvl1(drkey.mgmt.v1.DRKeyLvl1Request) returns (drkey.mgmt.v1.DRKeyLvl1Response) {}
+    // Return the Lvl1Key that matches the request
+    rpc DRKeyLvl1(proto.drkey.mgmt.v1.DRKeyLvl1Request) returns (proto.drkey.mgmt.v1.DRKeyLvl1Response) {}
 }
 
 service DRKeyLvl2Service{
-    rpc DRKeyLvl2(drkey.mgmt.v1.DRKeyLvl2Request) returns (drkey.mgmt.v1.DRKeyLvl2Response) {}
+    // Return the Lvl2Key that matches the request
+    rpc DRKeyLvl2(proto.drkey.mgmt.v1.DRKeyLvl2Request) returns (proto.drkey.mgmt.v1.DRKeyLvl2Response) {}
 }
 

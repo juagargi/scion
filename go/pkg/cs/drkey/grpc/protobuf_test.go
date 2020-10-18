@@ -43,7 +43,7 @@ func TestRequestToLvl1Req(t *testing.T) {
 	dstIA := xtest.MustParseIA("1-ff00:0:110").IAInt()
 
 	req := &dkpb.DRKeyLvl1Request{
-		DstIA:     uint64(dstIA),
+		Dst_IA:    uint64(dstIA),
 		ValTime:   valTime,
 		Timestamp: timestamp,
 	}
@@ -74,8 +74,8 @@ func TestKeyToLvl1Resp(t *testing.T) {
 	}
 
 	targetResp := &dkpb.DRKeyLvl1Response{
-		DstIA:      uint64(dstIA.IAInt()),
-		SrcIA:      uint64(srcIA.IAInt()),
+		Dst_IA:     uint64(dstIA.IAInt()),
+		Src_IA:     uint64(srcIA.IAInt()),
 		EpochBegin: epochBegin,
 		EpochEnd:   epochEnd,
 		Drkey:      []byte(k),
@@ -98,8 +98,8 @@ func TestGetLvl1KeyFromReply(t *testing.T) {
 	k := xtest.MustParseHexString("c584cad32613547c64823c756651b6f5") // just a level 1 key
 
 	resp := &dkpb.DRKeyLvl1Response{
-		DstIA:      uint64(dstIA.IAInt()),
-		SrcIA:      uint64(srcIA.IAInt()),
+		Dst_IA:     uint64(dstIA.IAInt()),
+		Src_IA:     uint64(srcIA.IAInt()),
 		EpochBegin: epochBegin,
 		EpochEnd:   epochEnd,
 		Drkey:      []byte(k),
@@ -133,8 +133,8 @@ func TestRequestToLvl2Req(t *testing.T) {
 	req := &dkpb.DRKeyLvl2Request{
 		Protocol: "piskes",
 		ReqType:  uint32(reqType),
-		DstIA:    uint64(dstIA.IAInt()),
-		SrcIA:    uint64(srcIA.IAInt()),
+		Dst_IA:   uint64(dstIA.IAInt()),
+		Src_IA:   uint64(srcIA.IAInt()),
 		ValTime:  valTime,
 		SrcHost: &dkpb.DRKeyLvl2Request_DRKeyHost{
 			Type: uint32(hostType),
@@ -185,6 +185,7 @@ func TestKeyToLvl2Resp(t *testing.T) {
 	}
 
 	resp, err := dk_grpc.KeyToLvl2Resp(lvl2Key)
+	require.NoError(t, err)
 	targetResp.Timestamp = resp.Timestamp
 	assert.Equal(t, targetResp, resp)
 }

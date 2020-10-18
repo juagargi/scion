@@ -22,11 +22,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/golang/mock/gomock"
 	pb_ctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/drkey"
 	mock_st "github.com/scionproto/scion/go/lib/drkeystorage/mock_drkeystorage"
@@ -36,7 +37,6 @@ import (
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
 	"github.com/scionproto/scion/go/pkg/trust"
 	"github.com/scionproto/scion/go/pkg/trust/mock_trust"
-	"github.com/stretchr/testify/require"
 )
 
 func dialer(creds credentials.TransportCredentials,
@@ -45,7 +45,6 @@ func dialer(creds credentials.TransportCredentials,
 	listener := bufconn.Listen(bufsize)
 
 	server := grpc.NewServer(grpc.Creds(creds))
-	// server := grpc.NewServer()
 
 	cppb.RegisterDRKeyLvl1ServiceServer(server, drkeyServer)
 
