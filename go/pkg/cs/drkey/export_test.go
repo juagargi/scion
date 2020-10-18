@@ -22,8 +22,9 @@ import (
 
 func (c *SecretValueStore) SetTimeNowFunction(f func() time.Time) {
 	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	c.timeNowFcn = f
-	c.mutex.Unlock()
+
 }
 
 func (c *SecretValueStore) CleanExpired() {

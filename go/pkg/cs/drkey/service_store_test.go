@@ -16,8 +16,6 @@ package drkey_test
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -49,8 +47,8 @@ func TestDeriveLvl1Key(t *testing.T) {
 }
 
 func TestGetLvl1Key(t *testing.T) {
-	lvl1db, cleanF := newLvl1Database(t)
-	defer cleanF()
+	lvl1db := newLvl1Database(t)
+	defer lvl1db.Close()
 	localIA := xtest.MustParseIA("1-ff00:0:110")
 	dstIA := localIA
 	srcIA := xtest.MustParseIA("1-ff00:0:111")
@@ -103,17 +101,9 @@ func TestGetLvl1Key(t *testing.T) {
 	assert.Equal(t, secondLvl1Key, rcvKey3)
 }
 
-func newLvl1Database(t *testing.T) (*drkeydbsqlite.Lvl1Backend, func()) {
-	file, err := ioutil.TempFile("", "db-test-")
-	require.NoError(t, err)
-	name := file.Name()
-	err = file.Close()
-	require.NoError(t, err)
-	db, err := drkeydbsqlite.NewLvl1Backend(name)
+func newLvl1Database(t *testing.T) *drkeydbsqlite.Lvl1Backend {
+	db, err := drkeydbsqlite.NewLvl1Backend("file::memory:")
 	require.NoError(t, err)
 
-	return db, func() {
-		db.Close()
-		os.Remove(name)
-	}
+	return db
 }
