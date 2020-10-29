@@ -8,7 +8,6 @@ import (
 	context "context"
 	gomock "github.com/golang/mock/gomock"
 	daemon "github.com/scionproto/scion/go/pkg/proto/daemon"
-	drkey "github.com/scionproto/scion/go/pkg/proto/drkey"
 	reflect "reflect"
 )
 
@@ -51,10 +50,10 @@ func (mr *MockDaemonServiceServerMockRecorder) AS(arg0, arg1 interface{}) *gomoc
 }
 
 // DRKeyLvl2 mocks base method
-func (m *MockDaemonServiceServer) DRKeyLvl2(arg0 context.Context, arg1 *drkey.DRKeyLvl2Request) (*drkey.DRKeyLvl2Response, error) {
+func (m *MockDaemonServiceServer) DRKeyLvl2(arg0 context.Context, arg1 *daemon.DRKeyLvl2Request) (*daemon.DRKeyLvl2Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DRKeyLvl2", arg0, arg1)
-	ret0, _ := ret[0].(*drkey.DRKeyLvl2Response)
+	ret0, _ := ret[0].(*daemon.DRKeyLvl2Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

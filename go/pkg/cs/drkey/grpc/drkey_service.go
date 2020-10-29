@@ -17,9 +17,7 @@ package grpc
 import (
 	"context"
 	"net"
-	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/peer"
 
 	"github.com/scionproto/scion/go/lib/addr"
@@ -55,7 +53,7 @@ func (d *DRKeyServer) DRKeyLvl1(ctx context.Context,
 		logger.Error("[DRKey ServiceStore] Cannot retrieve peer from ctx")
 		return nil, serrors.New("retrieving peer information from ctx")
 	}
-	parsedReq, err := requestToLvl1Req(req)
+	parsedReq, err := ctrl.RequestToLvl1Req(req)
 	if err != nil {
 		logger.Error("[DRKey ServiceStore] Invalid DRKey Lvl1 request",
 			"peer", peer, "err", err)
@@ -76,7 +74,7 @@ func (d *DRKeyServer) DRKeyLvl1(ctx context.Context,
 		logger.Error("Error deriving level 1 key", "err", err)
 		return nil, err
 	}
-	resp, err := keyToLvl1Resp(lvl1Key)
+	resp, err := ctrl.KeyToLvl1Resp(lvl1Key)
 	if err != nil {
 		logger.Error("Error parsing DRKey Lvl1 to protobuf resp", "err", err)
 		return nil, err
@@ -84,50 +82,9 @@ func (d *DRKeyServer) DRKeyLvl1(ctx context.Context,
 	return resp, nil
 }
 
-func requestToLvl1Req(req *dkpb.DRKeyLvl1Request) (ctrl.Lvl1Req, error) {
-	valTime, err := ptypes.Timestamp(req.ValTime)
-	if err != nil {
-		return ctrl.Lvl1Req{}, err
-	}
-	timestamp, err := ptypes.Timestamp(req.Timestamp)
-	if err != nil {
-		return ctrl.Lvl1Req{}, err
-	}
-
-	return ctrl.Lvl1Req{
-		DstIA:     addr.IAInt(req.Dst_IA).IA(),
-		ValTime:   valTime,
-		Timestamp: timestamp,
-	}, nil
-}
-
-func keyToLvl1Resp(drkey drkey.Lvl1Key) (*dkpb.DRKeyLvl1Response, error) {
-	epochBegin, err := ptypes.TimestampProto(drkey.Epoch.NotBefore)
-	if err != nil {
-		return nil, err
-	}
-	epochEnd, err := ptypes.TimestampProto(drkey.Epoch.NotAfter)
-	if err != nil {
-		return nil, err
-	}
-	now, err := ptypes.TimestampProto(time.Now())
-	if err != nil {
-		return nil, err
-	}
-
-	return &dkpb.DRKeyLvl1Response{
-		Dst_IA:     uint64(drkey.DstIA.IAInt()),
-		Src_IA:     uint64(drkey.SrcIA.IAInt()),
-		EpochBegin: epochBegin,
-		EpochEnd:   epochEnd,
-		Drkey:      []byte(drkey.Key),
-		Timestamp:  now,
-	}, nil
-}
-
 // DRKeyLvl2 handles a level 2 drkey request and returns a level 2 response.
 func (d *DRKeyServer) DRKeyLvl2(ctx context.Context,
-	req *dkpb.DRKeyLvl2Request) (*dkpb.DRKeyLvl2Response, error) {
+	req *cppb.DRKeyLvl2Request) (*cppb.DRKeyLvl2Response, error) {
 	logger := log.FromCtx(ctx)
 	peer, ok := peer.FromContext(ctx)
 	if !ok {
@@ -135,7 +92,7 @@ func (d *DRKeyServer) DRKeyLvl2(ctx context.Context,
 		return nil, serrors.New("retrieving peer information from ctx")
 	}
 
-	parsedReq, err := ctrl.RequestToLvl2Req(req)
+	parsedReq, err := requestToLvl2Req(req)
 	if err != nil {
 		logger.Error("[DRKey ServiceStore] Invalid DRKey Lvl2 request",
 			"peer", peer, "err", err)
@@ -181,13 +138,27 @@ func (d *DRKeyServer) DRKeyLvl2(ctx context.Context,
 		return nil, err
 	}
 
-	resp, err := ctrl.KeyToLvl2Resp(lvl2Key)
+	resp, err := keyToLvl2Resp(lvl2Key)
 	if err != nil {
 		logger.Debug("[DRKey ServiceStore] Error parsing DRKey Lvl2 to protobuf resp",
 			"err", err)
 		return nil, err
 	}
 	return resp, nil
+}
+
+func requestToLvl2Req(req *cppb.DRKeyLvl2Request) (ctrl.Lvl2Req, error) {
+	return ctrl.RequestToLvl2Req(req.BaseReq)
+}
+
+func keyToLvl2Resp(drkey drkey.Lvl2Key) (*cppb.DRKeyLvl2Response, error) {
+	baseRep, err := ctrl.KeyToLvl2Resp(drkey)
+	if err != nil {
+		return nil, err
+	}
+	return &cppb.DRKeyLvl2Response{
+		BaseRep: baseRep,
+	}, nil
 }
 
 // deriveLvl2 will derive the level 2 key specified by the meta data and the level 1 key.

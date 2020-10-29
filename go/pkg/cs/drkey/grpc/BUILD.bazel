@@ -17,14 +17,12 @@ go_library(
         "//go/lib/drkey/protocol:go_default_library",
         "//go/lib/drkeystorage:go_default_library",
         "//go/lib/log:go_default_library",
-        "//go/lib/scrypto/cppki:go_default_library",
         "//go/lib/serrors:go_default_library",
         "//go/pkg/cs/drkey:go_default_library",
         "//go/pkg/grpc:go_default_library",
         "//go/pkg/proto/control_plane:go_default_library",
         "//go/pkg/proto/drkey:go_default_library",
         "//go/pkg/trust:go_default_library",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@org_golang_google_grpc//peer:go_default_library",
     ],
 )
@@ -33,6 +31,7 @@ go_test(
     name = "go_default_test",
     srcs = [
         "drkey_service_test.go",
+        "export_test.go",
         "lvl1_exchange_test.go",
     ],
     data = glob(["testdata/**"]),

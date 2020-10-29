@@ -32,8 +32,9 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 	"github.com/scionproto/scion/go/pkg/grpc/mock_grpc"
 	"github.com/scionproto/scion/go/pkg/proto/daemon"
+	sd_pb "github.com/scionproto/scion/go/pkg/proto/daemon"
 	"github.com/scionproto/scion/go/pkg/proto/daemon/mock_daemon"
-	pb_drkey "github.com/scionproto/scion/go/pkg/proto/drkey"
+	drkey_pb "github.com/scionproto/scion/go/pkg/proto/drkey"
 	sd_grpc "github.com/scionproto/scion/go/pkg/sciond/drkey/grpc"
 	"github.com/scionproto/scion/go/pkg/trust/mock_trust"
 )
@@ -72,11 +73,13 @@ func TestLvl2KeyFetching(t *testing.T) {
 	timestamp, err := ptypes.TimestampProto(time.Now().UTC())
 	require.NoError(t, err)
 
-	resp := &pb_drkey.DRKeyLvl2Response{
-		Timestamp:  timestamp,
-		Drkey:      xtest.MustParseHexString("c584cad32613547c64823c756651b6f5"),
-		EpochBegin: epochBegin,
-		EpochEnd:   epochEnd,
+	resp := &sd_pb.DRKeyLvl2Response{
+		BaseRep: &drkey_pb.DRKeyLvl2Response{
+			Timestamp:  timestamp,
+			Drkey:      xtest.MustParseHexString("c584cad32613547c64823c756651b6f5"),
+			EpochBegin: epochBegin,
+			EpochEnd:   epochEnd,
+		},
 	}
 
 	daemonSrv := mock_daemon.NewMockDaemonServiceServer(ctrl)

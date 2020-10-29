@@ -52,7 +52,7 @@ func Lvl1reqToProtoRequest(req Lvl1Req) (*dkpb.DRKeyLvl1Request, error) {
 		return nil, err
 	}
 	return &dkpb.DRKeyLvl1Request{
-		Dst_IA:    uint64(req.DstIA.IAInt()),
+		DstIa:     uint64(req.DstIA.IAInt()),
 		ValTime:   valTime,
 		Timestamp: timestamp,
 	}, nil
@@ -77,15 +77,15 @@ func GetLvl1KeyFromReply(rep *dkpb.DRKeyLvl1Response) (drkey.Lvl1Key, error) {
 	}
 	return drkey.Lvl1Key{
 		Lvl1Meta: drkey.Lvl1Meta{
-			SrcIA: addr.IAInt(rep.Src_IA).IA(),
-			DstIA: addr.IAInt(rep.Dst_IA).IA(),
+			SrcIA: addr.IAInt(rep.SrcIa).IA(),
+			DstIA: addr.IAInt(rep.DstIa).IA(),
 			Epoch: epoch,
 		},
 		Key: drkey.DRKey(rep.Drkey),
 	}, nil
 }
 
-// KeyToLvl1Resp builds a Lvl1Resp provided a given Lvl1Key
+// KeyToLvl1Resp builds a Lvl1Resp provided a given Lvl1Key.
 func KeyToLvl1Resp(drkey drkey.Lvl1Key) (*dkpb.DRKeyLvl1Response, error) {
 	epochBegin, err := ptypes.TimestampProto(drkey.Epoch.NotBefore)
 	if err != nil {
@@ -101,8 +101,8 @@ func KeyToLvl1Resp(drkey drkey.Lvl1Key) (*dkpb.DRKeyLvl1Response, error) {
 	}
 
 	return &dkpb.DRKeyLvl1Response{
-		Dst_IA:     uint64(drkey.DstIA.IAInt()),
-		Src_IA:     uint64(drkey.SrcIA.IAInt()),
+		DstIa:      uint64(drkey.DstIA.IAInt()),
+		SrcIa:      uint64(drkey.SrcIA.IAInt()),
 		EpochBegin: epochBegin,
 		EpochEnd:   epochEnd,
 		Drkey:      []byte(drkey.Key),
@@ -122,7 +122,7 @@ func RequestToLvl1Req(req *dkpb.DRKeyLvl1Request) (Lvl1Req, error) {
 	}
 
 	return Lvl1Req{
-		DstIA:     addr.IAInt(req.Dst_IA).IA(),
+		DstIA:     addr.IAInt(req.DstIa).IA(),
 		ValTime:   valTime,
 		Timestamp: timestamp,
 	}, nil

@@ -21,6 +21,7 @@ import (
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/drkey"
+	"github.com/scionproto/scion/go/lib/scrypto/cppki"
 	dkpb "github.com/scionproto/scion/go/pkg/proto/drkey"
 )
 
@@ -98,8 +99,8 @@ func RequestToLvl2Req(req *dkpb.DRKeyLvl2Request) (Lvl2Req, error) {
 		Protocol: req.Protocol,
 		ReqType:  req.ReqType,
 		ValTime:  valTime,
-		SrcIA:    addr.IAInt(req.Src_IA).IA(),
-		DstIA:    addr.IAInt(req.Dst_IA).IA(),
+		SrcIA:    addr.IAInt(req.SrcIa).IA(),
+		DstIA:    addr.IAInt(req.DstIa).IA(),
 		SrcHost: Host{
 			Type: addr.HostAddrType(req.SrcHost.Type),
 			Host: req.SrcHost.Host,
@@ -132,5 +133,59 @@ func KeyToLvl2Resp(drkey drkey.Lvl2Key) (*dkpb.DRKeyLvl2Response, error) {
 		EpochEnd:   epochEnd,
 		Drkey:      []byte(drkey.Key),
 		Timestamp:  now,
+	}, nil
+}
+
+// Lvl2reqToProtoRequest parses the Lvl2Req to a protobuf Lvl2Request.
+func Lvl2reqToProtoRequest(req Lvl2Req) (*dkpb.DRKeyLvl2Request, error) {
+	valTime, err := ptypes.TimestampProto(req.ValTime)
+	if err != nil {
+		return nil, err
+	}
+	return &dkpb.DRKeyLvl2Request{
+		Protocol: req.Protocol,
+		ReqType:  req.ReqType,
+		DstIa:    uint64(req.DstIA.IAInt()),
+		SrcIa:    uint64(req.DstIA.IAInt()),
+		ValTime:  valTime,
+		SrcHost: &dkpb.DRKeyLvl2Request_DRKeyHost{
+			Type: uint32(req.SrcHost.Type),
+			Host: req.SrcHost.Host,
+		},
+		DstHost: &dkpb.DRKeyLvl2Request_DRKeyHost{
+			Type: uint32(req.DstHost.Type),
+			Host: req.DstHost.Host,
+		},
+	}, nil
+}
+
+// GetLvl2KeyFromReply extracts the level 2 drkey from the reply.
+func GetLvl2KeyFromReply(rep *dkpb.DRKeyLvl2Response, meta drkey.Lvl2Meta) (drkey.Lvl2Key, error) {
+
+	epochBegin, err := ptypes.Timestamp(rep.EpochBegin)
+	if err != nil {
+		return drkey.Lvl2Key{}, err
+	}
+	epochEnd, err := ptypes.Timestamp(rep.EpochEnd)
+	if err != nil {
+		return drkey.Lvl2Key{}, err
+	}
+	epoch := drkey.Epoch{
+		Validity: cppki.Validity{
+			NotBefore: epochBegin,
+			NotAfter:  epochEnd,
+		},
+	}
+	return drkey.Lvl2Key{
+		Lvl2Meta: drkey.Lvl2Meta{
+			KeyType:  meta.KeyType,
+			Protocol: meta.Protocol,
+			SrcIA:    meta.SrcIA,
+			DstIA:    meta.DstIA,
+			SrcHost:  meta.SrcHost,
+			DstHost:  meta.DstHost,
+			Epoch:    epoch,
+		},
+		Key: drkey.DRKey(rep.Drkey),
 	}, nil
 }
