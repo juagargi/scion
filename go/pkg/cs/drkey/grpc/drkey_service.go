@@ -135,7 +135,7 @@ func (d *DRKeyServer) DRKeyLvl2(ctx context.Context,
 		return nil, serrors.New("retrieving peer information from ctx")
 	}
 
-	parsedReq, err := requestToLvl2Req(req)
+	parsedReq, err := ctrl.RequestToLvl2Req(req)
 	if err != nil {
 		logger.Error("[DRKey ServiceStore] Invalid DRKey Lvl2 request",
 			"peer", peer, "err", err)
@@ -181,7 +181,7 @@ func (d *DRKeyServer) DRKeyLvl2(ctx context.Context,
 		return nil, err
 	}
 
-	resp, err := keyToLvl2Resp(lvl2Key)
+	resp, err := ctrl.KeyToLvl2Resp(lvl2Key)
 	if err != nil {
 		logger.Debug("[DRKey ServiceStore] Error parsing DRKey Lvl2 to protobuf resp",
 			"err", err)
@@ -249,50 +249,4 @@ func (d *DRKeyServer) validateLvl2Req(req ctrl.Lvl2Req, peerAddr net.Addr) error
 		return serrors.New("unknown request type", "reqType", req.ReqType)
 	}
 	return nil
-}
-
-func requestToLvl2Req(req *dkpb.DRKeyLvl2Request) (ctrl.Lvl2Req, error) {
-	valTime, err := ptypes.Timestamp(req.ValTime)
-	if err != nil {
-		return ctrl.Lvl2Req{}, err
-	}
-
-	return ctrl.Lvl2Req{
-		Protocol: req.Protocol,
-		ReqType:  req.ReqType,
-		ValTime:  valTime,
-		SrcIA:    addr.IAInt(req.Src_IA).IA(),
-		DstIA:    addr.IAInt(req.Dst_IA).IA(),
-		SrcHost: ctrl.Host{
-			Type: addr.HostAddrType(req.SrcHost.Type),
-			Host: req.SrcHost.Host,
-		},
-		DstHost: ctrl.Host{
-			Type: addr.HostAddrType(req.DstHost.Type),
-			Host: req.DstHost.Host,
-		},
-		Misc: req.Misc,
-	}, nil
-}
-
-func keyToLvl2Resp(drkey drkey.Lvl2Key) (*dkpb.DRKeyLvl2Response, error) {
-	epochBegin, err := ptypes.TimestampProto(drkey.Epoch.NotBefore)
-	if err != nil {
-		return nil, err
-	}
-	epochEnd, err := ptypes.TimestampProto(drkey.Epoch.NotAfter)
-	if err != nil {
-		return nil, err
-	}
-	now, err := ptypes.TimestampProto(time.Now())
-	if err != nil {
-		return nil, err
-	}
-
-	return &dkpb.DRKeyLvl2Response{
-		EpochBegin: epochBegin,
-		EpochEnd:   epochEnd,
-		Drkey:      []byte(drkey.Key),
-		Timestamp:  now,
-	}, nil
 }
