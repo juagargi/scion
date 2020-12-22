@@ -30,6 +30,7 @@ const caSample = `
 # loaded that satisfies the condition. (default 3d)
 max_as_validity = "3d"
 `
+
 const drkeySample = `
 # EpochDuration of the DRKey secret value and of all derived keys. (default "24h")
 epoch_duration = "24h"
@@ -37,4 +38,11 @@ epoch_duration = "24h"
 const drkeyDelegationListSample = `
 # The list of hosts authorized to get a DS per protocol.
 piskes = [ "127.0.0.1", "127.0.0.2"]
+`
+
+const colibriSample = `
+# COLIBRI service configuration sample
+delta = 0.8
+capacities_file = "capacities.json"
+reservations_file = "reservations.json"
 `

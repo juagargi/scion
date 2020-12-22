@@ -84,6 +84,7 @@ type Config struct {
 	CA          CA                 `toml:"ca,omitempty"`
 	TrustEngine trustengine.Config `toml:"trustengine,omitempty"`
 	DRKey       DRKeyConfig        `toml:"drkey,omitempty"`
+	Colibri     ColibriConfig      `toml:"colibri,omitempty"`
 }
 
 // InitDefaults initializes the default values for all parts of the config.

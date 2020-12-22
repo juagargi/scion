@@ -23,6 +23,9 @@ import (
 	"github.com/scionproto/scion/go/cs/beacon"
 	"github.com/scionproto/scion/go/cs/beaconing"
 	"github.com/scionproto/scion/go/cs/ifstate"
+	coli_conf "github.com/scionproto/scion/go/cs/reservation/conf"
+	"github.com/scionproto/scion/go/cs/reservationstorage"
+	"github.com/scionproto/scion/go/cs/reservationstore"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
@@ -57,6 +60,7 @@ type TasksConfig struct {
 	Inspector       trust.Inspector
 	Metrics         *Metrics
 	DRKeyStore      drkeystorage.ServiceStore
+	ColibriStore    reservationstorage.Store
 
 	MACGen       func() hash.Hash
 	TopoProvider topology.Provider
@@ -66,6 +70,7 @@ type TasksConfig struct {
 	PropagationInterval  time.Duration
 	RegistrationInterval time.Duration
 	DRKeyEpochInterval   time.Duration
+	ColibriInitialRsvs   coli_conf.Reservations
 
 	AllowIsdLoop bool
 }
@@ -216,12 +221,24 @@ func (t *TasksConfig) DRKeyPrefetcher() *periodic.Runner {
 		prefetchPeriod, prefetchPeriod)
 }
 
+// ColibriManager returns the COLIBRI manager that runs every 8 seconds checking that
+// the segment reservations are healthy.
+func (t *TasksConfig) ColibriManager() *periodic.Runner {
+	if t.ColibriStore == nil {
+		return nil
+	}
+	return periodic.Start(
+		reservationstore.NewColibriManager(t.ColibriStore, t.ColibriInitialRsvs),
+		8*time.Second, 8*time.Second)
+}
+
 // Tasks keeps track of the running tasks.
 type Tasks struct {
 	Originator      *periodic.Runner
 	Propagator      *periodic.Runner
 	Registrars      []*periodic.Runner
 	DRKeyPrefetcher *periodic.Runner
+	ColibriManager  *periodic.Runner
 
 	BeaconCleaner *periodic.Runner
 	PathCleaner   *periodic.Runner
@@ -239,6 +256,7 @@ func StartTasks(cfg TasksConfig) (*Tasks, error) {
 		Propagator:      cfg.Propagator(),
 		Registrars:      cfg.SegmentWriters(),
 		DRKeyPrefetcher: cfg.DRKeyPrefetcher(),
+		ColibriManager:  cfg.ColibriManager(),
 		BeaconCleaner: periodic.Start(
 			periodic.Func{
 				Task: func(ctx context.Context) {
