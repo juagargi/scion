@@ -76,3 +76,5 @@ tags
 
 # local buildkite run
 /artifacts.out
+
+*.txt

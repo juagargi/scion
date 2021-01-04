@@ -17,8 +17,11 @@ package queues
 import (
 	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/scionproto/scion/go/border/qos/conf"
+	"github.com/scionproto/scion/go/lib/log"
+	"github.com/scionproto/scion/go/lib/scmp"
 )
 
 type PacketSliceQueue struct {
@@ -26,6 +29,7 @@ type PacketSliceQueue struct {
 	mutex  *sync.Mutex
 	queue  []*QPkt
 	tb     TokenBucket
+	pid    scmp.PID
 }
 
 var _ PacketQueueInterface = (*PacketSliceQueue)(nil)
@@ -36,6 +40,12 @@ func (pq *PacketSliceQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mutTb
 	pq.queue = make([]*QPkt, que.MaxLength)
 	pq.tb = TokenBucket{}
 	pq.tb.Init(pq.pktQue.PoliceRate)
+	if pq.pktQue.CongestionWarning.Approach == 2 {
+		pq.pid = scmp.PID{FactorProportional: .5, FactorIntegral: 0.6,
+			FactorDerivative: .3, LastUpdate: time.Now(), SetPoint: 70,
+			Min: 60, Max: 90}
+	}
+
 }
 
 func (pq *PacketSliceQueue) Enqueue(rp *QPkt) {
@@ -95,6 +105,7 @@ func (pq *PacketSliceQueue) PopMultiple(number int) []*QPkt {
 
 func (pq *PacketSliceQueue) CheckAction() conf.PoliceAction {
 	level := pq.GetFillLevel()
+	log.Debug("Filllevel of packetslicequeue", "level", level)
 	for j := len(pq.pktQue.Profile) - 1; j >= 0; j-- {
 		if level >= pq.pktQue.Profile[j].FillLevel {
 			if rand.Intn(100) < (pq.pktQue.Profile[j].Prob) {
@@ -123,4 +134,16 @@ func (pq *PacketSliceQueue) GetPriority() int {
 
 func (pq *PacketSliceQueue) GetPacketQueue() PacketQueue {
 	return pq.pktQue
+}
+
+func (pq *PacketSliceQueue) GetCongestionWarning() *CongestionWarning {
+	return &pq.pktQue.CongestionWarning
+}
+
+func (pq *PacketSliceQueue) GetTokenBucket() *TokenBucket {
+	return &pq.tb
+}
+
+func (pq *PacketSliceQueue) GetPID() *scmp.PID {
+	return &pq.pid
 }

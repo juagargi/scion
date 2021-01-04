@@ -86,6 +86,12 @@ func (rp *RtrPkt) validateLocalIF(ifid *common.IFIDType) error {
 	}
 	intf, ok := rp.Ctx.Conf.Topo.IFInfoMap()[*ifid]
 	if !ok {
+		// ifInfoMap := rp.Ctx.Conf.Topo.IFInfoMap()
+		// ifids := make([]common.IFIDType, 0, len(ifInfoMap))
+		// for k := range ifInfoMap {
+		// 	ifids = append(ifids, k)
+		// }
+		// log.Debug("Interface map", "keys", ifids)
 		// No such interface.
 		return common.NewBasicError(
 			"Unknown IF",

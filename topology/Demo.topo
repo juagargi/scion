@@ -1,0 +1,31 @@
+--- # Demo Topology IPv4 only
+ASes:
+  "1-ff00:0:110": # old 1-11
+    core: true
+    voting: true
+    authoritative: true
+    issuing: true
+    mtu: 1400
+  "1-ff00:0:111": # old 1-12
+    cert_issuer: 1-ff00:0:110
+  "1-ff00:0:112": 
+    cert_issuer: 1-ff00:0:110 
+  "1-ff00:0:113":
+    cert_issuer: 1-ff00:0:110
+  #"1-ff00:0:114": 
+  #  cert_issuer: 1-ff00:0:110
+links: 
+- {a: "1-ff00:0:110#1", b: "1-ff00:0:111#11", linkAtoB: CHILD}
+- {a: "1-ff00:0:110#2", b: "1-ff00:0:112#21", linkAtoB: CHILD}
+- {a: "1-ff00:0:111#12", b: "1-ff00:0:113#31", linkAtoB: CHILD}
+- {a: "1-ff00:0:112#22", b: "1-ff00:0:113#32", linkAtoB: CHILD}
+  #- {a: "1-ff00:0:110#1", b: "1-ff00:0:111#11", linkAtoB: CHILD}
+  #- {a: "1-ff00:0:110#2", b: "1-ff00:0:112#21", linkAtoB: CHILD}
+  #- {a: "1-ff00:0:111#12", b: "1-ff00:0:112#21", linkAtoB: CHILD}
+  #- {a: "1-ff00:0:111#13", b: "1-ff00:0:113#31", linkAtoB: CHILD}
+  #- {a: "1-ff00:0:112#22", b: "1-ff00:0:114#41", linkAtoB: CHILD}
+  #- {a: "1-ff00:0:113#32", b: "1-ff00:0:114#42", linkAtoB: CHILD}
+CAs:
+  CA1-1:
+    ISD: 1
+    commonName: CA1-1

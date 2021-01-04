@@ -188,21 +188,28 @@ func (rp *RtrPkt) CreateReply(sp *spkt.ScnPkt) (*RtrPkt, error) {
 	// Convert back to RtrPkt
 	reply, err := RtrPktFromScnPkt(sp, rp.Ctx)
 	if err != nil {
+		log.Debug("Unable RtrPktFromScnPkt", "err", err)
 		return nil, err
 	}
 	dstIA, err := reply.DstIA()
 	if err != nil {
+		log.Debug("Unable DstIA", "err", err)
+
 		return nil, err
 	}
 	// Only (potentially) call IncPath if the dest is not in the local AS.
 	if !dstIA.Equal(rp.Ctx.Conf.IA) {
 		hopF, err := reply.HopF()
 		if err != nil {
+			log.Debug("Unable HopF", "err", err)
+
 			return nil, err
 		}
 		if hopF != nil && hopF.Xover {
 			// Always increment reversed path on a xover point.
 			if _, err := reply.IncPath(); err != nil {
+				log.Debug("Unable IncPath 1", "err", err)
+
 				return nil, err
 			}
 			// Increment reversed path if it was incremented in the forward direction.
@@ -211,6 +218,8 @@ func (rp *RtrPkt) CreateReply(sp *spkt.ScnPkt) (*RtrPkt, error) {
 			// for details.
 			if rp.IncrementedPath {
 				if _, err := reply.IncPath(); err != nil {
+					log.Debug("Unable IncPath 2", "err", err)
+
 					return nil, err
 				}
 			}
@@ -218,11 +227,15 @@ func (rp *RtrPkt) CreateReply(sp *spkt.ScnPkt) (*RtrPkt, error) {
 			// Increase path if the current HOF is not xover and
 			// this router is an ingress router.
 			if _, err := reply.IncPath(); err != nil {
+				log.Debug("Unable IncPath 3", "err", err)
+
 				return nil, err
 			}
 		}
 	}
 	if err := reply.replyEgress(rp.DirFrom, rp.Ingress.Src, rp.Ingress.IfID); err != nil {
+		log.Debug("Unable replyEgress ", "err", err)
+
 		return nil, err
 	}
 	return reply, nil
@@ -248,11 +261,15 @@ func (rp *RtrPkt) replyEgress(dir rcmn.Dir, dst *net.UDPAddr, ifid common.IFIDTy
 	// DirFrom Local and destination is remote AS
 	// At this point we should have a valid path to route the packet
 	if _, err := rp.IFNext(); err != nil {
+		log.Debug("Unable IFNext ", "err", err)
+
 		return err
 	}
-	if err := rp.validateLocalIF(rp.ifNext); err != nil {
-		return err
-	}
+	// if err := rp.validateLocalIF(rp.ifNext); err != nil {
+	// 	log.Debug("Unable validateLocalIF ", "err", err)
+
+	// 	return err
+	// }
 	if _, ok := rp.Ctx.Conf.BR.IFs[*rp.ifNext]; ok {
 		// Egress interface is on this BR
 		// Re-inject to process the reply as an "Egress br"

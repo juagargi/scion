@@ -285,6 +285,10 @@ func (s *SCMPTaggedLayer) parseSCMPType(c string) {
 		s.Type = scmp.T_G_RecordPathRequest
 	case "RECORD_PATH_REPLY":
 		s.Type = scmp.T_G_RecordPathReply
+	case "BASIC_CONG_WARN":
+		s.Type = scmp.T_G_BasicCongWarn
+	case "STOCHASTIC_CONG_WARN":
+		s.Type = scmp.T_G_StochasticCongWarn
 	case "UNREACH_NET":
 		s.Type = scmp.T_R_UnreachNet
 	case "UNREACH_HOST":

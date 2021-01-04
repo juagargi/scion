@@ -1,6 +1,6 @@
 Scheduler:
     Latency: 0
-    Bandwidth: 30Mbps
+    Bandwidth: 500Mbps
 Queues:
     -
         name: 'General Queue, all SCMP lives here'
@@ -12,8 +12,8 @@ Queues:
         priority: 1
         congestionWarning: {approach: 0, informationContent: 3}
         profile:
-            - {fill-level: 20, prob: 99, action: 1}
-            - {fill-level: 50, prob: 10, action: 3}
+            - {fill-level: 50, prob: 50, action: 1}
+            - {fill-level: 60, prob: 75, action: 1}
             - {fill-level: 75, prob: 20, action: 3}
             - {fill-level: 80, prob: 50, action: 3}
     -
@@ -26,7 +26,8 @@ Queues:
         priority: 4
         congestionWarning: {approach: 0, informationContent: 3}
         profile:
-            - {fill-level: 20, prob: 99, action: 1}
+            - {fill-level: 50, prob: 50, action: 1}
+            - {fill-level: 60, prob: 75, action: 1}
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}
     -
@@ -39,7 +40,8 @@ Queues:
         priority: 2
         congestionWarning: {approach: 0, informationContent: 3}
         profile:
-            - {fill-level: 20, prob: 99, action: 1}            
+            - {fill-level: 50, prob: 50, action: 1}
+            - {fill-level: 60, prob: 75, action: 1}            
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}
     -
@@ -52,7 +54,8 @@ Queues:
         priority: 2
         congestionWarning: {approach: 0, informationContent: 3}
         profile:
-            - {fill-level: 20, prob: 99, action: 1}
+            - {fill-level: 50, prob: 50, action: 1}
+            - {fill-level: 60, prob: 75, action: 1}
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}
     -
@@ -65,7 +68,8 @@ Queues:
         priority: 0
         congestionWarning: {approach: 0, informationContent: 3}
         profile:
-            - {fill-level: 20, prob: 99, action: 1}
+            - {fill-level: 50, prob: 50, action: 1}
+            - {fill-level: 60, prob: 75, action: 1}
             - {fill-level: 80, prob: 20, action: 3}
             - {fill-level: 90, prob: 90, action: 3}
 Rules:

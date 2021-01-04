@@ -17,8 +17,11 @@ package queues
 import (
 	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/scionproto/scion/go/border/qos/conf"
+	"github.com/scionproto/scion/go/lib/log"
+	"github.com/scionproto/scion/go/lib/scmp"
 )
 
 // CustomPacketQueue is a queue for Qpkts based on a ringbuffer.
@@ -32,6 +35,7 @@ type CustomPacketQueue struct {
 	head   int
 	tail   int
 	mask   int
+	pid    scmp.PID
 }
 
 var _ PacketQueueInterface = (*CustomPacketQueue)(nil)
@@ -46,6 +50,11 @@ func (pq *CustomPacketQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mutT
 	pq.head = 0
 	pq.tail = 0
 	pq.mask = pq.pktQue.MaxLength - 1
+	if pq.pktQue.CongestionWarning.Approach == 2 {
+		pq.pid = scmp.PID{FactorProportional: .5, FactorIntegral: 0.6,
+			FactorDerivative: .3, LastUpdate: time.Now(), SetPoint: 70,
+			Min: 60, Max: 90}
+	}
 }
 
 func (pq *CustomPacketQueue) Enqueue(rp *QPkt) {
@@ -126,6 +135,8 @@ func (pq *CustomPacketQueue) PopMultiple(number int) []*QPkt {
 
 func (pq *CustomPacketQueue) CheckAction() conf.PoliceAction {
 	level := pq.GetFillLevel()
+	log.Debug("Filllevel of custompacketqueue", "level", level)
+
 	for j := len(pq.pktQue.Profile) - 1; j >= 0; j-- {
 		if level >= pq.pktQue.Profile[j].FillLevel {
 			if rand.Intn(100) < (pq.pktQue.Profile[j].Prob) {
@@ -154,4 +165,16 @@ func (pq *CustomPacketQueue) GetPriority() int {
 
 func (pq *CustomPacketQueue) GetPacketQueue() PacketQueue {
 	return pq.pktQue
+}
+
+func (pq *CustomPacketQueue) GetCongestionWarning() *CongestionWarning {
+	return &pq.pktQue.CongestionWarning
+}
+
+func (pq *CustomPacketQueue) GetTokenBucket() *TokenBucket {
+	return &pq.tb
+}
+
+func (pq *CustomPacketQueue) GetPID() *scmp.PID {
+	return &pq.pid
 }

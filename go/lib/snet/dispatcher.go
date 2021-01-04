@@ -21,7 +21,6 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
-	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/scmp"
 	"github.com/scionproto/scion/go/lib/snet/internal/metrics"
 	"github.com/scionproto/scion/go/lib/sock/reliable"
@@ -100,6 +99,7 @@ type scmpHandler struct {
 
 func (h *scmpHandler) Handle(pkt *Packet) error {
 	hdr, ok := pkt.L4Header.(*scmp.Hdr)
+	//log.Debug("Got a SCMP packet in the dispatcher!!!!!!!!!!!!!!!!!!!!!!!!!!", "pkt", pkt.PacketInfo)
 	if !ok {
 		return common.NewBasicError("scmp handler invoked with non-scmp packet", nil, "pkt", pkt)
 	}
@@ -115,7 +115,26 @@ func (h *scmpHandler) Handle(pkt *Packet) error {
 	if hdr.Class == scmp.C_Path && hdr.Type == scmp.T_P_RevokedIF {
 		return h.handleSCMPRev(hdr, pkt)
 	}
-	log.Debug("Ignoring scmp packet", "hdr", hdr, "src", pkt.Source)
+	// if hdr.Class == scmp.C_General && hdr.Type == scmp.T_G_BasicCongWarn {
+	// 	log.Debug("CW received ", "src", pkt.Source, "dst", pkt.Destination)
+	// 	return h.handleSCMPCW(hdr, pkt)
+	// }
+	//log.Debug("Ignoring scmp packet", "hdr", hdr, "src", pkt.Source)
+	return nil
+}
+
+func (h *scmpHandler) handleSCMPCW(hdr *scmp.Hdr, pkt *Packet) error {
+	scmpPayload, ok := pkt.Payload.(*scmp.Payload)
+	if !ok {
+		return common.NewBasicError("Unable to type assert payload to SCMP payload", nil,
+			"type", common.TypeOf(pkt.Payload))
+	}
+	info, ok := scmpPayload.Info.(*scmp.InfoBscCW)
+	if !ok {
+		return common.NewBasicError("Unable to type assert SCMP Info to SCMP CongestionWarning Info", nil,
+			"type", common.TypeOf(scmpPayload.Info))
+	}
+	info.CurrBW++ //dummy command
 	return nil
 }
 
@@ -130,8 +149,8 @@ func (h *scmpHandler) handleSCMPRev(hdr *scmp.Hdr, pkt *Packet) error {
 		return common.NewBasicError("Unable to type assert SCMP Info to SCMP Revocation Info", nil,
 			"type", common.TypeOf(scmpPayload.Info))
 	}
-	log.Info("Received SCMP revocation", "header", hdr.String(), "payload", scmpPayload.String(),
-		"src", pkt.Source)
+	// log.Info("Received SCMP revocation", "header", hdr.String(), "payload", scmpPayload.String(),
+	// "src", pkt.Source) //IMP: not sure if its fine if we uncomment this
 	if h.revocationHandler != nil {
 		h.revocationHandler.RevokeRaw(context.TODO(), info.RawSRev)
 	}

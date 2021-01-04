@@ -17,9 +17,12 @@ package queues
 import (
 	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/scionproto/scion/go/border/qos/conf"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/ringbuf"
+	"github.com/scionproto/scion/go/lib/scmp"
 )
 
 // PacketBufQueue is a queue based on the ringbuffer from go/lib/ringbuf/rinbguf.go
@@ -30,6 +33,7 @@ type PacketBufQueue struct {
 	bufQueue *ringbuf.Ring
 	length   int
 	tb       TokenBucket
+	pid      scmp.PID
 }
 
 var _ PacketQueueInterface = (*PacketBufQueue)(nil)
@@ -45,6 +49,11 @@ func (pq *PacketBufQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mutTb *
 	pq.bufQueue = ringbuf.New(pq.pktQue.MaxLength, func() interface{} {
 		return &QPkt{}
 	}, pq.pktQue.Name)
+	if pq.pktQue.CongestionWarning.Approach == 2 {
+		pq.pid = scmp.PID{FactorProportional: .5, FactorIntegral: 0.6,
+			FactorDerivative: .1, LastUpdate: time.Now(), SetPoint: 70,
+			Min: 60, Max: 90}
+	}
 }
 
 // Enqueue enqueues a single pointer to a QPkt
@@ -102,6 +111,8 @@ func (pq *PacketBufQueue) PopMultiple(number int) []*QPkt {
 // A faster but less random random number might be fine as well.
 func (pq *PacketBufQueue) CheckAction() conf.PoliceAction {
 	level := pq.GetFillLevel()
+	log.Debug("Filllevel of packetbufqueue", "level", level)
+
 	for j := len(pq.pktQue.Profile) - 1; j >= 0; j-- {
 		if level >= pq.pktQue.Profile[j].FillLevel {
 			if rand.Intn(100) < (pq.pktQue.Profile[j].Prob) {
@@ -147,4 +158,16 @@ func (pq *PacketBufQueue) GetPriority() int {
 // GetPacketQueue returns the PacketQueue struct associated with this queue
 func (pq *PacketBufQueue) GetPacketQueue() PacketQueue {
 	return pq.pktQue
+}
+
+func (pq *PacketBufQueue) GetCongestionWarning() *CongestionWarning {
+	return &pq.pktQue.CongestionWarning
+}
+
+func (pq *PacketBufQueue) GetTokenBucket() *TokenBucket {
+	return &pq.tb
+}
+
+func (pq *PacketBufQueue) GetPID() *scmp.PID {
+	return &pq.pid
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/scionproto/scion/go/border/qos/conf"
 	"github.com/scionproto/scion/go/border/rpkt"
+	"github.com/scionproto/scion/go/lib/scmp"
 )
 
 // QPkt is the representation of a router packet in the qos subsystem
@@ -27,6 +28,8 @@ type QPkt struct {
 	QueueNo int
 	Act     Action
 	Rp      *rpkt.RtrPkt
+	Forward bool
+	Mtx     sync.Mutex
 }
 
 // NPkt is the representation of a router packet used when sending notifications
@@ -50,6 +53,24 @@ type Action struct {
 	action conf.PoliceAction
 }
 
+func (a *Action) GetReason() int {
+	reason := a.reason
+	return int(reason)
+}
+
+func (a *Action) SetAction(newAction conf.PoliceAction) {
+	a.action = newAction
+}
+
+func (a *Action) GetAction() conf.PoliceAction {
+	return a.action
+}
+
+type CongestionWarning struct {
+	Approach           int `yaml:"approach"`
+	InformationContent int `yaml:"informationContent"`
+}
+
 type ActionProfile struct {
 	FillLevel int               `yaml:"fill-level"`
 	Prob      int               `yaml:"prob"`
@@ -57,14 +78,15 @@ type ActionProfile struct {
 }
 
 type PacketQueue struct {
-	Name         string
-	ID           int
-	MinBandwidth int
-	MaxBandWidth int
-	PoliceRate   int
-	MaxLength    int
-	Priority     int
-	Profile      []ActionProfile
+	Name              string
+	ID                int
+	MinBandwidth      int
+	MaxBandWidth      int
+	PoliceRate        int
+	MaxLength         int
+	Priority          int
+	CongestionWarning CongestionWarning
+	Profile           []ActionProfile
 }
 
 type PacketQueueInterface interface {
@@ -81,6 +103,9 @@ type PacketQueueInterface interface {
 	GetMinBandwidth() int
 	GetMaxBandwidth() int
 	GetPacketQueue() PacketQueue
+	GetCongestionWarning() *CongestionWarning
+	GetTokenBucket() *TokenBucket
+	GetPID() *scmp.PID
 }
 
 // MergeAction merges both PoliceAction together and returns the merged result.

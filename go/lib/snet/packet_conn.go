@@ -109,6 +109,8 @@ type PacketInfo struct {
 	Payload  common.Payload
 }
 
+var _ PacketConn = (*SCIONPacketConn)(nil)
+
 // SCIONAddress is the fully-specified address of a host.
 type SCIONAddress struct {
 	IA   addr.IA
@@ -195,7 +197,7 @@ func (c *SCIONPacketConn) ReadFrom(pkt *Packet, ov *net.UDPAddr) error {
 				return common.NewBasicError("scmp packet received, but no handler found", nil,
 					"scmp.Hdr", scmpHdr, "src", pkt.Source)
 			}
-			if err := c.scmpHandler.Handle(pkt); err != nil {
+			if err := c.scmpHandler.Handle(pkt); err != nil { //IMP:
 				// Return error intact s.t. applications can handle custom
 				// error types returned by SCMP handlers.
 				return err
@@ -213,7 +215,7 @@ func (c *SCIONPacketConn) readFrom(pkt *Packet, ov *net.UDPAddr) error {
 	n, lastHopNetAddr, err := c.conn.ReadFrom(pkt.Bytes)
 	if err != nil {
 		metrics.M.DispatcherErrors().Inc()
-		return common.NewBasicError("Reliable socket read error", err)
+		return common.NewBasicError("Reliable socket read error", err) //IMP: appears often
 	}
 	metrics.M.ReadBytes().Add(float64(n))
 	metrics.M.ReadPackets().Inc()

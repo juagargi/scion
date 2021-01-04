@@ -17,9 +17,11 @@ package queues
 import (
 	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/scionproto/scion/go/border/qos/conf"
 	"github.com/scionproto/scion/go/lib/log"
+	"github.com/scionproto/scion/go/lib/scmp"
 )
 
 // ChannelPacketQueue is a queue of Qpkts based on Go channels
@@ -30,6 +32,7 @@ type ChannelPacketQueue struct {
 
 	queue chan *QPkt
 	tb    TokenBucket
+	pid   scmp.PID
 }
 
 var _ PacketQueueInterface = (*ChannelPacketQueue)(nil)
@@ -42,6 +45,11 @@ func (pq *ChannelPacketQueue) InitQueue(que PacketQueue, mutQue *sync.Mutex, mut
 	pq.tb = TokenBucket{}
 	pq.tb.Init(pq.pktQue.PoliceRate)
 	pq.queue = make(chan *QPkt, pq.pktQue.MaxLength+1)
+	if pq.pktQue.CongestionWarning.Approach == 2 {
+		pq.pid = scmp.PID{FactorProportional: .5, FactorIntegral: 0.6,
+			FactorDerivative: .3, LastUpdate: time.Now(), SetPoint: 70,
+			Min: 60, Max: 90}
+	}
 }
 
 // Enqueue enqueues a single pointer to a QPkt
@@ -170,4 +178,16 @@ func (pq *ChannelPacketQueue) GetPriority() int {
 // GetPacketQueue returns the PacketQueue struct associated with this queue
 func (pq *ChannelPacketQueue) GetPacketQueue() PacketQueue {
 	return pq.pktQue
+}
+
+func (pq *ChannelPacketQueue) GetCongestionWarning() *CongestionWarning {
+	return &pq.pktQue.CongestionWarning
+}
+
+func (pq *ChannelPacketQueue) GetTokenBucket() *TokenBucket {
+	return &pq.tb
+}
+
+func (pq *ChannelPacketQueue) GetPID() *scmp.PID {
+	return &pq.pid
 }
