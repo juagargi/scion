@@ -395,7 +395,7 @@ func run(file string) error {
 		drkeyFetcher := drkeygrpc.DRKeyFetcher{
 			Dialer: &libgrpc.TLSQUICDialer{
 				Rewriter:    nc.AddressRewriter(nil),
-				Dialer:      quicStack.TLSDialer,
+				Dialer:      quicStack.Dialer,
 				Credentials: trust.GetTansportCredentials(tlsMgr),
 			},
 			Router: segreq.NewRouter(fetcherCfg),
@@ -453,7 +453,7 @@ func run(file string) error {
 	if cfg.DRKey.Enabled() {
 		go func() {
 			defer log.HandlePanic()
-			if err := quicTLSServer.Serve(quicStack.TLSListener); err != nil {
+			if err := quicTLSServer.Serve(quicStack.Listener); err != nil {
 				fatal.Fatal(err)
 			}
 		}()

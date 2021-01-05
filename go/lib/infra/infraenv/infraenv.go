@@ -87,8 +87,6 @@ type NetworkConfig struct {
 type QUICStack struct {
 	Listener       *squic.ConnListener
 	Dialer         *squic.ConnDialer
-	TLSListener    *squic.ConnListener
-	TLSDialer      *squic.ConnDialer
 	RedirectCloser func()
 }
 
@@ -117,28 +115,11 @@ func (nc *NetworkConfig) QUICStack() (*QUICStack, error) {
 	}
 	listener, err := quic.Listen(server, tlsConfig, nil)
 	if err != nil {
-		return nil, serrors.WrapStr("listening QUIC/SCION", err)
-	}
-
-	//TLS/QUIC part
-	tlsClient, tlsServer, err := nc.initQUICSockets()
-	if err != nil {
-		return nil, err
-	}
-	log.Info("TLS/QUIC server conn initialized", "local_addr", tlsServer.LocalAddr())
-	log.Info("TLS/QUIC client conn initialized", "local_addr", tlsClient.LocalAddr())
-
-	tlsQuicConfig, err := GenerateTLSConfig()
-	if err != nil {
-		return nil, err
-	}
-	tlsListener, err := quic.Listen(tlsServer, tlsQuicConfig, nil)
-	if err != nil {
 		return nil, serrors.WrapStr("listening TLS/QUIC/SCION", err)
 	}
 
 	cancel, err := nc.initSvcRedirect(fmt.Sprintf("%s", server.LocalAddr()),
-		fmt.Sprintf("%s", tlsServer.LocalAddr()))
+		fmt.Sprintf("%s", server.LocalAddr()))
 	if err != nil {
 		return nil, serrors.WrapStr("starting service redirection", err)
 	}
@@ -148,11 +129,6 @@ func (nc *NetworkConfig) QUICStack() (*QUICStack, error) {
 		Dialer: &squic.ConnDialer{
 			Conn:      client,
 			TLSConfig: tlsConfig,
-		},
-		TLSListener: squic.NewConnListener(tlsListener),
-		TLSDialer: &squic.ConnDialer{
-			Conn:      tlsClient,
-			TLSConfig: tlsQuicConfig,
 		},
 		RedirectCloser: cancel,
 	}, nil
