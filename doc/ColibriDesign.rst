@@ -378,13 +378,6 @@ example has the following values:
    traffic originating for this reservation can be correctly stamped with the
    appropriate MAC value.
 
-TODO Question: we want to have reliable communication between services. This means using
-quic for the communication. Will it work okay?
-
-TODO Do not forget to mention the independence between transport and operations:
-an operation about a reservation X can be transported using reservation Y,
-as long as it is compatible with the operation? Pros, cons.
-
 Core-Segment Renewal Operation
 ------------------------------
 The segment reservation operations look very much like in the previous example,
