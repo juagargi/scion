@@ -172,7 +172,7 @@ It protects the path in the following ways:
 
 To achieve the protection we want against changes in the relevant parts
 of the *InfoField* and *HopField*, we will include the following in the
-MAC computation:
+MAC computation (and call them the *InputData* for the MAC computation):
 
 - Reservation ID: as each HopField's MAC is bound to the unique
   reservation ID, it is impossible to "splice" reservations, i.e.,
@@ -233,8 +233,8 @@ With ``C=0`` (data plane traffic), we want to avoid end hosts
 from the source of the reservation AS *A*,
 and any other on-path ASes, to be able to leak the MACs to
 other entities in different ASes, that could then generate traffic
-that appears like generated from the original AS *A*, and thus AS *A*
-being wrongly blamed for consuming more than their granted bandwidth,
+that appears like generated from the original AS *A*, and thus have AS *A*
+been wrongly blamed for consuming more than their granted bandwidth,
 which would surely have it blacklisted in the transit ASes.
 To do this we will use a per-packet MAC computation approach.
 This is done by computing a different type of MAC:
