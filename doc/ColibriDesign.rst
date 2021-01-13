@@ -253,16 +253,25 @@ validate each HopField when ``C=1``:
     \text{MAC}_B^{C=1} = \text{MAC}_{K_B}(InputData)
 
 With ``C=0``, the **per-packet MAC** has to be computed.
-We denote the per-packet MACs as *HVF* (hop-validation field)
-and introduce a high-precision time stamp of each
-packet, *TS*.
-The (HVF) is computed as follows:
+We denote the per-packet MACs as *HVF* (hop-validation field),
+which uses :math:`\sigma_B` as key a value very similar to the static MAC defined
+above, but with ``C=0`` and also using the source and destination host
+addresses from the address header:
 
 .. math::
     \begin{align}
-    \sigma_B &= \text{MAC}_B^{C=0} \\
-    \text{HVF}_B &= \text{MAC}_{\sigma_B}(\text{TS}, \text{packet_length}) \\
+    \sigma_B &= \text{MAC}_B^{C=0}\\
+    \sigma_B &= \text{MAC}_{K_B}(InputData, SrcHost, DstHost)\\
     \end{align}
+
+We then introduce a high-precision time stamp of each packet, *TS*.
+This time stamp is further defined in the SCION header document
+(the value of HVF changes with each E2E COLIBRI packet, even when
+:math:`\sigma_B` does not).
+The (HVF) is computed as follows:
+
+.. math::
+    \text{HVF}_B &= \text{MAC}_{\sigma_B}(\text{TS}, \text{packet_length}) \\
 
 Note that the key used to compute the HVF is :math:`\sigma_B`, the static
 MAC computed by *B*, which is only known to *B* and *A*.
