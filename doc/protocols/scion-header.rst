@@ -846,7 +846,7 @@ The only info field has the following format::
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                        Expiration Tick                        |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |      BWCls    |      RLC      |  Ver  |  RPT  |r r r r r r r r|
+    |      BWCls    |      RLC      |  Ver  |r r r r r r r r r r r r|
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 r
@@ -944,7 +944,7 @@ The `InputData` is common for both types::
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                      Expiration Tick                          |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |      BWCls    |      RLC      |  Ver  |  RPT  |       0       |
+    |      BWCls    |      RLC      |  Ver  |           0           |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 We just compute :math:`\text{MAC}_{K_i}^{C}` with the appropriate `InputData`:
