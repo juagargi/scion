@@ -64,10 +64,6 @@ Segment reservation
     A reservation between two ASes. This is a "tube" that allows to communicate
     control-plane traffic directly, or to embed one or multiple end-to-end
     reservations inside.
-    A segment reservation can be of type up, down, core, peering-up, or
-    peering-down. Up, down, and core are similar to the corresponding regular
-    SCION segments; peering-up and peering-down end or start with a
-    peering link, respectively.
     All segment reservations have a maximum set of 16 versions.
 
 End-to-end (E2E) reservation
@@ -75,7 +71,6 @@ End-to-end (E2E) reservation
     uses from one to three segment reservations to reach the destination end
     host (similar to regular SCION paths). The E2E reservation "stitches" these
     segment reservations to create a valid E2E reservation.
-    The path type of an E2E reservation is always the same (type *E2E*)
     An E2E reservation has a maximum set of 16 versions.
 
 Reservation ID
@@ -197,7 +192,6 @@ MAC computation:
   - Granted bandwidth.
   - Request latency class.
   - Version number.
-  - Reservation path type (up, core, etc.)
 
 - Other fields of the *InfoField* related to the path that should
   not be altered:
@@ -549,7 +543,8 @@ should be notified.
    the response, only for ``C=1`` (segment reservations are always
    ``C=1,S=1``). These MACs are stored alongside with the HopFields in the DB
    for this reservation, and the setup finishes.
-#. If the response was successful and the reservation is of type down-segment,
+#. If the response was successful and the segment reservation is of type
+   down-segment (checkeable in the service via the COLIBRI store),
    the reservation initiator (which is the requester) will inform the
    reservation origin (which is the core AS) with the HopFields and MACs
    necessary to send packets from there to here.

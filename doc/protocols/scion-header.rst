@@ -883,14 +883,6 @@ RLC
     The Request Latency Class this reservation has.
 Ver
     The version of this reservation.
-RPT
-    The Reservation Path Type of this reservation.
-
-TODO and questions:
-
-    - The reservation path type can be removed. Can it? For any given
-      segment reservation, its type must always be the same, and thus
-      established when setting it up. Is this correct?
 
 Reservation ID Reconstruction
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -983,8 +975,8 @@ and they are verified at each transit AS, one HVF per transit AS.
 
 Forwarding Process
 ------------------
-There is a unique way of forwarding a COLIBRI packet, regardless of its
-underlying type or whether it is control plane or data plane.
+There is a unique way of forwarding a COLIBRI packet, regardless of
+whether it is control plane or data plane.
 This should simplify the design and implementation of the COLIBRI
 part in the border router. The only branching happens on the value of the
 ``C`` flag, as is noted below.
