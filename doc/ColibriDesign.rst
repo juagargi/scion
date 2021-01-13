@@ -184,13 +184,16 @@ MAC computation:
   combine HopFields from multiple reservations. Therefore, the
   MAC chaining employed in standard SCION is not needed
   (note that an ID is bound to exactly one path).
+- Source and destination addresses: these are variable length addresses that
+  specify the source and destination hosts in their respective ASes, located
+  in the address header of the general SCION packet.
 - Reservation fields: fields that came from the reservation setup, and that
   should not be altered otherwise, must be included in the MAC computation.
   This prevents malicious clients from tampering with the reservation and
   claiming more reserved bandwidth than what they were granted.
   These fields are:
 
-  - Expiration time.
+  - Expiration time (reservation expiration tick).
   - Granted bandwidth.
   - Request latency class.
   - Version number.
