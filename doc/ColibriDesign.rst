@@ -203,18 +203,12 @@ MAC computation (and call them the *InputData* for the MAC computation):
   the MAC.
 
 .. Note::
-    The ``R`` flag we chose at the `design decisions`_
-    alters the order of appearance of the HopFields, but not the
-    computation of the MAC. Since ``R`` implies ``C``, a packet with these
-    flags set will traverse the COLIBRI service of each AS on the path,
-    and these COLIBRI services
-    can (and possibly will) check that the ingress/egress pair they observe
-    in their HopField corresponds to that stored in their DB for the
-    reservation ID of the packet.
-
-    The ``S`` flag is also not part of the MAC computation, and since it forces
-    ``C=1`` we can follow the same principle described above and ensure in
-    the COLIBRI service that the packet represents a valid segment reservation.
+    Setting any of ``R`` or ``S`` to 1 forces ``C=1``.
+    This way a COLIBRI packet with ``C=1`` will traverse the COLIBRI service
+    of each AS on the path, and these COLIBRI services can
+    (and possibly will) check that the ingress/egress pair
+    they observe in their HopField corresponds to
+    that stored in their DB for the reservation ID of the packet.
 
 We calculate the MAC differently depending on the value of the flag ``C``.
 For ``C=1`` the MAC is first computed by each of the on-path ASes,
