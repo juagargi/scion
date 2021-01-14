@@ -349,9 +349,11 @@ example has the following values:
    reaches the last AS `G`.
 
    - If there is an error, the payload is modified, and
-     the message is sent in reverse. This means ``R=1,C=1``. It will
-     traverse the path in reverse until it reaches `A`, where it will be
-     finally forwarded to :math:`h_1`, the reservation originator.
+     the message is sent in reverse. This means ``R=1,C=1``.
+     The hop fields in the packet are reversed, as well as the source and
+     destination AS from the address header.
+     The packet will traverse the path in reverse until it reaches `A`, where
+     it will be finally forwarded to :math:`h_1`, the reservation originator.
    - If there are no errors, the request will reach AS `G`. There the
      admission is computed in the COLIBRI service, and it will be forwarded
      to the destination end host :math:`h_2`. The end host will decide the
@@ -390,7 +392,7 @@ This example covers the renewal of a core-segment reservation traversing
 the ASes in the sequence :math:`C \to D \to E`.
 These are the steps:
 
-#. The COLIBRI service at `C` decides to renew the down-segment reservation.
+#. The COLIBRI service at `C` decides to renew the core-segment reservation.
    The path of the reservation has the flags and HopFields:
    :math:`\verb!C=1,R=0,S=1!, C \to D \to E`. The COLIBRI service at
    `C` does the initial AS admission and sends the request to the

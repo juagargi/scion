@@ -935,6 +935,9 @@ The Hop Field has the following format::
     |                              MAC                              |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
+Hop fields appear in the forwarding order.
+
+
 Hop Field MAC Computation
 -------------------------
 There is a explanation about the rationale of the MAC computation on
@@ -1028,12 +1031,12 @@ The validation process checks that all of the following conditions are true:
 
 If the packet is valid, we continue to validate the current Hop Field.
 The current hop field is located at
-`Len(TS) + Len(InfoField) + CurrHF` :math:`\times 8`:
+`Offset(COLIBRI_header) + Len(TS) + Len(InfoField) + CurrHF` :math:`\times 8`:
 
 - Its `Ingress ID` field is checked against the actual ingress interface.
 - Its MAC is computed according to :ref:`colibri-mac-computation`
-  and checked against the `MAC` field. If ``C=0`` the `HVF` is computed and
-  checked instead of the static :math:`\text{MAC}_{K_i}^{C=1}`.
+  and checked against the `MAC` field. If ``C=0`` the *HVF* is computed and
+  checked instead of the *static MAC*.
 
 If the packet is valid:
 
