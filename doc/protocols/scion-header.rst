@@ -905,7 +905,7 @@ on the value of ``R`` and ``S``:
 
 .. code-block::
 
-    var ASID [4]byte
+    var ASID [6]byte
     var Suffix []byte
     if R == 0 {
         ASID = AddressHeader.SrcAS
@@ -957,13 +957,22 @@ The `InputData` is common for both types::
     |      BWCls    |      RLC      |  Ver  |     HFCount   |C|  0  |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                                                               |
-    |                 SrcAS           +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                 |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |                 ASID          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |                               |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 Most of the fields come from the COLIBRI *InfoField*,
-with the exception of ``SrcAS``, which is used to derive the
-full reservation ID.
+with the exception of ``ASID``, which was used to derive the
+full reservation ID. Depending on the value of ``R``, is derived as:
+
+.. code-block::
+
+    var ASID [6]byte
+    if R == 0 {
+        ASID = AddressHeader.SrcAS
+    } else {
+        ASID = AddressHeader.DstAS
+    }
 
 When ``C=1`` we compute the *static MAC*:
 
