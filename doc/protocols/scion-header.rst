@@ -780,7 +780,7 @@ Packet Timestamp
     |                             PckId                             |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-Both fields ``TsRel`` and ``TckId`` contain arbitrary data when ``C=1``
+Both fields ``TsRel`` and ``PckId`` contain arbitrary data when ``C=1``
 (defined in the InfoField).
 This is so because these fields are only used for E2E data plane traffic,
 which means ``C=0``; thus they only need to be set for ``C=0``.
