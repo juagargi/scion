@@ -69,6 +69,9 @@ DT/DL/ST/SL
 RSV
     These bits are currently reserved for future use.
 
+
+.. _header-specification_address-header:
+
 Address Header
 ==============
 The Address Header has the following format::
@@ -937,6 +940,8 @@ Hop Field MAC Computation
 There is a explanation about the rationale of the MAC computation on
 :ref:`colibri-mac-computation`.
 Here we only detail how to perform the two different MAC computations.
+The two different MAC flavors are the *static MAC* and the *per-packet MAC*
+(also known as *HVF*).
 
 The `InputData` is common for both types::
 
@@ -954,18 +959,28 @@ The `InputData` is common for both types::
     |      BWCls    |      RLC      |  Ver  |           0           |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-We just compute :math:`\text{MAC}_{K_i}^{C}` with the appropriate `InputData`:
+When ``C=1`` we compute the *static MAC*:
 
 .. math::
-    \text{MAC}_{K_i}^C (\text{InputData})
+    \text{MAC}_i^{C=1} \equiv \text{MAC}_{K_i} (\text{InputData})
 
-Note that when ``C=0`` :math:`\text{MAC}_{K_i}^{C=0}` is also called
-:math:`\sigma_i`.
-In that case, we want to use :math:`\sigma_i` to compute the per packet MAC,
+When ``C=0`` we have :math:`\text{MAC}_{i}^{C=0}` which is also called
+:math:`\sigma_i`:
+
+.. math::
+    \sigma_i = \text{MAC}_{K_i}(InputData, SrcHostAddr, DstHostAddr)
+
+(SrcHostAddr and DstHostAddr are defined in the
+:ref:`header-specification_address-header`, present in every SCION packet).
+
+In the case of ``C=0``, we want to use the :math:`\sigma_i` defined above
+to compute the *per-packet MAC*,
 also known as HopField Validation Field (*HVF*):
 
 .. math::
     \text{HVF}_i = \text{MAC}_{\sigma_i}(\text{TS}, \text{packet_length})
+
+With:
 
 TS
     The Timestamp described on `packet timestamp`_.
@@ -973,7 +988,7 @@ packet_length
     The length of the packet.
 
 The per packet MACs (or *HVFs*) are used only when ``C=0``, which implies
-that the other two flags are also not set (``R=0,S=0``). The computation of
+that the other two flags are also not set (``R=0, S=0``). The computation of
 the HVFs for all HopFields happens at the *stamping* service in the source AS,
 and they are verified at each transit AS, one HVF per transit AS.
 
