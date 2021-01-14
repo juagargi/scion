@@ -210,6 +210,10 @@ MAC computation (and call them the *InputData* for the MAC computation):
     they observe in their HopField corresponds to
     that stored in their DB for the reservation ID of the packet.
 
+To calculate the MAC we will use a secret only known to :math:`\text{AS}_i`,
+denoted as :math:`K_i`. This secret can be the same one as the one used
+to compute the MAC in the normal SCION packet.
+
 We calculate the MAC differently depending on the value of the flag ``C``.
 For ``C=1`` the MAC is first computed by each of the on-path ASes,
 very similarly to the regular SCION path case.
@@ -244,7 +248,7 @@ Let's describe both MACs. The **static MAC** is used as a mechanism to
 validate each HopField when ``C=1``:
 
 .. math::
-    \text{MAC}_B^{C=1} = \text{MAC}_{K_B}(InputData)
+    \text{MAC}_B^{C=1} \equiv \text{MAC}_{K_B}(InputData)
 
 With ``C=0``, the **per-packet MAC** has to be computed.
 We denote the per-packet MACs as *HVF* (hop-validation field),
