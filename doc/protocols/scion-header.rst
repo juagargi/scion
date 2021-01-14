@@ -762,7 +762,8 @@ only one info field::
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 The sizes of the packet timestamp, the info field and the individual hop fields
-are fixed, although the number of hop fields is variable.
+are fixed and the fields always exist, although the number of hop fields
+is variable.
 
 Packet Timestamp
 ----------------
@@ -776,10 +777,14 @@ Packet Timestamp
     |                             PckId                             |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
+Both fields ``TsRel`` and ``TckId`` contain arbitrary data when ``C=1``
+(defined in the InfoField).
+This is so because these fields are only used for E2E data plane traffic,
+which means ``C=0``; thus they only need to be set for ``C=0``.
+
 TsRel
   A 4-byte timestamp relative to the Expiration Tick in the InfoField minus 16
-  seconds. The timestamp only needs to be set for `C=0` in the InfoField,
-  otherwise it can contain arbitrary data.
+  seconds.
   TsRel is calculated by the source host as follows:
 
 .. math::
