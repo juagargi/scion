@@ -897,8 +897,8 @@ The reservation ID is encoded in two parts in the packet header.
   regular SCION address header, either at the `SrcAS` or the `DstAS` field.
 - The suffix is present in the `Reservation ID Suffix` field.
 
-The process of reconstructing the reservation ID is simple. It depends only
-on the value of ``R``:
+The process of reconstructing the reservation ID is simple. It depends
+on the value of ``R`` and ``S``:
 
 .. code-block::
 
@@ -906,10 +906,13 @@ on the value of ``R``:
     var Suffix []byte
     if R == 0 {
         ASID = AddressHeader.SrcAS
-        Suffix = InfoField.IDSuffix[:4]
     } else {
         ASID = AddressHeader.DstAS
+    }
+    if S == 0 {
         Suffix = InfoField.IDSuffix
+    } else {
+        Suffix = InfoField.IDSuffix[:4]
     }
     ReservationID = append(ASID, Suffix)
 
@@ -944,7 +947,6 @@ The `InputData` is common for both types::
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                                                               |
     |                        Reservation ID                         |
-    |                                                               |
     |                                                               |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                      Expiration Tick                          |
