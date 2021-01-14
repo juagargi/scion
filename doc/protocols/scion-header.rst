@@ -948,16 +948,22 @@ The `InputData` is common for both types::
      0                   1                   2                   3
      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |C|                      0                      |    HFCount    |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                                                               |
     |                        Reservation ID                         |
     |                                                               |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                      Expiration Tick                          |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |      BWCls    |      RLC      |  Ver  |           0           |
+    |      BWCls    |      RLC      |  Ver  |     HFCount   |C|  0  |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |                                                               |
+    |                 SrcAS           +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |                                 |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Most of the fields come from the COLIBRI *InfoField*,
+with the exception of ``SrcAS``, which is used to derive the
+full reservation ID.
 
 When ``C=1`` we compute the *static MAC*:
 
