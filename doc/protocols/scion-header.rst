@@ -992,12 +992,12 @@ When ``C=0`` we have :math:`\text{MAC}_{i}^{C=0}` which is also called
 :math:`\sigma_i`:
 
 .. math::
-    \sigma_i = \text{MAC}_{K_i}(InputData, SrcHostAddr, DstHostAddr,
-      SL, DL, ST, DT)
+    \sigma_i = \text{MAC}_{K_i}(InputData, DT, DL, ST, SL,
+      SrcHostAddr, DstHostAddr)
 
 (SrcHostAddr and DstHostAddr are defined in the
 :ref:`header-specification_address-header`,
-SL, DL, ST and DT defined in the 
+SL, DL, ST and DT defined in the
 :ref:`header-specification_common-header`,
 both present in every SCION packet).
 

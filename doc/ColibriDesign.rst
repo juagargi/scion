@@ -259,8 +259,7 @@ addresses from the address header:
 .. math::
     \begin{align}
     \sigma_B &= \text{MAC}_B^{C=0}\\
-    \sigma_B &= \text{MAC}_{K_B}(InputData, SrcHost, DstHost,
-      SL, DL, ST, DT)\\
+    \sigma_B &= \text{MAC}_{K_B}(InputData, DT, DL, ST, SL, SrcHost, DstHost)\\
     \end{align}
 
 With:
