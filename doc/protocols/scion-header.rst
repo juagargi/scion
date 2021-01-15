@@ -962,13 +962,16 @@ The `InputData` is common for both types::
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |      BWCls    |      RLC      |  Ver  |     HFCount   |C|  0  |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |            Ingress            |            Egress             |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                                                               |
     |                 ASID          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |                               |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 Most of the fields come from the COLIBRI *InfoField*,
-with the exception of ``ASID``, which was used to derive the
+with the exception of *Ingress* and *Egress* that come from the *HopField*,
+and ``ASID``, which was used to derive the
 full reservation ID. Depending on the value of ``R``, is derived as:
 
 .. code-block::
