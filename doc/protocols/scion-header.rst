@@ -920,7 +920,8 @@ on the value of ``R`` and ``S``:
     ReservationID = append(ASID, Suffix)
 
 These steps need only to be carried out by entities that need the
-complete reservation ID, which excludes the border router.
+complete reservation ID, which excludes the border router
+(which only needs to derive the correct ASID using ``R``).
 
 
 Hop Field
@@ -1018,8 +1019,9 @@ Forwarding Process
 There is a unique way of forwarding a COLIBRI packet, regardless of
 whether it is control plane or data plane.
 This should simplify the design and implementation of the COLIBRI
-part in the border router. The only branching happens on the value of the
-``C`` flag, as is noted below.
+part in the border router.
+There are, though, slight modifications on the forward process depending
+on the ``C`` and ``R`` flags, as is noted below.
 
 The validation process checks that all of the following conditions are true:
 
@@ -1030,6 +1032,8 @@ The validation process checks that all of the following conditions are true:
   I.e. :math:`\text{CurrHF} \lt \text{HFCount}`
 
 If the packet is valid, we continue to validate the current Hop Field.
+Depending on ``R``, ingress and egress in the packet actually represent
+the opposite (for forwarding purposes).
 The current hop field is located at
 `Offset(COLIBRI_header) + Len(TS) + Len(InfoField) + CurrHF` :math:`\times 8`:
 
