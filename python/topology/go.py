@@ -19,7 +19,7 @@
 # Stdlib
 import os
 import toml
-import yaml
+import json
 from typing import Mapping
 
 # SCION
@@ -35,7 +35,6 @@ from python.topology.common import (
     translate_features,
     SD_API_PORT,
     SD_CONFIG_NAME,
-    CO_CONFIG_NAME,
 )
 
 from python.topology.net import socket_address_str, NetworkDescription, IPNetwork
@@ -126,93 +125,108 @@ class GoGenerator(object):
         return raw_entry
 
     def generate_co(self):
-        if not self.args.colibri:
-            return
         for topo_id, topo in self.args.topo_dicts.items():
             for elem_id, elem in topo.get("colibri_service", {}).items():
                 # only a single Go-CO per AS is currently supported
                 if elem_id.endswith("-1"):
                     base = topo_id.base_dir(self.args.output_dir)
                     co_conf = self._build_co_conf(topo_id, topo["isd_as"], base, elem_id, elem)
-                    write_file(os.path.join(base, elem_id, CO_CONFIG_NAME), toml.dumps(co_conf))
-                    traffic_matrix = self._build_co_traffic_matrix(topo_id)
-                    write_file(os.path.join(base, elem_id, 'matrix.yml'),
-                               yaml.dump(traffic_matrix, default_flow_style=False))
+                    write_file(os.path.join(base, "%s.toml" % elem_id), toml.dumps(co_conf))
+                    capacities = self._build_co_capacities(topo_id)
+                    write_file(os.path.join(base, 'capacities.json'),
+                               json.dumps(capacities, indent=2))
                     rsvps = self._build_co_reservations(topo_id)
-                    write_file(os.path.join(base, elem_id, 'reservations.yml'),
-                               yaml.dump(rsvps, default_flow_style=False))
+                    write_file(os.path.join(base, 'reservations.json'),
+                               json.dumps(rsvps, indent=2))
 
     def _build_co_conf(self, topo_id, ia, base, name, infra_elem):
+        daemon_ip = sciond_ip(self.args.docker, topo_id, self.args.networks)
         config_dir = '/share/conf' if self.args.docker else base
         raw_entry = {
             'general': {
-                'ID': name,
-                'ConfigDir': config_dir,
-                'ReconnectToDispatcher': True,
+                'id': name,
+                'config_dir': config_dir,
+                'reconnect_to_dispatcher': True,
             },
             'log': self._log_entry(name),
-            'trust_db': {
-                'connection': os.path.join(self.db_dir, '%s.trust.db' % name),
-            },
-            'tracing': self._tracing_entry(),
             'metrics': self._metrics_entry(infra_elem, CO_PROM_PORT),
-            'features': translate_features(self.args.features),
+            'tracing': self._tracing_entry(),
+            'sciond_connection': {
+                'address': socket_address_str(daemon_ip, SD_API_PORT),
+            },
+            'colibri': {
+                'delta': 0.3,
+                'capacities': os.path.join(base, 'capacities.json'),
+                'reservations': os.path.join(base, 'reservations.json'),
+                'db':{
+                    'connection': os.path.join(self.db_dir, '%s.reservation.db' % name),
+                },
+            },
         }
         return raw_entry
 
-    def _build_co_traffic_matrix(self, ia):
+    def _build_co_capacities(self, ia):
         """
-        Creates a NxN traffic matrix for colibri with N = len(interfaces)
+        Creates len(interfaces) + 1 ingress and egress entries.
         """
         topo = self.args.topo_dicts[ia]
         if_ids = {iface for br in topo['border_routers'].values() for iface in br['interfaces']}
         if_ids.add(0)
-        bw = int(DEFAULT_LINK_BW / (len(if_ids) - 1))
-        traffic_matrix = {}
-        for inIfid in if_ids:
-            traffic_matrix[inIfid] = {}
-            for egIfid in if_ids.difference({inIfid}):
-                traffic_matrix[inIfid][egIfid] = bw
-        return traffic_matrix
+        bw = int(DEFAULT_LINK_BW)
+        caps = {
+            'ingress_kbps': {},
+            'egress_kbps': {},
+        }
+        for ifid in if_ids:
+            caps['ingress_kbps'][ifid] = bw
+            caps['egress_kbps'][ifid] = bw
+        return caps
 
-    def _build_co_reservations(self, ia):
+    def _build_co_reservations(self, local_ia):
         """
-        Generates a dictionary of reservations with one entry per core AS (if "ia" is core)
-        excluding itself, or a pair (up and down) per core AS in the ISD if "ia" is not core.
+        Generates a dictionary of reservations with one entry per core AS (if "local_ia" is core)
+        excluding itself, or a pair (up and down) per core AS in the ISD if "local_ia" is not core.
         """
-        rsvps = {}
-        this_as = self.args.topo_dicts[ia]
-        if this_as['Core']:
-            for dst_ia, topo in self.args.topo_dicts.items():
-                if dst_ia != ia and topo['Core']:
-                    rsvps['Core-%s' % dst_ia] = self._build_co_reservation(dst_ia, 'Core')
-        else:
-            for dst_ia, topo in self.args.topo_dicts.items():
-                if dst_ia != ia and dst_ia._isd == ia._isd and topo['Core']:
-                    # reach this core AS in the same ISD
-                    rsvps['Up-%s' % dst_ia] = self._build_co_reservation(dst_ia, 'Up')
-                    rsvps['Down-%s' % dst_ia] = self._build_co_reservation(dst_ia, 'Down')
-        return rsvps
+        local_topo = self.args.topo_dicts[local_ia]
+        local_core = 'core' in local_topo['attributes']
+        dst_ias = []
+        for dst_ia, topo in self.args.topo_dicts.items():
+            if dst_ia == local_ia or 'core' not in topo['attributes']:
+                continue
+            if local_core:
+                dst_ias.append(dst_ia)
+            elif dst_ia._isd == local_ia._isd:
+                dst_ias.append(dst_ia)
+
+        rsvs = []
+        for dst_ia in dst_ias:
+            if local_core:
+                rsvs.append(self._build_co_reservation(dst_ia, 'core'))
+            else:
+                # reach this core AS in the same ISD
+                rsvs.append(self._build_co_reservation(dst_ia, 'up'))
+                rsvs.append(self._build_co_reservation(dst_ia, 'down'))
+        return {'reservation_list': rsvs}
 
     def _build_co_reservation(self, dst_ia, path_type):
         start_props = {'L', 'T'}
         end_props = {'L', 'T'}
-        if path_type == 'Up':
+        if path_type == 'up':
             start_props.remove('T')
-        elif path_type == 'Down':
+        elif path_type == 'down':
             end_props.remove('T')
         return {
-            'desired_size': 27,
-            'ia': str(dst_ia),
-            'max_size': 30,
-            'min_size': 1,
-            'path_predicate': '%s#0' % dst_ia,
+            'destination': str(dst_ia),
             'path_type': path_type,
-            'split_cls': 8,
+            'path_predicate': '',
+            'max_size': 13,
+            'min_size': 5,
+            'split_cls': 7,
             'end_props': {
                 'start': list(start_props),
                 'end': list(end_props)
-            }
+            },
+            'required_count': 1,
         }
 
     def generate_sciond(self):

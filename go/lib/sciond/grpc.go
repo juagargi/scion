@@ -16,23 +16,29 @@ package sciond
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
 	"google.golang.org/grpc"
 
+	"github.com/scionproto/scion/go/co/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	dkctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/serrors"
+	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/snet/path"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
 )
 
@@ -180,6 +186,107 @@ func (c grpcConn) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 		return drkey.Lvl2Key{}, err
 	}
 	return lvl2Key, nil
+}
+
+func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
+	*colibri.StitchableSegments, error) {
+
+	req := &sdpb.ColibriListRequest{
+		Base: &colpb.ListStitchablesRequest{
+			DstIa: uint64(dstIA.IAInt()),
+		},
+	}
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	sdRes, err := client.ColibriListRsvs(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if sdRes.Base.ErrorMessage != "" {
+		return nil, fmt.Errorf(sdRes.Base.ErrorMessage)
+	}
+
+	stitchable, err := translate.StitchableSegments(sdRes.Base)
+	if err != nil {
+		return nil, err
+	}
+	return stitchable, nil
+}
+
+func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservationSetup) (
+	snet.Path, error) {
+
+	pbSegs := make([]*colpb.ReservationID, len(req.Segments))
+	for i, r := range req.Segments {
+		pbSegs[i] = translate.PBufID(&r)
+	}
+	pbReq := &sdpb.ColibriSetupRequest{
+		Base: &colpb.DaemonSetupRequest{
+			Id:          translate.PBufID(&req.Id),
+			SrcIa:       uint64(req.SrcIA.IAInt()),
+			DstIa:       uint64(req.DstIA.IAInt()),
+			Index:       uint32(req.Index),
+			RequestedBw: uint32(req.RequestedBW),
+			Segments:    pbSegs,
+		},
+	}
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	sdRes, err := client.ColibriSetupRsv(ctx, pbReq)
+	if err != nil {
+		return nil, err
+	}
+	if sdRes.Base.Failure != nil {
+		trail := make([]reservation.BWCls, len(sdRes.Base.Failure.AllocTrail))
+		for i, b := range sdRes.Base.Failure.AllocTrail {
+			trail[i] = reservation.BWCls(b)
+		}
+		return nil, &colibri.E2ESetupError{
+			E2EResponseError: colibri.E2EResponseError{
+				Message:  sdRes.Base.Failure.ErrorMessage,
+				FailedAS: int(sdRes.Base.Failure.FailedStep),
+			},
+			AllocationTrail: trail,
+		}
+	}
+	nextHop, err := net.ResolveUDPAddr("udp", sdRes.Base.Success.NextHop)
+	if err != nil {
+		return nil, serrors.WrapStr("parsing next hop", err)
+	}
+	return &path.Path{
+		SPath: spath.Path{
+			Raw:  sdRes.Base.Success.Spath,
+			Type: colpath.PathType,
+		},
+		NextHop: nextHop,
+	}, nil
+}
+
+func (c grpcConn) ColibriCleanupRsv(ctx context.Context, id *reservation.ID,
+	idx reservation.IndexNumber) error {
+
+	if id == nil {
+		return serrors.New("invalid nil ID")
+	}
+	if !id.IsE2EID() {
+		return serrors.New("this id is not for an E2E reservation")
+	}
+	pbReq := &sdpb.ColibriCleanupRequest{
+		Base: &colpb.DaemonCleanupRequest{
+			Id:    translate.PBufID(id),
+			Index: uint32(idx),
+		},
+	}
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	sdRes, err := client.ColibriCleanupRsv(ctx, pbReq)
+	if err != nil {
+		return err
+	}
+	if sdRes.Base.Failure != nil {
+		return &colibri.E2EResponseError{
+			Message:  sdRes.Base.Failure.ErrorMessage,
+			FailedAS: int(sdRes.Base.Failure.FailedStep),
+		}
+	}
+	return nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {

@@ -26,6 +26,7 @@ import (
 
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/slayers"
+	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/empty"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/util"
@@ -237,6 +238,39 @@ func TestPaths(t *testing.T) {
 				require.NoError(t, s.SetDstAddr(ip6Addr))
 				require.NoError(t, s.SetSrcAddr(ip4Addr))
 				require.NoError(t, s.Path.DecodeFromBytes(rawPath))
+				u := &slayers.UDP{
+					SrcPort:  1280,
+					DstPort:  80,
+					Length:   1032,
+					Checksum: 0xb7d2,
+				}
+				require.NoError(t, u.SetNetworkLayerForChecksum(s))
+				return []gopacket.SerializableLayer{s, u, gopacket.Payload(mkPayload(1024))}
+			},
+		},
+		"colibri path": {
+			rawFile: filepath.Join(goldenDir, "colibri-udp.bin"),
+			decodedLayers: func(t *testing.T) []gopacket.SerializableLayer {
+				s := &slayers.SCION{
+					Version:      0,
+					TrafficClass: 0xb8,
+					FlowID:       0xdead,
+					HdrLen:       28,
+					PayloadLen:   1032,
+					NextHdr:      common.L4UDP,
+					PathType:     colibri.PathType,
+					DstAddrType:  slayers.T16Ip,
+					DstAddrLen:   slayers.AddrLen16,
+					SrcAddrType:  slayers.T4Ip,
+					SrcAddrLen:   slayers.AddrLen4,
+					DstIA:        xtest.MustParseIA("1-ff00:0:111"),
+					SrcIA:        xtest.MustParseIA("2-ff00:0:222"),
+					Path:         &colibri.ColibriPathMinimal{},
+				}
+				require.NoError(t, s.SetDstAddr(ip6Addr))
+				require.NoError(t, s.SetSrcAddr(ip4Addr))
+				require.NoError(t, s.Path.DecodeFromBytes(rawColibriPath))
+
 				u := &slayers.UDP{
 					SrcPort:  1280,
 					DstPort:  80,

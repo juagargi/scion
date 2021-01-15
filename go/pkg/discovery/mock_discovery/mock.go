@@ -35,6 +35,21 @@ func (m *MockTopologyInformation) EXPECT() *MockTopologyInformationMockRecorder 
 	return m.recorder
 }
 
+// ColibriServices mocks base method.
+func (m *MockTopologyInformation) ColibriServices() ([]*net.UDPAddr, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ColibriServices")
+	ret0, _ := ret[0].([]*net.UDPAddr)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ColibriServices indicates an expected call of ColibriServices.
+func (mr *MockTopologyInformationMockRecorder) ColibriServices() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ColibriServices", reflect.TypeOf((*MockTopologyInformation)(nil).ColibriServices))
+}
+
 // Gateways mocks base method.
 func (m *MockTopologyInformation) Gateways() ([]topology.GatewayInfo, error) {
 	m.ctrl.T.Helper()

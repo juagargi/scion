@@ -41,6 +41,7 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers"
 	"github.com/scionproto/scion/go/lib/slayers/path"
+	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/empty"
 	"github.com/scionproto/scion/go/lib/slayers/path/epic"
 	"github.com/scionproto/scion/go/lib/slayers/path/onehop"
@@ -98,6 +99,7 @@ type DataPlane struct {
 	internalNextHops  map[uint16]*net.UDPAddr
 	svc               *services
 	macFactory        func() hash.Hash
+	colibriKey        []byte
 	bfdSessions       map[uint16]bfdSession
 	localIA           addr.IA
 	mtx               sync.Mutex
@@ -168,6 +170,25 @@ func (d *DataPlane) SetKey(key []byte) error {
 		mac, _ := scrypto.InitMac(key)
 		return mac
 	}
+	return nil
+}
+
+// SetColibriKey sets the key used for Colibri MAC verification. The key provided here should
+// already be derived as in scrypto.HFMacFactory.
+func (d *DataPlane) SetColibriKey(key []byte) error {
+	d.mtx.Lock()
+	defer d.mtx.Unlock()
+	if d.running {
+		return modifyExisting
+	}
+	if len(key) == 0 {
+		return emptyValue
+	}
+	if len(d.colibriKey) != 0 {
+		return alreadySet
+	}
+
+	d.colibriKey = key
 	return nil
 }
 
@@ -627,6 +648,8 @@ func (p *scionPacketProcessor) processPkt(rawPkt []byte,
 		return p.processSCION()
 	case epic.PathType:
 		return p.processEPIC()
+	case colibri.PathType:
+		return p.processCOLIBRI()
 	default:
 		return processResult{}, serrors.WithCtx(unsupportedPathType, "type", pathType)
 	}
@@ -733,6 +756,18 @@ func (p *scionPacketProcessor) processEPIC() (processResult, error) {
 	}
 
 	return result, nil
+}
+
+func (p *scionPacketProcessor) processCOLIBRI() (processResult, error) {
+
+	c := colibriPacketProcessor{
+		d:          p.d,
+		ingressID:  p.ingressID,
+		rawPkt:     p.rawPkt,
+		scionLayer: p.scionLayer,
+		buffer:     p.buffer,
+	}
+	return c.process()
 }
 
 // scionPacketProcessor processes packets. It contains pre-allocated per-packet

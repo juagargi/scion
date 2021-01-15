@@ -80,3 +80,11 @@ func TimeToCompact(t time.Time) string {
 	}
 	return TimeToString(t)
 }
+
+// MaxFutureTime returns a time in the very far future (close to max_uint64) that is still
+// comparable with other times, and whose API (e.g. UnixNano) works alright.
+// see https://stackoverflow.com/a/65683262/817736
+func MaxFutureTime() time.Time {
+	minTime := time.Unix(-2208988800, 0) // Jan 1, 1900
+	return minTime.Add(1<<63 - 1)
+}

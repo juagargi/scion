@@ -1,0 +1,13 @@
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "colibri",
+    srcs = [
+        "colibri.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/control_plane/v1:control_plane",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)

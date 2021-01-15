@@ -68,6 +68,7 @@ type (
 		IFInfoMap IfInfoMap
 
 		CS                        IDAddrMap
+		CO                        IDAddrMap
 		DS                        IDAddrMap
 		HiddenSegmentLookup       IDAddrMap
 		HiddenSegmentRegistration IDAddrMap
@@ -144,6 +145,7 @@ func NewRWTopology() *RWTopology {
 	return &RWTopology{
 		BR:                        make(map[string]BRInfo),
 		CS:                        make(IDAddrMap),
+		CO:                        make(IDAddrMap),
 		DS:                        make(IDAddrMap),
 		HiddenSegmentLookup:       make(IDAddrMap),
 		HiddenSegmentRegistration: make(IDAddrMap),
@@ -305,6 +307,10 @@ func (t *RWTopology) populateServices(raw *jsontopo.Topology) error {
 	if err != nil {
 		return serrors.WrapStr("unable to extract CS address", err)
 	}
+	t.CO, err = svcMapFromRaw(raw.ColibriService)
+	if err != nil {
+		return serrors.WrapStr("unable to extract CO address", err)
+	}
 	t.SIG, err = gatewayMapFromRaw(raw.SIG)
 	if err != nil {
 		return serrors.WrapStr("unable to extract SIG address", err)
@@ -365,6 +371,8 @@ func (t *RWTopology) getSvcInfo(svc ServiceType) (*svcInfo, error) {
 		return &svcInfo{idTopoAddrMap: t.DS}, nil
 	case Control:
 		return &svcInfo{idTopoAddrMap: t.CS}, nil
+	case Colibri:
+		return &svcInfo{idTopoAddrMap: t.CO}, nil
 	case HiddenSegmentLookup:
 		return &svcInfo{idTopoAddrMap: t.HiddenSegmentLookup}, nil
 	case HiddenSegmentRegistration:
@@ -396,6 +404,7 @@ func (t *RWTopology) Copy() *RWTopology {
 		IFInfoMap: t.IFInfoMap.copy(),
 
 		CS:                        t.CS.copy(),
+		CO:                        t.CO.copy(),
 		DS:                        t.DS.copy(),
 		SIG:                       copySIGMap(t.SIG),
 		HiddenSegmentLookup:       t.HiddenSegmentLookup.copy(),

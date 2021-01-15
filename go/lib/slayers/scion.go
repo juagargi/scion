@@ -24,6 +24,7 @@ import (
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path"
+	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/empty"
 	"github.com/scionproto/scion/go/lib/slayers/path/epic"
 	"github.com/scionproto/scion/go/lib/slayers/path/onehop"
@@ -41,6 +42,7 @@ const (
 )
 
 func init() {
+	colibri.RegisterPath()
 	empty.RegisterPath()
 	scion.RegisterPath()
 	onehop.RegisterPath()
@@ -178,6 +180,9 @@ func (s *SCION) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeO
 	if opts.FixLengths {
 		s.HdrLen = uint8(scnLen / LineLen)
 		s.PayloadLen = uint16(len(b.Bytes()) - scnLen)
+		if c, ok := s.Path.(*colibri.ColibriPathMinimal); ok {
+			c.InfoField.OrigPayLen = s.PayloadLen
+		}
 	}
 	// Serialize common header.
 	firstLine := uint32(s.Version&0xF)<<28 | uint32(s.TrafficClass)<<20 | s.FlowID&0xFFFFF

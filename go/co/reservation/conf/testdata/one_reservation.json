@@ -1,0 +1,23 @@
+{
+  "reservation_list": [
+    {
+      "destination": "1-ff00:1:112",
+      "path_type": "down",
+      "path_predicate": "1-ff00:1:112#0",
+      "max_size": 13,
+      "min_size": 7,
+      "split_cls": 7,
+      "end_props": {
+        "end": [
+          "L",
+          "T"
+        ],
+        "start": [
+          "L",
+          "T"
+        ]
+      },
+      "required_count": 3
+    }
+  ]
+}

@@ -760,3 +760,11 @@ func (topoInformation) HiddenSegmentRegistrationAddresses() ([]*net.UDPAddr, err
 	}
 	return a, err
 }
+
+func (topoInformation) ColibriServices() ([]*net.UDPAddr, error) {
+	a, err := itopo.Get().MakeHostInfos(topology.Colibri)
+	if errors.Is(err, topology.ErrAddressNotFound) {
+		return nil, nil
+	}
+	return a, err
+}

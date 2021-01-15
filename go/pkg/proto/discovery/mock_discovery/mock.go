@@ -35,6 +35,21 @@ func (m *MockDiscoveryServiceServer) EXPECT() *MockDiscoveryServiceServerMockRec
 	return m.recorder
 }
 
+// ColibriServices mocks base method.
+func (m *MockDiscoveryServiceServer) ColibriServices(arg0 context.Context, arg1 *discovery.ColibriServicesRequest) (*discovery.ColibriServicesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ColibriServices", arg0, arg1)
+	ret0, _ := ret[0].(*discovery.ColibriServicesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ColibriServices indicates an expected call of ColibriServices.
+func (mr *MockDiscoveryServiceServerMockRecorder) ColibriServices(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ColibriServices", reflect.TypeOf((*MockDiscoveryServiceServer)(nil).ColibriServices), arg0, arg1)
+}
+
 // Gateways mocks base method.
 func (m *MockDiscoveryServiceServer) Gateways(arg0 context.Context, arg1 *discovery.GatewaysRequest) (*discovery.GatewaysResponse, error) {
 	m.ctrl.T.Helper()

@@ -68,6 +68,23 @@ func (iface PathInterface) String() string {
 	return fmt.Sprintf("%s#%d", iface.IA, iface.ID)
 }
 
+func FmtInterfaces(ifaces []PathInterface) []string {
+	var hops []string
+	if len(ifaces) == 0 {
+		return hops
+	}
+	intf := ifaces[0]
+	hops = append(hops, fmt.Sprintf("%s %d", intf.IA, intf.ID))
+	for i := 1; i < len(ifaces)-1; i += 2 {
+		inIntf := ifaces[i]
+		outIntf := ifaces[i+1]
+		hops = append(hops, fmt.Sprintf("%d %s %d", inIntf.ID, inIntf.IA, outIntf.ID))
+	}
+	intf = ifaces[len(ifaces)-1]
+	hops = append(hops, fmt.Sprintf("%d %s", intf.ID, intf.IA))
+	return hops
+}
+
 // PathMetadata contains supplementary information about a path.
 //
 // The information about MTU, Latency, Bandwidth etc. are based solely on data

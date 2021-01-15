@@ -1,0 +1,22 @@
+load("//lint:go.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "common.go",
+        "path.go",
+    ],
+    importpath = "github.com/scionproto/scion/go/co/reservation/test",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//go/co/reservation:go_default_library",
+        "//go/lib/colibri/reservation:go_default_library",
+        "//go/lib/common:go_default_library",
+        "//go/lib/slayers/path:go_default_library",
+        "//go/lib/slayers/path/scion:go_default_library",
+        "//go/lib/snet:go_default_library",
+        "//go/lib/snet/path:go_default_library",
+        "//go/lib/spath:go_default_library",
+        "//go/lib/xtest:go_default_library",
+    ],
+)

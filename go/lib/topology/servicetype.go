@@ -24,6 +24,7 @@ const (
 	Unknown = iota
 	Router
 	Control
+	Colibri
 	Discovery
 	Gateway
 	HiddenSegmentLookup
@@ -36,6 +37,8 @@ func (t ServiceType) String() string {
 		return "router"
 	case Control:
 		return "control"
+	case Colibri:
+		return "colibri"
 	case Discovery:
 		return "discovery"
 	case Gateway:
@@ -56,6 +59,8 @@ func ServiceTypeFromString(s string) ServiceType {
 		return Router
 	case "control", "cs":
 		return Control
+	case "colibri":
+		return Colibri
 	case "discovery":
 		return Discovery
 	case "gateway":

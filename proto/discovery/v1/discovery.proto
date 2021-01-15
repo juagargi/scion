@@ -23,6 +23,8 @@ service DiscoveryService {
     rpc Gateways(GatewaysRequest) returns (GatewaysResponse) {}
     // Return the hidden segment services.
     rpc HiddenSegmentServices(HiddenSegmentServicesRequest) returns (HiddenSegmentServicesResponse) {}
+    // Return the colibri services.
+    rpc ColibriServices(ColibriServicesRequest) returns (ColibriServicesResponse) {}
 }
 
 message GatewaysRequest {}
@@ -64,4 +66,10 @@ message HiddenSegmentLookupServer {
 message HiddenSegmentRegistrationServer {
     // The address of a hidden segment registration service instance.
     string address = 1;
+}
+
+message ColibriServicesRequest {}
+
+message ColibriServicesResponse {
+    repeated string address = 1;
 }

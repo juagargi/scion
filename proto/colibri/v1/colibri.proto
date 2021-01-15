@@ -1,0 +1,232 @@
+// Copyright 2021 ETH Zurich
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+option go_package = "github.com/scionproto/scion/go/pkg/proto/colibri";
+
+package proto.colibri.v1;
+
+
+service Colibri {
+    // segment
+    rpc SetupSegment(SegmentSetupRequest) returns (SegmentSetupResponse) {}
+    rpc ConfirmSegmentIndex(Request) returns (Response) {}
+    rpc ActivateSegmentIndex(Request) returns (Response) {}
+    rpc TeardownSegment(Request) returns (Response) {}
+    rpc CleanupSegmentIndex(Request) returns (Response) {}
+    // e2e
+    rpc ListReservations(ListRequest) returns (ListResponse) {}
+    rpc SetupE2e(E2eSetupRequest) returns (E2eSetupResponse) {}
+    rpc CleanupE2eIndex(Request) returns (Response) {}
+
+    // facing the intra AS scion daemons
+    rpc ListStitchables(ListStitchablesRequest) returns (ListStitchablesResponse) {}
+    rpc SetupReservation(DaemonSetupRequest) returns (DaemonSetupResponse) {}
+    rpc CleanupReservation(DaemonCleanupRequest) returns (DaemonCleanupResponse) {}
+}
+
+// /////////////////////////////////////////////////
+
+message ReservationID {
+    uint64 asid = 1;
+    bytes suffix = 2;
+}
+
+message IndexState {
+    enum State {
+        PENDING = 0;
+        ACTIVE = 1;
+    }
+    State state = 1;
+}
+
+message PathEndProps {
+    bool local = 1;
+    bool transfer = 2;
+}
+
+message AllocationBead {
+    uint32 allocbw = 1;
+    uint32 maxbw = 2;
+}
+
+message PathStep {
+    uint64 ia = 1;
+    uint32 ingress = 2;
+    uint32 egress =3;
+}
+
+message TransparentPath {
+    uint32 current_step = 1;
+    repeated PathStep steps = 2;
+    uint32 spathType = 3;
+    bytes spathRaw = 4;
+}
+
+////////////////////////////////////////
+
+message Request {
+    ReservationID id = 1;
+    uint32 index = 2;
+    uint32 timestamp = 3;
+    TransparentPath path = 4;
+}
+
+message Response {
+    message Success {}
+    message Failure {
+        uint32 error_code = 1; // TODO(juagargi) currently unused
+        string message = 2;
+        uint32 failing_hop = 3;
+    }
+
+    oneof success_failure {
+        Success success = 1;
+        Failure failure = 2;
+    }
+}
+
+message SegmentSetupRequest {
+    message Params {
+        uint32 expiration_time = 1;
+        uint32 rlc = 2;
+        uint32 path_type = 3;
+        uint32 minbw = 4;
+        uint32 maxbw = 5;
+        uint32 splitcls = 6;
+        PathEndProps props_at_start = 7;
+        PathEndProps props_at_end = 8;
+        repeated AllocationBead allocationtrail = 9;
+        // when a down rsv., indicates the req. is just traveling to the last AS to be
+        // re-requested from there (admission is done in the direction of the reservation).
+        bool reverse_traveling = 10;
+    }
+
+    Request base = 1;
+    Params params = 2;
+}
+
+message SegmentSetupResponse {
+    message Failure {
+        Response.Failure failure = 1;
+        SegmentSetupRequest.Params request = 2;
+    }
+
+    oneof success_failure {
+        bytes token = 1;
+        Failure failure = 2;
+    }
+}
+
+message ListRequest {
+    uint64 dst_ia = 1;
+    uint32 path_type = 2;
+}
+
+message ListResponse {
+    message ReservationLooks {
+        ReservationID ID = 1;
+        uint64 src_ia = 2;
+        uint64 dst_ia = 3;
+        uint32 expiration_time = 4;
+        uint32 minbw = 5;
+        uint32 maxbw = 6;
+        uint32 allocbw = 7;
+        uint32 splitcls = 8;
+        repeated PathStep path = 9;
+    }
+    string error_message = 1;
+    repeated ReservationLooks reservations = 2;
+}
+
+
+message E2eSetupRequest {
+    message PathParams {
+        repeated ReservationID segments = 1;
+        uint32 current_segment = 2; // index of the current segment.
+                                    // If the node is transfer, the first segment it belongs to.
+        uint64 src_ia = 3; // the ASID will be identical to the ASID of the rsv. ID
+        uint64 dst_ia = 4; // to compute MACs as we pass the request to the next AS.
+    }
+    message E2eSetupBead {
+        uint32 maxbw = 1;
+        bytes hopfield = 2; // TODO(juagargi) unnecessary?
+    }
+
+    Request base = 1; // the path here is from src to dst
+    uint32 requestedBw = 3;
+    PathParams params = 4;
+    repeated E2eSetupBead allocationtrail = 5; // even failed nodes will write an entry
+}
+
+message E2eSetupResponse {
+    message Failure {
+        string message = 1;
+        uint32 failed_step = 2;
+        repeated E2eSetupRequest.E2eSetupBead allocationtrail = 3;
+    }
+    Failure failure = 1; // if present: information about the failure
+    bytes token = 2;
+}
+
+
+message ListStitchablesRequest {
+    uint64 dst_ia = 1;
+}
+
+message ListStitchablesResponse {
+    string error_message = 1;
+    uint64 src_ia = 2;
+    uint64 dst_ia = 3;
+    repeated ListResponse.ReservationLooks up = 4;
+    repeated ListResponse.ReservationLooks core = 5;
+    repeated ListResponse.ReservationLooks down = 6;
+}
+
+message DaemonSetupRequest {
+    uint64 src_ia = 1;
+    uint64 dst_ia = 2;
+    ReservationID id = 3;
+    uint32 index = 4;
+    repeated ReservationID segments = 5;
+    uint32 requested_bw = 6;
+}
+
+message DaemonSetupResponse {
+    message Failure {
+        string error_message = 1;
+        uint32 failed_step = 2;
+        repeated uint32 alloc_trail = 3;
+    }
+    message Success {
+        bytes spath = 1;
+        string next_hop = 2;
+    }
+    Failure failure = 1; // if present: information about the failure
+    Success success = 2; // should be present if failure == nil
+}
+
+message DaemonCleanupRequest {
+    ReservationID id = 1;
+    uint32 index = 2;
+}
+
+message DaemonCleanupResponse {
+    message Failure {
+        string error_message = 1;
+        uint32 failed_step = 2;
+    }
+    Failure failure = 1; // or nil if all ok
+}
