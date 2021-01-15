@@ -15,11 +15,14 @@
 package reservation
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
@@ -27,139 +30,152 @@ import (
 	"github.com/scionproto/scion/go/lib/util"
 )
 
-// SegmentID identifies a COLIBRI segment reservation. The suffix differentiates
+// ID identifies a COLIBRI segment or E2E reservation. The suffix differentiates
 // reservations for the same AS.
-type SegmentID struct {
+// A segment ID has a 4 byte long suffix. The suffix is 12 byte long for an E2E reservation.
+type ID struct {
 	ASID   addr.AS
-	Suffix [4]byte
+	Suffix []byte
 }
 
-var _ io.Reader = (*SegmentID)(nil)
+const (
+	IDSegLen = 4
+	IDE2ELen = 12
+)
 
-const SegmentIDLen = 10
+var _ io.Reader = (*ID)(nil)
 
-// NewSegmentID returns a new SegmentID
-func NewSegmentID(AS addr.AS, suffix []byte) (*SegmentID, error) {
-	if len(suffix) != 4 {
-		return nil, serrors.New("wrong suffix length, should be 4", "actual_len", len(suffix))
+// NewID returns a new ID
+func NewID(AS addr.AS, suffix []byte) (*ID, error) {
+	if len(suffix) != IDSegLen && len(suffix) != IDE2ELen {
+		return nil, serrors.New("wrong suffix length, should be 4 or 12", "actual_len", len(suffix))
 	}
-	id := SegmentID{ASID: AS}
-	copy(id.Suffix[:], suffix)
+	id := ID{
+		ASID:   AS,
+		Suffix: append([]byte{}, suffix...),
+	}
 	return &id, nil
 }
 
-// SegmentIDFromRawBuffers constructs a SegmentID from two separate buffers.
-func SegmentIDFromRawBuffers(ASID, suffix []byte) (*SegmentID, error) {
-	if len(ASID) < 6 || len(suffix) < 4 {
+// IDFromRawBuffers constructs an ID from two separate buffers.
+func IDFromRawBuffers(ASID, suffix []byte) (*ID, error) {
+	if len(ASID) < 6 {
 		return nil, serrors.New("buffers too small", "length_ASID", len(ASID),
 			"length_suffix", len(suffix))
 	}
-	return NewSegmentID(addr.AS(binary.BigEndian.Uint64(append([]byte{0, 0}, ASID[:6]...))),
-		suffix[:4])
+	return NewID(addr.AS(binary.BigEndian.Uint64(append([]byte{0, 0}, ASID[:6]...))), suffix)
 }
 
-// SegmentIDFromRaw constructs a SegmentID parsing a raw buffer.
-func SegmentIDFromRaw(raw []byte) (
-	*SegmentID, error) {
-
-	if len(raw) < SegmentIDLen {
-		return nil, serrors.New("buffer too small", "actual", len(raw),
-			"min", SegmentIDLen)
+// IDFromRaw constructs a ID parsing a raw buffer.
+func IDFromRaw(raw []byte) (*ID, error) {
+	if len(raw) < 6 {
+		return nil, serrors.New("buffer too small", "actual", len(raw))
 	}
-	return SegmentIDFromRawBuffers(raw[:6], raw[6:])
+	return IDFromRawBuffers(raw[:6], raw[6:])
 }
 
-// Read serializes this SegmentID into the buffer.
-func (id *SegmentID) Read(raw []byte) (int, error) {
-	if len(raw) < SegmentIDLen {
-		return 0, serrors.New("buffer too small", "actual", len(raw), "min", SegmentIDLen)
+func (id *ID) SetSegmentSuffix(suffix int) {
+	if id.Suffix == nil {
+		id.Suffix = make([]byte, 4)
+	}
+	binary.BigEndian.PutUint32(id.Suffix, uint32(suffix))
+}
+
+// Len returns the length of this ID in bytes.
+func (id *ID) Len() int {
+	return 6 + len(id.Suffix)
+}
+
+func (id *ID) Equal(other *ID) bool {
+	return id.ASID == other.ASID && bytes.Equal(id.Suffix, other.Suffix)
+}
+
+func (id *ID) Validate() error {
+	if len(id.Suffix) != 4 && len(id.Suffix) != 10 {
+		return serrors.New("bad suffix", "suffix", hex.EncodeToString(id.Suffix))
+	}
+	return nil
+}
+
+func (id *ID) Copy() *ID {
+	if id == nil {
+		return nil
+	}
+	return &ID{
+		ASID:   id.ASID,
+		Suffix: append([]byte{}, id.Suffix...),
+	}
+}
+
+func (id *ID) IsSegmentID() bool {
+	return len(id.Suffix) == IDSegLen
+}
+
+func (id *ID) IsE2EID() bool {
+	return len(id.Suffix) == IDE2ELen
+}
+
+// Read serializes this ID into the buffer.
+func (id *ID) Read(raw []byte) (int, error) {
+	if len(raw) < id.Len() {
+		return 0, serrors.New("buffer too small", "actual", len(raw), "min", id.Len())
 	}
 	auxBuff := make([]byte, 8)
 	binary.BigEndian.PutUint64(auxBuff, uint64(id.ASID))
 	copy(raw, auxBuff[2:8])
-	copy(raw[6:], id.Suffix[:])
-	return SegmentIDLen, nil
+	copy(raw[6:], id.Suffix)
+	return id.Len(), nil
 }
 
 // ToRaw calls Read and returns a new allocated buffer with the ID serialized.
-func (id *SegmentID) ToRaw() []byte {
-	buf := make([]byte, SegmentIDLen)
+func (id *ID) ToRaw() []byte {
+	buf := make([]byte, id.Len())
 	id.Read(buf) // safely ignore errors as they can only come from buffer size
 	return buf
 }
 
-func (id *SegmentID) String() string {
+func (id ID) String() string {
 	return fmt.Sprintf("%s-%x", id.ASID, id.Suffix)
 }
 
-// E2EID identifies a COLIBRI E2E reservation. The suffix is different for each
-// reservation for any given AS.
-type E2EID struct {
-	ASID   addr.AS
-	Suffix [10]byte
+func (id *ID) IsEmptySuffix() bool {
+	return bytes.Equal(id.Suffix, []byte{0, 0, 0, 0})
 }
 
-const E2EIDLen = 16
-
-var _ io.Reader = (*E2EID)(nil)
-
-// NewE2EID returns a new E2EID
-func NewE2EID(AS addr.AS, suffix []byte) (*E2EID, error) {
-	if len(suffix) != 10 {
-		return nil, serrors.New("wrong suffix length, should be 10", "actual_len", len(suffix))
-	}
-	id := E2EID{ASID: AS}
-	copy(id.Suffix[:], suffix)
-	return &id, nil
+func (id *ID) IsEmpty() bool {
+	return id.ASID == 0 && id.IsEmptySuffix()
 }
 
-// E2EIDFromRawBuffers constructs a E2DID from two separate buffers.
-func E2EIDFromRawBuffers(ASID, suffix []byte) (*E2EID, error) {
-	if len(ASID) < 6 || len(suffix) < 10 {
-		return nil, serrors.New("buffers too small", "length_ASID", len(ASID),
-			"length_suffix", len(suffix))
-	}
-	return NewE2EID(addr.AS(binary.BigEndian.Uint64(append([]byte{0, 0}, ASID[:6]...))),
-		suffix[:10])
-}
+const SecsPerTick = 4
+const DurationPerTick = SecsPerTick * time.Second
 
-// E2EIDFromRaw constructs an E2EID parsing a buffer.
-func E2EIDFromRaw(raw []byte) (*E2EID, error) {
-	if len(raw) < E2EIDLen {
-		return nil, serrors.New("buffer too small", "actual", len(raw), "min", E2EIDLen)
-	}
-	return E2EIDFromRawBuffers(raw[:6], raw[6:])
-}
+const TicksInSegmentRsv = 80
+const TicksInE2ERsv = 4
 
-// Read serializes this E2EID into the buffer.
-func (id *E2EID) Read(raw []byte) (int, error) {
-	if len(raw) < E2EIDLen {
-		return 0, serrors.New("buffer too small", "actual", len(raw), "min", E2EIDLen)
-	}
-	auxBuff := make([]byte, 8)
-	binary.BigEndian.PutUint64(auxBuff, uint64(id.ASID))
-	copy(raw, auxBuff[2:8])
-	copy(raw[6:], id.Suffix[:])
-	return E2EIDLen, nil
-}
-
-// ToRaw calls Read and returns a new allocated buffer with the ID serialized.
-func (id *E2EID) ToRaw() []byte {
-	buf := make([]byte, E2EIDLen)
-	id.Read(buf) // safely ignore errors as they can only come from buffer size
-	return buf
-}
+const SegRsvDuration = TicksInSegmentRsv * DurationPerTick
+const E2ERsvDuration = TicksInE2ERsv * DurationPerTick
 
 // Tick represents a slice of time of 4 seconds.
 type Tick uint32
 
 // TickFromTime returns the tick for a given time.
 func TickFromTime(t time.Time) Tick {
-	return Tick(util.TimeToSecs(t) / 4)
+	return Tick(util.TimeToSecs(t) / SecsPerTick)
+}
+
+// TicksFromDuration returns duration as ticks.
+func TicksFromDuration(dur time.Duration) Tick {
+	secsDur := (dur + DurationPerTick - 1).Truncate(DurationPerTick)
+	seconds := secsDur.Milliseconds() / 1e3
+	return Tick(seconds / SecsPerTick)
 }
 
 func (t Tick) ToTime() time.Time {
-	return util.SecsToTime(uint32(t) * 4)
+	return util.SecsToTime(uint32(t) * SecsPerTick)
+}
+
+func (t Tick) ToDuration() time.Duration {
+	return time.Duration(t) * DurationPerTick
 }
 
 // BWCls is the bandwidth class. bandwidth = 16 * sqrt(2^(BWCls - 1)). 0 <= bwcls <= 63 kbps.
@@ -171,9 +187,9 @@ type BWCls uint8
 // BWCls = 2 * log2( bandwidth/16 ) + 1
 // The value of BWCls will be the ceiling of the previous expression.
 func BWClsFromBW(bwKbps uint64) BWCls {
-	cls := 2*math.Log2(float64(bwKbps)/16) + 1
+	cls := math.Max(0, 2*math.Log2(float64(bwKbps)/16)+1)
 	cls = math.Min(cls, 63)
-	return BWCls(math.Ceil(cls))
+	return BWCls(math.Floor(cls))
 }
 
 // Validate will return an error for invalid values.
@@ -186,6 +202,9 @@ func (b BWCls) Validate() error {
 
 // ToKbps returns the kilobits per second this BWCls represents.
 func (b BWCls) ToKbps() uint64 {
+	if b == 0 {
+		return 0
+	}
 	return uint64(16 * math.Sqrt(math.Pow(2, float64(b)-1)))
 }
 
@@ -209,6 +228,14 @@ func MinBWCls(a, b BWCls) BWCls {
 // in control traffic (BW * split) and end to end traffic (BW * (1-s)). 0 <= splitCls <= 256 .
 type SplitCls uint8
 
+func (s SplitCls) SplitForControl() float64 {
+	return math.Sqrt(1. / math.Pow(2., float64(s)))
+}
+
+func (s SplitCls) SplitForData() float64 {
+	return 1. - s.SplitForControl()
+}
+
 // RLC Request Latency Class. latency = 2^rlc miliseconds. 0 <= rlc <= 63
 type RLC uint8
 
@@ -222,6 +249,10 @@ func (c RLC) Validate() error {
 
 // IndexNumber is a 4 bit index for a reservation.
 type IndexNumber uint8
+
+func NewIndexNumber(value int) IndexNumber {
+	return IndexNumber(value % 16)
+}
 
 // Validate will return an error for invalid values.
 func (i IndexNumber) Validate() error {
@@ -245,18 +276,68 @@ type PathType uint8
 // the different COLIBRI path types.
 const (
 	UnknownPath PathType = iota
+	CorePath
 	DownPath
 	UpPath
 	PeeringDownPath
 	PeeringUpPath
 	E2EPath
-	CorePath
+	_lastvaluePath
 )
 
 // Validate will return an error for invalid values.
 func (pt PathType) Validate() error {
-	if pt == UnknownPath || pt > CorePath {
+	if pt == UnknownPath || pt >= _lastvaluePath {
 		return serrors.New("invalid path type", "path_type", pt)
+	}
+	return nil
+}
+
+func (pt PathType) String() string {
+	switch pt {
+	case CorePath:
+		return "core"
+	case DownPath:
+		return "down"
+	case UpPath:
+		return "up"
+	case PeeringDownPath:
+		return "peer_down"
+	case PeeringUpPath:
+		return "peer_up"
+	case E2EPath:
+		return "e2e"
+	default:
+		return fmt.Sprintf("unknown path_type %d", pt)
+	}
+}
+
+func (pt PathType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(pt.String())
+}
+
+func (pt *PathType) UnmarshalJSON(b []byte) error {
+	var text string
+	err := json.Unmarshal(b, &text)
+	if err != nil {
+		return err
+	}
+	switch text {
+	case "core":
+		*pt = CorePath
+	case "down":
+		*pt = DownPath
+	case "up":
+		*pt = UpPath
+	case "peer_down":
+		*pt = PeeringDownPath
+	case "peer_up":
+		*pt = PeeringUpPath
+	case "e2e":
+		*pt = E2EPath
+	default:
+		return serrors.New("unknown path_type description", "text", text,
+			"bytes", hex.EncodeToString(b))
 	}
 	return nil
 }
@@ -282,10 +363,10 @@ func (pt PathType) Validate() error {
 // Type indicates which path type of the reservation.
 type InfoField struct {
 	ExpirationTick Tick
-	BWCls          BWCls
-	RLC            RLC
 	Idx            IndexNumber
+	BWCls          BWCls
 	PathType       PathType
+	RLC            RLC
 }
 
 // InfoFieldLen is the length in bytes of the InfoField.
@@ -309,6 +390,11 @@ func (f *InfoField) Validate() error {
 	}
 
 	return nil
+}
+
+func (f *InfoField) String() string {
+	return fmt.Sprintf("exp.tick: %v, idx: %d, bwcls: %d, pathtype: %v, rlc: %d",
+		f.ExpirationTick, f.Idx, f.BWCls, f.PathType, f.RLC)
 }
 
 // InfoFieldFromRaw builds an InfoField from the InfoFieldLen bytes buffer.
@@ -415,6 +501,22 @@ func (pep PathEndProps) ValidateWithPathType(pt PathType) error {
 	return nil
 }
 
+func (pep PathEndProps) StartLocal() bool {
+	return pep&StartLocal != 0
+}
+
+func (pep PathEndProps) StartTransfer() bool {
+	return pep&StartTransfer != 0
+}
+
+func (pep PathEndProps) EndLocal() bool {
+	return pep&EndLocal != 0
+}
+
+func (pep PathEndProps) EndTransfer() bool {
+	return pep&EndTransfer != 0
+}
+
 func NewPathEndProps(startLocal, startTransfer, endLocal, endTransfer bool) PathEndProps {
 	var props PathEndProps
 	if startLocal {
@@ -481,6 +583,10 @@ func HopFieldFromRaw(raw []byte) (*HopField, error) {
 	return &hf, nil
 }
 
+func (hf *HopField) String() string {
+	return fmt.Sprintf("%d>%d [%x]", hf.Ingress, hf.Egress, hf.Mac)
+}
+
 // Read serializes this HopField into the buffer.
 func (hf *HopField) Read(b []byte) (int, error) {
 	if len(b) < HopFieldLen {
@@ -514,6 +620,14 @@ func (t *Token) Validate() error {
 		return serrors.New("token without hop fields")
 	}
 	return t.InfoField.Validate()
+}
+
+func (t *Token) String() string {
+	hfs := make([]string, len(t.HopFields))
+	for i, hf := range t.HopFields {
+		hfs[i] = hf.String()
+	}
+	return t.InfoField.String() + ", Hops: " + strings.Join(hfs, " , ")
 }
 
 // TokenFromRaw builds a Token from the passed bytes buffer.

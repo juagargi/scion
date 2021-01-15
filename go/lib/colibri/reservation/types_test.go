@@ -25,31 +25,44 @@ import (
 )
 
 func TestSegmentIDFromRaw(t *testing.T) {
-	id, err := SegmentIDFromRaw(xtest.MustParseHexString("ffaa00001101facecafe"))
+	id, err := IDFromRaw(xtest.MustParseHexString("ffaa00001101facecafe"))
 	require.NoError(t, err)
 	require.Equal(t, xtest.MustParseAS("ffaa:0:1101"), id.ASID)
-	require.Equal(t, xtest.MustParseHexString("facecafe"), id.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("facecafe"), id.Suffix)
+	require.True(t, id.IsSegmentID())
 }
 
-func TestSegmentIDRead(t *testing.T) {
-	reference := SegmentID{
+func TestIDRead(t *testing.T) {
+	reference := ID{
 		ASID: xtest.MustParseAS("ffaa:0:1101"),
 	}
-	copy(reference.Suffix[:], xtest.MustParseHexString("facecafe"))
-	raw := make([]byte, SegmentIDLen)
+	reference.Suffix = xtest.MustParseHexString("facecafe")
+	raw := make([]byte, 6+IDSegLen)
 	n, err := reference.Read(raw)
 	require.NoError(t, err)
-	require.Equal(t, SegmentIDLen, n)
+	require.Equal(t, 6+IDSegLen, n)
 	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafe"), raw)
+	require.True(t, reference.IsSegmentID())
+	require.Equal(t, n, reference.Len())
+
+	// E2E
+	reference.Suffix = xtest.MustParseHexString("facecafedeadbeeff00dcafe")
+	raw = make([]byte, 6+IDE2ELen)
+	n, err = reference.Read(raw)
+	require.NoError(t, err)
+	require.Equal(t, 6+IDE2ELen, n)
+	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00dcafe"), raw)
+	require.True(t, reference.IsE2EID())
+	require.Equal(t, n, reference.Len())
 }
 
-func TestSegmentIDString(t *testing.T) {
+func TestIDString(t *testing.T) {
 	cases := []struct {
-		ID  SegmentID
+		ID  ID
 		Str string
 	}{
-		{ID: mustParseSegmentID("ff0000001101facecafe"), Str: "ff00:0:1101-facecafe"},
-		{ID: mustParseSegmentID("ff000000110100000000"), Str: "ff00:0:1101-00000000"},
+		{ID: mustParseID("ff0000001101facecafe"), Str: "ff00:0:1101-facecafe"},
+		{ID: mustParseID("ff000000110100000000"), Str: "ff00:0:1101-00000000"},
 	}
 	for i, c := range cases {
 		name := fmt.Sprintf("case %d", i)
@@ -62,23 +75,24 @@ func TestSegmentIDString(t *testing.T) {
 }
 
 func TestE2EIDFromRaw(t *testing.T) {
-	raw := xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00d")
-	id, err := E2EIDFromRaw(raw)
+	raw := xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00dcafe")
+	id, err := IDFromRaw(raw)
 	require.NoError(t, err)
 	require.Equal(t, xtest.MustParseAS("ffaa:0:1101"), id.ASID)
-	require.Equal(t, xtest.MustParseHexString("facecafedeadbeeff00d"), id.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("facecafedeadbeeff00dcafe"), id.Suffix)
+	require.True(t, id.IsE2EID())
 }
 
-func TestE2EIDRead(t *testing.T) {
-	reference := E2EID{
-		ASID: xtest.MustParseAS("ffaa:0:1101"),
+func TestIDCopy(t *testing.T) {
+	id1 := ID{
+		ASID:   xtest.MustParseAS("ff00:0:111"),
+		Suffix: make([]byte, IDE2ELen),
 	}
-	copy(reference.Suffix[:], xtest.MustParseHexString("facecafedeadbeeff00d"))
-	raw := make([]byte, E2EIDLen)
-	n, err := reference.Read(raw)
-	require.NoError(t, err)
-	require.Equal(t, E2EIDLen, n)
-	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00d"), raw)
+	id1.Suffix[1] = 1
+	id2 := id1.Copy()
+	id2.Suffix[1] = 2
+	require.Equal(t, uint8(1), id1.Suffix[1])
+	require.Equal(t, uint8(2), id2.Suffix[1])
 }
 
 func TestTickFromTime(t *testing.T) {
@@ -95,6 +109,38 @@ func TestTickToTime(t *testing.T) {
 	require.Equal(t, time.Unix(4, 0), TickFromTime(time.Unix(4, 0)).ToTime())
 }
 
+func TestTickFromDuration(t *testing.T) {
+	cases := map[time.Duration]Tick{
+		0:                                       0,
+		1:                                       1,
+		time.Duration(3300 * time.Millisecond):  1,
+		time.Duration(4 * time.Second):          1,
+		time.Duration(4*time.Second + 1):        2,
+		time.Duration(8001 * time.Millisecond):  3,
+		time.Duration(11999 * time.Millisecond): 3,
+	}
+	for dur, tick := range cases {
+		t.Run(dur.String(), func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tick, TicksFromDuration(dur))
+		})
+	}
+}
+
+func TestTickToDuration(t *testing.T) {
+	cases := map[Tick]time.Duration{
+		0: 0,
+		1: time.Duration(4 * time.Second),
+	}
+	for tick, dur := range cases {
+		name := fmt.Sprintf("%d", tick)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, dur, tick.ToDuration())
+		})
+	}
+}
+
 func TestValidateBWCls(t *testing.T) {
 	for i := 0; i < 64; i++ {
 		c := BWCls(i)
@@ -108,10 +154,12 @@ func TestValidateBWCls(t *testing.T) {
 
 func TestBWClsToKbps(t *testing.T) {
 	cases := map[BWCls]uint64{
-		0:  11,
+		0:  0,
 		1:  16,
 		2:  22,
+		3:  32,
 		5:  64,
+		7:  128,
 		13: 1024,
 		63: 32 * 1024 * 1024 * 1024, // 32 TBps
 	}
@@ -129,23 +177,25 @@ func TestBWClsToKbps(t *testing.T) {
 func TestBWClsFromBW(t *testing.T) {
 	cases := map[uint64]BWCls{
 		0:                       0,
+		1:                       0, // class 0 because when granted it won't exceed 1 Kbps
 		16:                      1,
-		22:                      2,
+		22:                      1,
+		23:                      2,
+		32:                      3,
 		64:                      5,
 		1024:                    13,
-		32 * 1024 * 1024 * 1024: 63,
-		21:                      2,
 		4096:                    17,
-		4000:                    17,
-		4097:                    18,
+		4000:                    16,
+		4097:                    17,
+		32 * 1024 * 1024 * 1024: 63,
 	}
 	for bw, cls := range cases {
+		bw, cls := bw, cls
 		name := fmt.Sprintf("case for %d", bw)
 		t.Run(name, func(t *testing.T) {
-			bw := bw
-			cls := cls
 			t.Parallel()
-			require.Equal(t, cls, BWClsFromBW(bw))
+			require.Equal(t, cls, BWClsFromBW(bw), "BW fails at %d: expected %d got %d",
+				int(bw), cls, BWClsFromBW(bw))
 		})
 	}
 }
@@ -178,6 +228,27 @@ func TestMinBWCls(t *testing.T) {
 			c := c
 			t.Parallel()
 			require.Equal(t, c.min, MinBWCls(c.a, c.b))
+		})
+	}
+}
+
+func TestSplitForData(t *testing.T) {
+	cases := map[SplitCls]float64{
+		2:  0.5,
+		4:  0.75,
+		6:  0.875,
+		7:  0.91161,
+		8:  0.9375,
+		10: 0.96875,
+		12: 0.984375,
+		16: 0.99609375,
+	}
+	for cls, split := range cases {
+		cls, split := cls, split
+		name := fmt.Sprintf("case for %d", cls)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.InDelta(t, split, cls.SplitForData(), 0.00001)
 		})
 	}
 }
@@ -221,12 +292,12 @@ func TestIndexNumberArithmetic(t *testing.T) {
 
 func TestValidatePathType(t *testing.T) {
 	validTypes := []PathType{
+		CorePath,
 		DownPath,
 		UpPath,
 		PeeringDownPath,
 		PeeringUpPath,
 		E2EPath,
-		CorePath,
 	}
 	for _, vt := range validTypes {
 		err := vt.Validate()
@@ -234,9 +305,7 @@ func TestValidatePathType(t *testing.T) {
 	}
 	err := UnknownPath.Validate()
 	require.Error(t, err)
-
-	pt := CorePath + 1
-	err = pt.Validate()
+	err = _lastvaluePath.Validate()
 	require.Error(t, err)
 }
 
@@ -267,7 +336,7 @@ func TestValidateInfoField(t *testing.T) {
 	require.Error(t, err)
 
 	otherIF = infoField
-	otherIF.PathType = CorePath + 1
+	otherIF.PathType = _lastvaluePath
 	err = otherIF.Validate()
 	require.Error(t, err)
 }
@@ -333,7 +402,7 @@ func TestValidatePathEndPropsWithPathType(t *testing.T) {
 		EP    PathEndProps
 		Valid bool
 	}{
-		// core path
+		// core paths
 		{CorePath, StartLocal | EndLocal, true},
 		{CorePath, StartLocal | EndLocal | EndTransfer, true},
 		{CorePath, StartTransfer | EndTransfer, true},
@@ -341,19 +410,19 @@ func TestValidatePathEndPropsWithPathType(t *testing.T) {
 		{CorePath, StartTransfer, true},
 		{CorePath, EndLocal, false},
 		{CorePath, 0, false},
-		// up path
+		// up paths
 		{UpPath, StartLocal, true},
 		{UpPath, StartLocal | EndLocal | EndTransfer, true},
 		{UpPath, 0, false},
 		{UpPath, StartTransfer, false},
 		{UpPath, StartTransfer | StartLocal, false},
-		// down path
+		// down paths
 		{DownPath, EndLocal, true},
 		{DownPath, EndLocal | StartLocal | StartTransfer, true},
 		{DownPath, 0, false},
 		{DownPath, EndTransfer, false},
 		{DownPath, EndTransfer | EndLocal, false},
-		// peering up path
+		// peering up paths
 		{PeeringUpPath, StartLocal | EndLocal, true},
 		{PeeringUpPath, StartLocal | EndLocal | EndTransfer, true},
 		{PeeringUpPath, 0, false},
@@ -361,7 +430,7 @@ func TestValidatePathEndPropsWithPathType(t *testing.T) {
 		{PeeringUpPath, StartLocal | StartTransfer | EndLocal, false},
 		{PeeringUpPath, StartTransfer | EndLocal, false},
 		{PeeringUpPath, EndLocal, false},
-		// peering down path
+		// peering down paths
 		{PeeringDownPath, EndLocal | StartLocal, true},
 		{PeeringDownPath, EndLocal | StartLocal | StartTransfer, true},
 		{PeeringDownPath, 0, false},
@@ -466,7 +535,7 @@ func newInfoField() InfoField {
 }
 
 func newInfoFieldRaw() []byte {
-	return xtest.MustParseHexString("16ebdb4f0d042500")
+	return xtest.MustParseHexString("16ebdb4f0d042600")
 }
 
 func newHopField(ingress, egress uint16, mac []byte) *HopField {
@@ -491,11 +560,11 @@ func newToken() Token {
 	}
 }
 func newTokenRaw() []byte {
-	return xtest.MustParseHexString("16ebdb4f0d04250000010002badcffee00010002baadf00d")
+	return xtest.MustParseHexString("16ebdb4f0d04260000010002badcffee00010002baadf00d")
 }
 
-func mustParseSegmentID(s string) SegmentID {
-	id, err := SegmentIDFromRaw(xtest.MustParseHexString(s))
+func mustParseID(s string) ID {
+	id, err := IDFromRaw(xtest.MustParseHexString(s))
 	if err != nil {
 		panic(err)
 	}

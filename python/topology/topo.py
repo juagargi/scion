@@ -49,7 +49,7 @@ from python.topology.net import (
     SubnetGenerator
 )
 
-DEFAULT_LINK_BW = 1000
+DEFAULT_LINK_BW = 10000
 
 DEFAULT_BEACON_SERVERS = 1
 DEFAULT_GRACE_PERIOD = 18000
@@ -150,8 +150,7 @@ class TopoGenerator(object):
 
     def _register_srv_entries(self, topo_id, as_conf):
         srvs = [("control_servers", DEFAULT_CONTROL_SERVERS, "cs")]
-        if self.args.colibri:
-            srvs.append(("colibri_servers", DEFAULT_COLIBRI_SERVERS, "co"))
+        srvs.append(("colibri_servers", DEFAULT_COLIBRI_SERVERS, "co"))
         for conf_key, def_num, nick in srvs:
             self._register_srv_entry(topo_id, as_conf, conf_key, def_num, nick)
 
@@ -259,8 +258,7 @@ class TopoGenerator(object):
     def _gen_srv_entries(self, topo_id, as_conf):
         srvs = [("control_servers", DEFAULT_CONTROL_SERVERS, "cs", "control_service")]
         srvs.append(("control_servers", DEFAULT_CONTROL_SERVERS, "cs", "discovery_service"))
-        if self.args.colibri:
-            srvs.append(("colibri_servers", DEFAULT_COLIBRI_SERVERS, "co", "colibri_service"))
+        srvs.append(("colibri_servers", DEFAULT_COLIBRI_SERVERS, "co", "colibri_service"))
         for conf_key, def_num, nick, topo_key in srvs:
             self._gen_srv_entry(topo_id, as_conf, conf_key, def_num, nick, topo_key)
 

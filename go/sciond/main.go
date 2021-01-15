@@ -50,6 +50,7 @@ import (
 	cryptopb "github.com/scionproto/scion/go/pkg/proto/crypto"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
 	"github.com/scionproto/scion/go/pkg/sciond"
+	"github.com/scionproto/scion/go/pkg/sciond/colibri"
 	"github.com/scionproto/scion/go/pkg/sciond/config"
 	"github.com/scionproto/scion/go/pkg/sciond/drkey"
 	dk_grpc "github.com/scionproto/scion/go/pkg/sciond/drkey/grpc"
@@ -212,6 +213,7 @@ func realMain() error {
 		RevCache:     revCache,
 		TopoProvider: itopo.Provider(),
 		DRKeyStore:   drkeyStore,
+		Colibri:      &colibri.DaemonClient{Dialer: dialer},
 	}))
 
 	promgrpc.Register(server)

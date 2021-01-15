@@ -32,7 +32,8 @@ const (
 )
 
 var (
-	hfMacSalt = []byte("Derive OF Key")
+	hfMacSalt   = []byte("Derive OF Key")
+	colibriSalt = []byte("Derive Colibri Key")
 )
 
 func InitMac(key []byte) (hash.Hash, error) {
@@ -48,10 +49,7 @@ func InitMac(key []byte) (hash.Hash, error) {
 }
 
 func HFMacFactory(key []byte) (func() hash.Hash, error) {
-	// Generate keys
-	// This uses 16B keys with 1000 hash iterations, which is the same as the
-	// defaults used by pycrypto.
-	hfGenKey := pbkdf2.Key(key, hfMacSalt, 1000, 16, sha256.New)
+	hfGenKey := DeriveHFMacKey(key)
 
 	// First check for MAC creation errors.
 	if _, err := InitMac(hfGenKey); err != nil {
@@ -62,4 +60,18 @@ func HFMacFactory(key []byte) (func() hash.Hash, error) {
 		return mac
 	}
 	return f, nil
+}
+
+// DeriveHFMacKey generates the hop field mac key.
+// This uses 16B keys with 1000 hash iterations, which is the same as the
+// defaults used by pycrypto.
+func DeriveHFMacKey(key []byte) []byte {
+	return pbkdf2.Key(key, hfMacSalt, 1000, 16, sha256.New)
+}
+
+// DeriveColibriMacKey derives the private Colibri key from the given key.
+func DeriveColibriMacKey(key []byte) []byte {
+	// This uses 16B keys with 1000 hash iterations, which is the same as the
+	// defaults used by pycrypto.
+	return pbkdf2.Key(key, colibriSalt, 1000, 16, sha256.New)
 }

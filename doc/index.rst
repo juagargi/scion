@@ -30,7 +30,7 @@ is a good place to start.
    uri
    grpc
    EPIC
-   ColibriService
+   ColibriDesign
    BeaconService
    PathService
    endhost-bootstrap

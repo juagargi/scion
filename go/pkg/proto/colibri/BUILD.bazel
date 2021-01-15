@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+
+go_proto_library(
+    name = "go_default_library",
+    compiler = "@io_bazel_rules_go//proto:go_grpc",
+    importpath = "github.com/scionproto/scion/go/pkg/proto/colibri",
+    proto = "//proto/colibri/v1:colibri",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//go/pkg/proto/control_plane:go_default_library",
+    ],
+)

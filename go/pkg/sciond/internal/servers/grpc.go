@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	durationpb "github.com/golang/protobuf/ptypes/duration"
@@ -39,6 +40,7 @@ import (
 	"github.com/scionproto/scion/go/lib/topology"
 	"github.com/scionproto/scion/go/lib/util"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
+	"github.com/scionproto/scion/go/pkg/sciond/colibri"
 	"github.com/scionproto/scion/go/pkg/sciond/fetcher"
 	"github.com/scionproto/scion/go/pkg/trust"
 	"github.com/scionproto/scion/go/proto"
@@ -51,6 +53,7 @@ type DaemonServer struct {
 	RevCache     revcache.RevCache
 	ASInspector  trust.Inspector
 	DRKeyStore   drkeystorage.ClientStore
+	Colibri      *colibri.DaemonClient
 
 	Metrics Metrics
 
@@ -375,4 +378,41 @@ func keyToLvl2Resp(drkey drkey.Lvl2Key) (*sdpb.DRKeyLvl2Response, error) {
 	return &sdpb.DRKeyLvl2Response{
 		BaseRep: baseRep,
 	}, nil
+}
+
+func (s *DaemonServer) ColibriListRsvs(ctx context.Context, req *sdpb.ColibriListRequest) (
+	*sdpb.ColibriListResponse, error) {
+
+	dstIA := addr.IAInt(req.Base.DstIa).IA()
+	log.FromCtx(ctx).Debug("fetching reservation list", "dst", dstIA.String())
+	return s.Colibri.ListReservations(ctx, req)
+}
+
+func (s *DaemonServer) ColibriSetupRsv(ctx context.Context, req *sdpb.ColibriSetupRequest) (
+	*sdpb.ColibriSetupResponse, error) {
+
+	res, err := s.Colibri.SetupReservation(ctx, req)
+	if err != nil {
+		return res, err
+	}
+	if res.Base.Success != nil {
+		egress, err := strconv.Atoi(res.Base.Success.NextHop)
+		if err != nil {
+			return nil, serrors.WrapStr("obtaining next hop from egress", err,
+				"egress", res.Base.Success.NextHop)
+		}
+		addr, ok := s.TopoProvider.Get().UnderlayNextHop(common.IFIDType(egress))
+		if !ok {
+			return nil, serrors.New("obtaining next hop from egress id, egress not present",
+				"egress", egress)
+		}
+		res.Base.Success.NextHop = addr.String()
+	}
+	return res, nil
+}
+
+func (s *DaemonServer) ColibriCleanupRsv(ctx context.Context, req *sdpb.ColibriCleanupRequest) (
+	*sdpb.ColibriCleanupResponse, error) {
+
+	return s.Colibri.CleanupReservation(ctx, req)
 }

@@ -668,7 +668,7 @@ func realMain() error {
 		AllowIsdLoop:              isdLoopAllowed,
 	})
 	if err != nil {
-		serrors.WrapStr("starting periodic tasks", err)
+		return serrors.WrapStr("starting periodic tasks", err)
 	}
 	defer tasks.Kill()
 	log.Info("Started periodic tasks")
@@ -751,6 +751,14 @@ func (topoInformation) HiddenSegmentLookupAddresses() ([]*net.UDPAddr, error) {
 
 func (topoInformation) HiddenSegmentRegistrationAddresses() ([]*net.UDPAddr, error) {
 	a, err := itopo.Get().MakeHostInfos(topology.HiddenSegmentRegistration)
+	if errors.Is(err, topology.ErrAddressNotFound) {
+		return nil, nil
+	}
+	return a, err
+}
+
+func (topoInformation) ColibriServices() ([]*net.UDPAddr, error) {
+	a, err := itopo.Get().MakeHostInfos(topology.Colibri)
 	if errors.Is(err, topology.ErrAddressNotFound) {
 		return nil, nil
 	}

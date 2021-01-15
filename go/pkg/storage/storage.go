@@ -21,6 +21,8 @@ import (
 	"io"
 	"time"
 
+	sqlitereservation "github.com/scionproto/scion/go/co/reservation/sqlite"
+	"github.com/scionproto/scion/go/co/reservationstorage/backend"
 	"github.com/scionproto/scion/go/cs/beacon"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/config"
@@ -47,10 +49,11 @@ const (
 	// BackendSqlite indicates an sqlite backend.
 	BackendSqlite Backend = "sqlite"
 	// DefaultPath indicates the default connection string for a generic database.
-	DefaultPath        = "/share/scion.db"
-	DefaultTrustDBPath = "/share/data/%s.trust.db"
-	DefaultPathDBPath  = "/share/cache/%s.path.db"
-	DefaultDRKeyDBPath = "/share/cache/%s.drkey.db"
+	DefaultPath          = "/share/scion.db"
+	DefaultTrustDBPath   = "/share/data/%s.trust.db"
+	DefaultPathDBPath    = "/share/cache/%s.path.db"
+	DefaultDRKeyDBPath   = "/share/cache/%s.drkey.db"
+	DefaultColibriDBPath = "/share/cache/%s.colibri.db"
 )
 
 // Default samples for various databases.
@@ -66,6 +69,9 @@ var (
 	}
 	SampleDRKeyDB = DBConfig{
 		Connection: DefaultDRKeyDBPath,
+	}
+	SampleColibriDB = DBConfig{
+		Connection: DefaultColibriDBPath,
 	}
 )
 
@@ -253,6 +259,16 @@ func NewDRKeyLvl1Storage(c DBConfig) (drkey.Lvl1DB, error) {
 func NewDRKeyLvl2Storage(c DBConfig) (drkey.Lvl2DB, error) {
 	log.Info("Connecting DRKeyDB", "	", BackendSqlite, "connection", c.Connection)
 	db, err := drkeydbsqlite.NewLvl2Backend(c.Connection)
+	if err != nil {
+		return nil, err
+	}
+	SetConnLimits(db, c)
+	return db, nil
+}
+
+func NewColibriStorage(c DBConfig) (backend.DB, error) {
+	log.Info("Connecting COLIBRI DB", "backend", BackendSqlite, "connection", c.Connection)
+	db, err := sqlitereservation.New(c.Connection)
 	if err != nil {
 		return nil, err
 	}

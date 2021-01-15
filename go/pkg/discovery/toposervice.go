@@ -40,6 +40,8 @@ type TopologyInformation interface {
 	// HiddenSegmentRegistrationAddresses returns the addresses of the hidden
 	// segment registration services.
 	HiddenSegmentRegistrationAddresses() ([]*net.UDPAddr, error)
+	// ColibriServices returns all the colibri services in the AS.
+	ColibriServices() ([]*net.UDPAddr, error)
 }
 
 // Topology implements a service discovery server based on the topology
@@ -123,6 +125,30 @@ func (t Topology) HiddenSegmentServices(ctx context.Context,
 		"lookups", len(lookups), "registration", len(registration))
 	t.updateTelemetry(span, labels.WithResult(prom.Success), nil)
 	return response, nil
+}
+
+func (t Topology) ColibriServices(ctx context.Context, _ *dpb.ColibriServicesRequest) (
+	*dpb.ColibriServicesResponse, error) {
+
+	span := opentracing.SpanFromContext(ctx)
+	labels := requestLabels{ReqType: "colibri_services"}
+	logger := log.FromCtx(ctx)
+
+	colSrvs, err := t.Information.ColibriServices()
+	if err != nil {
+		logger.Debug("Failed to list colibri services", "err", err)
+		t.updateTelemetry(span, labels.WithResult(prom.ErrInternal), err)
+		return nil, err
+	}
+	reply := &dpb.ColibriServicesResponse{
+		Address: make([]string, len(colSrvs)),
+	}
+	for i, addr := range colSrvs {
+		reply.Address[i] = addr.String()
+	}
+	logger.Debug("Replied with colibri services", "services", colSrvs)
+	t.updateTelemetry(span, labels.WithResult(prom.Success), nil)
+	return reply, nil
 }
 
 // RequestsLabels exposes the labels required by the Requests metric.

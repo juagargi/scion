@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
 	"github.com/scionproto/scion/go/lib/drkey"
@@ -186,6 +188,25 @@ func (c connector) RevNotification(ctx context.Context,
 
 func (c connector) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 	valTime time.Time) (drkey.Lvl2Key, error) {
+
+	panic("not implemented")
+}
+
+func (c connector) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
+	*colibri.StitchableSegments, error) {
+
+	panic("not implemented")
+}
+
+func (c connector) ColibriSetupRsv(context.Context, *colibri.E2EReservationSetup) (
+	snet.Path, error) {
+
+	panic("not implemented")
+}
+
+func (c connector) ColibriCleanupRsv(context.Context, *reservation.ID,
+	reservation.IndexNumber) error {
+
 	panic("not implemented")
 }
 
