@@ -12,6 +12,8 @@ Header Alignment
 ----------------
 The SCION Header is aligned to 4 bytes.
 
+.. _header-specification_common-header:
+
 Common Header
 -------------
 The Common Header has the following format::
@@ -987,10 +989,14 @@ When ``C=0`` we have :math:`\text{MAC}_{i}^{C=0}` which is also called
 :math:`\sigma_i`:
 
 .. math::
-    \sigma_i = \text{MAC}_{K_i}(InputData, SrcHostAddr, DstHostAddr)
+    \sigma_i = \text{MAC}_{K_i}(InputData, SrcHostAddr, DstHostAddr,
+      SL, DL, ST, DT)
 
 (SrcHostAddr and DstHostAddr are defined in the
-:ref:`header-specification_address-header`, present in every SCION packet).
+:ref:`header-specification_address-header`,
+SL, DL, ST and DT defined in the 
+:ref:`header-specification_common-header`,
+both present in every SCION packet).
 
 In the case of ``C=0``, we want to use the :math:`\sigma_i` defined above
 to compute the *per-packet MAC*,

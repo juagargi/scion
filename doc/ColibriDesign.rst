@@ -259,8 +259,17 @@ addresses from the address header:
 .. math::
     \begin{align}
     \sigma_B &= \text{MAC}_B^{C=0}\\
-    \sigma_B &= \text{MAC}_{K_B}(InputData, SrcHost, DstHost)\\
+    \sigma_B &= \text{MAC}_{K_B}(InputData, SrcHost, DstHost,
+      SL, DL, ST, DT)\\
     \end{align}
+
+With:
+
+SL, DL
+    Source and Destination host addresses lengths.
+
+ST, DT
+    Source and Destination host addresses types.
 
 We then introduce a high-precision time stamp of each packet, *TS*.
 This time stamp is further defined in the SCION header document
