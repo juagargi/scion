@@ -456,7 +456,7 @@ func run(file string) error {
 			Capacities: cap,
 			Delta:      cfg.Colibri.Delta,
 		}
-		colibriStore = reservationstore.NewStore(db, admitter)
+		colibriStore = reservationstore.NewStore(topo.IA(), db, admitter)
 		colibriInitialRsvs, err = reservation_conf.ReservationsFromFile(cfg.Colibri.ReservationsFile)
 		if err != nil {
 			return serrors.WrapStr("error loading colibri initial reservation list", err)

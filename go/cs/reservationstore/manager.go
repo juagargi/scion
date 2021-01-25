@@ -16,17 +16,22 @@ package reservationstore
 
 import (
 	"context"
+	"sync"
 
 	"github.com/scionproto/scion/go/cs/reservation/conf"
+	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/periodic"
 )
 
 // Manager takes care of the health of the segment reservations.
 // TODO(juagargi) do the Manager interface
 type Manager struct {
-	store   reservationstorage.Store
-	initial conf.Reservations
+	store            reservationstorage.Store
+	initial          conf.Reservations
+	alreadyRequested bool
 }
 
 var _ periodic.Task = (*Manager)(nil)
@@ -43,5 +48,39 @@ func (m *Manager) Name() string {
 }
 
 func (m *Manager) Run(ctx context.Context) {
-	// read configuration
+	m.alreadyRequested = true
+	if m.alreadyRequested {
+		// TODO(juagargi) this should not be a task
+		return
+	}
+	var wg sync.WaitGroup
+	for _, rsv := range m.initial.Rsvs {
+		wg.Add(1)
+		cfg := rsv
+		go func() {
+			defer log.HandlePanic()
+			m.requestReservation(ctx, &wg, cfg)
+		}()
+	}
+	log.Info("waiting for initial reservations", "count", len(m.initial.Rsvs))
+	wg.Wait()
+}
+
+func (m *Manager) requestReservation(ctx context.Context, wg *sync.WaitGroup,
+	cfg conf.ReservationEntry) {
+
+	defer wg.Done()
+
+	// prepare request
+	req := segment.SetupReq{
+		Request:    segment.Request{},
+		MinBW:      cfg.MinSize,
+		MaxBW:      cfg.MaxSize,
+		SplitCls:   cfg.SplitCls,
+		PathProps:  cfg.EndProps.PathEndProps,
+		AllocTrail: reservation.AllocationBeads{},
+	}
+	if err := m.store.InitSegmentReservation(ctx, &req); err != nil {
+		log.Error("failed to request initial reservation", "error", err)
+	}
 }

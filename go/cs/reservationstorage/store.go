@@ -39,6 +39,9 @@ type Store interface {
 		base.MessageWithPath, error)
 
 	DeleteExpiredIndices(ctx context.Context) (int, error)
+
+	// InitSegmentReservation starts a new segment reservation.
+	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
 }
 
 // TODO(juagargi) there is a number of functions missing: all regarding responses.
