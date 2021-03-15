@@ -41,11 +41,11 @@ func (a *StatefulAdmission) AdmitRsv(ctx context.Context, x backend.ColibriStora
 	req *segment.SetupReq) error {
 
 	pad := &ScratchPad{}
-	avail, err := a.availableBW(ctx, x, req)
+	avail, err := a.availableBW(ctx, x, *req)
 	if err != nil {
 		return serrors.WrapStr("cannot compute reservation admission", err, "request_id", req.ID)
 	}
-	ideal, err := a.idealBW(ctx, x, req, pad)
+	ideal, err := a.idealBW(ctx, x, *req, pad)
 	if err != nil {
 		return serrors.WrapStr("cannot compute reservation admission", err, "request_id", req.ID)
 	}
@@ -103,7 +103,7 @@ type ScratchPad struct {
 }
 
 func (a *StatefulAdmission) availableBW(ctx context.Context, x backend.ColibriStorage,
-	req *segment.SetupReq) (uint64, error) {
+	req segment.SetupReq) (uint64, error) {
 
 	usedIngress, err := x.GetInterfaceUsageIngress(ctx, req.Ingress)
 	if err != nil {
@@ -134,7 +134,7 @@ func (a *StatefulAdmission) availableBW(ctx context.Context, x backend.ColibriSt
 }
 
 func (a *StatefulAdmission) idealBW(ctx context.Context, x backend.ColibriStorage,
-	req *segment.SetupReq, pad *ScratchPad) (uint64, error) {
+	req segment.SetupReq, pad *ScratchPad) (uint64, error) {
 
 	tubeRatio, err := a.tubeRatio(ctx, x, req, pad)
 	if err != nil {
@@ -149,9 +149,9 @@ func (a *StatefulAdmission) idealBW(ctx context.Context, x backend.ColibriStorag
 }
 
 func (a *StatefulAdmission) tubeRatio(ctx context.Context, x backend.ColibriStorage,
-	req *segment.SetupReq, pad *ScratchPad) (float64, error) {
+	req segment.SetupReq, pad *ScratchPad) (float64, error) {
 
-	transitDemand, err := a.transitDemand(ctx, x, req.Ingress, *req, pad)
+	transitDemand, err := a.transitDemand(ctx, x, req.Ingress, req, pad)
 	if err != nil {
 		return 0, serrors.WrapStr("cannot compute transit demand", err)
 	}
@@ -163,7 +163,7 @@ func (a *StatefulAdmission) tubeRatio(ctx context.Context, x backend.ColibriStor
 		if in == req.Ingress {
 			continue
 		}
-		transitDem, err := a.transitDemand(ctx, x, in, *req, pad)
+		transitDem, err := a.transitDemand(ctx, x, in, req, pad)
 		if err != nil {
 			return 0, serrors.WrapStr("computing tube ratio failed", err)
 		}
@@ -178,7 +178,7 @@ func (a *StatefulAdmission) tubeRatio(ctx context.Context, x backend.ColibriStor
 // and then adjusting it by substracting the stored egScalFctr x srcAlloc and adding
 // the computed egScalFctr x srcAlloc
 func (a *StatefulAdmission) linkRatio(ctx context.Context, x backend.ColibriStorage,
-	req *segment.SetupReq, pad *ScratchPad) (float64, error) {
+	req segment.SetupReq, pad *ScratchPad) (float64, error) {
 
 	var denominator uint64
 	// stored sum:
@@ -201,7 +201,7 @@ func (a *StatefulAdmission) linkRatio(ctx context.Context, x backend.ColibriStor
 	denominator -= uint64(storedEgScalFctr * float64(storedSrcAlloc))
 
 	// adjust by adding the computed egScalFctr and srcAlloc
-	egScalFctr, err := a.egScalFctr(ctx, x, req.ID.ASID, req.Egress, *req, pad)
+	egScalFctr, err := a.egScalFctr(ctx, x, req.ID.ASID, req.Egress, req, pad)
 	if err != nil {
 		return 0, serrors.WrapStr("computing link ratio failed", err)
 	}

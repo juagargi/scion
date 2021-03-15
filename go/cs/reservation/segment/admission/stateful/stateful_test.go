@@ -24,6 +24,7 @@ import (
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	"github.com/scionproto/scion/go/cs/reservation/sqlite"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend/mock_backend"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -185,14 +186,14 @@ func TestAvailableBW(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			db, finish := newTestDB(t)
+			db, finish := newMockDB(t)
 			adm := newTestAdmitter(t)
 			defer finish()
 
 			adm.Delta = tc.delta
 			ctx := context.Background()
 			tc.setupDB(db.(*mock_backend.MockDB))
-			avail, err := adm.availableBW(ctx, db, tc.req)
+			avail, err := adm.availableBW(ctx, db, *tc.req)
 			require.NoError(t, err)
 			require.Equal(t, tc.availBW, avail)
 		})
@@ -315,7 +316,7 @@ func TestTubeRatio(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			db, finish := newTestDB(t)
+			db, finish := newMockDB(t)
 			adm := newTestAdmitter(t)
 			defer finish()
 
@@ -327,7 +328,7 @@ func TestTubeRatio(t *testing.T) {
 
 			ctx := context.Background()
 			pad := &ScratchPad{}
-			ratio, err := adm.tubeRatio(ctx, db, tc.req, pad)
+			ratio, err := adm.tubeRatio(ctx, db, *tc.req, pad)
 			require.NoError(t, err)
 			require.Equal(t, tc.tubeRatio, ratio)
 		})
@@ -423,7 +424,7 @@ func TestLinkRatio(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			db, finish := newTestDB(t)
+			db, finish := newMockDB(t)
 			adm := newTestAdmitter(t)
 			defer finish()
 
@@ -435,12 +436,91 @@ func TestLinkRatio(t *testing.T) {
 
 			ctx := context.Background()
 			pad := &ScratchPad{}
-			linkRatio, err := adm.linkRatio(ctx, db, tc.req, pad)
+			linkRatio, err := adm.linkRatio(ctx, db, *tc.req, pad)
 			require.NoError(t, err)
 			require.Equal(t, tc.linkRatio, linkRatio)
 		})
 	}
 
+}
+
+func TestAvailableBWAfterAdmission(t *testing.T) {
+	req := func() *segment.SetupReq {
+		return newTestRequest(t, 1, 2, 5, 7) // note: `req` changes ID for the second availBW call
+	}
+	cases := map[string]struct {
+		availBW      uint64
+		delta        float64
+		req          *segment.SetupReq
+		rsvsInDB     []*segment.Reservation
+		availBWAfter uint64
+	}{
+		"empty DB": {
+			availBW:      1024,
+			delta:        1,
+			req:          req(),
+			rsvsInDB:     []*segment.Reservation{},
+			availBWAfter: 1024 - req().MaxBW.ToKbps(),
+		},
+		"this reservation in DB": {
+			// as the only reservation in DB has the same ID as the request, the availableBW
+			// function should return the same value as with an empty DB.
+			availBW: 1024,
+			delta:   1,
+			req:     req(),
+			rsvsInDB: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
+			},
+			availBWAfter: 1024 - req().MaxBW.ToKbps(),
+		},
+		"other reservation in DB": {
+			availBW: 1024 - 64,
+			delta:   1,
+			req:     req(),
+			rsvsInDB: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:2", "beefcafe", 1, 2, 5, 5, 5),
+			},
+			// cap - ff00:1:2 - ff00:1:1
+			availBWAfter: 1024 - 64 - 128,
+		},
+		"change delta": {
+			availBW: (1024 - 64) / 2,
+			delta:   .5,
+			req:     req(),
+			rsvsInDB: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:2", "beefcafe", 1, 2, 5, 5, 5),
+			},
+			availBWAfter: (1024 - 64 - 128) / 2,
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t)
+
+			adm := newTestAdmitter(t)
+			adm.Delta = tc.delta
+			ctx := context.Background()
+			prepareDBForAdmission(ctx, t, db, tc.rsvsInDB, tc.req, 1024*1024)
+			avail, err := adm.availableBW(ctx, db, *tc.req)
+			require.NoError(t, err)
+			require.Equal(t, tc.availBW, avail)
+
+			err = adm.AdmitRsv(ctx, db, tc.req)
+			require.NoError(t, err)
+			persistRsvFromAdmittedRequest(t, db, *tc.req)
+
+			// evaluate avail BW again, but change the request ID to something not in the DB:
+			tc.req.ID.ASID = xtest.MustParseAS("6:6:6")
+			avail, err = adm.availableBW(ctx, db, *tc.req)
+			require.NoError(t, err)
+			require.Equal(t, tc.availBWAfter, avail)
+			db.Close()
+		})
+	}
 }
 
 type testCapacities struct {
@@ -456,11 +536,21 @@ func (c *testCapacities) Capacity(from, to uint16) uint64       { return c.Cap }
 func (c *testCapacities) CapacityIngress(ingress uint16) uint64 { return c.Cap }
 func (c *testCapacities) CapacityEgress(egress uint16) uint64   { return c.Cap }
 
-func newTestDB(t *testing.T) (backend.DB, func()) {
+func newMockDB(t *testing.T) (backend.DB, func()) {
+	t.Helper()
+
 	mctlr := gomock.NewController(t)
 	db := mock_backend.NewMockDB(mctlr)
 
 	return db, mctlr.Finish
+}
+
+func newTestDB(t *testing.T) *sqlite.Backend {
+	t.Helper()
+
+	db, err := sqlite.New("file::memory:")
+	require.NoError(t, err)
+	return db
 }
 
 func newTestAdmitter(t *testing.T) *StatefulAdmission {
@@ -677,7 +767,6 @@ func prepareMockForLinkRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 
 	sameIDAsRequest, sourceStateMap, inMap, egMap, transitDem, transitAlloc :=
 		prepareForMock(rsvs, req, globalCapacity)
-	_ = sameIDAsRequest
 	_ = transitDem
 
 	db.EXPECT().GetSegmentRsvFromID(gomock.Any(), &req.ID).AnyTimes().Return(sameIDAsRequest, nil)
@@ -708,4 +797,76 @@ func prepareMockForLinkRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 			func(_ context.Context, _ addr.AS, egress uint16) (uint64, error) {
 				return egMap[req.ID.ASID][egress], nil
 			})
+}
+
+func prepareDBForAdmission(ctx context.Context, t *testing.T, db *sqlite.Backend,
+	rsvs []*segment.Reservation, req *segment.SetupReq, globalCapacity uint64) {
+
+	for _, r := range rsvs {
+		if r.ID == req.ID {
+			// its last index must be compatible with the request, so that the admission succeeds
+			lastIdx := req.InfoField.Idx
+			for i := len(r.Indices) - 1; i >= 0; i-- {
+				r.Indices[i].Expiration = req.InfoField.ExpirationTick.ToTime()
+				lastIdx = lastIdx.Sub(1)
+				r.Indices[i].Idx = lastIdx
+			}
+		}
+		err := db.PersistSegmentRsv(ctx, r)
+		require.NoError(t, err)
+	}
+	sameIDAsRequest, sourceStateMap, inMap, egMap, transitDem, transitAlloc :=
+		prepareForMock(rsvs, req, globalCapacity)
+	_ = sameIDAsRequest
+	for key, state := range sourceStateMap {
+		err := db.PersistSourceState(ctx, key.Source, key.Ingress, key.Egress,
+			state.SrcDem, state.SrcAlloc)
+		require.NoError(t, err)
+	}
+	for src, inDemMap := range inMap {
+		for ingress, inDem := range inDemMap {
+			err := db.PersistInDemand(ctx, src, ingress, inDem)
+			require.NoError(t, err)
+		}
+	}
+	for src, egDemMap := range egMap {
+		for egress, egDem := range egDemMap {
+			err := db.PersistEgDemand(ctx, src, egress, egDem)
+			require.NoError(t, err)
+		}
+	}
+	// transitDem and transitAlloc represent transits between all ingress and req.Egress
+	for ingress, demand := range transitDem {
+		err := db.PersistTransitDem(ctx, ingress, req.Egress, demand)
+		require.NoError(t, err)
+	}
+	err := db.PersistTransitAlloc(ctx, req.Ingress, req.Egress, transitAlloc)
+	require.NoError(t, err)
+}
+
+func persistRsvFromAdmittedRequest(t *testing.T, db *sqlite.Backend, req segment.SetupReq) {
+	// req.AllocTrail has been modified by the admission
+	ctx := context.Background()
+	rsv, err := db.GetSegmentRsvFromID(ctx, &req.ID)
+	require.NoError(t, err)
+	if rsv == nil {
+		rsv = segment.NewReservation()
+		rsv.ID = req.ID
+		rsv.Ingress = req.Ingress
+		rsv.Egress = req.Egress
+		err = db.NewSegmentRsv(ctx, rsv)
+		require.NoError(t, err)
+	} else {
+		index := rsv.Index(req.InfoField.Idx)
+		require.Nil(t, index, "same index not allowed")
+	}
+	req.Reservation = rsv
+	tok := &reservation.Token{InfoField: req.InfoField}
+	idx, err := rsv.NewIndexFromToken(tok, req.MinBW, req.MaxBW)
+	require.NoError(t, err)
+	index := rsv.Index(idx)
+	// admitted; the request contains already the value inside the "allocation beads" of the rsv
+	index.AllocBW = req.AllocTrail[len(req.AllocTrail)-1].AllocBW
+	err = db.PersistSegmentRsv(ctx, rsv)
+	require.NoError(t, err)
 }

@@ -91,6 +91,8 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		// setup, create reservation and an index
 		rsv = segment.NewReservation()
 		rsv.ID = req.ID
+		rsv.Ingress = req.Ingress
+		rsv.Egress = req.Egress
 		err = tx.NewSegmentRsv(ctx, rsv)
 		if err != nil {
 			return failedResponse, serrors.WrapStr(
