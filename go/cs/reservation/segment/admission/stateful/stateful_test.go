@@ -234,11 +234,11 @@ func TestTubeRatio(t *testing.T) {
 		},
 		"one source, two ingress": {
 			tubeRatio: .5,
-			req:       newTestRequest(t, 1, 2, 3, 3), // 64Kbps
+			req:       newTestRequest(t, 1, 2, 3, 3), // 32Kbps
 			setupDB: func(db *mock_backend.MockDB) {
 				rsvs := []*segment.Reservation{
-					testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 3, 3, 3), // 64Kbps
-					testNewRsv(t, "ff00:1:1", "00000002", 3, 2, 5, 5, 5), // 128Kbps
+					testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 3, 3, 3), // 32Kbps
+					testNewRsv(t, "ff00:1:1", "00000002", 3, 2, 5, 5, 5), // 64Kbps
 				}
 				req := newTestRequest(t, 1, 2, 3, 3)
 				prepareMockForTubeRatio(db, rsvs, req, 1024*1024)
@@ -297,7 +297,7 @@ func TestTubeRatio(t *testing.T) {
 			setupDB: func(db *mock_backend.MockDB) {
 				rsvs := []*segment.Reservation{
 					testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5),
-					testNewRsv(t, "ff00:1:2", "00000001", 1, 2, 5, 5, 5), // 128 Kbps
+					testNewRsv(t, "ff00:1:2", "00000001", 1, 2, 5, 5, 5), // 64Kbps
 					testNewRsv(t, "ff00:1:1", "00000002", 3, 2, 5, 5, 5),
 					testNewRsv(t, "ff00:1:3", "00000001", 4, 5, 5, 9, 9),
 					testNewRsv(t, "ff00:1:3", "00000002", 4, 5, 5, 9, 9),
@@ -398,10 +398,10 @@ func TestLinkRatio(t *testing.T) {
 		},
 		"smaller prevBW": {
 			linkRatio: 1. / 3.,
-			req:       testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 3, 3), // 64 Kbps
+			req:       testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 3, 3), // 32 Kbps
 			setupDB: func(db *mock_backend.MockDB) {
 				rsvs := []*segment.Reservation{
-					testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5), // 128 Kbps
+					testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5), // 64 Kbps
 				}
 				req := testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 3, 3)
 				prepareMockForLinkRatio(db, rsvs, req, 1024*1024)
@@ -409,10 +409,10 @@ func TestLinkRatio(t *testing.T) {
 		},
 		"bigger prevBW": {
 			linkRatio: 2. / 3.,
-			req:       testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 7, 7), // 256 Kbps
+			req:       testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 7, 7), // 128 Kbps
 			setupDB: func(db *mock_backend.MockDB) {
 				rsvs := []*segment.Reservation{
-					testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5), // 128 Kbps
+					testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5), // 64 Kbps
 				}
 				req := testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 7, 7)
 				prepareMockForLinkRatio(db, rsvs, req, 1024*1024)
@@ -500,10 +500,10 @@ func TestAvailableBWAfterAdmission(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			db := newTestDB(t)
-
 			adm := newTestAdmitter(t)
 			adm.Delta = tc.delta
 			ctx := context.Background()
+
 			prepareDBForAdmission(ctx, t, db, tc.rsvsInDB, tc.req, 1024*1024)
 			avail, err := adm.availableBW(ctx, db, *tc.req)
 			require.NoError(t, err)
@@ -518,7 +518,137 @@ func TestAvailableBWAfterAdmission(t *testing.T) {
 			avail, err = adm.availableBW(ctx, db, *tc.req)
 			require.NoError(t, err)
 			require.Equal(t, tc.availBWAfter, avail)
-			db.Close()
+		})
+	}
+}
+
+func TestTubeRatioAfterAdmission(t *testing.T) {
+	cases := map[string]struct {
+		tubeRatio      float64
+		req            *segment.SetupReq
+		tubeRatioAfter float64           // tube ratio expected after admission
+		reqAfter       *segment.SetupReq // leave empty to repeat `req` after admission
+		rsvs           []*segment.Reservation
+		globalCapacity uint64
+		interfaces     []uint16
+	}{
+		"empty": {
+			tubeRatio:      1,
+			tubeRatioAfter: 1,
+			req:            newTestRequest(t, 1, 2, 5, 5),
+			rsvs:           []*segment.Reservation{},
+			globalCapacity: 1024 * 1024,
+			interfaces:     []uint16{1, 2, 3},
+		},
+		"one source, one ingress": {
+			tubeRatio:      1,
+			tubeRatioAfter: 1,
+			req:            newTestRequest(t, 1, 2, 5, 5),
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5),
+			},
+			globalCapacity: 1024 * 1024,
+			interfaces:     []uint16{1, 2, 3},
+		},
+		"one source, two ingress": {
+			tubeRatio:      .5,
+			tubeRatioAfter: (64. + 32.) / (96. + 64.),
+			req:            newTestRequest(t, 1, 2, 3, 3), // 32Kbps
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 3, 3, 3), // 32Kbps
+				testNewRsv(t, "ff00:1:1", "00000002", 3, 2, 5, 5, 5), // 64Kbps
+			},
+			globalCapacity: 1024 * 1024,
+			interfaces:     []uint16{1, 2, 3},
+		},
+		"two sources, request already present": {
+			tubeRatio:      64. / (64. + 64.),
+			tubeRatioAfter: (64. + 64.) / ((64. + 64.) + 64.),
+			req:            newTestRequest(t, 1, 2, 5, 5), // 64Kbps
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 9, 9), // 256Kbps, replaced by req
+				testNewRsv(t, "ff00:1:1", "00000002", 3, 2, 5, 5, 5),
+			},
+			globalCapacity: 1024 * 1024,
+			interfaces:     []uint16{1, 2, 3},
+		},
+		"multiple sources, multiple ingress": {
+			tubeRatio:      .75,
+			tubeRatioAfter: (64. + 64. + 64. + 64.) / ((64. + 64. + 64. + 64.) + 64.),
+			req:            newTestRequest(t, 1, 2, 5, 5),
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:2", "00000001", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:1", "00000002", 3, 2, 5, 5, 5),
+			},
+			globalCapacity: 1024 * 1024,
+			interfaces:     []uint16{1, 2, 3},
+		},
+		"exceeding ingress capacity": {
+			tubeRatio:      (64. + 64. + 64.) / ((64. + 64. + 64.) + 0 + 64.),
+			tubeRatioAfter: (64. + 64. + 64. + 64.) / ((64. + 64. + 64. + 64.) + 0 + 64.),
+			req:            newTestRequest(t, 1, 2, 1, 5),
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:2", "00000001", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:1", "00000002", 3, 2, 5, 5, 5),
+			},
+			globalCapacity: 280.,
+			interfaces:     []uint16{1, 2, 3},
+		},
+		"with many other irrelevant reservations": {
+			tubeRatio:      (64. + 64. + 64.) / ((64. + 64. + 64.) + 64.),
+			tubeRatioAfter: (64. + 64. + 64. + 64.) / ((64. + 64. + 64. + 64.) + 64.),
+			req:            newTestRequest(t, 1, 2, 5, 5),
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:2", "00000001", 1, 2, 5, 5, 5), // 64 Kbps
+				testNewRsv(t, "ff00:1:1", "00000002", 3, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:3", "00000001", 4, 5, 5, 9, 9),
+				testNewRsv(t, "ff00:1:3", "00000002", 4, 5, 5, 9, 9),
+				testNewRsv(t, "ff00:1:4", "00000001", 5, 4, 5, 9, 9),
+				testNewRsv(t, "ff00:1:4", "00000002", 5, 4, 5, 9, 9),
+			},
+			globalCapacity: 1024 * 1024,
+			interfaces:     []uint16{1, 2, 3, 4, 5},
+		},
+	}
+
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t)
+			adm := newTestAdmitter(t)
+			adm.Capacities = &testCapacities{
+				Cap:    tc.globalCapacity,
+				Ifaces: tc.interfaces,
+			}
+			ctx := context.Background()
+
+			// tc.setupDB(db.(*mock_backend.MockDB))
+			prepareDBForAdmission(ctx, t, db, tc.rsvs, tc.req, tc.globalCapacity)
+			pad := &ScratchPad{}
+			ratio, err := adm.tubeRatio(ctx, db, *tc.req, pad)
+			require.NoError(t, err)
+			require.Equal(t, tc.tubeRatio, ratio, "failed before admission")
+
+			err = adm.AdmitRsv(ctx, db, tc.req)
+			require.NoError(t, err)
+			persistRsvFromAdmittedRequest(t, db, *tc.req)
+
+			// evaluate tube ratio again, but change the request ID
+			var newReq *segment.SetupReq
+			if tc.reqAfter != nil {
+				newReq = tc.reqAfter
+			} else {
+				newReq = tc.req
+				tc.req.ID.ASID = xtest.MustParseAS("6:6:6")
+			}
+			pad = &ScratchPad{}
+			ratio, err = adm.tubeRatio(ctx, db, *newReq, pad)
+			require.NoError(t, err)
+			require.Equal(t, tc.tubeRatioAfter, ratio, "failed after admission")
 		})
 	}
 }

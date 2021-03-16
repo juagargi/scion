@@ -126,8 +126,10 @@ func (a *StatefulAdmission) availableBW(ctx context.Context, x backend.ColibriSt
 			usedEgress -= blocked
 		}
 	}
-	freeIngress := a.Capacities.CapacityIngress(req.Ingress) - usedIngress
-	freeEgress := a.Capacities.CapacityIngress(req.Ingress) - usedEgress
+	capIn := int64(a.Capacities.CapacityIngress(req.Ingress))
+	capEg := int64(a.Capacities.CapacityIngress(req.Ingress))
+	freeIngress := uint64(maxSignedBW(0, capIn-int64(usedIngress)))
+	freeEgress := uint64(maxSignedBW(0, capEg-int64(usedEgress)))
 	free := float64(minBW(freeIngress, freeEgress))
 
 	return uint64(free * a.Delta), nil
@@ -434,4 +436,14 @@ func minBW(a uint64, bws ...uint64) uint64 {
 		}
 	}
 	return min
+}
+
+func maxSignedBW(a int64, bws ...int64) int64 {
+	max := a
+	for _, bw := range bws {
+		if bw > max {
+			max = bw
+		}
+	}
+	return max
 }
