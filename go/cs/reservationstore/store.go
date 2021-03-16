@@ -93,12 +93,6 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		rsv.ID = req.ID
 		rsv.Ingress = req.Ingress
 		rsv.Egress = req.Egress
-		err = tx.NewSegmentRsv(ctx, rsv)
-		if err != nil {
-			return failedResponse, serrors.WrapStr(
-				"unable to create a new segment reservation in db", err,
-				"id", req.ID)
-		}
 	}
 	req.Reservation = rsv
 	tok := &reservation.Token{InfoField: req.InfoField}

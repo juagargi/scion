@@ -626,7 +626,6 @@ func TestTubeRatioAfterAdmission(t *testing.T) {
 			}
 			ctx := context.Background()
 
-			// tc.setupDB(db.(*mock_backend.MockDB))
 			prepareDBForAdmission(ctx, t, db, tc.rsvs, tc.req, tc.globalCapacity)
 			pad := &ScratchPad{}
 			ratio, err := adm.tubeRatio(ctx, db, *tc.req, pad)
@@ -651,6 +650,103 @@ func TestTubeRatioAfterAdmission(t *testing.T) {
 			require.Equal(t, tc.tubeRatioAfter, ratio, "failed after admission")
 		})
 	}
+}
+
+func TestLinkRatioAfterAdmission(t *testing.T) {
+	cases := map[string]struct {
+		linkRatio      float64
+		linkRatioAfter float64
+		req            *segment.SetupReq
+		rsvs           []*segment.Reservation
+	}{
+		"empty": {
+			linkRatio:      1.,
+			linkRatioAfter: .5,
+			req:            testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 5, 5),
+			rsvs:           []*segment.Reservation{},
+		},
+		"same request": {
+			linkRatio:      1.,
+			linkRatioAfter: .5,
+			req:            testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 5, 5),
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
+			},
+		},
+		"same source": {
+			linkRatio:      1. / 2.,
+			linkRatioAfter: 1. / 3.,
+			req:            testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 5, 5),
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5),
+			},
+		},
+		"different sources": {
+			linkRatio:      1. / 3.,
+			linkRatioAfter: 1. / 4.,
+			req:            testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 5, 5),
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:2", "00000001", 1, 2, 5, 5, 5),
+				testNewRsv(t, "ff00:1:3", "00000001", 1, 2, 5, 5, 5),
+			},
+		},
+		"different egress interface": {
+			linkRatio:      1., // 64 / 64  => srcAlloc(ff00:1:1, 1, 2) = 0 + prevBW = 0 + 64 = 64
+			linkRatioAfter: 1. / 2.,
+			req:            testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 5, 5),
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 3, 5, 5, 5),
+			},
+		},
+		"smaller prevBW": {
+			linkRatio:      1. / 3.,
+			linkRatioAfter: 1. / 4.,
+			req:            testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 3, 3), // 32 Kbps
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5), // 64 Kbps
+			},
+		},
+		"bigger prevBW": {
+			linkRatio:      2. / 3.,
+			linkRatioAfter: 128. / (192. + 128.),
+			req:            testAddAllocTrail(newTestRequest(t, 1, 2, 5, 5), 7, 7), // 128 Kbps
+			rsvs: []*segment.Reservation{
+				testNewRsv(t, "ff00:1:1", "00000001", 1, 2, 5, 5, 5), // 64 Kbps
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t)
+			adm := newTestAdmitter(t)
+			adm.Capacities = &testCapacities{
+				Cap:    1024 * 1024,
+				Ifaces: []uint16{1, 2, 3},
+			}
+			ctx := context.Background()
+
+			prepareDBForAdmission(ctx, t, db, tc.rsvs, tc.req, 1024*1024)
+			pad := &ScratchPad{}
+			linkRatio, err := adm.linkRatio(ctx, db, *tc.req, pad)
+			require.NoError(t, err)
+			require.Equal(t, tc.linkRatio, linkRatio, "failed before admission")
+
+			err = adm.AdmitRsv(ctx, db, tc.req)
+			require.NoError(t, err)
+			persistRsvFromAdmittedRequest(t, db, *tc.req)
+
+			tc.req.ID.ASID = xtest.MustParseAS("6:6:6")
+			pad = &ScratchPad{}
+			linkRatio, err = adm.linkRatio(ctx, db, *tc.req, pad)
+			require.NoError(t, err)
+			require.Equal(t, tc.linkRatioAfter, linkRatio, "failed after admission")
+		})
+	}
+
 }
 
 type testCapacities struct {
@@ -984,7 +1080,7 @@ func persistRsvFromAdmittedRequest(t *testing.T, db *sqlite.Backend, req segment
 		rsv.ID = req.ID
 		rsv.Ingress = req.Ingress
 		rsv.Egress = req.Egress
-		err = db.NewSegmentRsv(ctx, rsv)
+		// err = db.NewSegmentRsv(ctx, rsv)
 		require.NoError(t, err)
 	} else {
 		index := rsv.Index(req.InfoField.Idx)
