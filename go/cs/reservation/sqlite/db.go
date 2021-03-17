@@ -572,10 +572,9 @@ func (x *executor) DebugCountE2ERsvs(ctx context.Context) (int, error) {
 // newSuffix finds a segment reservation ID suffix not being used at the moment. Should be called
 // inside a transaction so the suffix is not used in the meantime, or fail.
 func newSuffix(ctx context.Context, x db.Sqler, ASID addr.AS) (uint32, error) {
-	const query = `SELECT MIN(id_suffix)+1 FROM (
-			SELECT 0 AS id_suffix UNION ALL
-			SELECT id_suffix FROM seg_reservation WHERE id_as = $1
-		) WHERE id_suffix+1 NOT IN (SELECT id_suffix FROM seg_reservation WHERE id_as = $1)`
+	const query = `SELECT	max(id_suffix)+1
+		FROM	seg_reservation sr
+		WHERE	sr.id_as = $1`
 	var suffix uint32
 	err := x.QueryRowContext(ctx, query, uint64(ASID)).Scan(&suffix)
 	switch {
