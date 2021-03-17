@@ -17,9 +17,9 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"testing"
 
-	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/go/cs/reservation/reservationdbtest"
@@ -60,28 +60,75 @@ func TestNewSuffix(t *testing.T) {
 	require.False(t, isSuffixInDB(t, db, asid, suffix))
 }
 
+// TestRaceForSuffix checks that there are no problems trying to obtain a suffix for the same
+// AS ID from different goroutines, even if using transactions.
+// As we use sqlite3 per default, the default behavior is to have only 1 open connection.
+// This makes impossible to have more than one running transaction at a time. In this case
+// the DB access is serialized by the sqlite3 driver itself.
+// If we manually allow more than 1 open connection, we can create more than 1 transaction
+// at a time. The problem arises if we try to modify the same table from more than one
+// transaction, because the driver will return with a "table locked" or "database locked".
 func TestRaceForSuffix(t *testing.T) {
 	ctx := context.Background()
 	asid := xtest.MustParseAS("ff00:0:1")
 	db := newDB(t)
-	addSegRsvRows(t, db, asid, 1, 2)
-	suffix1, err := newSuffix(ctx, db.db, asid)
-	require.NoError(t, err)
-	require.Equal(t, uint32(3), suffix1)
-	suffix2, err := newSuffix(ctx, db.db, asid)
-	require.NoError(t, err)
-	require.Equal(t, uint32(3), suffix2)
-	rsv := &segment.Reservation{
-		ID:      reservation.SegmentID{ASID: asid},
-		Indices: segment.Indices{segment.Index{}},
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	fcn := func(t *testing.T, rsv *segment.Reservation, m1, m2 *sync.Mutex) {
+		tx, err := db.BeginTransaction(ctx, nil)
+		require.NoError(t, err, "failed for rsv %s", rsv.ID.String())
+		defer tx.Rollback()
+
+		t.Logf("[%s] waiting on 1...", &rsv.ID)
+		m1.Lock()
+		defer m1.Unlock()
+		t.Logf("[%s] woke up on 1...", &rsv.ID)
+
+		err = tx.NewSegmentRsv(ctx, rsv)
+		require.NoError(t, err, "failed for rsv %s", rsv.ID.String())
+
+		t.Logf("[%s] waiting on 2...", &rsv.ID)
+		m2.Lock()
+		defer m2.Unlock()
+		t.Logf("[%s] woke up on 2...", &rsv.ID)
+
+		err = tx.Commit()
+		require.NoError(t, err, "failed for rsv %s", rsv.ID.String())
+		wg.Done()
 	}
-	err = testInsertNewSegReservation(ctx, t, db.db, rsv, suffix1)
-	require.NoError(t, err)
-	err = testInsertNewSegReservation(ctx, t, db.db, rsv, suffix2)
-	require.Error(t, err)
-	sqliteError, ok := err.(sqlite3.Error)
-	require.True(t, ok)
-	require.Equal(t, sqlite3.ErrConstraint, sqliteError.Code)
+
+	mut1_1, mut1_2 := sync.Mutex{}, sync.Mutex{}
+	mut2_1, mut2_2 := sync.Mutex{}, sync.Mutex{}
+	lockAllMutexes := func() {
+		mut1_1.Lock()
+		mut1_2.Lock()
+		mut2_1.Lock()
+		mut2_2.Lock()
+	}
+
+	rsv1 := segment.Reservation{
+		ID:      reservation.SegmentID{ASID: asid, Suffix: [4]byte{1, 1, 1, 1}},
+		Indices: segment.Indices{segment.Index{}}}
+	rsv2 := segment.Reservation{
+		ID:      reservation.SegmentID{ASID: asid, Suffix: [4]byte{2, 2, 2, 2}},
+		Indices: segment.Indices{segment.Index{}}}
+	lockAllMutexes()
+
+	go fcn(t, &rsv1, &mut1_1, &mut1_2)
+	go fcn(t, &rsv2, &mut2_1, &mut2_2)
+
+	t.Logf("rsv1: %v", rsv1.ID.String())
+	t.Logf("rsv2: %v", rsv2.ID.String())
+	mut1_1.Unlock()
+	mut2_1.Unlock()
+	mut2_2.Unlock()
+	mut1_2.Unlock()
+	wg.Wait()
+	t.Logf("rsv1: %v", rsv1.ID.String())
+	t.Logf("rsv2: %v", rsv2.ID.String())
+	require.NotEqual(t, rsv1.ID.Suffix, rsv2.ID.Suffix)
 }
 
 func BenchmarkNewSuffix10K(b *testing.B)  { benchmarkNewSuffix(b, 10000) }
