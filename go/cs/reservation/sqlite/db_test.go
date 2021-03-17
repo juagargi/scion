@@ -53,11 +53,11 @@ func TestNewSuffix(t *testing.T) {
 	addSegRsvRows(t, db, asid, 3, 5)
 	suffix, err = newSuffix(ctx, db.db, asid)
 	require.NoError(t, err)
-	require.Equal(t, uint32(1), suffix)
+	require.False(t, isSuffixInDB(t, db, asid, suffix))
 	addSegRsvRows(t, db, asid, 1, 2)
 	suffix, err = newSuffix(ctx, db.db, asid)
 	require.NoError(t, err)
-	require.Equal(t, uint32(6), suffix)
+	require.False(t, isSuffixInDB(t, db, asid, suffix))
 }
 
 func TestRaceForSuffix(t *testing.T) {
@@ -105,6 +105,17 @@ func addSegRsvRows(t testing.TB, b *Backend, asid addr.AS, firstSuffix, lastSuff
 		_, err := b.db.ExecContext(ctx, query, asid, suffix, 0, 0, nil, 0, 0, nil, nil)
 		require.NoError(t, err)
 	}
+}
+
+func isSuffixInDB(t *testing.T, b *Backend, asid addr.AS, suffix uint32) bool {
+	t.Helper()
+	ctx := context.Background()
+	query := `SELECT COUNT(*) FROM seg_reservation
+	WHERE id_as = ? AND id_suffix = ?`
+	var count int
+	err := b.db.QueryRowContext(ctx, query, asid, suffix).Scan(&count)
+	require.NoError(t, err)
+	return count > 0
 }
 
 func testInsertNewSegReservation(ctx context.Context, t *testing.T, db *sql.DB,
