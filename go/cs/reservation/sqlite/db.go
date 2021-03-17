@@ -586,11 +586,6 @@ func newSuffix(ctx context.Context, x db.Sqler, ASID addr.AS) (uint32, error) {
 	return suffix, nil
 }
 
-func newSuffixNotDeterministic(ctx context.Context, x db.Sqler, ASID addr.AS) (uint32, error) {
-	// TODO(juagargi) this is a temporary hack
-	return rand.Uint32(), nil
-}
-
 func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reservation,
 	suffix uint32) error {
 
