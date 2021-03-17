@@ -98,8 +98,9 @@ func TestEstablishConnection(t *testing.T) {
 		}()
 
 		dialer := connDialer(t)
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
+		// ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		// defer cancel()
+		ctx := context.Background()
 		clientConn, err := dialer.Dial(ctx, srvPacketConn.LocalAddr())
 		require.NoError(t, err)
 
