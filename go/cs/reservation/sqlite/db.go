@@ -281,12 +281,53 @@ func (x *executor) DeleteExpiredIndices(ctx context.Context, now time.Time) (int
 			return err
 		}
 		if len(rowIDs) > 0 {
+			cond := fmt.Sprintf("WHERE ROWID IN (?%s)", strings.Repeat(",?", len(rsvRowIDs)-1))
+			affectedSegRsvs, err := getSegReservations(ctx, tx, cond, rsvRowIDs)
+			if err != nil {
+				return err
+			}
+			previous := make(map[reservation.SegmentID]uint64, len(affectedSegRsvs))
+			for _, seg := range affectedSegRsvs {
+				previous[seg.ID] = seg.MaxBlockedBW()
+			}
 			// delete the segment indices pointed by rowIDs
 			n, err := deleteSegIndicesFromRowIDs(ctx, tx, rowIDs)
 			if err != nil {
 				return err
 			}
 			deletedIndices += n
+			// update state of interfaces (used bandwidth may have changed)
+			affectedSegRsvs, err = getSegReservations(ctx, tx, cond, rsvRowIDs)
+			if err != nil {
+				return err
+			}
+			if len(affectedSegRsvs) != len(previous) {
+				return serrors.New("error getting difference in bandwidth use while "+
+					"expiring indices", "len_curr", len(affectedSegRsvs), "len_prev", len(previous))
+			}
+			ingressIFs := make(map[uint16]int64)
+			egressIFs := make(map[uint16]int64)
+			for _, seg := range affectedSegRsvs {
+				curr := seg.MaxBlockedBW()
+				prev := previous[seg.ID]
+				if curr != prev {
+					diff := int64(prev - curr)
+					ingressIFs[seg.Ingress] += diff
+					egressIFs[seg.Egress] += diff
+				}
+			}
+			for ifid, diff := range ingressIFs {
+				err := interfaceStateUsedBWUpdate(ctx, tx, "state_ingress_interface", ifid, diff)
+				if err != nil {
+					return err
+				}
+			}
+			for ifid, diff := range egressIFs {
+				err := interfaceStateUsedBWUpdate(ctx, tx, "state_egress_interface", ifid, diff)
+				if err != nil {
+					return err
+				}
+			}
 			// delete empty reservations touched by previous removal
 			return deleteEmptySegReservations(ctx, tx, rsvRowIDs)
 		}
@@ -340,13 +381,199 @@ func (x *executor) PersistE2ERsv(ctx context.Context, rsv *e2e.Reservation) erro
 	return nil
 }
 
+func (x *executor) GetInterfaceUsageIngress(ctx context.Context, ifid uint16) (uint64, error) {
+	return getInterfaceUsage(ctx, x.db, "state_ingress_interface", ifid)
+}
+
+func (x *executor) GetInterfaceUsageEgress(ctx context.Context, ifid uint16) (uint64, error) {
+	return getInterfaceUsage(ctx, x.db, "state_egress_interface", ifid)
+}
+
+func (x *executor) GetTransitDem(ctx context.Context, ingress, egress uint16) (uint64, error) {
+	query := `SELECT traffic_demand from state_transit_demand
+	WHERE ingress = ? AND egress = ?`
+	var transit uint64
+	if err := x.db.QueryRowContext(ctx, query, ingress, egress).Scan(&transit); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, serrors.WrapStr("get transit demand failed", err, "ingress", ingress, "egress", egress)
+	}
+	return transit, nil
+}
+
+func (x *executor) PersistTransitDem(ctx context.Context, ingress, egress uint16,
+	transit uint64) error {
+
+	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
+		query := `INSERT INTO state_transit_demand (ingress, egress, traffic_demand)
+		VALUES(?, ?, ?)
+		ON CONFLICT(ingress,egress) DO UPDATE
+		SET traffic_demand = ?`
+		_, err := tx.ExecContext(ctx, query, ingress, egress, transit, transit)
+		return err
+	})
+	if err != nil {
+		return db.NewTxError("error persisting transit demand", err)
+	}
+	return nil
+}
+
+func (x *executor) GetTransitAlloc(ctx context.Context, ingress, egress uint16) (uint64, error) {
+	query := `SELECT traffic_alloc FROM state_transit_alloc
+	WHERE ingress = ? AND egress = ?`
+	var sum uint64
+	if err := x.db.QueryRowContext(ctx, query, ingress, egress).Scan(&sum); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, serrors.WrapStr("get transit alloc failed", err)
+	}
+	return sum, nil
+}
+
+func (x *executor) PersistTransitAlloc(ctx context.Context, ingress, egress uint16,
+	transit uint64) error {
+
+	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
+		query := `INSERT INTO state_transit_alloc (ingress, egress, traffic_alloc)
+			VALUES(?, ?, ?)
+			ON CONFLICT(ingress,egress) DO UPDATE
+			SET traffic_alloc = ?`
+		_, err := tx.ExecContext(ctx, query, ingress, egress, transit, transit)
+		return err
+	})
+	if err != nil {
+		return db.NewTxError("error persisting transit alloc", err)
+	}
+	return nil
+}
+
+func (x *executor) GetSourceState(ctx context.Context, source addr.AS, ingress, egress uint16) (
+	uint64, uint64, error) {
+
+	query := `SELECT src_demand,src_alloc FROM state_source_ingress_egress
+	WHERE source = ? AND ingress = ? AND egress = ?`
+	var srcDem, srcAlloc uint64
+	if err := x.db.QueryRowContext(ctx, query, source, ingress, egress).Scan(
+		&srcDem, &srcAlloc); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, 0, nil
+		}
+		return 0, 0, serrors.WrapStr("get source state failed", err)
+	}
+	return srcDem, srcAlloc, nil
+}
+
+func (x *executor) PersistSourceState(ctx context.Context, source addr.AS, ingress, egress uint16,
+	srcDem, srcAlloc uint64) error {
+
+	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
+		query := `INSERT INTO state_source_ingress_egress
+		(source, ingress, egress, src_demand, src_alloc)
+		VALUES(?, ?, ?, ?, ?)
+		ON CONFLICT(source,ingress,egress) DO UPDATE
+		SET src_demand = ?, src_alloc = ?`
+		_, err := tx.ExecContext(ctx, query, source, ingress, egress, srcDem, srcAlloc,
+			srcDem, srcAlloc)
+		return err
+	})
+	if err != nil {
+		return db.NewTxError("error persisting source state", err)
+	}
+	return nil
+}
+
+func (x *executor) GetInDemand(ctx context.Context, source addr.AS, ingress uint16) (
+	uint64, error) {
+
+	query := `SELECT demand FROM state_source_ingress
+		WHERE source = ? AND ingress = ?`
+	var demand uint64
+	if err := x.db.QueryRowContext(ctx, query, source, ingress).Scan(&demand); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, serrors.WrapStr("get in demand failed", err)
+	}
+	return demand, nil
+}
+
+func (x *executor) PersistInDemand(ctx context.Context, source addr.AS, ingress uint16,
+	demand uint64) error {
+
+	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
+		query := `INSERT INTO state_source_ingress (source, ingress, demand)
+				VALUES(?, ?, ?)
+				ON CONFLICT(source,ingress) DO UPDATE
+				SET demand = ?`
+		_, err := tx.ExecContext(ctx, query, source, ingress, demand, demand)
+		return err
+	})
+	if err != nil {
+		return db.NewTxError("error persisting ingress demand", err)
+	}
+	return nil
+}
+
+func (x *executor) GetEgDemand(ctx context.Context, source addr.AS, egress uint16) (
+	uint64, error) {
+
+	query := `SELECT demand FROM state_source_egress
+		WHERE source = ? AND egress = ?`
+	var demand uint64
+	if err := x.db.QueryRowContext(ctx, query, source, egress).Scan(&demand); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, serrors.WrapStr("get eg demand failed", err)
+	}
+	return demand, nil
+}
+
+func (x *executor) PersistEgDemand(ctx context.Context, source addr.AS, egress uint16,
+	demand uint64) error {
+
+	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
+		query := `INSERT INTO state_source_egress (source, egress, demand)
+				VALUES(?, ?, ?)
+				ON CONFLICT(source,egress) DO UPDATE
+				SET demand = ?`
+		_, err := tx.ExecContext(ctx, query, source, egress, demand, demand)
+		return err
+	})
+	if err != nil {
+		return db.NewTxError("error persisting egress demand", err)
+	}
+	return nil
+}
+
+func (x *executor) DebugCountSegmentRsvs(ctx context.Context) (int, error) {
+	const query = `SELECT COUNT(*) FROM seg_reservation`
+	var count int
+	err := x.db.QueryRowContext(ctx, query).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (x *executor) DebugCountE2ERsvs(ctx context.Context) (int, error) {
+	const query = `SELECT COUNT(*) FROM e2e_reservation`
+	var count int
+	err := x.db.QueryRowContext(ctx, query).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // newSuffix finds a segment reservation ID suffix not being used at the moment. Should be called
 // inside a transaction so the suffix is not used in the meantime, or fail.
 func newSuffix(ctx context.Context, x db.Sqler, ASID addr.AS) (uint32, error) {
-	const query = `SELECT MIN(id_suffix)+1 FROM (
-			SELECT 0 AS id_suffix UNION ALL
-			SELECT id_suffix FROM seg_reservation WHERE id_as = $1
-		) WHERE id_suffix+1 NOT IN (SELECT id_suffix FROM seg_reservation WHERE id_as = $1)`
+	const query = `SELECT COALESCE(MAX(id_suffix), 0) + 1
+		FROM	seg_reservation sr
+		WHERE	sr.id_as = ?`
 	var suffix uint32
 	err := x.QueryRowContext(ctx, query, uint64(ASID)).Scan(&suffix)
 	switch {
@@ -392,6 +619,10 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 		if err != nil {
 			return err
 		}
+
+		// update interface state
+		blocked := int64(rsv.MaxBlockedBW())
+		return interfacesStateUsedBWUpdate(ctx, x, rsv.Ingress, rsv.Egress, blocked)
 	}
 	return nil
 }
@@ -505,9 +736,34 @@ func getSegIndices(ctx context.Context, x db.Sqler, rowID int) (segment.Indices,
 }
 
 func deleteSegmentRsv(ctx context.Context, x db.Sqler, rsvID *reservation.SegmentID) error {
+	// get blocked bandwidth to update the ingress/egress interfaces tables
+	params := []interface{}{
+		rsvID.ASID,
+		binary.BigEndian.Uint32(rsvID.Suffix[:]),
+	}
+	rsvs, err := getSegReservations(ctx, x, "WHERE id_as = ? AND id_suffix = ?", params)
+	if err != nil {
+		return err
+	}
+	switch len(rsvs) {
+	case 0:
+	case 1:
+		blocked := -int64(rsvs[0].MaxBlockedBW()) // more free bandwidth
+		err := interfacesStateUsedBWUpdate(ctx, x, rsvs[0].Ingress, rsvs[0].Egress, blocked)
+		if err != nil {
+			return err
+		}
+	default:
+		return serrors.New("Got more than one reservation for one ID", "ID", rsvID.String())
+	}
+
+	// now remove the reservation
 	const query = `DELETE FROM seg_reservation WHERE id_as = ? AND id_suffix = ?`
 	suffix := binary.BigEndian.Uint32(rsvID.Suffix[:])
-	_, err := x.ExecContext(ctx, query, rsvID.ASID, suffix)
+	_, err = x.ExecContext(ctx, query, rsvID.ASID, suffix)
+	if err != nil {
+		return err
+	}
 	return err
 }
 
@@ -787,4 +1043,37 @@ func deleteEmptyE2EReservations(ctx context.Context, x db.Sqler, rowIDs []interf
 	query := fmt.Sprintf(queryTmpl, strings.Repeat(",?", len(rowIDs)-1))
 	_, err := x.ExecContext(ctx, query, rowIDs...)
 	return err
+}
+
+func getInterfaceUsage(ctx context.Context, x db.Sqler, table string, ifid uint16) (uint64, error) {
+	query := fmt.Sprintf(`SELECT blocked_bw FROM %s WHERE ifid = ?`, table)
+	var usedBW uint64
+	err := x.QueryRowContext(ctx, query, ifid).Scan(&usedBW)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return usedBW, nil
+}
+
+func interfaceStateUsedBWUpdate(ctx context.Context, x db.Sqler,
+	table string, ifid uint16, deltaBW int64) error {
+
+	query := fmt.Sprintf(`INSERT INTO %s(ifid, blocked_bw) VALUES(?, ?)
+	ON CONFLICT(ifid) DO UPDATE
+	SET blocked_bw = blocked_bw + ?`, table)
+	_, err := x.ExecContext(ctx, query, ifid, deltaBW, deltaBW)
+	return err
+}
+
+func interfacesStateUsedBWUpdate(ctx context.Context, x db.Sqler, ingress, egress uint16,
+	deltaBW int64) error {
+
+	err := interfaceStateUsedBWUpdate(ctx, x, "state_ingress_interface", ingress, deltaBW)
+	if err != nil {
+		return err
+	}
+	return interfaceStateUsedBWUpdate(ctx, x, "state_egress_interface", egress, deltaBW)
 }

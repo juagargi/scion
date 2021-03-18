@@ -111,7 +111,9 @@ func TestBWClsToKbps(t *testing.T) {
 		0:  11,
 		1:  16,
 		2:  22,
+		3:  32,
 		5:  64,
+		7:  128,
 		13: 1024,
 		63: 32 * 1024 * 1024 * 1024, // 32 TBps
 	}
@@ -129,15 +131,17 @@ func TestBWClsToKbps(t *testing.T) {
 func TestBWClsFromBW(t *testing.T) {
 	cases := map[uint64]BWCls{
 		0:                       0,
+		1:                       0, // class 0 because when granted it won't exceed 1 Kbps
 		16:                      1,
-		22:                      2,
+		22:                      1,
+		23:                      2,
+		32:                      3,
 		64:                      5,
 		1024:                    13,
-		32 * 1024 * 1024 * 1024: 63,
-		21:                      2,
 		4096:                    17,
-		4000:                    17,
-		4097:                    18,
+		4000:                    16,
+		4097:                    17,
+		32 * 1024 * 1024 * 1024: 63,
 	}
 	for bw, cls := range cases {
 		name := fmt.Sprintf("case for %d", bw)
@@ -145,7 +149,7 @@ func TestBWClsFromBW(t *testing.T) {
 			bw := bw
 			cls := cls
 			t.Parallel()
-			require.Equal(t, cls, BWClsFromBW(bw))
+			require.Equal(t, cls, BWClsFromBW(bw), "BW fails at %d", int(bw))
 		})
 	}
 }

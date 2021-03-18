@@ -76,10 +76,50 @@ type ReserverAndTransit interface {
 	PersistE2ERsv(ctx context.Context, rsv *e2e.Reservation) error
 }
 
-type Transaction interface {
+// OptimizedStore is implemented by all DBs.
+type OptimizedStore interface {
+	// GetInterfaceUsageIngress returns the bandwidth already blocked in ingress interface `ifid`.
+	GetInterfaceUsageIngress(ctx context.Context, ifid uint16) (uint64, error)
+
+	// GetInterfaceUsageEgress returns the bandwidth already blocked in egress interface `ifid`.
+	GetInterfaceUsageEgress(ctx context.Context, ifid uint16) (uint64, error)
+
+	// GetTransitDem returns the stored transit demand between ingress and egress.
+	GetTransitDem(ctx context.Context, ingress, egress uint16) (uint64, error)
+
+	// PersistTransitDem stores the transit demand between ingress and egress.
+	PersistTransitDem(ctx context.Context, ingress, egress uint16, transit uint64) error
+
+	// GetTransitAlloc returns the denominator of the linkRatio formula.
+	GetTransitAlloc(ctx context.Context, ingress, egress uint16) (uint64, error)
+
+	// PersistTransitAlloc stores the transit alloc between ingress and egress.
+	PersistTransitAlloc(ctx context.Context, ingress, egress uint16, transit uint64) error
+
+	// GetSourceState returns the srcDem and srcAlloc for a source,ingress,egress tuple.
+	GetSourceState(ctx context.Context, source addr.AS, ingress, egress uint16) (
+		uint64, uint64, error)
+
+	// PersistSourceState stores the source state.
+	PersistSourceState(ctx context.Context, source addr.AS, ingress, egress uint16,
+		srcDem, srcAlloc uint64) error
+
+	GetInDemand(ctx context.Context, source addr.AS, ingress uint16) (uint64, error)
+	PersistInDemand(ctx context.Context, source addr.AS, ingress uint16, demand uint64) error
+
+	GetEgDemand(ctx context.Context, source addr.AS, egress uint16) (uint64, error)
+	PersistEgDemand(ctx context.Context, source addr.AS, egress uint16, demand uint64) error
+}
+
+type ColibriStorage interface {
 	ReserverOnly
 	TransitOnly
 	ReserverAndTransit
+	OptimizedStore
+}
+
+type Transaction interface {
+	ColibriStorage
 	Commit() error
 	Rollback() error
 }
@@ -87,9 +127,7 @@ type Transaction interface {
 // DB is the interface for any reservation backend.
 type DB interface {
 	BeginTransaction(ctx context.Context, opts *sql.TxOptions) (Transaction, error)
-	ReserverOnly
-	TransitOnly
-	ReserverAndTransit
+	ColibriStorage
 	db.LimitSetter
 	io.Closer
 }
