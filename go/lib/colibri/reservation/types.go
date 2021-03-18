@@ -150,6 +150,10 @@ func (id *E2EID) ToRaw() []byte {
 	return buf
 }
 
+func (id *E2EID) String() string {
+	return fmt.Sprintf("%s-%x", id.ASID, id.Suffix)
+}
+
 // Tick represents a slice of time of 4 seconds.
 type Tick uint32
 
@@ -171,9 +175,9 @@ type BWCls uint8
 // BWCls = 2 * log2( bandwidth/16 ) + 1
 // The value of BWCls will be the ceiling of the previous expression.
 func BWClsFromBW(bwKbps uint64) BWCls {
-	cls := 2*math.Log2(float64(bwKbps)/16) + 1
+	cls := math.Max(0, 2*math.Log2(float64(bwKbps)/16)+1)
 	cls = math.Min(cls, 63)
-	return BWCls(math.Ceil(cls))
+	return BWCls(math.Floor(cls))
 }
 
 // Validate will return an error for invalid values.

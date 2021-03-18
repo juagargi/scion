@@ -1,9 +1,9 @@
-load("//lint:go.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
-    srcs = ["stateless.go"],
-    importpath = "github.com/scionproto/scion/go/cs/reservation/segment/admission/impl",
+    srcs = ["stateful.go"],
+    importpath = "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateful",
     visibility = ["//visibility:public"],
     deps = [
         "//go/cs/reservation:go_default_library",
@@ -18,12 +18,15 @@ go_library(
 
 go_test(
     name = "go_default_test",
-    srcs = ["stateless_test.go"],
+    srcs = ["stateful_test.go"],
     embed = [":go_default_library"],
     deps = [
         "//go/cs/reservation:go_default_library",
         "//go/cs/reservation/segment:go_default_library",
+        "//go/cs/reservation/sqlite:go_default_library",
+        "//go/cs/reservationstorage/backend:go_default_library",
         "//go/cs/reservationstorage/backend/mock_backend:go_default_library",
+        "//go/lib/addr:go_default_library",
         "//go/lib/colibri/reservation:go_default_library",
         "//go/lib/util:go_default_library",
         "//go/lib/xtest:go_default_library",

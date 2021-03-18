@@ -70,6 +70,67 @@ const (
 		FOREIGN KEY(seg) REFERENCES seg_reservation(ROWID) ON DELETE CASCADE,
 		FOREIGN KEY(e2e) REFERENCES e2e_reservation(ROWID) ON DELETE CASCADE
 	);
+
+	-- Tables that start with state_ are meant to enhance performance.
+	-- They must be updated every time an index / reservation is added / deleted / modified.
+
+	-- state_ingress_interface keeps the blocked bandwidth per interface ID in this AS
+	CREATE TABLE state_ingress_interface (
+		ifid	INTEGER NOT NULL,
+		blocked_bw	INTEGER NOT NULL,
+		PRIMARY KEY(ifid)
+	);
+	CREATE TABLE state_egress_interface (
+		ifid	INTEGER NOT NULL,
+		blocked_bw	INTEGER NOT NULL,
+		PRIMARY KEY(ifid)
+	);
+
+	-- state_transit_demand keeps the current transit demand between interface pairs.
+	CREATE TABLE state_transit_demand (
+		ingress INTEGER NOT NULL,
+		egress  INTEGER NOT NULL,
+		traffic_demand INTEGER NOT NULL,
+		PRIMARY KEY(ingress,egress)
+	);
+
+	-- stores the sum of egScalFctr x srcAlloc for all sources, between interface pairs.
+	-- It is essentially the denominator of the link ratio formula.
+	CREATE TABLE state_transit_alloc (
+		ingress INTEGER NOT NULL,
+		egress INTEGER NOT NULL,
+		traffic_alloc INTEGER NOT NULL,
+		PRIMARY KEY(ingress,egress)
+	);
+
+	-- state_source_ingress_egress stores the source demands and allocations for a given
+	-- source, and ingress and egress interfaces.
+	CREATE TABLE state_source_ingress_egress (
+		source INTEGER NOT NULL,
+		ingress INTEGER NOT NULL,
+		egress INTEGER NOT NULL,
+		src_demand INTEGER NOT NULL,
+		src_alloc INTEGER NOT NULL,
+		PRIMARY KEY(source,ingress,egress)
+	);
+
+	-- stores inDemand for a given source and ingress interface.
+	CREATE TABLE state_source_ingress (
+		source INTEGER NOT NULL,
+		ingress INTEGER NOT NULL,
+		demand INTEGER NOT NULL,
+		PRIMARY KEY(source,ingress)
+	);
+
+	-- stores egDemand for a given source and egress interface.
+	CREATE TABLE state_source_egress (
+		source INTEGER NOT NULL,
+		egress INTEGER NOT NULL,
+		demand INTEGER NOT NULL,
+		PRIMARY KEY(source,egress)
+	);
+
+
 	CREATE INDEX "index_seg_reservation" ON "seg_reservation" (
 		"id_as",
 		"id_suffix"

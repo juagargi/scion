@@ -91,12 +91,8 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		// setup, create reservation and an index
 		rsv = segment.NewReservation()
 		rsv.ID = req.ID
-		err = tx.NewSegmentRsv(ctx, rsv)
-		if err != nil {
-			return failedResponse, serrors.WrapStr(
-				"unable to create a new segment reservation in db", err,
-				"id", req.ID)
-		}
+		rsv.Ingress = req.Ingress
+		rsv.Egress = req.Egress
 	}
 	req.Reservation = rsv
 	tok := &reservation.Token{InfoField: req.InfoField}
@@ -112,9 +108,9 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, serrors.WrapStr("error validating end props and path type", err,
 			"id", req.ID)
 	}
+
 	// compute admission max BW
-	// TODO(juagargi) use the transaction also in the admitter
-	err = s.admitter.AdmitRsv(ctx, req)
+	err = s.admitter.AdmitRsv(ctx, tx, req)
 	if err != nil {
 		return failedResponse, serrors.WrapStr("segment not admitted", err, "id", req.ID,
 			"index", req.Index)
@@ -284,12 +280,12 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 
 	req := request.GetCommonSetupReq()
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, serrors.WrapStr("error validating e2e request", err, "id", req.ID)
+		return nil, serrors.WrapStr("error validating e2e request", err, "id", req.ID.String())
 	}
 
 	response, err := s.prepareFailureE2EResp(&req.Request)
 	if err != nil {
-		return nil, serrors.WrapStr("cannot construct response", err, "id", req.ID)
+		return nil, serrors.WrapStr("cannot construct response", err, "id", req.ID.String())
 	}
 	var failedResponse base.MessageWithPath
 	failedResponse = &e2e.ResponseSetupFailure{
@@ -317,21 +313,21 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
 		return failedResponse, serrors.WrapStr("cannot create transaction", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetE2ERsvFromID(ctx, &req.ID)
 	if err != nil {
 		return failedResponse, serrors.WrapStr("cannot obtain e2e reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 
 	segRsvIDs := req.SegmentRsvIDsForThisAS()
 	if rsv != nil {
 		// renewal
 		if index := rsv.Index(req.Index); index != nil {
-			return failedResponse, serrors.New("already existing e2e index", "id", req.ID,
+			return failedResponse, serrors.New("already existing e2e index", "id", req.ID.String(),
 				"idx", req.Index)
 		}
 	} else {
@@ -342,22 +338,33 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 		}
 		for i, id := range segRsvIDs {
 			r, err := tx.GetSegmentRsvFromID(ctx, &id)
-			if err != nil {
+			if err != nil || r == nil {
 				return failedResponse, serrors.WrapStr("cannot get segment rsv for e2e admission",
-					err, "e2e_id", req.ID, "seg_id", id)
+					err, "e2e_id", req.ID.String(), "seg_id", id.String())
 			}
 			rsv.SegmentReservations[i] = r
 		}
 	}
 	if len(rsv.SegmentReservations) == 0 {
 		return failedResponse, serrors.New("there is no segment rsv. associated to this e2e rsv.",
-			"id", req.ID, "idx", req.Index)
+			"id", req.ID.String(), "idx", req.Index)
+	} else {
+		for i, r := range rsv.SegmentReservations {
+			if r == nil {
+				return failedResponse, serrors.New("there is no segment rsv. associated to "+
+					"this e2e rsv.", "id", req.ID.String(), "seg_id", segRsvIDs[i].String())
+			}
+			if r.ActiveIndex() == nil {
+				return failedResponse, serrors.New("seg. rsv. for e2e rsv has no active index",
+					"id", req.ID.String(), "seg_id", r.ID.String())
+			}
+		}
 	}
 
 	idx, err := rsv.NewIndex(req.Timestamp)
 	if err != nil {
 		return failedResponse, serrors.WrapStr("cannot create index in e2e admission", err,
-			"e2e_id", req.ID)
+			"e2e_id", req.ID.String())
 	}
 	index := rsv.Index(idx)
 	index.AllocBW = req.RequestedBW
@@ -368,7 +375,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
 	if err != nil {
 		return failedResponse, serrors.WrapStr("cannot compute free bw for e2e admission", err,
-			"e2e_id", rsv.ID)
+			"e2e_id", rsv.ID.String())
 	}
 	free = free + rsv.AllocResv() // don't count this E2E request in the used BW
 
@@ -376,12 +383,13 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 		// this AS must stitch two segment rsvs. according to the request
 		if len(segRsvIDs) == 1 {
 			return failedResponse, serrors.New("e2e setup request with transfer inconsistent",
-				"e2e_id", req.ID, "req_sgmt_rsvs_count", req.SegmentRsvASCount,
+				"e2e_id", req.ID.String(), "req_sgmt_rsvs_count", req.SegmentRsvASCount,
 				"trail_len", len(req.AllocationTrail))
 		}
 		freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv)
 		if err != nil {
-			return failedResponse, serrors.WrapStr("cannot compute transfer", err, "id", req.ID)
+			return failedResponse, serrors.WrapStr("cannot compute transfer", err,
+				"id", req.ID.String())
 		}
 		freeOutgoing += rsv.AllocResv() // do not count this rsv's BW
 		if free > freeOutgoing {
@@ -402,7 +410,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 			asARequest.AllocationTrail = append(asARequest.AllocationTrail, maxWillingToAlloc)
 			failedResponse = asARequest
 		}
-		return failedResponse, serrors.WrapStr("e2e not admitted", err, "id", req.ID,
+		return failedResponse, serrors.WrapStr("e2e not admitted", err, "id", req.ID.String(),
 			"index", req.Index)
 	}
 
@@ -410,11 +418,12 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 	// TODO(juagargi) update token here
 	if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
 		return failedResponse, serrors.WrapStr("cannot persist e2e reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 
 	if err := tx.Commit(); err != nil {
-		return failedResponse, serrors.WrapStr("cannot commit transaction", err, "id", req.ID)
+		return failedResponse, serrors.WrapStr("cannot commit transaction", err,
+			"id", req.ID.String())
 	}
 
 	var msg base.MessageWithPath
