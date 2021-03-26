@@ -15,11 +15,8 @@
 package control
 
 import (
-	"crypto/sha256"
 	"net"
 	"sort"
-
-	"golang.org/x/crypto/pbkdf2"
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
@@ -75,12 +72,18 @@ func ConfigDataplane(dp Dataplane, cfg *Config) error {
 	// XXX HSR currently only support 1 key, so use Key0
 	// Should it be an error if no key is set?
 	if len(cfg.MasterKeys.Key0) > 0 {
-		key0 := DeriveHFMacKey(cfg.MasterKeys.Key0)
+		key0, err := scrypto.DeriveHFMacKey(cfg.MasterKeys.Key0)
+		if err != nil {
+			return err
+		}
 		if err := dp.SetKey(cfg.IA, 0, key0); err != nil {
 			return err
 		}
 
-		keyColibri := scrypto.DeriveColibriKey(cfg.MasterKeys.Key0)
+		keyColibri, err := scrypto.DeriveColibriMacKey(cfg.MasterKeys.Key0)
+		if err != nil {
+			return err
+		}
 		if err := dp.SetColibriKey(cfg.IA, 0, keyColibri); err != nil {
 			return err
 		}
@@ -102,18 +105,6 @@ func ConfigDataplane(dp Dataplane, cfg *Config) error {
 		return err
 	}
 	return nil
-}
-
-// DeriveHFMacKey derives the MAC key from the given key.
-func DeriveHFMacKey(k []byte) []byte {
-	if len(k) == 0 {
-		panic("empty key")
-	}
-	// XXX Generate keys - MUST be kept in sync with go/lib/scrypto/mac.go
-	hfMacSalt := []byte("Derive OF Key")
-	// This uses 16B keys with 1000 hash iterations, which is the same as the
-	// defaults used by pycrypto.
-	return pbkdf2.Key(k, hfMacSalt, 1000, 16, sha256.New)
 }
 
 func confExternalInterfaces(dp Dataplane, cfg *Config) error {
