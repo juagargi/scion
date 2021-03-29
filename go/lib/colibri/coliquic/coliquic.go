@@ -15,3 +15,28 @@
 // Package coliquic implements QUIC on top of COLIBRI.
 // Inspired on squic.
 package coliquic
+
+import (
+	"github.com/lucas-clemente/quic-go"
+
+	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
+	"github.com/scionproto/scion/go/lib/snet"
+)
+
+// GetColibriPath returns the (last) COLIBRI path used with this quic Session, or nil if none.
+func GetColibriPath(session quic.Session) (*colibri.ColibriPath, error) {
+	// TODO(juagargi) currently, the same session can receive packets from multitude of
+	// COLIBRI paths (or non colibri), which should not be allowed. To enforce that the limits
+	// of the reservation are respected, only one colibri path must be allowed thru the
+	// life of the session. For now we assume no malicious parties.
+	var colPath *colibri.ColibriPath
+	netAddr := session.RemoteAddr()
+	addr, _ := netAddr.(*snet.UDPAddr)
+	if addr != nil && addr.Path.Type == colibri.PathType {
+		colPath = new(colibri.ColibriPath)
+		if err := colPath.DecodeFromBytes(addr.Path.Raw); err != nil {
+			return nil, err
+		}
+	}
+	return colPath, nil
+}

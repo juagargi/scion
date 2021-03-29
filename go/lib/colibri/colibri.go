@@ -179,6 +179,7 @@ func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField
 }
 
 // CalculateColibriMacStatic calculates the static colibri MAC.
+// The private key comes from calling scrypto.DeriveColibriKey.
 func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
 	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
 
