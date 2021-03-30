@@ -81,12 +81,50 @@ func (n *network) ensureChannel(key string) {
 	}
 }
 
-func mockColibriAddress(ia string, host *net.UDPAddr) net.Addr {
+func mockColibriAddress(t *testing.T, ia string, host *net.UDPAddr) net.Addr {
+	path := colibri.ColibriPath{
+		PacketTimestamp: 1,
+		InfoField: &colibri.InfoField{
+			C:           true,
+			R:           false,
+			S:           true,
+			Ver:         1,
+			CurrHF:      0,
+			HFCount:     3,
+			ResIdSuffix: xtest.MustParseHexString("beefcafe0000000000000000"),
+			ExpTick:     1893452400, // valid until 1.1.2030
+			BwCls:       7,
+			Rlc:         7,
+			OrigPayLen:  1208,
+		},
+		HopFields: []*colibri.HopField{
+			{
+				IngressId: 0,
+				EgressId:  41,
+				Mac:       []byte{140, 95, 102, 190}, // MAC is 4 bytes
+			},
+			{
+				IngressId: 1,
+				EgressId:  2,
+				Mac:       []byte{0, 61, 66, 164},
+			},
+			{
+				IngressId: 1,
+				EgressId:  0,
+				Mac:       xtest.MustParseHexString("00000000"),
+			},
+		},
+	}
+	buffLen := 8 + 24 + (len(path.HopFields) * 8) // timestamp + infofield + 3*hops
+	buff := make([]byte, buffLen)
+	err := path.SerializeTo(buff)
+	require.NoError(t, err)
+
 	return &snet.UDPAddr{
 		IA:   xtest.MustParseIA(ia),
 		Host: host,
 		Path: spath.Path{
-			Raw:  []byte{0, 0},
+			Raw:  buff,
 			Type: colibri.PathType,
 		},
 	}
@@ -144,7 +182,7 @@ func TestColibriQuic(t *testing.T) {
 	thisNet := NewNetwork()
 	// server:
 	serverLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
-	serverAddr := mockColibriAddress("1-ff00:0:111", serverLocalAddr)
+	serverAddr := mockColibriAddress(t, "1-ff00:0:111", serverLocalAddr)
 	serverTlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*createTestCertificate(t)},
 		NextProtos:   []string{"netcat"},
@@ -159,9 +197,17 @@ func TestColibriQuic(t *testing.T) {
 	go func(ctx context.Context, listener quic.Listener) {
 		session, err := listener.Accept(ctx)
 		require.NoError(t, err)
+
+		colPath, err := GetColibriPath(session)
+		require.NoError(t, err)
+		buff := make([]byte, colPath.Len())
+		err = colPath.SerializeTo(buff)
+		require.NoError(t, err)
+		require.Equal(t, serverAddr.(*snet.UDPAddr).Path.Raw, buff)
+
 		stream, err := session.AcceptStream(ctx)
 		require.NoError(t, err)
-		buff := make([]byte, 16384)
+		buff = make([]byte, 16384)
 		n, err := stream.Read(buff)
 		require.NoError(t, err)
 		require.Equal(t, "hello world", string(buff[:n]))
@@ -172,7 +218,7 @@ func TestColibriQuic(t *testing.T) {
 
 	// client:
 	clientLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
-	clientAddr := mockColibriAddress("1-ff00:0:112", clientLocalAddr)
+	clientAddr := mockColibriAddress(t, "1-ff00:0:112", clientLocalAddr)
 	clientTlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"netcat"},
