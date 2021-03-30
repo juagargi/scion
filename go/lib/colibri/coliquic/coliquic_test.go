@@ -140,7 +140,7 @@ func (c *connMock) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func TestDeleteme(t *testing.T) {
+func TestColibriQuic(t *testing.T) {
 	thisNet := NewNetwork()
 	// server:
 	serverLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
