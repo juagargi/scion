@@ -18,13 +18,11 @@
 package coliquic
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -148,7 +146,7 @@ func TestDeleteme(t *testing.T) {
 	serverLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
 	serverAddr := mockColibriAddress("1-ff00:0:111", serverLocalAddr)
 	serverTlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{*generateKeyAndCert(t)},
+		Certificates: []tls.Certificate{*createTestCertificate(t)},
 		NextProtos:   []string{"netcat"},
 	}
 	serverQuicConfig := &quic.Config{KeepAlive: true}
@@ -201,56 +199,20 @@ func TestDeleteme(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// createCertificate from scion-apps:
-// createCertificate creates a self-signed dummy certificate for the given key
-// Inspired/copy pasted from crypto/tls/generate_cert.go
-func createCertificate(t *testing.T, priv *rsa.PrivateKey) *tls.Certificate {
+// createTestCertificate based on https://github.com/lucas-clemente/quic-go/blob/
+// e098ccd2b3bf560d3d8056dccc1a35b229a2a47a/example/echo/echo.go#L92
+func createTestCertificate(t *testing.T) *tls.Certificate {
 	t.Helper()
 
-	notBefore := time.Now()
-	notAfter := notBefore.Add(365 * 24 * time.Hour)
-
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
 	require.NoError(t, err)
-
-	template := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"scionlab"},
-		},
-		NotBefore:             notBefore,
-		NotAfter:              notAfter,
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		DNSNames:              []string{"dummy"},
-	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	template := x509.Certificate{SerialNumber: big.NewInt(1)}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	require.NoError(t, err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 
-	certPEMBuf := &bytes.Buffer{}
-	err = pem.Encode(certPEMBuf, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
 	require.NoError(t, err)
-
-	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
-	require.NoError(t, err)
-
-	keyPEMBuf := &bytes.Buffer{}
-	err = pem.Encode(keyPEMBuf, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
-	require.NoError(t, err)
-
-	cert, err := tls.X509KeyPair(certPEMBuf.Bytes(), keyPEMBuf.Bytes())
-	require.NoError(t, err)
-
-	return &cert
-}
-
-// generateKeyAndCert from scion-apps.
-func generateKeyAndCert(t *testing.T) *tls.Certificate {
-	t.Helper()
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-	return createCertificate(t, priv)
+	return &tlsCert
 }
