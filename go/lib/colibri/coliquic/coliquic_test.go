@@ -39,49 +39,121 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-type bundle struct {
+// TestColibriQuic creates a server and a client, both with SCION-COLIBRI addresses and paths,
+// and communicates both via a quic connection.
+func TestColibriQuic(t *testing.T) {
+	thisNet := newMockNetwork()
+	// server:
+	serverLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
+	serverAddr := mockColibriAddress(t, "1-ff00:0:111", serverLocalAddr)
+	serverTlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{*createTestCertificate(t)},
+		NextProtos:   []string{"netcat"},
+	}
+	serverQuicConfig := &quic.Config{KeepAlive: true}
+	listener, err := quic.Listen(newConnMock(t, serverAddr, thisNet), serverTlsConfig, serverQuicConfig)
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	ctx, cancelF := context.WithTimeout(context.Background(), 5*time.Hour)
+	defer cancelF()
+	go func(ctx context.Context, listener quic.Listener) {
+		session, err := listener.Accept(ctx)
+		require.NoError(t, err)
+
+		colPath, err := GetColibriPath(session)
+		require.NoError(t, err)
+		buff := make([]byte, colPath.Len())
+		err = colPath.SerializeTo(buff)
+		require.NoError(t, err)
+		require.Equal(t, serverAddr.(*snet.UDPAddr).Path.Raw, buff)
+
+		stream, err := session.AcceptStream(ctx)
+		require.NoError(t, err)
+		buff = make([]byte, 16384)
+		n, err := stream.Read(buff)
+		require.NoError(t, err)
+		require.Equal(t, "hello world", string(buff[:n]))
+		err = stream.Close()
+		require.NoError(t, err)
+		done <- struct{}{}
+	}(ctx, listener)
+
+	// client:
+	clientLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
+	clientAddr := mockColibriAddress(t, "1-ff00:0:112", clientLocalAddr)
+	clientTlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"netcat"},
+	}
+	clientQuicConfig := &quic.Config{KeepAlive: true}
+
+	ctx2, cancelF2 := context.WithTimeout(context.Background(), 9*time.Hour)
+	defer cancelF2()
+	session, err := quic.DialContext(ctx2, newConnMock(t, clientAddr, thisNet), serverAddr, "serverName",
+		clientTlsConfig, clientQuicConfig)
+	require.NoError(t, err)
+	stream, err := session.OpenStream()
+	require.NoError(t, err)
+	n, err := stream.Write([]byte("hello world"))
+	require.NoError(t, err)
+	require.Equal(t, len("hello wold")+1, n)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out")
+	}
+	err = stream.Close()
+	require.NoError(t, err)
+}
+
+// packet is a packet received by a mockNetwork.
+type packet struct {
 	sender net.Addr
 	data   []byte
 }
 
-type network struct {
-	channels map[string]chan bundle
+// mockNetwork is used to simulate a network, where packets are sent and read.
+// The channels field organizes packets per receiver address (as string).
+type mockNetwork struct {
+	channels map[string]chan packet
 	m        sync.Mutex
 }
 
-func NewNetwork() *network {
-	return &network{
-		channels: make(map[string]chan bundle),
+func newMockNetwork() *mockNetwork {
+	return &mockNetwork{
+		channels: make(map[string]chan packet),
 	}
 }
 
-func (n *network) ReadFrom(receiver net.Addr) ([]byte, net.Addr) {
+// ReadFrom returns the data from the first packet for receiver, and its sender.
+func (n *mockNetwork) ReadFrom(receiver net.Addr) ([]byte, net.Addr) {
 	key := receiver.String()
 	n.ensureChannel(key)
-	bun := <-n.channels[key]
-	buff := make([]byte, len(bun.data))
-	copy(buff, bun.data)
-	return buff, bun.sender
+	pac := <-n.channels[key]
+	return pac.data, pac.sender
 }
 
-func (n *network) WriteTo(sender, receiver net.Addr, data []byte) {
-	buff := make([]byte, len(data))
-	copy(buff, data)
-	bun := bundle{sender: sender, data: buff}
+// WriteTo writes a packet from sender to receiver, with data.
+func (n *mockNetwork) WriteTo(sender, receiver net.Addr, data []byte) {
+	pac := packet{sender: sender, data: data}
 	key := receiver.String()
 	n.ensureChannel(key)
-	n.channels[key] <- bun
+	n.channels[key] <- pac
 }
 
-func (n *network) ensureChannel(key string) {
+func (n *mockNetwork) ensureChannel(key string) {
 	n.m.Lock()
 	defer n.m.Unlock()
 	if _, found := n.channels[key]; !found {
-		n.channels[key] = make(chan bundle, 32)
+		n.channels[key] = make(chan packet, 32)
 	}
 }
 
+// mockColibriAddress returns a SCION address with a Colibri path.
 func mockColibriAddress(t *testing.T, ia string, host *net.UDPAddr) net.Addr {
+	t.Helper()
 	path := colibri.ColibriPath{
 		PacketTimestamp: 1,
 		InfoField: &colibri.InfoField{
@@ -130,17 +202,17 @@ func mockColibriAddress(t *testing.T, ia string, host *net.UDPAddr) net.Addr {
 	}
 }
 
+// connMock uses a mockNetwork to simulate a proper net.PacketConn.
 type connMock struct {
 	localAddr net.Addr
-	net       *network
+	net       *mockNetwork
 }
 
 var _ net.PacketConn = (*connMock)(nil)
 
-func NewConnMock(localAddr net.Addr, network *network) *connMock {
-	if network == nil {
-		panic("network is nil")
-	}
+func newConnMock(t *testing.T, localAddr net.Addr, network *mockNetwork) *connMock {
+	t.Helper()
+	require.NotNil(t, network)
 	return &connMock{
 		localAddr: localAddr,
 		net:       network,
@@ -178,74 +250,7 @@ func (c *connMock) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func TestColibriQuic(t *testing.T) {
-	thisNet := NewNetwork()
-	// server:
-	serverLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
-	serverAddr := mockColibriAddress(t, "1-ff00:0:111", serverLocalAddr)
-	serverTlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{*createTestCertificate(t)},
-		NextProtos:   []string{"netcat"},
-	}
-	serverQuicConfig := &quic.Config{KeepAlive: true}
-	listener, err := quic.Listen(NewConnMock(serverAddr, thisNet), serverTlsConfig, serverQuicConfig)
-	require.NoError(t, err)
-
-	done := make(chan struct{})
-	ctx, cancelF := context.WithTimeout(context.Background(), 5*time.Hour)
-	defer cancelF()
-	go func(ctx context.Context, listener quic.Listener) {
-		session, err := listener.Accept(ctx)
-		require.NoError(t, err)
-
-		colPath, err := GetColibriPath(session)
-		require.NoError(t, err)
-		buff := make([]byte, colPath.Len())
-		err = colPath.SerializeTo(buff)
-		require.NoError(t, err)
-		require.Equal(t, serverAddr.(*snet.UDPAddr).Path.Raw, buff)
-
-		stream, err := session.AcceptStream(ctx)
-		require.NoError(t, err)
-		buff = make([]byte, 16384)
-		n, err := stream.Read(buff)
-		require.NoError(t, err)
-		require.Equal(t, "hello world", string(buff[:n]))
-		err = stream.Close()
-		require.NoError(t, err)
-		done <- struct{}{}
-	}(ctx, listener)
-
-	// client:
-	clientLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
-	clientAddr := mockColibriAddress(t, "1-ff00:0:112", clientLocalAddr)
-	clientTlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"netcat"},
-	}
-	clientQuicConfig := &quic.Config{KeepAlive: true}
-
-	ctx2, cancelF2 := context.WithTimeout(context.Background(), 9*time.Hour)
-	defer cancelF2()
-	session, err := quic.DialContext(ctx2, NewConnMock(clientAddr, thisNet), serverAddr, "serverName",
-		clientTlsConfig, clientQuicConfig)
-	require.NoError(t, err)
-	stream, err := session.OpenStream()
-	require.NoError(t, err)
-	n, err := stream.Write([]byte("hello world"))
-	require.NoError(t, err)
-	require.Equal(t, len("hello wold")+1, n)
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "timed out")
-	}
-	err = stream.Close()
-	require.NoError(t, err)
-}
-
-// createTestCertificate based on https://github.com/lucas-clemente/quic-go/blob/
+// createTestCertificate is based on https://github.com/lucas-clemente/quic-go/blob/
 // e098ccd2b3bf560d3d8056dccc1a35b229a2a47a/example/echo/echo.go#L92
 func createTestCertificate(t *testing.T) *tls.Certificate {
 	t.Helper()
