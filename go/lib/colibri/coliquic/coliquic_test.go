@@ -327,7 +327,6 @@ func TestColibriLocal(t *testing.T) {
 
 type connMock struct {
 	LocalAddress net.Addr
-	DebugString  string
 }
 
 var _ net.PacketConn = (*connMock)(nil)
@@ -365,19 +364,9 @@ func (c *connMock) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func mockConn(isServer bool) net.PacketConn {
-	var addr net.Addr
-	var str string
-	if isServer {
-		addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
-		str = "server"
-	} else {
-		addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
-		str = "client"
-	}
+func mockConn(addr net.Addr) net.PacketConn {
 	return &connMock{
 		LocalAddress: addr,
-		DebugString:  str,
 	}
 }
 
@@ -385,15 +374,12 @@ func TestDeleteme(t *testing.T) {
 	thisNet = NewNetwork()
 	// server:
 	serverAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
-	// serverConn, err := net.ListenUDP("udp", serverAddr)
-	// require.NoError(t, err)
 	serverTlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*generateKeyAndCert(t)},
 		NextProtos:   []string{"netcat"},
 	}
 	serverQuicConfig := &quic.Config{KeepAlive: true}
-	// listener, err := quic.Listen(serverConn, serverTlsConfig, serverQuicConfig)
-	listener, err := quic.Listen(mockConn(true), serverTlsConfig, serverQuicConfig)
+	listener, err := quic.Listen(mockConn(serverAddr), serverTlsConfig, serverQuicConfig)
 	require.NoError(t, err)
 
 	done := make(chan struct{})
@@ -414,9 +400,7 @@ func TestDeleteme(t *testing.T) {
 	}(ctx, listener)
 
 	// client:
-	// clientAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
-	// clientConn, err := net.ListenUDP("udp", clientAddr)
-	// require.NoError(t, err)
+	clientAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
 	clientTlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"netcat"},
@@ -425,7 +409,7 @@ func TestDeleteme(t *testing.T) {
 
 	ctx2, cancelF2 := context.WithTimeout(context.Background(), 9*time.Hour)
 	defer cancelF2()
-	session, err := quic.DialContext(ctx2, mockConn(false), serverAddr, "serverName",
+	session, err := quic.DialContext(ctx2, mockConn(clientAddr), serverAddr, "serverName",
 		clientTlsConfig, clientQuicConfig)
 	require.NoError(t, err)
 	stream, err := session.OpenStream()
