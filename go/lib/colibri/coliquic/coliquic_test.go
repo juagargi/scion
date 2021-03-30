@@ -33,12 +33,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/colibri/coliquic/mock_coliquic"
 	"github.com/scionproto/scion/go/lib/sciond"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
@@ -219,7 +217,7 @@ func (n *network) ensureChannel(key string) {
 	}
 }
 
-func mockColibriAddress(ia string, host *net.UDPAddr) *snet.UDPAddr {
+func mockColibriAddress(ia string, host *net.UDPAddr) net.Addr {
 	return &snet.UDPAddr{
 		IA:   xtest.MustParseIA(ia),
 		Host: host,
@@ -230,111 +228,25 @@ func mockColibriAddress(ia string, host *net.UDPAddr) *snet.UDPAddr {
 	}
 }
 
-func TestColibriLocal(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	// deletemeBundle := make(chan bundle)
-	thisNet := NewNetwork()
-
-	// create a server (reads and writes will go thru the scion address)
-	serverLocalAddr := &net.UDPAddr{IP: net.ParseIP("fd00:f00d:cafe::7f00:b"), Port: 43210, Zone: ""}
-	serverAddr := mockColibriAddress("1-ff00:0:112", serverLocalAddr)
-	serverConn := mock_coliquic.NewMockPacketConn(ctrl)
-	serverConn.EXPECT().LocalAddr().AnyTimes().Return(serverLocalAddr)
-	serverConn.EXPECT().WriteTo(gomock.Any(), gomock.Any()).AnyTimes().
-		DoAndReturn(func(buff []byte, addr net.Addr) (int, error) {
-			thisNet.WriteTo(serverAddr, addr, buff)
-			t.Logf("Server has written %d bytes from %s to %s", len(buff), serverAddr, addr)
-			return len(buff), nil
-		})
-	serverConn.EXPECT().ReadFrom(gomock.Any()).AnyTimes().
-		DoAndReturn(func(buff []byte) (int, net.Addr, error) {
-			b, sender := thisNet.ReadFrom(serverAddr)
-			t.Logf("Server has read %d bytes from %s", len(buff), sender)
-			if len(b) > len(buff) {
-				panic("buffer too small")
-			}
-			copy(buff, b)
-			return len(buff), sender, nil
-		})
-	serverTlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{*generateKeyAndCert(t)},
-		NextProtos:   []string{"netcat"},
-	}
-	serverQuicConfig := &quic.Config{KeepAlive: true}
-	listener, err := quic.Listen(serverConn, serverTlsConfig, serverQuicConfig)
-	require.NoError(t, err)
-
-	ctx, cancelF := context.WithTimeout(context.Background(), 5*time.Hour)
-	defer cancelF()
-
-	go func(ctx context.Context, listener quic.Listener) {
-		session, err := listener.Accept(ctx)
-		require.NoError(t, err)
-		stream, err := session.AcceptStream(ctx)
-		require.NoError(t, err)
-		err = stream.Close()
-		require.NoError(t, err)
-	}(ctx, listener)
-
-	// create a client:
-	clientLocalAddr := &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 8888, Zone: ""}
-	clientAddr := mockColibriAddress("1-ff00:0:111", clientLocalAddr)
-	clientConn := mock_coliquic.NewMockPacketConn(ctrl)
-	clientConn.EXPECT().LocalAddr().AnyTimes().Return(clientLocalAddr)
-	clientConn.EXPECT().WriteTo(gomock.Any(), gomock.Any()).AnyTimes().
-		DoAndReturn(func(buff []byte, addr net.Addr) (int, error) {
-			thisNet.WriteTo(clientAddr, addr, buff)
-			t.Logf("Client has written %d bytes from %s to %s", len(buff), clientAddr, addr)
-			return len(buff), nil
-		})
-	clientConn.EXPECT().ReadFrom(gomock.Any()).AnyTimes().
-		DoAndReturn(func(buff []byte) (int, net.Addr, error) {
-			t.Logf("Client waiting to read with address %s", clientAddr)
-			b, sender := thisNet.ReadFrom(clientAddr)
-			t.Logf("Client has read %d bytes from %s", len(buff), sender)
-			if len(b) > len(buff) {
-				panic("buffer too small")
-			}
-			copy(buff, b)
-			return len(buff), sender, nil
-		})
-
-	clientTlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"netcat"},
-	}
-	clientQuicConfig := &quic.Config{KeepAlive: true}
-	// remoteAddr := "1-ff00:0:112,[fd00:f00d:cafe::7f00:b]:43210"
-	// // path set to colibri:
-	// raddr := getColibriRemoteAddress(t, remoteAddr)
-	raddr := serverAddr
-	ctx2, cancelF2 := context.WithTimeout(context.Background(), 9*time.Hour)
-	defer cancelF2()
-	session, err := quic.DialContext(ctx2, clientConn, raddr, "serverName", clientTlsConfig, clientQuicConfig)
-	require.NoError(t, err)
-	_ = session
-	// stream, err := sess.OpenStreamSync(context.Background())
-	// require.NoError(t, err)
-	// n, err := stream.Write([]byte("hello world"))
-	// require.NoError(t, err)
-	// require.Equal(t, 11, n)
-	// err = stream.Close()
-	// require.NoError(t, err)
-
-}
-
 type connMock struct {
-	LocalAddress net.Addr
+	localAddr net.Addr
+	net       *network
 }
 
 var _ net.PacketConn = (*connMock)(nil)
 
-var thisNet *network
+func NewConnMock(localAddr net.Addr, network *network) *connMock {
+	if network == nil {
+		panic("network is nil")
+	}
+	return &connMock{
+		localAddr: localAddr,
+		net:       network,
+	}
+}
 
 func (c *connMock) LocalAddr() net.Addr {
-	return c.LocalAddress
+	return c.localAddr
 }
 
 func (c *connMock) Close() error {
@@ -342,13 +254,13 @@ func (c *connMock) Close() error {
 }
 
 func (c *connMock) ReadFrom(p []byte) (int, net.Addr, error) {
-	b, sender := thisNet.ReadFrom(c.LocalAddress)
+	b, sender := c.net.ReadFrom(c.localAddr)
 	n := copy(p, b)
 	return n, sender, nil
 }
 
 func (c *connMock) WriteTo(p []byte, addr net.Addr) (int, error) {
-	thisNet.WriteTo(c.LocalAddress, addr, p)
+	c.net.WriteTo(c.localAddr, addr, p)
 	return len(p), nil
 }
 
@@ -364,22 +276,17 @@ func (c *connMock) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func mockConn(addr net.Addr) net.PacketConn {
-	return &connMock{
-		LocalAddress: addr,
-	}
-}
-
 func TestDeleteme(t *testing.T) {
-	thisNet = NewNetwork()
+	thisNet := NewNetwork()
 	// server:
-	serverAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
+	serverLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
+	serverAddr := mockColibriAddress("1-ff00:0:111", serverLocalAddr)
 	serverTlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*generateKeyAndCert(t)},
 		NextProtos:   []string{"netcat"},
 	}
 	serverQuicConfig := &quic.Config{KeepAlive: true}
-	listener, err := quic.Listen(mockConn(serverAddr), serverTlsConfig, serverQuicConfig)
+	listener, err := quic.Listen(NewConnMock(serverAddr, thisNet), serverTlsConfig, serverQuicConfig)
 	require.NoError(t, err)
 
 	done := make(chan struct{})
@@ -400,7 +307,8 @@ func TestDeleteme(t *testing.T) {
 	}(ctx, listener)
 
 	// client:
-	clientAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
+	clientLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
+	clientAddr := mockColibriAddress("1-ff00:0:112", clientLocalAddr)
 	clientTlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"netcat"},
@@ -409,7 +317,7 @@ func TestDeleteme(t *testing.T) {
 
 	ctx2, cancelF2 := context.WithTimeout(context.Background(), 9*time.Hour)
 	defer cancelF2()
-	session, err := quic.DialContext(ctx2, mockConn(clientAddr), serverAddr, "serverName",
+	session, err := quic.DialContext(ctx2, NewConnMock(clientAddr, thisNet), serverAddr, "serverName",
 		clientTlsConfig, clientQuicConfig)
 	require.NoError(t, err)
 	stream, err := session.OpenStream()
