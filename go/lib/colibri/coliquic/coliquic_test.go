@@ -28,7 +28,6 @@ import (
 	"encoding/pem"
 	"math/big"
 	"net"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -36,144 +35,11 @@ import (
 	"github.com/lucas-clemente/quic-go"
 	"github.com/stretchr/testify/require"
 
-	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/sciond"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
-	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
-	"github.com/scionproto/scion/go/lib/sock/reliable"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/xtest"
-	// "github.com/scionproto/scion/go/lib/underlay/conn/mock_conn"
 )
-
-// TODO(juagargi) cleanup
-
-// go test ./go/lib/colibri/coliquic/ -count=1 -run=TestScion -v
-
-var scionNetwork *snet.SCIONNetwork
-var pathQuerier snet.PathQuerier
-
-func TestMain(m *testing.M) {
-	initScionNetworkAs111()
-	os.Exit(m.Run())
-}
-
-func TestScionClient(t *testing.T) {
-	ctx := context.Background()
-	// remoteAddr := "17-ffaa:1:a,127.0.0.1:43210" // ethz netcat
-	remoteAddr := "1-ff00:0:112,[fd00:f00d:cafe::7f00:b]:43210"
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"netcat"},
-	}
-	quicConfig := &quic.Config{KeepAlive: true}
-
-	raddr := getScionPathRemoteAddress(t, remoteAddr)
-
-	listen := net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0, Zone: ""}
-	sconn, err := scionNetwork.Listen(ctx, "udp", &listen, addr.SvcNone)
-	require.NoError(t, err)
-
-	sess, err := quic.Dial(sconn, raddr, "serverName", tlsConfig, quicConfig)
-	require.NoError(t, err)
-	stream, err := sess.OpenStreamSync(context.Background())
-	require.NoError(t, err)
-	n, err := stream.Write([]byte("hello world"))
-	require.NoError(t, err)
-	require.Equal(t, 11, n)
-	err = stream.Close()
-	require.NoError(t, err)
-}
-
-func TestScionServer(t *testing.T) {
-	// run the server in 112
-	scionNetwork112, _ := initScionNetworkWithSciondPoint("[fd00:f00d:cafe::7f00:b]:30255")
-	cert := generateKeyAndCert(t)
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{*cert},
-		NextProtos:   []string{"netcat"},
-	}
-	quicConfig := &quic.Config{KeepAlive: true}
-
-	// scion connection
-	ctx := context.Background()
-	listen := net.UDPAddr{IP: net.ParseIP("fd00:f00d:cafe::7f00:b"), Port: 43210, Zone: ""}
-	require.NotNil(t, listen.IP)
-	sconn, err := scionNetwork112.Listen(ctx, "udp", &listen, addr.SvcNone)
-	require.NoError(t, err)
-
-	listener, err := quic.Listen(WrapConn(sconn), tlsConfig, quicConfig)
-	require.NoError(t, err)
-
-	session, err := listener.Accept(ctx)
-	require.NoError(t, err)
-	remoteNetAddr := session.RemoteAddr()
-	remoteAddr, ok := remoteNetAddr.(*snet.UDPAddr)
-	require.True(t, ok)
-	require.NotNil(t, remoteAddr.Path)
-	stream, err := session.AcceptStream(ctx)
-	require.NoError(t, err)
-	stream.Close()
-}
-
-func TestColibriClient(t *testing.T) {
-	ctx := context.Background()
-	// remoteAddr := "17-ffaa:1:a,127.0.0.1:43210" // ethz netcat
-	remoteAddr := "1-ff00:0:112,[fd00:f00d:cafe::7f00:b]:43210"
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"netcat"},
-	}
-	quicConfig := &quic.Config{KeepAlive: true}
-
-	raddr := getColibriRemoteAddress(t, remoteAddr)
-
-	listen := net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0, Zone: ""}
-	sconn, err := scionNetwork.Listen(ctx, "udp", &listen, addr.SvcNone)
-	require.NoError(t, err)
-
-	sess, err := quic.Dial(sconn, raddr, "serverName", tlsConfig, quicConfig)
-	require.NoError(t, err)
-	stream, err := sess.OpenStreamSync(context.Background())
-	require.NoError(t, err)
-	n, err := stream.Write([]byte("hello world"))
-	require.NoError(t, err)
-	require.Equal(t, 11, n)
-	err = stream.Close()
-	require.NoError(t, err)
-}
-
-func TestColibriServer(t *testing.T) {
-	// run the server in 112
-	scionNetwork112, _ := initScionNetworkWithSciondPoint("[fd00:f00d:cafe::7f00:b]:30255")
-	cert := generateKeyAndCert(t)
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{*cert},
-		NextProtos:   []string{"netcat"},
-	}
-	quicConfig := &quic.Config{KeepAlive: true}
-
-	// scion connection
-	ctx := context.Background()
-	listen := net.UDPAddr{IP: net.ParseIP("fd00:f00d:cafe::7f00:b"), Port: 43210, Zone: ""}
-	sconn, err := scionNetwork112.Listen(ctx, "udp", &listen, addr.SvcNone)
-	require.NoError(t, err)
-
-	listener, err := quic.Listen(sconn, tlsConfig, quicConfig)
-	// listener, err := ListenQuic(ctx, scionNetwork, listen, tlsConfig, quicConfig)
-	require.NoError(t, err)
-
-	session, err := listener.Accept(ctx)
-	require.NoError(t, err)
-	remoteNetAddr := session.RemoteAddr()
-	remoteAddr, ok := remoteNetAddr.(*snet.UDPAddr)
-	require.True(t, ok)
-	require.NotNil(t, remoteAddr.Path)
-	stream, err := session.AcceptStream(ctx)
-	require.NoError(t, err)
-	stream.Close()
-}
 
 type bundle struct {
 	sender net.Addr
@@ -335,29 +201,6 @@ func TestDeleteme(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func initScionNetworkAs111() {
-	// scionNetwork, pathQuerier = initScionNetworkWithSciondPoint(sciond.DefaultAPIAddress)
-	// scionNetwork, pathQuerier = initScionNetworkWithSciondPoint("[fd00:f00d:cafe::7f00:b]:30255")
-	scionNetwork, pathQuerier = initScionNetworkWithSciondPoint("127.0.0.19:30255")
-}
-
-func initScionNetworkWithSciondPoint(sciondPoint string) (*snet.SCIONNetwork, snet.PathQuerier) {
-	ctx := context.Background()
-	dispatcherService := reliable.NewDispatcher("")
-	sciondConn, err := sciond.NewService(sciondPoint).Connect(ctx) // 1-ff00:0:111
-	if err != nil {
-		panic(err)
-	}
-
-	localIA, err := sciondConn.LocalIA(ctx)
-	if err != nil {
-		panic(err)
-	}
-	scionNetwork = snet.NewNetwork(localIA, dispatcherService, sciond.RevHandler{Connector: sciondConn})
-	pathQuerier = sciond.Querier{Connector: sciondConn, IA: localIA}
-	return scionNetwork, pathQuerier
-}
-
 // createCertificate from scion-apps:
 // createCertificate creates a self-signed dummy certificate for the given key
 // Inspired/copy pasted from crypto/tls/generate_cert.go
@@ -411,101 +254,3 @@ func generateKeyAndCert(t *testing.T) *tls.Certificate {
 	require.NoError(t, err)
 	return createCertificate(t, priv)
 }
-
-func getScionPathRemoteAddress(t *testing.T, remote string) net.Addr {
-	t.Helper()
-
-	raddr, err := snet.ParseUDPAddr(remote)
-	require.NoError(t, err)
-	if raddr.Path.IsEmpty() {
-		paths, err := pathQuerier.Query(context.Background(), raddr.IA)
-		require.NoError(t, err)
-		// raddr.Path.Type = 1 // scion type
-		raddr.Path = paths[0].Path()
-		t.Logf("Path type is %v", raddr.Path.Type)
-		// BR complains about an empty path and a UDP header, TAL at the BR logs
-		raddr.NextHop = paths[0].UnderlayNextHop()
-		t.Logf("NextHop = %s", raddr.NextHop)
-		require.Equal(t, scion.PathType, raddr.Path.Type)
-		// print the SCION path
-		// dec := scion.Decoded{}
-		// err = dec.DecodeFromBytes(raddr.Path.Raw)
-		// require.NoError(t, err)
-		// t.Logf("SCION Path: %#v", dec)
-	}
-	require.NotNil(t, raddr.Path)
-	return raddr
-}
-
-func getColibriRemoteAddress(t *testing.T, remote string) net.Addr {
-	t.Helper()
-
-	// to test, get a normal scion address first:
-	scionRaddr, err := snet.ParseUDPAddr(remote)
-	require.NoError(t, err)
-	if scionRaddr.Path.IsEmpty() {
-		paths, err := pathQuerier.Query(context.Background(), scionRaddr.IA)
-		require.NoError(t, err)
-		scionRaddr.Path = paths[0].Path()
-		scionRaddr.NextHop = paths[0].UnderlayNextHop()
-	}
-	require.NotNil(t, scionRaddr.Path)
-	// use the next hop from the normal address into the colibri address
-	raddr := snet.UDPAddr{
-		IA:   scionRaddr.IA,
-		Host: scionRaddr.Host,
-		Path: spath.Path{
-			Raw:  createTestColibriPath(t),
-			Type: colibri.PathType,
-		},
-		NextHop: scionRaddr.NextHop,
-	}
-	require.NotNil(t, raddr.Path)
-	require.NotNil(t, raddr.NextHop)
-	return &raddr
-}
-
-func createTestColibriPath(t *testing.T) []byte {
-	t.Helper()
-
-	path := colibri.ColibriPath{
-		PacketTimestamp: 1,
-		InfoField: &colibri.InfoField{
-			C:           true,
-			R:           false,
-			S:           true,
-			Ver:         1,
-			CurrHF:      0,
-			HFCount:     3,
-			ResIdSuffix: xtest.MustParseHexString("beefcafe0000000000000000"),
-			ExpTick:     1893452400, // valid until 1.1.2030
-			BwCls:       7,
-			Rlc:         7,
-			OrigPayLen:  1208,
-		},
-		HopFields: []*colibri.HopField{
-			{
-				IngressId: 0,
-				EgressId:  41,
-				Mac:       []byte{140, 95, 102, 190}, // MAC is 4 bytes
-			},
-			{
-				IngressId: 1,
-				EgressId:  2,
-				Mac:       []byte{0, 61, 66, 164},
-			},
-			{
-				IngressId: 1,
-				EgressId:  0,
-				Mac:       xtest.MustParseHexString("00000000"),
-			},
-		},
-	}
-	buffLen := 8 + 24 + (len(path.HopFields) * 8) // timestamp + infofield + 3*hops
-	buff := make([]byte, buffLen)
-	err := path.SerializeTo(buff)
-	require.NoError(t, err)
-	return buff
-}
-
-// TODO(juagargi) border router receives packets from inside the AS in a different routine?
