@@ -362,31 +362,14 @@ func (c *connMock) Close() error {
 }
 
 func (c *connMock) ReadFrom(p []byte) (int, net.Addr, error) {
-	bun := <-*c.ChRead
-	if len(bun.data) > len(p) {
-		panic("buffer is too short")
-	}
-	n := copy(p, bun.data)
-	// return n, bun.sender, nil
-	key := c.LocalAddress.String()
-	thisNet.ensureChannel(key)
 	b, sender := thisNet.ReadFrom(c.LocalAddress)
-	if len(b) != n || sender.String() != bun.sender.String() {
-		panic("different")
-	}
-	return n, bun.sender, nil
+	n := copy(p, b)
+	return n, sender, nil
 }
 
 func (c *connMock) WriteTo(p []byte, addr net.Addr) (int, error) {
-	buff := make([]byte, len(p))
-	n := copy(buff, p)
-	bun := bundle{sender: c.LocalAddress, data: buff}
-	*c.ChWrite <- bun
-	// return n, nil
-	key := c.LocalAddress.String()
-	thisNet.ensureChannel(key)
 	thisNet.WriteTo(c.LocalAddress, addr, p)
-	return n, nil
+	return len(p), nil
 }
 
 func (c *connMock) SetDeadline(t time.Time) error {
