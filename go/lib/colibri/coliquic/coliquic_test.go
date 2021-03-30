@@ -26,7 +26,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -194,20 +193,10 @@ func NewNetwork() *network {
 	}
 }
 
-func (n *network) DebugPrint(t *testing.T, str string) {
-	t.Logf("          DEBUG %s network size = %d", str, len(n.channels))
-	for k, c := range n.channels {
-		t.Logf("          DEBUG %s network channel for %s is %d", str, k, len(c))
-	}
-}
-
 func (n *network) ReadFrom(receiver net.Addr) ([]byte, net.Addr) {
 	key := receiver.String()
 	n.ensureChannel(key)
-	before := len(n.channels[key])
 	bun := <-n.channels[key]
-	after := len(n.channels[key])
-	fmt.Printf("============== [reading] BEFORE %d AFTER %d channel: %v\n", before, after, n.channels[key])
 	buff := make([]byte, len(bun.data))
 	copy(buff, bun.data)
 	return buff, bun.sender
@@ -219,17 +208,13 @@ func (n *network) WriteTo(sender, receiver net.Addr, data []byte) {
 	bun := bundle{sender: sender, data: buff}
 	key := receiver.String()
 	n.ensureChannel(key)
-	before := len(n.channels[key])
 	n.channels[key] <- bun
-	after := len(n.channels[key])
-	fmt.Printf("============== [writing] BEFORE %d AFTER %d channel: %v\n", before, after, n.channels[key])
 }
 
 func (n *network) ensureChannel(key string) {
 	n.m.Lock()
 	defer n.m.Unlock()
 	if _, found := n.channels[key]; !found {
-		fmt.Printf("------------------------ adding receiver %s \n", key)
 		n.channels[key] = make(chan bundle, 32)
 	}
 }
@@ -300,10 +285,8 @@ func TestColibriLocal(t *testing.T) {
 	clientConn.EXPECT().LocalAddr().AnyTimes().Return(clientLocalAddr)
 	clientConn.EXPECT().WriteTo(gomock.Any(), gomock.Any()).AnyTimes().
 		DoAndReturn(func(buff []byte, addr net.Addr) (int, error) {
-			thisNet.DebugPrint(t, "client before write")
 			thisNet.WriteTo(clientAddr, addr, buff)
 			t.Logf("Client has written %d bytes from %s to %s", len(buff), clientAddr, addr)
-			thisNet.DebugPrint(t, "client after write")
 			return len(buff), nil
 		})
 	clientConn.EXPECT().ReadFrom(gomock.Any()).AnyTimes().
@@ -344,8 +327,6 @@ func TestColibriLocal(t *testing.T) {
 
 type connMock struct {
 	LocalAddress net.Addr
-	ChRead       *chan bundle
-	ChWrite      *chan bundle
 	DebugString  string
 }
 
@@ -384,24 +365,17 @@ func (c *connMock) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-var chA, chB chan bundle
-
 func mockConn(isServer bool) net.PacketConn {
-	var ptrRead, ptrWrite *chan bundle
 	var addr net.Addr
 	var str string
 	if isServer {
 		addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
-		ptrRead, ptrWrite = &chA, &chB
 		str = "server"
 	} else {
 		addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
-		ptrRead, ptrWrite = &chB, &chA
 		str = "client"
 	}
 	return &connMock{
-		ChRead:       ptrRead,
-		ChWrite:      ptrWrite,
 		LocalAddress: addr,
 		DebugString:  str,
 	}
@@ -409,8 +383,6 @@ func mockConn(isServer bool) net.PacketConn {
 
 func TestDeleteme(t *testing.T) {
 	thisNet = NewNetwork()
-	chA = make(chan bundle)
-	chB = make(chan bundle)
 	// server:
 	serverAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
 	// serverConn, err := net.ListenUDP("udp", serverAddr)
