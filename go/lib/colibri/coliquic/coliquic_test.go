@@ -34,6 +34,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
+	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/xtest"
@@ -42,70 +43,97 @@ import (
 // TestColibriQuic creates a server and a client, both with SCION-COLIBRI addresses and paths,
 // and communicates both via a quic connection.
 func TestColibriQuic(t *testing.T) {
-	thisNet := newMockNetwork()
-	// server:
-	serverLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}
-	serverAddr := mockColibriAddress(t, "1-ff00:0:111", serverLocalAddr)
-	serverTlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{*createTestCertificate(t)},
-		NextProtos:   []string{"netcat"},
+
+	testCases := map[string]struct {
+		serverAddr net.Addr
+		clientAddr net.Addr
+	}{
+		"scion": {
+			serverAddr: mockScionAddress(t, "1-ff00:0:111",
+				&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210, Zone: ""}),
+			clientAddr: mockScionAddress(t, "1-ff00:0:112",
+				&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}),
+		},
+		"colibri": {
+			serverAddr: mockScionAddress(t, "1-ff00:0:111",
+				&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43211, Zone: ""}),
+			clientAddr: mockColibriAddress(t, "1-ff00:0:112",
+				&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12346, Zone: ""}),
+		},
 	}
-	serverQuicConfig := &quic.Config{KeepAlive: true}
-	listener, err := quic.Listen(newConnMock(t, serverAddr, thisNet), serverTlsConfig, serverQuicConfig)
-	require.NoError(t, err)
+	for name, tc := range testCases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel() // we are not really using sockets -> no bind clashes
+			thisNet := newMockNetwork()
+			// server:
+			serverTlsConfig := &tls.Config{
+				Certificates: []tls.Certificate{*createTestCertificate(t)},
+				NextProtos:   []string{"coliquictest"},
+			}
+			serverQuicConfig := &quic.Config{KeepAlive: true}
+			listener, err := quic.Listen(newConnMock(t, tc.serverAddr, thisNet),
+				serverTlsConfig, serverQuicConfig)
+			require.NoError(t, err)
 
-	done := make(chan struct{})
-	ctx, cancelF := context.WithTimeout(context.Background(), 5*time.Hour)
-	defer cancelF()
-	go func(ctx context.Context, listener quic.Listener) {
-		session, err := listener.Accept(ctx)
-		require.NoError(t, err)
+			done := make(chan struct{})
+			ctx, cancelF := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancelF()
+			go func(ctx context.Context, listener quic.Listener) {
+				session, err := listener.Accept(ctx)
+				require.NoError(t, err)
 
-		colPath, err := GetColibriPath(session)
-		require.NoError(t, err)
-		buff := make([]byte, colPath.Len())
-		err = colPath.SerializeTo(buff)
-		require.NoError(t, err)
-		require.Equal(t, serverAddr.(*snet.UDPAddr).Path.Raw, buff)
+				colPath, err := GetColibriPath(session)
+				require.NoError(t, err)
+				if clientPath := tc.clientAddr.(*snet.UDPAddr).Path; clientPath.Type ==
+					colibri.PathType {
 
-		stream, err := session.AcceptStream(ctx)
-		require.NoError(t, err)
-		buff = make([]byte, 16384)
-		n, err := stream.Read(buff)
-		require.NoError(t, err)
-		require.Equal(t, "hello world", string(buff[:n]))
-		err = stream.Close()
-		require.NoError(t, err)
-		done <- struct{}{}
-	}(ctx, listener)
+					buff := make([]byte, colPath.Len())
+					err = colPath.SerializeTo(buff)
+					require.NoError(t, err)
+					require.Equal(t, tc.clientAddr.(*snet.UDPAddr).Path.Raw, buff)
+				} else {
+					require.Nil(t, colPath)
+				}
 
-	// client:
-	clientLocalAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345, Zone: ""}
-	clientAddr := mockColibriAddress(t, "1-ff00:0:112", clientLocalAddr)
-	clientTlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"netcat"},
+				stream, err := session.AcceptStream(ctx)
+				require.NoError(t, err)
+				buff := make([]byte, 16384)
+				n, err := stream.Read(buff)
+				require.NoError(t, err)
+				require.Equal(t, "hello world", string(buff[:n]))
+				err = stream.Close()
+				require.NoError(t, err)
+				done <- struct{}{}
+			}(ctx, listener)
+
+			// client:
+			clientTlsConfig := &tls.Config{
+				InsecureSkipVerify: true,
+				NextProtos:         []string{"coliquictest"},
+			}
+			clientQuicConfig := &quic.Config{KeepAlive: true}
+
+			ctx2, cancelF2 := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancelF2()
+			session, err := quic.DialContext(ctx2, newConnMock(t, tc.clientAddr, thisNet),
+				tc.serverAddr, "serverName", clientTlsConfig, clientQuicConfig)
+			require.NoError(t, err)
+			stream, err := session.OpenStream()
+			require.NoError(t, err)
+			n, err := stream.Write([]byte("hello world"))
+			require.NoError(t, err)
+			require.Equal(t, len("hello wold")+1, n)
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "timed out")
+			}
+			err = stream.Close()
+			require.NoError(t, err)
+		})
 	}
-	clientQuicConfig := &quic.Config{KeepAlive: true}
-
-	ctx2, cancelF2 := context.WithTimeout(context.Background(), 9*time.Hour)
-	defer cancelF2()
-	session, err := quic.DialContext(ctx2, newConnMock(t, clientAddr, thisNet), serverAddr, "serverName",
-		clientTlsConfig, clientQuicConfig)
-	require.NoError(t, err)
-	stream, err := session.OpenStream()
-	require.NoError(t, err)
-	n, err := stream.Write([]byte("hello world"))
-	require.NoError(t, err)
-	require.Equal(t, len("hello wold")+1, n)
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "timed out")
-	}
-	err = stream.Close()
-	require.NoError(t, err)
 }
 
 // packet is a packet received by a mockNetwork.
@@ -148,6 +176,19 @@ func (n *mockNetwork) ensureChannel(key string) {
 	defer n.m.Unlock()
 	if _, found := n.channels[key]; !found {
 		n.channels[key] = make(chan packet, 32)
+	}
+}
+
+// mockScionAddress returns a SCION address with a SCION type path.
+func mockScionAddress(t *testing.T, ia string, host *net.UDPAddr) net.Addr {
+	t.Helper()
+	return &snet.UDPAddr{
+		IA:   xtest.MustParseIA(ia),
+		Host: host,
+		Path: spath.Path{
+			Raw:  []byte{},
+			Type: scion.PathType,
+		},
 	}
 }
 
