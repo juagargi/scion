@@ -24,6 +24,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"sync"
@@ -32,12 +33,16 @@ import (
 
 	"github.com/lucas-clemente/quic-go"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
 
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/snet/squic"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/xtest"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
 // TestColibriQuic creates a server and a client, both with SCION-COLIBRI addresses and paths,
@@ -134,6 +139,79 @@ func TestColibriQuic(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestColibriGRPC(t *testing.T) {
+	thisNet := newMockNetwork()
+	// server:
+	// serverAddr := mockScionAddress(t, "1-ff00:0:111",
+	// 	&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43211, Zone: ""})
+	serverAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210}
+	serverTlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{*createTestCertificate(t)},
+		NextProtos:   []string{"coliquictest"},
+	}
+	serverQuicConfig := &quic.Config{KeepAlive: true}
+	quicLis, err := quic.Listen(newConnMock(t, serverAddr, thisNet),
+		serverTlsConfig, serverQuicConfig)
+	require.NoError(t, err)
+	// TODO:
+	var listener net.Listener = squic.NewConnListener(quicLis)
+	listener, err = net.Listen("tcp", serverAddr.String())
+	require.NoError(t, err)
+
+	gRPCServer := grpc.NewServer()
+	colibriService := &ColibriService{}
+	colpb.RegisterColibriServer(gRPCServer, colibriService)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		err = gRPCServer.Serve(listener)
+		require.NoError(t, err)
+		wg.Done()
+	}()
+	// client:
+	// // clientAddr := mockColibriAddress(t, "1-ff00:0:112",
+	// // 	&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12346, Zone: ""})
+	// clientAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210}
+	// clientTlsConfig := &tls.Config{
+	// 	InsecureSkipVerify: true,
+	// 	NextProtos:         []string{"coliquictest"},
+	// }
+	// clientQuicConfig := &quic.Config{KeepAlive: true}
+
+	ctx, cancelF := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelF()
+	// conn, err := net.DialUDP("udp", clientAddr, serverAddr)
+	// require.NoError(t, err)
+	// session, err := quic.DialContext(ctx2, conn, serverAddr, "serverName", clientTlsConfig, clientQuicConfig)
+	// require.NoError(t, err)
+
+	conn, err := grpc.DialContext(ctx, serverAddr.String(), grpc.WithInsecure(), grpc.WithBlock())
+	require.NoError(t, err)
+	gRPCClient := colpb.NewColibriClient(conn)
+
+	msg := &colpb.TestingMessage{Message: "client msg"}
+	res, err := gRPCClient.TestPeer(ctx, msg)
+	require.NoError(t, err)
+	require.Equal(t, "server msg", res.Message)
+
+	err = conn.Close()
+	require.NoError(t, err)
+	// wg.Wait()
+}
+
+type ColibriService struct {
+	colpb.ColibriServer
+}
+
+func (c *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
+	*colpb.TestingMessage, error) {
+
+	fmt.Println("DELETEME someone called test peer")
+	p, ok := peer.FromContext(ctx)
+	fmt.Println("DELETEME call to TestPeer", "peer", p, "ok", ok)
+	return &colpb.TestingMessage{Message: "server msg"}, nil
 }
 
 // packet is a packet received by a mockNetwork.
