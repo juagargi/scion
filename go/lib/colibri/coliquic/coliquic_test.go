@@ -24,13 +24,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"math/big"
 	"net"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/lucas-clemente/quic-go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -42,7 +42,8 @@ import (
 	"github.com/scionproto/scion/go/lib/snet/squic"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/xtest"
-	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
+	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
+	mock_cp "github.com/scionproto/scion/go/pkg/proto/control_plane/mock_control_plane"
 )
 
 // TestColibriQuic creates a server and a client, both with SCION-COLIBRI addresses and paths,
@@ -143,6 +144,7 @@ func TestColibriQuic(t *testing.T) {
 
 func TestColibriGRPC(t *testing.T) {
 	thisNet := newMockNetwork()
+
 	// server: (don't reuse addresses on any test, as quic caches the connections)
 	serverAddr := mockScionAddress(t, "1-ff00:0:111",
 		&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 23211, Zone: ""})
@@ -158,17 +160,28 @@ func TestColibriGRPC(t *testing.T) {
 	listener := squic.NewConnListener(quicLis)
 	require.NoError(t, err)
 
-	gRPCServer := grpc.NewServer()
-	colibriService := &ColibriService{}
-	colpb.RegisterColibriServer(gRPCServer, colibriService)
+	// mock a method (the same as in net_test) and check we recover the colibri path correctly
+	mctrl := gomock.NewController(t)
+	defer mctrl.Finish()
+	handler := mock_cp.NewMockTrustMaterialServiceServer(mctrl)
+	handler.EXPECT().TRC(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+		func(ctx context.Context, _ *cppb.TRCRequest) (*cppb.TRCResponse, error) {
+			p, ok := peer.FromContext(ctx)
+			require.True(t, ok)
+			require.NotNil(t, p)
+			require.IsType(t, &snet.UDPAddr{}, p.Addr)
+			require.Equal(t, colibri.PathType, p.Addr.(*snet.UDPAddr).Path.Type)
+			return &cppb.TRCResponse{Trc: p.Addr.(*snet.UDPAddr).Path.Raw}, nil
+		})
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	gRPCServer := grpc.NewServer()
+	cppb.RegisterTrustMaterialServiceServer(gRPCServer, handler)
+
+	done := make(chan struct{})
 	go func() {
-		t.Log("LISTENING")
 		err = gRPCServer.Serve(listener)
 		require.NoError(t, err)
-		defer wg.Done()
+		done <- struct{}{}
 	}()
 
 	// client:
@@ -195,30 +208,17 @@ func TestColibriGRPC(t *testing.T) {
 	}
 	conn, err := grpc.DialContext(ctx, serverAddr.String(), grpc.WithInsecure(), grpc.WithContextDialer(dialer))
 	require.NoError(t, err)
-	gRPCClient := colpb.NewColibriClient(conn)
-
-	msg := &colpb.TestingMessage{Message: "client msg"}
-	res, err := gRPCClient.TestPeer(ctx, msg)
+	gRPCClient := cppb.NewTrustMaterialServiceClient(conn)
+	res, err := gRPCClient.TRC(ctx, &cppb.TRCRequest{})
 	require.NoError(t, err)
-	require.Equal(t, "addr type snet.UDPAddr true", res.Message)
+	require.Equal(t, clientAddr.(*snet.UDPAddr).Path.Raw, res.Trc)
 
 	gRPCServer.GracefulStop()
-	gRPCServer.Stop()
-	wg.Wait()
-}
-
-type ColibriService struct {
-	colpb.ColibriServer
-}
-
-func (c *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
-	*colpb.TestingMessage, error) {
-
-	p, ok := peer.FromContext(ctx)
-	fmt.Printf("DELETEME call to TestPeer peer = %v, ok = %v, type = %T, PathType = %v\n",
-		p.Addr, ok, p.Addr, p.Addr.(*snet.UDPAddr).Path.Type)
-	_, ok = p.Addr.(*snet.UDPAddr)
-	return &colpb.TestingMessage{Message: fmt.Sprintf("addr type snet.UDPAddr %v", ok)}, nil
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out")
+	}
 }
 
 // packet is a packet received by a mockNetwork.
