@@ -20,9 +20,13 @@ go_test(
         "//go/lib/slayers/path/colibri:go_default_library",
         "//go/lib/slayers/path/scion:go_default_library",
         "//go/lib/snet:go_default_library",
+        "//go/lib/snet/squic:go_default_library",
         "//go/lib/spath:go_default_library",
         "//go/lib/xtest:go_default_library",
+        "//go/pkg/proto/colibri:go_default_library",
         "@com_github_lucas_clemente_quic_go//:go_default_library",
         "@com_github_stretchr_testify//require:go_default_library",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//peer:go_default_library",
     ],
 )

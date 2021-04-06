@@ -143,12 +143,12 @@ func TestColibriQuic(t *testing.T) {
 
 func TestColibriGRPC(t *testing.T) {
 	thisNet := newMockNetwork()
-	// server:
+	// server: (don't reuse addresses on any test, as quic caches the connections)
 	serverAddr := mockScionAddress(t, "1-ff00:0:111",
-		&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43211, Zone: ""})
+		&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 23211, Zone: ""})
 	serverTlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*createTestCertificate(t)},
-		NextProtos:   []string{"coliquictest"},
+		NextProtos:   []string{"coliquicgrpc"},
 	}
 	serverQuicConfig := &quic.Config{KeepAlive: true}
 
@@ -162,17 +162,21 @@ func TestColibriGRPC(t *testing.T) {
 	colibriService := &ColibriService{}
 	colpb.RegisterColibriServer(gRPCServer, colibriService)
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
 		t.Log("LISTENING")
 		err = gRPCServer.Serve(listener)
 		require.NoError(t, err)
+		defer wg.Done()
 	}()
+
 	// client:
-	clientAddr := mockScionAddress(t, "1-ff00:0:112",
-		&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12346, Zone: ""})
+	clientAddr := mockColibriAddress(t, "1-ff00:0:112",
+		&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 2346, Zone: ""})
 	clientTlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:         []string{"coliquictest"},
+		NextProtos:         []string{"coliquicgrpc"},
 	}
 	clientQuicConfig := &quic.Config{KeepAlive: true}
 
@@ -196,10 +200,11 @@ func TestColibriGRPC(t *testing.T) {
 	msg := &colpb.TestingMessage{Message: "client msg"}
 	res, err := gRPCClient.TestPeer(ctx, msg)
 	require.NoError(t, err)
-	require.Equal(t, "server msg", res.Message)
+	require.Equal(t, "addr type snet.UDPAddr true", res.Message)
 
-	err = conn.Close()
-	require.NoError(t, err)
+	gRPCServer.GracefulStop()
+	gRPCServer.Stop()
+	wg.Wait()
 }
 
 type ColibriService struct {
@@ -209,10 +214,11 @@ type ColibriService struct {
 func (c *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
 	*colpb.TestingMessage, error) {
 
-	fmt.Println("DELETEME someone called test peer")
 	p, ok := peer.FromContext(ctx)
-	fmt.Printf("DELETEME call to TestPeer peer = %v, ok = %v, type = %T\n", p.Addr, ok, p.Addr)
-	return &colpb.TestingMessage{Message: "server msg"}, nil
+	fmt.Printf("DELETEME call to TestPeer peer = %v, ok = %v, type = %T, PathType = %v\n",
+		p.Addr, ok, p.Addr, p.Addr.(*snet.UDPAddr).Path.Type)
+	_, ok = p.Addr.(*snet.UDPAddr)
+	return &colpb.TestingMessage{Message: fmt.Sprintf("addr type snet.UDPAddr %v", ok)}, nil
 }
 
 // packet is a packet received by a mockNetwork.
