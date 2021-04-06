@@ -144,50 +144,52 @@ func TestColibriQuic(t *testing.T) {
 func TestColibriGRPC(t *testing.T) {
 	thisNet := newMockNetwork()
 	// server:
-	// serverAddr := mockScionAddress(t, "1-ff00:0:111",
-	// 	&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43211, Zone: ""})
-	serverAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210}
+	serverAddr := mockScionAddress(t, "1-ff00:0:111",
+		&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43211, Zone: ""})
 	serverTlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*createTestCertificate(t)},
 		NextProtos:   []string{"coliquictest"},
 	}
 	serverQuicConfig := &quic.Config{KeepAlive: true}
-	quicLis, err := quic.Listen(newConnMock(t, serverAddr, thisNet),
-		serverTlsConfig, serverQuicConfig)
+
+	quicLis, err := quic.Listen(newConnMock(t, serverAddr, thisNet), serverTlsConfig, serverQuicConfig)
 	require.NoError(t, err)
-	// TODO:
-	var listener net.Listener = squic.NewConnListener(quicLis)
-	listener, err = net.Listen("tcp", serverAddr.String())
+
+	listener := squic.NewConnListener(quicLis)
 	require.NoError(t, err)
 
 	gRPCServer := grpc.NewServer()
 	colibriService := &ColibriService{}
 	colpb.RegisterColibriServer(gRPCServer, colibriService)
-	var wg sync.WaitGroup
-	wg.Add(1)
+
 	go func() {
+		t.Log("LISTENING")
 		err = gRPCServer.Serve(listener)
 		require.NoError(t, err)
-		wg.Done()
 	}()
 	// client:
-	// // clientAddr := mockColibriAddress(t, "1-ff00:0:112",
-	// // 	&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12346, Zone: ""})
-	// clientAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 43210}
-	// clientTlsConfig := &tls.Config{
-	// 	InsecureSkipVerify: true,
-	// 	NextProtos:         []string{"coliquictest"},
-	// }
-	// clientQuicConfig := &quic.Config{KeepAlive: true}
+	clientAddr := mockScionAddress(t, "1-ff00:0:112",
+		&net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12346, Zone: ""})
+	clientTlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"coliquictest"},
+	}
+	clientQuicConfig := &quic.Config{KeepAlive: true}
 
-	ctx, cancelF := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelF()
-	// conn, err := net.DialUDP("udp", clientAddr, serverAddr)
-	// require.NoError(t, err)
-	// session, err := quic.DialContext(ctx2, conn, serverAddr, "serverName", clientTlsConfig, clientQuicConfig)
-	// require.NoError(t, err)
 
-	conn, err := grpc.DialContext(ctx, serverAddr.String(), grpc.WithInsecure(), grpc.WithBlock())
+	connDial := squic.ConnDialer{
+		Conn:       newConnMock(t, clientAddr, thisNet),
+		TLSConfig:  clientTlsConfig,
+		QUICConfig: clientQuicConfig,
+	}
+	quicConn, err := connDial.Dial(ctx, serverAddr)
+	require.NoError(t, err)
+	dialer := func(context.Context, string) (net.Conn, error) {
+		return quicConn, nil
+	}
+	conn, err := grpc.DialContext(ctx, serverAddr.String(), grpc.WithInsecure(), grpc.WithContextDialer(dialer))
 	require.NoError(t, err)
 	gRPCClient := colpb.NewColibriClient(conn)
 
@@ -198,7 +200,6 @@ func TestColibriGRPC(t *testing.T) {
 
 	err = conn.Close()
 	require.NoError(t, err)
-	// wg.Wait()
 }
 
 type ColibriService struct {
@@ -210,7 +211,7 @@ func (c *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage
 
 	fmt.Println("DELETEME someone called test peer")
 	p, ok := peer.FromContext(ctx)
-	fmt.Println("DELETEME call to TestPeer", "peer", p, "ok", ok)
+	fmt.Printf("DELETEME call to TestPeer peer = %v, ok = %v, type = %T\n", p.Addr, ok, p.Addr)
 	return &colpb.TestingMessage{Message: "server msg"}, nil
 }
 
