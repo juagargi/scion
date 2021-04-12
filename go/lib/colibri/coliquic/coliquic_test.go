@@ -42,6 +42,7 @@ import (
 	"github.com/scionproto/scion/go/lib/snet/squic"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/xtest"
+	sgrpc "github.com/scionproto/scion/go/pkg/grpc"
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
 	mock_cp "github.com/scionproto/scion/go/pkg/proto/control_plane/mock_control_plane"
 )
@@ -157,7 +158,7 @@ func TestColibriGRPC(t *testing.T) {
 	quicLis, err := quic.Listen(newConnMock(t, serverAddr, thisNet), serverTlsConfig, serverQuicConfig)
 	require.NoError(t, err)
 
-	listener := squic.NewConnListener(quicLis)
+	listener := NewConnListener(quicLis)
 	require.NoError(t, err)
 
 	// mock a method (the same as in net_test) and check we recover the colibri path correctly
@@ -171,10 +172,23 @@ func TestColibriGRPC(t *testing.T) {
 			require.NotNil(t, p)
 			require.IsType(t, &snet.UDPAddr{}, p.Addr)
 			require.Equal(t, colibri.PathType, p.Addr.(*snet.UDPAddr).Path.Type)
+			usage, ok, err := UsageFromContext(ctx)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Greater(t, usage, uint64(0))
 			return &cppb.TRCResponse{Trc: p.Addr.(*snet.UDPAddr).Path.Raw}, nil
 		})
 
-	gRPCServer := grpc.NewServer()
+	var testInterceptorCalled bool
+	testInterceptor := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler) (interface{}, error) {
+		res, err := handler(ctx, req)
+		testInterceptorCalled = true
+		return res, err
+	}
+
+	gRPCServer := NewGrpcServer(grpc.UnaryInterceptor(testInterceptor),
+		sgrpc.UnaryServerInterceptor())
 	cppb.RegisterTrustMaterialServiceServer(gRPCServer, handler)
 
 	done := make(chan struct{})
@@ -212,6 +226,7 @@ func TestColibriGRPC(t *testing.T) {
 	res, err := gRPCClient.TRC(ctx, &cppb.TRCRequest{})
 	require.NoError(t, err)
 	require.Equal(t, clientAddr.(*snet.UDPAddr).Path.Raw, res.Trc)
+	require.True(t, testInterceptorCalled)
 
 	gRPCServer.GracefulStop()
 	select {

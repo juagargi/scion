@@ -6,9 +6,16 @@ go_library(
     importpath = "github.com/scionproto/scion/go/lib/colibri/coliquic",
     visibility = ["//visibility:public"],
     deps = [
+        "//go/lib/common:go_default_library",
+        "//go/lib/log:go_default_library",
+        "//go/lib/serrors:go_default_library",
         "//go/lib/slayers/path/colibri:go_default_library",
         "//go/lib/snet:go_default_library",
+        "//go/lib/snet/squic:go_default_library",
         "@com_github_lucas_clemente_quic_go//:go_default_library",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//peer:go_default_library",
+        "@org_golang_google_grpc//stats:go_default_library",
     ],
 )
 
@@ -23,6 +30,7 @@ go_test(
         "//go/lib/snet/squic:go_default_library",
         "//go/lib/spath:go_default_library",
         "//go/lib/xtest:go_default_library",
+        "//go/pkg/grpc:go_default_library",
         "//go/pkg/proto/control_plane:go_default_library",
         "//go/pkg/proto/control_plane/mock_control_plane:go_default_library",
         "@com_github_golang_mock//gomock:go_default_library",
