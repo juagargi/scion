@@ -154,7 +154,7 @@ func (c *colibriPacketProcessor) forward() (processResult, error) {
 		if conn, ok := c.canForwardLocally(egressId); ok {
 			return c.forwardToLocalEgress(egressId, conn)
 		}
-		return processResult{}, serrors.New("received packet from local AS but the packet should" +
+		return processResult{}, serrors.New("received packet from local AS but the packet should " +
 			"go to different border router")
 	}
 
