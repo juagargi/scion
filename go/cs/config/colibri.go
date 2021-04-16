@@ -25,8 +25,8 @@ import (
 type ColibriConfig struct {
 	DB               storage.DBConfig `toml:"colibri_db,omitempty"`
 	Delta            float64
-	CapacitiesFile   string `toml:"capacities_file"`
-	ReservationsFile string `toml:"reservations_file"`
+	CapacitiesFile   string `toml:"capacities_file"`   // cs/reservation/conf.Capacities
+	ReservationsFile string `toml:"reservations_file"` // cs/reservation/conf.Reservations
 }
 
 func (cfg *ColibriConfig) Validate() error {
