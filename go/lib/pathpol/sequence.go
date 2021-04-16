@@ -80,32 +80,57 @@ func (s *Sequence) Eval(paths []snet.Path) []snet.Path {
 	}
 	result := []snet.Path{}
 	for _, path := range paths {
-		ifaces := path.Metadata().Interfaces
-		// Path should contain even number of interfaces. 1 for source AS,
-		// 1 for destination AS and 2 per each intermediate AS. Invalid paths should
-		// not occur but if they do let's ignore them.
-		if len(ifaces) == 0 || len(ifaces)%2 != 0 {
-			log.Error("Invalid path with even number of hops", "path", path)
-			continue
-		}
-		// Turn the path into a string. For each AS on the path there will be
-		// one element in form <IA>#<inbound-interface>,<outbound-interface>,
-		// e.g. 64-ff00:0:112#3,5. For the source AS, the inbound interface will be
-		// zero. For destination AS, outbound interface will be zero.
-		p := fmt.Sprintf("%s#0,%d ", ifaces[0].IA, ifaces[0].ID)
-		for i := 1; i < len(ifaces)-1; i += 2 {
-			p += fmt.Sprintf("%s#%d,%d ", ifaces[i].IA,
-				ifaces[i].ID, ifaces[i+1].ID)
-		}
-		p += fmt.Sprintf("%s#%d,0 ", ifaces[len(ifaces)-1].IA,
-			ifaces[len(ifaces)-1].ID)
-		// Check whether the string matches the sequence regexp.
-		//fmt.Printf("EVAL: %s\n", p)
-		if s.re.MatchString(p) {
+		if s.eval(path.Metadata().Interfaces) {
 			result = append(result, path)
 		}
 	}
 	return result
+}
+
+// InterfaceLister can return a list of interfaces.
+// The list should have an even number, as it traverses N ASes, and every AS has 2 interfaces.
+type InterfaceLister interface {
+	Interfaces() []snet.PathInterface
+}
+
+// EvalInterfaces is analogous to Eval, but accepts anything that has interfaces.
+// XXX(juagargi) we need the function since we can't cast slices of types to slices of other types.
+func (s *Sequence) EvalInterfaces(paths []InterfaceLister) []InterfaceLister {
+	if s == nil || s.srcstr == "" {
+		return paths
+	}
+	result := []InterfaceLister{}
+	for _, path := range paths {
+		if s.eval(path.Interfaces()) {
+			result = append(result, path)
+		}
+	}
+	return result
+}
+
+// eval returns true if the list of interfaces passes the filter.
+func (s *Sequence) eval(ifaces []snet.PathInterface) bool {
+	// Path should contain even number of interfaces. 1 for source AS,
+	// 1 for destination AS and 2 per each intermediate AS. Invalid paths should
+	// not occur but if they do let's ignore them.
+	if len(ifaces) == 0 || len(ifaces)%2 != 0 {
+		log.Error("Invalid path with even number of hops", "path", ifaces)
+		return false
+	}
+	// Turn the path into a string. For each AS on the path there will be
+	// one element in form <IA>#<inbound-interface>,<outbound-interface>,
+	// e.g. 64-ff00:0:112#3,5. For the source AS, the inbound interface will be
+	// zero. For destination AS, outbound interface will be zero.
+	p := fmt.Sprintf("%s#0,%d ", ifaces[0].IA, ifaces[0].ID)
+	for i := 1; i < len(ifaces)-1; i += 2 {
+		p += fmt.Sprintf("%s#%d,%d ", ifaces[i].IA,
+			ifaces[i].ID, ifaces[i+1].ID)
+	}
+	p += fmt.Sprintf("%s#%d,0 ", ifaces[len(ifaces)-1].IA,
+		ifaces[len(ifaces)-1].ID)
+	// Check whether the string matches the sequence regexp.
+	//fmt.Printf("EVAL: %s\n", p)
+	return s.re.MatchString(p)
 }
 
 func (s *Sequence) String() string {
