@@ -21,7 +21,9 @@ import (
 	"strings"
 
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
+	"github.com/scionproto/scion/go/lib/snet"
 )
 
 // ReservationTransparentPath represents a reservation path, in the reservation order.
@@ -29,6 +31,8 @@ import (
 // TODO(juagargi) there exists a ColibriPath that could be used instead, if we only
 // need equality. If we need to know the IDs of the transit ASes, it won't be possible.
 type ReservationTransparentPath []PathStepWithIA
+
+var _ snet.PathInterfacesHaver = (*ReservationTransparentPath)(nil)
 
 var _ io.Reader = (*ReservationTransparentPath)(nil)
 
@@ -74,6 +78,25 @@ func (p ReservationTransparentPath) Equal(o ReservationTransparentPath) bool {
 		}
 	}
 	return true
+}
+
+func (p ReservationTransparentPath) Interfaces() []snet.PathInterface {
+	if len(p) == 0 {
+		return nil
+	}
+	ifaces := make([]snet.PathInterface, 0, len(p)*2)
+	for _, step := range p {
+		ig := snet.PathInterface{
+			ID: common.IFIDType(step.Ingress),
+			IA: step.IA,
+		}
+		eg := snet.PathInterface{
+			ID: common.IFIDType(step.Egress),
+			IA: step.IA,
+		}
+		ifaces = append(ifaces, ig, eg)
+	}
+	return ifaces
 }
 
 // GetSrcIA returns the source IA in the path or a zero IA if the path is nil (it's not the

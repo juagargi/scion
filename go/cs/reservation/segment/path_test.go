@@ -21,6 +21,7 @@ import (
 
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
@@ -178,4 +179,23 @@ func TestToFromBinary(t *testing.T) {
 func TestString(t *testing.T) {
 	p := segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
 	require.Equal(t, "0 1-ff00:0:1 1>1 1-ff00:0:2 0", p.String())
+}
+
+func TestPathHasInterfaces(t *testing.T) {
+	p := segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0)
+	ifaces := p.Interfaces()
+	require.Len(t, ifaces, 4)
+	require.Equal(t, common.IFIDType(0), ifaces[0].ID)
+	require.Equal(t, xtest.MustParseIA("1-ff00:0:1"), ifaces[0].IA)
+	require.Equal(t, common.IFIDType(1), ifaces[1].ID)
+	require.Equal(t, xtest.MustParseIA("1-ff00:0:1"), ifaces[1].IA)
+
+	require.Equal(t, common.IFIDType(2), ifaces[2].ID)
+	require.Equal(t, xtest.MustParseIA("1-ff00:0:2"), ifaces[2].IA)
+	require.Equal(t, common.IFIDType(0), ifaces[3].ID)
+	require.Equal(t, xtest.MustParseIA("1-ff00:0:2"), ifaces[3].IA)
+
+	p = segmenttest.NewPathFromComponents()
+	require.Nil(t, p.Interfaces())
+
 }
