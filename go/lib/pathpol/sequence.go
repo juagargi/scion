@@ -87,19 +87,12 @@ func (s *Sequence) Eval(paths []snet.Path) []snet.Path {
 	return result
 }
 
-// InterfaceLister can return a list of interfaces.
-// The list should have an even number, as it traverses N ASes, and every AS has 2 interfaces.
-type InterfaceLister interface {
-	Interfaces() []snet.PathInterface
-}
-
 // EvalInterfaces is analogous to Eval, but accepts anything that has interfaces.
-// XXX(juagargi) we need the function since we can't cast slices of types to slices of other types.
-func (s *Sequence) EvalInterfaces(paths []InterfaceLister) []InterfaceLister {
+func (s *Sequence) EvalInterfaces(paths []snet.PathInterfacesHaver) []snet.PathInterfacesHaver {
 	if s == nil || s.srcstr == "" {
 		return paths
 	}
-	result := []InterfaceLister{}
+	result := []snet.PathInterfacesHaver{}
 	for _, path := range paths {
 		if s.eval(path.Interfaces()) {
 			result = append(result, path)
