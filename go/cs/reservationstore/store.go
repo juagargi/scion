@@ -50,6 +50,12 @@ func NewStore(localIA addr.IA, db backend.DB, admitter admission.Admitter) *Stor
 	}
 }
 
+func (s *Store) GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) (
+	[]*segment.Reservation, error) {
+
+	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, src, dst)
+}
+
 // InitSegmentReservation will start a new segment reservation request. The source of
 // the request will have this very AS as source.
 func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupReq) error {

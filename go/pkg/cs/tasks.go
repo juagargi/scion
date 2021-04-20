@@ -37,6 +37,7 @@ import (
 	"github.com/scionproto/scion/go/lib/pathdb"
 	"github.com/scionproto/scion/go/lib/periodic"
 	"github.com/scionproto/scion/go/lib/revcache"
+	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/snet/addrutil"
 	"github.com/scionproto/scion/go/lib/topology"
@@ -223,13 +224,16 @@ func (t *TasksConfig) DRKeyPrefetcher() *periodic.Runner {
 
 // ColibriManager returns the COLIBRI manager that runs every 8 seconds checking that
 // the segment reservations are healthy.
-func (t *TasksConfig) ColibriManager() *periodic.Runner {
+func (t *TasksConfig) ColibriManager() (*periodic.Runner, error) {
 	if t.ColibriStore == nil {
-		return nil
+		return nil, nil
 	}
-	return periodic.Start(
-		reservationstore.NewColibriManager(t.ColibriStore, t.ColibriInitialRsvs),
-		8*time.Second, 8*time.Second)
+	topo := t.TopoProvider.Get()
+	mgr, err := reservationstore.NewColibriManager(topo.IA(), t.ColibriStore, t.ColibriInitialRsvs)
+	if err != nil {
+		return nil, err
+	}
+	return periodic.Start(mgr, 100*time.Millisecond, 100*time.Millisecond), nil
 }
 
 // Tasks keeps track of the running tasks.
@@ -251,12 +255,16 @@ func StartTasks(cfg TasksConfig) (*Tasks, error) {
 
 	segCleaner := pathdb.NewCleaner(cfg.PathDB, "control_pathstorage_segments")
 	segRevCleaner := revcache.NewCleaner(cfg.RevCache, "control_pathstorage_revocation")
+	colibriManager, err := cfg.ColibriManager()
+	if err != nil {
+		return nil, serrors.WrapStr("colibri manager failed while starting tasks", err)
+	}
 	return &Tasks{
 		Originator:      cfg.Originator(),
 		Propagator:      cfg.Propagator(),
 		Registrars:      cfg.SegmentWriters(),
 		DRKeyPrefetcher: cfg.DRKeyPrefetcher(),
-		ColibriManager:  cfg.ColibriManager(),
+		ColibriManager:  colibriManager,
 		BeaconCleaner: periodic.Start(
 			periodic.Func{
 				Task: func(ctx context.Context) {
