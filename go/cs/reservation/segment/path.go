@@ -26,6 +26,34 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 )
 
+// OpaquePath is used in e.g. setup requests, where the IAs should not be visible.
+type OpaquePath []PathStep
+
+// NewOpaquePathFromInterfaces constructs an OpaquePath given a list of snet.PathInterface .
+// from a scion path e.g. 1-1#1, 1-2#33, 1-2#44, i-3#2
+func NewOpaquePathFromInterfaces(ifaces []snet.PathInterface) (OpaquePath, error) {
+	if len(ifaces)%2 != 0 {
+		return nil, serrors.New("wrong number of interfaces, not even", "ifaces", ifaces)
+	}
+	if len(ifaces) == 0 {
+		return OpaquePath{}, nil
+	}
+	opaque := make(OpaquePath, len(ifaces)/2+1)
+	for i := 0; i < len(opaque)-1; i++ {
+		opaque[i].Egress = uint16(ifaces[i*2].ID)
+		opaque[i+1].Ingress = uint16(ifaces[i*2+1].ID)
+	}
+	return opaque, nil
+}
+
+func (p OpaquePath) String() string {
+	strs := make([]string, len(p))
+	for i, s := range p {
+		strs[i] = fmt.Sprintf("%d,%d", s.Ingress, s.Egress)
+	}
+	return strings.Join(strs, " > ")
+}
+
 // ReservationTransparentPath represents a reservation path, in the reservation order.
 // This path is seen only in the source of a segment reservation.
 // TODO(juagargi) there exists a ColibriPath that could be used instead, if we only
@@ -80,21 +108,22 @@ func (p ReservationTransparentPath) Equal(o ReservationTransparentPath) bool {
 	return true
 }
 
+// Interfaces returns the interfaces in this transparent path.
+// The expected convention for a list of interfaces always go egress and then ingress.
+// So a transparent path like:
+// 0 > 1-1 > 1  , 2 > 1-2 > 3 . 4 > 1-3 > 0
+// becomes a list of snet.PathInterfaces like:
+// 1-1#1 , 1-2#2 , 1-2#3 , 1-3#4
 func (p ReservationTransparentPath) Interfaces() []snet.PathInterface {
-	if len(p) == 0 {
-		return nil
+	if len(p) < 2 {
+		return []snet.PathInterface{}
 	}
-	ifaces := make([]snet.PathInterface, 0, len(p)*2)
-	for _, step := range p {
-		ig := snet.PathInterface{
-			ID: common.IFIDType(step.Ingress),
-			IA: step.IA,
-		}
-		eg := snet.PathInterface{
-			ID: common.IFIDType(step.Egress),
-			IA: step.IA,
-		}
-		ifaces = append(ifaces, ig, eg)
+	ifaces := make([]snet.PathInterface, len(p)*2-2)
+	for i := 0; i < len(ifaces); i += 2 {
+		ifaces[i].IA = p[(i+1)/2].IA
+		ifaces[i].ID = common.IFIDType(p[(i+1)/2].Egress)
+		ifaces[i+1].IA = p[i/2+1].IA
+		ifaces[i+1].ID = common.IFIDType(p[i/2+1].Ingress)
 	}
 	return ifaces
 }
@@ -158,17 +187,19 @@ func (p ReservationTransparentPath) String() string {
 	for i, s := range p {
 		strs[i] = s.String()
 	}
-	return strings.Join(strs, ">")
+	return strings.Join(strs, " > ")
 }
 
-// PathStep is one hop of the ReservationTransparentPath.
-// For a source AS Ingress will be invalid. Conversely for dst.
+// PathStep is one hop of the OpaquePath.
+// For a source AS: Ingress will be invalid. Conversely for dst.
+// So as opposed to snet.Path, these paths have length = number of ASes in the path.
 type PathStep struct {
 	Ingress uint16
 	Egress  uint16
 }
 
-// PathStepWithIA is a step in a reservation path as seen from the source AS.
+// PathStepWithIA is one step of the ReservationTransparentPath.
+// These steps are specified at the source AS.
 type PathStepWithIA struct {
 	PathStep
 	IA addr.IA
@@ -178,5 +209,5 @@ type PathStepWithIA struct {
 const PathStepWithIALen = 2 + 2 + 8
 
 func (s *PathStepWithIA) String() string {
-	return fmt.Sprintf("%d %s %d", s.Ingress, s.IA.String(), s.Egress)
+	return fmt.Sprintf("%s#%d,%d", s.IA.String(), s.Ingress, s.Egress)
 }
