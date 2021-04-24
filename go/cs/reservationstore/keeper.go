@@ -118,7 +118,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		defer entry.mutex.Unlock()
 
 		// filter reservations
-		compatible := entry.Filter(currentRsvs)
+		compatible := entry.Filter(currentRsvs, k.manager.now())
 		entry.activeRsvs = compatible
 		var requestCount int = len(entry.activeRsvs) - minActiveRsvs
 		if requestCount > 0 {
@@ -154,12 +154,6 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 	return nil
 }
 
-func (k *keeper) keepEntry(ctx context.Context, dstIA addr.IA, entry activeEntry,
-	paths []snet.PathInterfacesHaver) error {
-
-	return nil
-}
-
 // activeEntry is a 1 to 1 association to a conf.ReservationEntry
 type activeEntry struct {
 	mutex        *sync.Mutex
@@ -171,10 +165,10 @@ type activeEntry struct {
 const minActiveRsvs = 1
 
 // Filter will filter reservations compatible with the requirements for this entry.
-func (e *activeEntry) Filter(rsvs []*segment.Reservation) []*segment.Reservation {
+func (e *activeEntry) Filter(rsvs []*segment.Reservation, now time.Time) []*segment.Reservation {
 	accepted := make([]*segment.Reservation, 0)
-	for _, rsv := range e.activeRsvs {
-		if e.requirements.Compliant(rsv) {
+	for _, rsv := range rsvs {
+		if e.requirements.Compliant(rsv, now) {
 			accepted = append(accepted, rsv)
 		}
 	}
@@ -221,12 +215,12 @@ type entryRequirements struct {
 	endProps  reservation.PathEndProps
 }
 
-func (r entryRequirements) Compliant(rsv *segment.Reservation) bool {
+func (r entryRequirements) Compliant(rsv *segment.Reservation, now time.Time) bool {
 	idx := rsv.ActiveIndex()
 	switch {
 	case idx == nil:
 		return false
-	case !idx.Expiration.Before(now()):
+	case !idx.Expiration.After(now):
 		return false
 	case idx.MinBW < r.minBW:
 		return false

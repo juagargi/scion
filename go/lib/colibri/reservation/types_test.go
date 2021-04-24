@@ -339,7 +339,7 @@ func TestValidatePathEndPropsWithPathType(t *testing.T) {
 		EP    PathEndProps
 		Valid bool
 	}{
-		// core path
+		// core paths
 		{CorePath, StartLocal | EndLocal, true},
 		{CorePath, StartLocal | EndLocal | EndTransfer, true},
 		{CorePath, StartTransfer | EndTransfer, true},
@@ -347,19 +347,19 @@ func TestValidatePathEndPropsWithPathType(t *testing.T) {
 		{CorePath, StartTransfer, true},
 		{CorePath, EndLocal, false},
 		{CorePath, 0, false},
-		// up path
+		// up paths
 		{UpPath, StartLocal, true},
 		{UpPath, StartLocal | EndLocal | EndTransfer, true},
 		{UpPath, 0, false},
 		{UpPath, StartTransfer, false},
 		{UpPath, StartTransfer | StartLocal, false},
-		// down path
+		// down paths
 		{DownPath, EndLocal, true},
 		{DownPath, EndLocal | StartLocal | StartTransfer, true},
 		{DownPath, 0, false},
 		{DownPath, EndTransfer, false},
 		{DownPath, EndTransfer | EndLocal, false},
-		// peering up path
+		// peering up paths
 		{PeeringUpPath, StartLocal | EndLocal, true},
 		{PeeringUpPath, StartLocal | EndLocal | EndTransfer, true},
 		{PeeringUpPath, 0, false},
@@ -367,7 +367,7 @@ func TestValidatePathEndPropsWithPathType(t *testing.T) {
 		{PeeringUpPath, StartLocal | StartTransfer | EndLocal, false},
 		{PeeringUpPath, StartTransfer | EndLocal, false},
 		{PeeringUpPath, EndLocal, false},
-		// peering down path
+		// peering down paths
 		{PeeringDownPath, EndLocal | StartLocal, true},
 		{PeeringDownPath, EndLocal | StartLocal | StartTransfer, true},
 		{PeeringDownPath, 0, false},

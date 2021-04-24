@@ -15,10 +15,14 @@
 package segmenttest
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
@@ -79,13 +83,150 @@ func NewIfaces(args ...interface{}) []snet.PathInterface {
 }
 
 func NewReservation() *segment.Reservation {
-	segID, err := reservation.NewSegmentID(xtest.MustParseAS("ff00:0:1"),
-		xtest.MustParseHexString("beefcafe"))
+	return NewRsv(
+		WithID("ff00:0:1", "beefcafe"),
+		WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0))
+}
+
+type ReservationMod func(*segment.Reservation) *segment.Reservation
+
+func NewRsv(mods ...ReservationMod) *segment.Reservation {
+	rsv := segment.NewReservation()
+	return ModRsv(rsv, mods...)
+}
+
+func ModRsv(rsv *segment.Reservation, mods ...ReservationMod) *segment.Reservation {
+	for _, mod := range mods {
+		rsv = mod(rsv)
+	}
+	return rsv
+}
+
+func NewRsvs(n int, mods ...ReservationMod) []*segment.Reservation {
+	rsvs := make([]*segment.Reservation, n)
+	for i := 0; i < n; i++ {
+		rsvs[i] = NewRsv(mods...)
+	}
+	return rsvs
+}
+
+func ModRsvs(rsvs []*segment.Reservation, mods ...ReservationMod) {
+	for i, rsv := range rsvs {
+		for _, mod := range mods {
+			rsv = mod(rsv)
+		}
+		rsvs[i] = rsv
+	}
+}
+
+func WithID(as, suffix string) ReservationMod {
+	as_ := xtest.MustParseAS(as)
+	id, err := reservation.NewSegmentID(as_, xtest.MustParseHexString(suffix))
 	if err != nil {
 		panic(err)
 	}
-	r := segment.NewReservation()
-	r.ID = *segID
-	r.Path = NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
-	return r
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		rsv.ID = *id
+		return rsv
+	}
+}
+
+func WithPath(path ...interface{}) ReservationMod {
+	transparent := NewPathFromComponents(path...)
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		rsv.Path = transparent
+		return rsv
+	}
+}
+
+func WithIngressEgress(ig, eg int) ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		if ig > 0 {
+			rsv.Ingress = uint16(ig)
+		}
+		if eg > 0 {
+			rsv.Egress = uint16(eg)
+		}
+		return rsv
+	}
+}
+
+func WithTrafficSplit(split int) ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		rsv.TrafficSplit = reservation.SplitCls(split)
+		return rsv
+	}
+}
+
+func WithEndProps(endProps reservation.PathEndProps) ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		rsv.PathEndProps = endProps
+		return rsv
+	}
+}
+
+func WithActiveIndex(idx int) ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		if err := rsv.SetIndexConfirmed(reservation.IndexNumber(idx)); err != nil {
+			panic(err)
+		}
+		if err := rsv.SetIndexActive(reservation.IndexNumber(idx)); err != nil {
+			panic(err)
+		}
+		return rsv
+	}
+}
+
+type IndexMod func(*segment.Index)
+
+func AddIndex(mods ...IndexMod) ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		expTime := util.SecsToTime(0)
+		if rsv.Indices.Len() > 0 {
+			expTime = rsv.Indices.GetExpiration(rsv.Indices.Len() - 1)
+		}
+		idx, err := rsv.NewIndexAtSource(expTime, 0, 0, 0, 0, 0)
+		if err != nil {
+			panic(err)
+		}
+		index := rsv.Index(idx)
+		for _, mod := range mods {
+			mod(index)
+		}
+		return rsv
+	}
+}
+
+func ModIndex(idx reservation.IndexNumber, mods ...IndexMod) ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		index := rsv.Index(idx)
+		if index == nil {
+			panic(fmt.Errorf("index is nil. idx = %d, len = %d", idx, rsv.Indices.Len()))
+		}
+		for _, mod := range mods {
+			mod(index)
+		}
+		return rsv
+	}
+}
+
+func WithBW(min, max, alloc int) IndexMod {
+	return func(index *segment.Index) {
+		if min > 0 {
+			index.MinBW = reservation.BWCls(min)
+		}
+		if max > 0 {
+			index.MaxBW = reservation.BWCls(max)
+		}
+		if alloc > 0 {
+			index.AllocBW = reservation.BWCls(alloc)
+		}
+	}
+}
+
+func WithExpiration(exp time.Time) IndexMod {
+	return func(index *segment.Index) {
+		index.Expiration = exp
+		index.Token.ExpirationTick = reservation.TickFromTime(exp)
+	}
 }

@@ -28,15 +28,10 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 )
 
-var now func() time.Time // to be able to replace it in tests
-
-func init() {
-	now = time.Now
-}
-
 // Manager takes care of the health of the segment reservations.
 // TODO(juagargi) do the Manager interface
 type Manager struct {
+	now        func() time.Time // replace in tests
 	keeper     *keeper
 	localIA    addr.IA
 	store      reservationstorage.Store
@@ -49,6 +44,7 @@ func NewColibriManager(localIA addr.IA, store reservationstorage.Store,
 	initial conf.Reservations) (*Manager, error) {
 
 	m := &Manager{
+		now:        time.Now,
 		localIA:    localIA,
 		store:      store,
 		wakeupTime: time.Now().Add(-time.Second),

@@ -15,12 +15,18 @@
 package reservationstore
 
 import (
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	st "github.com/scionproto/scion/go/cs/reservation/segmenttest"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/pathpol"
+	"github.com/scionproto/scion/go/lib/util"
+	"github.com/scionproto/scion/go/lib/xtest"
 )
 
 func TestSplitRequests(t *testing.T) {
@@ -66,6 +72,72 @@ func TestSplitRequests(t *testing.T) {
 	}
 }
 
+func TestActiveEntryFilter(t *testing.T) {
+	now := util.SecsToTime(0)
+	tomorrow := now.Add(3600 * 24 * time.Second)
+	requirements := entryRequirements{
+		predicate: newSequence(t, "1-ff00:0:1#0,1 1-ff00:0:2 0*"),
+		minBW:     10,
+		maxBW:     42,
+		splitCls:  2,
+		endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+	}
+
+	cases := map[string]struct {
+		requirements entryRequirements
+		expectedLen  int
+		rsvs         []*segment.Reservation
+	}{
+		"empty": {
+			requirements: requirements,
+			expectedLen:  0,
+			rsvs:         nil,
+		},
+		"three_identical": {
+			requirements: requirements,
+			expectedLen:  3,
+			rsvs: st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow.Add(24*time.Hour))),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+		},
+		"a non active index of all rsvs is modified to uncompliant": {
+			requirements: requirements,
+			expectedLen:  3,
+			rsvs: st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
+				st.AddIndex(st.WithBW(3, 24, 0), st.WithExpiration(tomorrow.Add(24*time.Hour))),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+		},
+		"active index of first rsv is modified to uncompliant": {
+			requirements: requirements,
+			expectedLen:  2,
+			rsvs: modOneRsv(st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow.Add(24*time.Hour))),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)), 0, st.ModIndex(0, st.WithBW(3, 0, 0))),
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			en := activeEntry{
+				requirements: tc.requirements,
+				mutex:        new(sync.Mutex),
+			}
+			compliant := en.Filter(tc.rsvs, now)
+			require.Len(t, compliant, tc.expectedLen)
+		})
+	}
+}
+
 func fakeReqs(ids ...int) []*segment.SetupReq {
 	reqs := make([]*segment.SetupReq, len(ids))
 	for i, id := range ids {
@@ -78,4 +150,18 @@ func fakeReq(id int) *segment.SetupReq {
 	return &segment.SetupReq{
 		MinBW: reservation.BWCls(id),
 	}
+}
+
+func newSequence(t *testing.T, str string) *pathpol.Sequence {
+	t.Helper()
+	seq, err := pathpol.NewSequence(str)
+	xtest.FailOnErr(t, err)
+	return seq
+}
+
+func modOneRsv(rsvs []*segment.Reservation, whichRsv int,
+	mods ...st.ReservationMod) []*segment.Reservation {
+
+	rsvs[whichRsv] = st.ModRsv(rsvs[whichRsv], mods...)
+	return rsvs
 }
