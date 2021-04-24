@@ -178,7 +178,9 @@ func (e *activeEntry) Filter(rsvs []*segment.Reservation, now time.Time) []*segm
 // PrepareSetupRequests creates new reservation requests compliant with the requirements.
 // This function creates as many reservations requests as there are
 // scion paths compatible with the requirements.
-func (e *activeEntry) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver) ([]*segment.SetupReq, error) {
+func (e *activeEntry) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver) (
+	[]*segment.SetupReq, error) {
+
 	// filter paths
 	filtered := e.requirements.predicate.EvalInterfaces(ifaces)
 	requests := make([]*segment.SetupReq, len(filtered))
@@ -203,8 +205,11 @@ func (e *activeEntry) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver) ([
 }
 
 func (e *activeEntry) SelectRequests(requests []*segment.SetupReq, n int) []int {
+	if n > len(requests) {
+		n = len(requests)
+	}
 	rand.Seed(time.Now().UnixNano()) // TODO(juagargi) select using better criteria
-	return rand.Perm(len(requests))
+	return rand.Perm(n)
 }
 
 type entryRequirements struct {
@@ -239,7 +244,8 @@ func (r entryRequirements) Compliant(rsv *segment.Reservation, now time.Time) bo
 // splitRequests takes a slice of requests and indices, and returns two slices:
 // first, those elements in the indices, in the exact order as specified in indices.
 // second, all the other elements.
-func splitRequests(requests []*segment.SetupReq, indices []int) ([]*segment.SetupReq, []*segment.SetupReq) {
+func splitRequests(requests []*segment.SetupReq, indices []int) (
+	[]*segment.SetupReq, []*segment.SetupReq) {
 	a := make([]*segment.SetupReq, len(indices))
 	b := append(requests[:0:0], requests...)
 	for i, idx := range indices {

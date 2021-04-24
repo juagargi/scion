@@ -138,6 +138,56 @@ func TestActiveEntryFilter(t *testing.T) {
 	}
 }
 
+func TestSelectRequests(t *testing.T) {
+	entry := activeEntry{
+		requirements: entryRequirements{
+			predicate: newSequence(t, "1-ff00:0:1#0,1 1-ff00:0:2 0*"),
+			minBW:     10,
+			maxBW:     42,
+			splitCls:  2,
+			endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+		},
+		mutex:      new(sync.Mutex),
+		activeRsvs: nil,
+	}
+	cases := map[string]struct {
+		requests    []*segment.SetupReq
+		n           int
+		expectedLen int
+	}{
+		"regular": {
+			requests:    make([]*segment.SetupReq, 8),
+			n:           3,
+			expectedLen: 3,
+		},
+		"no requests": {
+			requests:    make([]*segment.SetupReq, 0),
+			n:           3,
+			expectedLen: 0,
+		},
+		"asked too many": {
+			requests:    make([]*segment.SetupReq, 8),
+			n:           9,
+			expectedLen: 8,
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			indices := entry.SelectRequests(tc.requests, tc.n)
+			require.Len(t, indices, tc.expectedLen)
+			visited := make(map[int]struct{}, len(indices))
+			for _, idx := range indices {
+				_, ok := visited[idx]
+				require.False(t, ok, "selected indices have duplicates: %v", indices)
+				visited[idx] = struct{}{}
+				require.Less(t, idx, len(tc.requests))
+			}
+		})
+	}
+}
+
 func fakeReqs(ids ...int) []*segment.SetupReq {
 	reqs := make([]*segment.SetupReq, len(ids))
 	for i, id := range ids {
