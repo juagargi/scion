@@ -28,9 +28,20 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 )
 
-// Manager takes care of the health of the segment reservations.
-// TODO(juagargi) do the Manager interface
-type Manager struct {
+// Manager is what a colibri manager requires to expose.
+type Manager interface {
+	periodic.Task
+	Now() time.Time
+	LocalIA() addr.IA
+	Store() reservationstorage.Store
+	// TODO(juagargi) move to sub interface, e.g. pather, comms manager,...
+	PathsTo(dst addr.IA) ([]snet.PathInterfacesHaver, error)
+	Request(ctx context.Context, req *segment.SetupReq) (*segment.Reservation, error)
+	RequestMany(ctx context.Context, reqs []*segment.SetupReq) ([]*segment.Reservation, []error)
+}
+
+// manager takes care of the health of the segment reservations.
+type manager struct {
 	now        func() time.Time // replace in tests
 	keeper     *keeper
 	localIA    addr.IA
@@ -38,12 +49,10 @@ type Manager struct {
 	wakeupTime time.Time // no need to do anything until this time
 }
 
-var _ periodic.Task = (*Manager)(nil)
-
 func NewColibriManager(localIA addr.IA, store reservationstorage.Store,
-	initial conf.Reservations) (*Manager, error) {
+	initial conf.Reservations) (Manager, error) {
 
-	m := &Manager{
+	m := &manager{
 		now:        time.Now,
 		localIA:    localIA,
 		store:      store,
@@ -58,11 +67,11 @@ func NewColibriManager(localIA addr.IA, store reservationstorage.Store,
 	return m, nil
 }
 
-func (m *Manager) Name() string {
-	return "colibri.Manager"
+func (m *manager) Name() string {
+	return "colibri.manager"
 }
 
-func (m *Manager) Run(ctx context.Context) {
+func (m *manager) Run(ctx context.Context) {
 	logger := log.FromCtx(ctx)
 
 	if time.Now().Before(m.wakeupTime) {
@@ -72,12 +81,24 @@ func (m *Manager) Run(ctx context.Context) {
 	defer logger.Debug("Reservation manager finished")
 }
 
-func (m *Manager) pathsTo(dst addr.IA) ([]snet.PathInterfacesHaver, error) {
+func (m *manager) Now() time.Time {
+	return m.now()
+}
+
+func (m *manager) LocalIA() addr.IA {
+	return m.localIA
+}
+
+func (m *manager) Store() reservationstorage.Store {
+	return m.store
+}
+
+func (m *manager) PathsTo(dst addr.IA) ([]snet.PathInterfacesHaver, error) {
 	// TODO
 	return nil, nil
 }
 
-func (m *Manager) request(ctx context.Context, req *segment.SetupReq) (
+func (m *manager) Request(ctx context.Context, req *segment.SetupReq) (
 	*segment.Reservation, error) {
 
 	err := m.store.InitSegmentReservation(ctx, req)
@@ -85,7 +106,7 @@ func (m *Manager) request(ctx context.Context, req *segment.SetupReq) (
 	return req.Reservation, err
 }
 
-func (m *Manager) requestMany(ctx context.Context, reqs []*segment.SetupReq) (
+func (m *manager) RequestMany(ctx context.Context, reqs []*segment.SetupReq) (
 	[]*segment.Reservation, []error) {
 
 	wg := sync.WaitGroup{}
@@ -97,7 +118,7 @@ func (m *Manager) requestMany(ctx context.Context, reqs []*segment.SetupReq) (
 		go func(req *segment.SetupReq) {
 			defer log.HandlePanic()
 			defer wg.Done()
-			rsvs[i], errs[i] = m.request(ctx, req)
+			rsvs[i], errs[i] = m.Request(ctx, req)
 		}(req)
 	}
 	wg.Wait()

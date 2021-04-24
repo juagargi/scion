@@ -45,13 +45,13 @@ import (
 // The keeper always knows the nearest point in time when a reservation will expire.
 
 type keeper struct {
-	manager     *Manager
+	manager     Manager
 	entries     map[addr.IA][]activeEntry
 	minDuration time.Duration // min validity in the future for the reservations
 	// TODO(juagargi) use minDuration in both the setup and in the renew, so that we always have indices ready
 }
 
-func NewKeeper(manager *Manager, conf conf.Reservations) (
+func NewKeeper(manager Manager, conf conf.Reservations) (
 	*keeper, error) {
 
 	entries, err := parseInitial(conf)
@@ -73,7 +73,7 @@ func (k *keeper) OneShot(ctx context.Context) error {
 		go func() {
 			defer log.HandlePanic()
 			defer wg.Done()
-			scionPaths, err := k.manager.pathsTo(dst)
+			scionPaths, err := k.manager.PathsTo(dst)
 			if err != nil {
 				log.Error("keeping the reservations", "err", err)
 			}
@@ -91,7 +91,7 @@ func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []a
 	paths []snet.PathInterfacesHaver) error {
 
 	// get reservations once and pass them along.
-	rsvs, err := k.manager.store.GetSegmentRsvsFromSrcDstIA(ctx, k.manager.localIA, dstIA)
+	rsvs, err := k.manager.Store().GetSegmentRsvsFromSrcDstIA(ctx, k.manager.LocalIA(), dstIA)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		defer entry.mutex.Unlock()
 
 		// filter reservations
-		compatible := entry.Filter(currentRsvs, k.manager.now())
+		compatible := entry.Filter(currentRsvs, k.manager.Now())
 		entry.activeRsvs = compatible
 		var requestCount int = len(entry.activeRsvs) - minActiveRsvs
 		if requestCount > 0 {
@@ -142,7 +142,7 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 	for pendingCount > 0 && len(requests) > 0 {
 		indices := entry.SelectRequests(requests, pendingCount)
 		setups, requests = splitRequests(requests, indices)
-		rsvs, errs := k.manager.requestMany(ctx, setups)
+		rsvs, errs := k.manager.RequestMany(ctx, setups)
 		if len(errs) > 0 {
 			log.Info("errors while requesting reservations", "errs", errs)
 		}
