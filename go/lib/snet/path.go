@@ -69,6 +69,7 @@ func (iface PathInterface) String() string {
 // The interface list returned typically has an even number, as it traverses
 // N ASeswith 2 interfaces each.
 type PathInterfacesHaver interface {
+	fmt.Stringer
 	Interfaces() []PathInterface
 }
 

@@ -109,7 +109,7 @@ func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []a
 }
 
 // setupsPerDestination process all entries for a given IA sequentially, to avoid
-// reservation racing.
+// reservation racing. It creates the setup requests and later sends them.
 func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entries []activeEntry,
 	paths []snet.PathInterfacesHaver, currentRsvs []*segment.Reservation) error {
 
@@ -120,14 +120,17 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		// filter reservations
 		compatible := entry.Filter(currentRsvs, k.manager.Now())
 		entry.activeRsvs = compatible
-		var requestCount int = len(entry.activeRsvs) - minActiveRsvs
+		var requestCount int = minActiveRsvs - len(entry.activeRsvs)
 		if requestCount > 0 {
 			requests, err := entry.PrepareSetupRequests(paths)
 			if err != nil {
 				return serrors.WrapStr("cannot setup new reservations", err, "paths", paths)
 			}
 			// this will block until successfully finished
-			return k.requestNSuccessfulRsvs(ctx, dstIA, entry, requests, requestCount)
+			err = k.requestNSuccessfulRsvs(ctx, dstIA, entry, requests, requestCount)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -190,6 +193,7 @@ func (e *activeEntry) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver) (
 		if err != nil {
 			return nil, err
 		}
+		// TODO(juagargi) complete filling up the request (exp time, etc)
 		req := &segment.SetupReq{
 			Request:    segment.Request{},
 			MinBW:      e.requirements.minBW,
