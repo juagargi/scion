@@ -290,3 +290,33 @@ func TestNewOpaquePathFromInterfaces(t *testing.T) {
 		})
 	}
 }
+
+func TestTransparentToOpaque(t *testing.T) {
+	cases := map[string]struct {
+		transparent segment.ReservationTransparentPath
+		expected    segment.OpaquePath
+	}{
+		"nil": {
+			transparent: nil,
+			expected:    segment.OpaquePath{},
+		},
+		"empty": {
+			transparent: segment.ReservationTransparentPath{},
+			expected:    segment.OpaquePath{},
+		},
+		"one step": {
+			transparent: segmenttest.NewPathFromComponents(0, "0-0", 1),
+			expected:    segmenttest.NewOpaquePathFromComponents(0, 1),
+		},
+		"two steps": {
+			transparent: segmenttest.NewPathFromComponents(0, "0-0", 1, 2, "0-0", 0),
+			expected:    segmenttest.NewOpaquePathFromComponents(0, 1, 2, 0),
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.transparent.Opaque())
+		})
+	}
+}

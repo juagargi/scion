@@ -190,6 +190,14 @@ func (p ReservationTransparentPath) String() string {
 	return strings.Join(strs, " > ")
 }
 
+func (p ReservationTransparentPath) Opaque() OpaquePath {
+	opaque := make(OpaquePath, len(p))
+	for i, step := range p {
+		opaque[i] = step.PathStep
+	}
+	return opaque
+}
+
 // PathStep is one hop of the OpaquePath.
 // For a source AS: Ingress will be invalid. Conversely for dst.
 // So as opposed to snet.Path, these paths have length = number of ASes in the path.
