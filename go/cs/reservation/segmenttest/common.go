@@ -88,13 +88,19 @@ func NewReservation() *segment.Reservation {
 		WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0))
 }
 
+// ReservationMod allows the configuration of reservations via function calls, aka
+// functional options.
+// As this signature is used only in tests, it doesn't return an error: it assumes that
+// the function implementing the option will panic if error.
 type ReservationMod func(*segment.Reservation) *segment.Reservation
 
+// NewRsv creates a reservation configured via functional options.
 func NewRsv(mods ...ReservationMod) *segment.Reservation {
 	rsv := segment.NewReservation()
 	return ModRsv(rsv, mods...)
 }
 
+// ModRsv simply modifies an existing reservation via functional options.
 func ModRsv(rsv *segment.Reservation, mods ...ReservationMod) *segment.Reservation {
 	for _, mod := range mods {
 		rsv = mod(rsv)
@@ -102,6 +108,7 @@ func ModRsv(rsv *segment.Reservation, mods ...ReservationMod) *segment.Reservati
 	return rsv
 }
 
+// NewRsvs creates a number of reservations configured via functional options.
 func NewRsvs(n int, mods ...ReservationMod) []*segment.Reservation {
 	rsvs := make([]*segment.Reservation, n)
 	for i := 0; i < n; i++ {
@@ -110,6 +117,7 @@ func NewRsvs(n int, mods ...ReservationMod) []*segment.Reservation {
 	return rsvs
 }
 
+// ModRsvs modifies existing reservations  via functional options.
 func ModRsvs(rsvs []*segment.Reservation, mods ...ReservationMod) {
 	for i, rsv := range rsvs {
 		for _, mod := range mods {
@@ -119,6 +127,7 @@ func ModRsvs(rsvs []*segment.Reservation, mods ...ReservationMod) {
 	}
 }
 
+// WithID sets the ID specified with as and suffix to the reservation.
 func WithID(as, suffix string) ReservationMod {
 	as_ := xtest.MustParseAS(as)
 	id, err := reservation.NewSegmentID(as_, xtest.MustParseHexString(suffix))
@@ -165,6 +174,7 @@ func WithEndProps(endProps reservation.PathEndProps) ReservationMod {
 	}
 }
 
+// WithActiveIndex sets the index specified with idx as active.
 func WithActiveIndex(idx int) ReservationMod {
 	return func(rsv *segment.Reservation) *segment.Reservation {
 		if err := rsv.SetIndexConfirmed(reservation.IndexNumber(idx)); err != nil {
@@ -177,8 +187,12 @@ func WithActiveIndex(idx int) ReservationMod {
 	}
 }
 
+// IndexMod allows the creation of indices with parameters via functional configuration.
+// This type doesn't return an error, thus assumes the functional option will panic or ignore
+// the error.
 type IndexMod func(*segment.Index)
 
+// AddIndex adds a new index, modified via functional options, to the reservation.
 func AddIndex(mods ...IndexMod) ReservationMod {
 	return func(rsv *segment.Reservation) *segment.Reservation {
 		expTime := util.SecsToTime(0)
@@ -197,6 +211,7 @@ func AddIndex(mods ...IndexMod) ReservationMod {
 	}
 }
 
+// ModIndex applies the functional options to the index specified.
 func ModIndex(idx reservation.IndexNumber, mods ...IndexMod) ReservationMod {
 	return func(rsv *segment.Reservation) *segment.Reservation {
 		index := rsv.Index(idx)
@@ -210,6 +225,7 @@ func ModIndex(idx reservation.IndexNumber, mods ...IndexMod) ReservationMod {
 	}
 }
 
+// WithBW changes the min, max and/or alloc BW if their values are > 0.
 func WithBW(min, max, alloc int) IndexMod {
 	return func(index *segment.Index) {
 		if min > 0 {
@@ -224,6 +240,7 @@ func WithBW(min, max, alloc int) IndexMod {
 	}
 }
 
+// WithExpiration sets the expiration to the index (and its token).
 func WithExpiration(exp time.Time) IndexMod {
 	return func(index *segment.Index) {
 		index.Expiration = exp
