@@ -144,7 +144,7 @@ func TestKeepOneShot(t *testing.T) {
 				func(dstIA addr.IA) ([]snet.PathInterfacesHaver, error) {
 					return tc.paths[dstIA], nil
 				})
-			manager.EXPECT().RequestMany(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
+			manager.EXPECT().RequestMany(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
 				func(_ context.Context, reqs []*segment.SetupReq) ([]*segment.Reservation, error) {
 					return make([]*segment.Reservation, len(reqs)), nil
 				})
@@ -368,44 +368,70 @@ func TestActiveEntryFilter(t *testing.T) {
 	}
 
 	cases := map[string]struct {
-		requirements entryRequirements
-		expectedLen  int
-		rsvs         []*segment.Reservation
+		requirements      entryRequirements
+		atLeastUntil      time.Time
+		expectedCompliant int
+		expectedMayBe     int
+		rsvs              []*segment.Reservation
 	}{
 		"empty": {
 			requirements: requirements,
-			expectedLen:  0,
+			atLeastUntil: now,
 			rsvs:         nil,
 		},
 		"three_identical": {
-			requirements: requirements,
-			expectedLen:  3,
+			requirements:      requirements,
+			atLeastUntil:      now,
+			expectedCompliant: 3,
 			rsvs: st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow.Add(24*time.Hour))),
+				st.ConfirmAllIndices(),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
 				st.WithEndProps(requirements.endProps)),
 		},
-		"a non active index of all rsvs is modified to uncompliant": {
-			requirements: requirements,
-			expectedLen:  3,
+		"a pending (non active) index of all rsvs is uncompliant": {
+			requirements:      requirements,
+			atLeastUntil:      now,
+			expectedCompliant: 3,
 			rsvs: st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
+				// next index is uncompliant
 				st.AddIndex(st.WithBW(3, 24, 0), st.WithExpiration(tomorrow.Add(24*time.Hour))),
+				st.ConfirmAllIndices(),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
 				st.WithEndProps(requirements.endProps)),
 		},
-		"active index of first rsv is modified to uncompliant": {
-			requirements: requirements,
-			expectedLen:  2,
+		"active index of first rsv is uncompliant but still one compliant index": {
+			requirements:      requirements,
+			atLeastUntil:      now,
+			expectedCompliant: 3,
 			rsvs: modOneRsv(st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow.Add(24*time.Hour))),
+				st.ConfirmAllIndices(),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)), 0, st.ModIndex(0, st.WithBW(3, 0, 0))),
+				st.WithEndProps(requirements.endProps)),
+				0, st.ModIndex(0, st.WithBW(3, 0, 0))), // index 0 of rsv 0
+		},
+		"first rsv with two indices, both uncompliant": {
+			requirements:      requirements,
+			atLeastUntil:      now,
+			expectedCompliant: 2,
+			expectedMayBe:     1,
+			rsvs: modOneRsv(st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow.Add(24*time.Hour))),
+				st.ConfirmAllIndices(),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+				0,                                   // first reservation
+				st.ModIndex(0, st.WithBW(3, 0, 0)),  // index 0
+				st.ModIndex(1, st.WithBW(3, 0, 0))), // index 1
 		},
 	}
 	for name, tc := range cases {
@@ -416,8 +442,137 @@ func TestActiveEntryFilter(t *testing.T) {
 				requirements: tc.requirements,
 				mutex:        new(sync.Mutex),
 			}
-			compliant := en.Filter(tc.rsvs, now)
-			require.Len(t, compliant, tc.expectedLen)
+			compliant, couldBeCompliant, neverCompliant :=
+				en.SplitByCompliance(tc.rsvs, tc.atLeastUntil)
+			require.Len(t, compliant, tc.expectedCompliant)
+			require.Len(t, couldBeCompliant, tc.expectedMayBe)
+			require.Len(t, neverCompliant, len(tc.rsvs)-tc.expectedCompliant-tc.expectedMayBe)
+		})
+	}
+}
+
+func TestActiveEntryCompliance(t *testing.T) {
+	now := util.SecsToTime(0)
+	tomorrow := now.Add(3600 * 24 * time.Second)
+	requirements := entryRequirements{
+		predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+		minBW:     10,
+		maxBW:     42,
+		splitCls:  2,
+		endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+	}
+	cases := map[string]struct {
+		requirements       entryRequirements
+		rsv                *segment.Reservation
+		atLeastUntil       time.Time
+		expectedCompliance Compliance
+	}{
+		"compliant, one index": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: Compliant,
+		},
+		"one compliant index but bad traffic split": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(1),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: NeverCompliant,
+		},
+		"bad end props": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(reservation.EndLocal)),
+			atLeastUntil:       now,
+			expectedCompliance: NeverCompliant,
+		},
+		"bad path": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 2, "1-ff00:0:3", 3, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: NeverCompliant,
+		},
+		"one non compliant index, minbw": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(1, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: CouldBeCompliant,
+		},
+		"one non compliant index, maxbw": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 44, 0), st.WithExpiration(tomorrow)),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: CouldBeCompliant,
+		},
+		"one non compliant index, expired": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(now)),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: CouldBeCompliant,
+		},
+		"no active indices": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: CouldBeCompliant,
+		},
+		"no indices": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: CouldBeCompliant,
+		},
+		"compliant in the past, not now": {
+			requirements: requirements,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.AddIndex(st.WithBW(1, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithActiveIndex(1), // will destroy index 0
+				st.WithTrafficSplit(2),
+				st.WithEndProps(requirements.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: CouldBeCompliant,
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cmplnce := tc.requirements.Compliance(tc.rsv, tc.atLeastUntil)
+			require.Equal(t, tc.expectedCompliance, cmplnce,
+				"expected %s got %s", tc.expectedCompliance, cmplnce)
 		})
 	}
 }

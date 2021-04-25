@@ -187,6 +187,22 @@ func WithActiveIndex(idx int) ReservationMod {
 	}
 }
 
+func ConfirmAllIndices() ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		if rsv == nil || rsv.Indices.Len() == 0 {
+			return rsv
+		}
+		for _, idx := range rsv.Indices {
+			if idx.State() != segment.IndexActive {
+				if err := rsv.SetIndexConfirmed(idx.Idx); err != nil {
+					panic(err)
+				}
+			}
+		}
+		return rsv
+	}
+}
+
 // IndexMod allows the creation of indices with parameters via functional configuration.
 // This type doesn't return an error, thus assumes the functional option will panic or ignore
 // the error.
