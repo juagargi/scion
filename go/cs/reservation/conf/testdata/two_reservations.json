@@ -9,7 +9,8 @@
       "end_props": {
         "end": null,
         "start": null
-      }
+      },
+      "required_count": 1
     },
     {
       "destination": "1-ff00:1:113",
@@ -24,7 +25,8 @@
         "start": [
           "T"
         ]
-      }
+      },
+      "required_count": 2
     }
   ]
 }

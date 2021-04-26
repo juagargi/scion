@@ -51,6 +51,7 @@ type ReservationEntry struct {
 	MinSize       reservation.BWCls    `json:"min_size"`
 	SplitCls      reservation.SplitCls `json:"split_cls"`
 	EndProps      endProps             `json:"end_props"`
+	RequiredCount int                  `json:"required_count"`
 }
 
 type endProps struct {

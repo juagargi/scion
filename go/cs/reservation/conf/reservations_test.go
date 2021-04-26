@@ -40,6 +40,7 @@ func TestReservationsJson(t *testing.T) {
 						MinSize:       7,
 						SplitCls:      7,
 						EndProps:      endProps{reservation.NewPathEndProps(true, true, true, true)},
+						RequiredCount: 3,
 					},
 				},
 			},
@@ -55,6 +56,7 @@ func TestReservationsJson(t *testing.T) {
 						MinSize:       7,
 						SplitCls:      7,
 						EndProps:      endProps{reservation.NewPathEndProps(false, false, false, false)},
+						RequiredCount: 1,
 					},
 					{
 						DstAS:         xtest.MustParseIA("1-ff00:1:113"),
@@ -63,6 +65,7 @@ func TestReservationsJson(t *testing.T) {
 						MinSize:       7,
 						SplitCls:      7,
 						EndProps:      endProps{reservation.NewPathEndProps(false, true, true, false)},
+						RequiredCount: 2,
 					},
 				},
 			},
@@ -76,7 +79,6 @@ func TestReservationsJson(t *testing.T) {
 			buf, err := json.MarshalIndent(tc.rsvs, "", "  ")
 			buf = append(buf, '\n')
 			require.NoError(t, err)
-			// fmt.Println(string(buf))
 			expectedJSON := xtest.MustReadFromFile(t, tc.filename)
 			require.Equal(t, expectedJSON, buf, "serialized failed.\nexpected: %s\nactual: %s",
 				string(expectedJSON), string(buf))
