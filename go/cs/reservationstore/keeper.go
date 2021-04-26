@@ -49,7 +49,7 @@ type keeper struct {
 	manager     Manager
 	entries     map[addr.IA][]activeEntry
 	minDuration time.Duration // min validity in the future for the reservations
-	// TODO(juagargi) use minDuration in both the setup and in the renew, so that we always have indices ready
+	// TODO(juagargi) use minDuration in both the setup and in the renew, so that we always have indices ready to be switched
 }
 
 func NewKeeper(manager Manager, conf conf.Reservations) (
@@ -84,7 +84,7 @@ func (k *keeper) OneShot(ctx context.Context) error {
 			}
 		}()
 	}
-	wg.Wait() // TODO(juagargi) use timeouts instead of blocking forever in all calls to wg.Wait()
+	wg.Wait()
 	return nil
 }
 
@@ -101,8 +101,9 @@ func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []a
 	if err != nil {
 		return serrors.WrapStr("keeping destination", err, "dst", dstIA)
 	}
-	// renew the reservations
-	// TODO(juagargi)
+	// reservations in keeper.entries are Compliant or CouldBeCompliant,
+	// so they might have to switch indices
+	// TODO(juagargi) save the Compliant and CouldBeCompliant difference in the keeper
 	//
 	//
 
@@ -136,7 +137,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			return err
 		}
 		// totally new reservations:
-		var requestCount int = minActiveRsvs - len(entry.activeRsvs)
+		var requestCount int = entry.minActiveRsvs - len(entry.activeRsvs)
 		if err := k.askNewReservations(ctx, requestCount, dstIA, entry, paths); err != nil {
 			return err
 		}
@@ -211,13 +212,11 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 
 // activeEntry is a 1 to 1 association to a conf.ReservationEntry
 type activeEntry struct {
-	mutex        *sync.Mutex
-	requirements entryRequirements
-	activeRsvs   []*seg.Reservation
-	// minActiveRsvs int // TODO(juagargi) allow to setup a value here instead of the const minActiveRsvs
+	mutex         *sync.Mutex
+	requirements  entryRequirements
+	activeRsvs    []*seg.Reservation
+	minActiveRsvs int
 }
-
-const minActiveRsvs = 1
 
 // SplitByCompliance will split the reservations into three groups:
 // compliant, could be compliant and not compliant, according to the requirements of this entry.
@@ -354,15 +353,25 @@ func parseInitial(conf conf.Reservations) (map[addr.IA][]activeEntry, error) {
 			return nil, err
 		}
 
+		if r.RequiredCount <= 0 {
+			return nil, serrors.New("required reservation count must be positive",
+				"count", r.RequiredCount)
+		}
+		if r.MinSize > r.MaxSize {
+			return nil, serrors.New("min bw must be less or equal than max bw",
+				"min_bw", r.MinSize, "max_bw", r.MaxSize)
+		}
+
 		initial[r.DstAS] = append(initial[r.DstAS], activeEntry{
 			requirements: entryRequirements{
 				predicate: seq,
 				minBW:     r.MinSize,
 				maxBW:     r.MaxSize,
 				splitCls:  r.SplitCls,
-				endProps:  r.EndProps.PathEndProps,
+				endProps:  reservation.PathEndProps(r.EndProps),
 			},
-			mutex: new(sync.Mutex),
+			mutex:         new(sync.Mutex),
+			minActiveRsvs: r.RequiredCount,
 		})
 	}
 	return initial, nil

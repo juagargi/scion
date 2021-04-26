@@ -24,7 +24,6 @@ import (
 )
 
 type Reservations struct {
-	// Rsvs []rsv `json:"reservation_list"`
 	Rsvs []ReservationEntry `json:"reservation_list"`
 }
 
@@ -50,35 +49,33 @@ type ReservationEntry struct {
 	MaxSize       reservation.BWCls    `json:"max_size"`
 	MinSize       reservation.BWCls    `json:"min_size"`
 	SplitCls      reservation.SplitCls `json:"split_cls"`
-	EndProps      endProps             `json:"end_props"`
+	EndProps      EndProps             `json:"end_props"`
 	RequiredCount int                  `json:"required_count"`
 }
 
-type endProps struct {
-	reservation.PathEndProps
-}
+type EndProps reservation.PathEndProps
 
-func (p endProps) MarshalJSON() ([]byte, error) {
+func (p EndProps) MarshalJSON() ([]byte, error) {
 	m := map[string][]string{
 		"start": nil,
 		"end":   nil,
 	}
-	if p.PathEndProps&reservation.StartLocal != 0 {
+	if reservation.PathEndProps(p)&reservation.StartLocal != 0 {
 		m["start"] = append(m["start"], "L")
 	}
-	if p.PathEndProps&reservation.StartTransfer != 0 {
+	if reservation.PathEndProps(p)&reservation.StartTransfer != 0 {
 		m["start"] = append(m["start"], "T")
 	}
-	if p.PathEndProps&reservation.EndLocal != 0 {
+	if reservation.PathEndProps(p)&reservation.EndLocal != 0 {
 		m["end"] = append(m["end"], "L")
 	}
-	if p.PathEndProps&reservation.EndTransfer != 0 {
+	if reservation.PathEndProps(p)&reservation.EndTransfer != 0 {
 		m["end"] = append(m["end"], "T")
 	}
 	return json.Marshal(m)
 }
 
-func (pep *endProps) UnmarshalJSON(b []byte) error {
+func (pep *EndProps) UnmarshalJSON(b []byte) error {
 	var m map[string][]string
 	if err := json.Unmarshal(b, &m); err != nil {
 		return serrors.WrapStr("cannot parse json to end props", err)
@@ -96,9 +93,9 @@ func (pep *endProps) UnmarshalJSON(b []byte) error {
 		for _, p := range v {
 			switch p {
 			case "L":
-				pep.PathEndProps |= (1 << (4 * mult))
+				*pep |= (1 << (4 * mult))
 			case "T":
-				pep.PathEndProps |= (2 << (4 * mult))
+				*pep |= (2 << (4 * mult))
 			default:
 				return serrors.New("illegal entry in path end props", "value", p)
 			}

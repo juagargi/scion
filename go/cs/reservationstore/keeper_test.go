@@ -23,6 +23,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/scionproto/scion/go/cs/reservation/conf"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	st "github.com/scionproto/scion/go/cs/reservation/segmenttest"
 	mockstore "github.com/scionproto/scion/go/cs/reservationstorage/mock_reservationstorage"
@@ -125,6 +126,7 @@ func TestKeepOneShot(t *testing.T) {
 				for i, req := range requirements {
 					entries[dst][i].requirements = req
 					entries[dst][i].mutex = new(sync.Mutex)
+					entries[dst][i].minActiveRsvs = 1
 				}
 			}
 			manager := mockManager(ctrl, now, localIA)
@@ -200,6 +202,7 @@ func TestSetupsPerDestination(t *testing.T) {
 			for i, req := range tc.requirements {
 				entries[i].requirements = req
 				entries[i].mutex = new(sync.Mutex)
+				entries[i].minActiveRsvs = 1
 			}
 			noRsvs := []*segment.Reservation{}
 			manager := mockManager(ctrl, now, localIA)
@@ -308,8 +311,9 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 			dstIA := xtest.MustParseIA("1-ff00:0:2")
 
 			entry := activeEntry{
-				requirements: tc.requirements,
-				mutex:        new(sync.Mutex),
+				requirements:  tc.requirements,
+				mutex:         new(sync.Mutex),
+				minActiveRsvs: 1,
 			}
 			manager := mockManager(ctrl, now, localIA)
 			keeper := keeper{
@@ -439,8 +443,9 @@ func TestActiveEntryFilter(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			en := activeEntry{
-				requirements: tc.requirements,
-				mutex:        new(sync.Mutex),
+				requirements:  tc.requirements,
+				mutex:         new(sync.Mutex),
+				minActiveRsvs: 1,
 			}
 			compliant, couldBeCompliant, neverCompliant :=
 				en.SplitByCompliance(tc.rsvs, tc.atLeastUntil)
@@ -637,9 +642,10 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			entry := activeEntry{
-				requirements: tc.requirements,
-				mutex:        new(sync.Mutex),
-				activeRsvs:   nil,
+				requirements:  tc.requirements,
+				mutex:         new(sync.Mutex),
+				minActiveRsvs: 1,
+				activeRsvs:    nil,
 			}
 			requests, err := entry.PrepareSetupRequests(tc.paths)
 			require.NoError(t, err)
@@ -680,8 +686,9 @@ func TestEntrySelectRequests(t *testing.T) {
 			splitCls:  2,
 			endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 		},
-		mutex:      new(sync.Mutex),
-		activeRsvs: nil,
+		mutex:         new(sync.Mutex),
+		minActiveRsvs: 1,
+		activeRsvs:    nil,
 	}
 	cases := map[string]struct {
 		requests    []*segment.SetupReq
@@ -760,6 +767,116 @@ func TestSplitRequests(t *testing.T) {
 			a, b := splitRequests(tc.reqs, tc.idxs)
 			require.Equal(t, tc.a, a)
 			require.ElementsMatch(t, tc.b, b)
+		})
+	}
+}
+
+func TestParseInitial(t *testing.T) {
+	cases := map[string]struct {
+		conf            conf.Reservations
+		expectedEntries map[addr.IA][]activeEntry
+		expectedError   bool
+	}{
+		"empty": {
+			conf:            conf.Reservations{},
+			expectedEntries: map[addr.IA][]activeEntry{},
+		},
+		"good": {
+			conf: conf.Reservations{Rsvs: []conf.ReservationEntry{
+				{
+					DstAS:         xtest.MustParseIA("1-ff00:0:2"),
+					PathPredicate: "",
+					MinSize:       1,
+					MaxSize:       2,
+					SplitCls:      3,
+					EndProps:      conf.EndProps(reservation.EndLocal),
+					RequiredCount: 2,
+				},
+			}},
+			expectedEntries: map[addr.IA][]activeEntry{
+				xtest.MustParseIA("1-ff00:0:2"): {
+					{
+						requirements: entryRequirements{
+							predicate: newSequence(t, ""),
+							minBW:     1,
+							maxBW:     2,
+							splitCls:  3,
+							endProps:  reservation.EndLocal,
+						},
+						mutex:         new(sync.Mutex),
+						minActiveRsvs: 2,
+					},
+				},
+			},
+		},
+		"bad predicate": {
+			conf: conf.Reservations{Rsvs: []conf.ReservationEntry{
+				{
+					DstAS:         xtest.MustParseIA("1-ff00:0:2"),
+					PathPredicate: ")",
+					MinSize:       1,
+					MaxSize:       2,
+					SplitCls:      3,
+					EndProps:      conf.EndProps(reservation.EndLocal),
+					RequiredCount: 2,
+				},
+			}},
+			expectedError: true,
+		},
+		"bad min bw": {
+			conf: conf.Reservations{Rsvs: []conf.ReservationEntry{
+				{
+					DstAS:         xtest.MustParseIA("1-ff00:0:2"),
+					PathPredicate: "",
+					MinSize:       11,
+					MaxSize:       2,
+					SplitCls:      3,
+					EndProps:      conf.EndProps(reservation.EndLocal),
+					RequiredCount: 2,
+				},
+			}},
+			expectedError: true,
+		},
+		"bad max bw": {
+			conf: conf.Reservations{Rsvs: []conf.ReservationEntry{
+				{
+					DstAS:         xtest.MustParseIA("1-ff00:0:2"),
+					PathPredicate: "",
+					MinSize:       1,
+					MaxSize:       0,
+					SplitCls:      3,
+					EndProps:      conf.EndProps(reservation.EndLocal),
+					RequiredCount: 2,
+				},
+			}},
+			expectedError: true,
+		},
+		"bad required count": {
+			conf: conf.Reservations{Rsvs: []conf.ReservationEntry{
+				{
+					DstAS:         xtest.MustParseIA("1-ff00:0:2"),
+					PathPredicate: "",
+					MinSize:       1,
+					MaxSize:       2,
+					SplitCls:      3,
+					EndProps:      conf.EndProps(reservation.EndLocal),
+					RequiredCount: 0,
+				},
+			}},
+			expectedError: true,
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			entries, err := parseInitial(tc.conf)
+			if tc.expectedError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.expectedEntries, entries)
 		})
 	}
 }
