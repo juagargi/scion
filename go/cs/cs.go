@@ -37,6 +37,10 @@ import (
 	"github.com/scionproto/scion/go/cs/config"
 	"github.com/scionproto/scion/go/cs/ifstate"
 	"github.com/scionproto/scion/go/cs/onehop"
+	reservation_conf "github.com/scionproto/scion/go/cs/reservation/conf"
+	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateful"
+	"github.com/scionproto/scion/go/cs/reservationstorage"
+	"github.com/scionproto/scion/go/cs/reservationstore"
 	segreggrpc "github.com/scionproto/scion/go/cs/segreg/grpc"
 	"github.com/scionproto/scion/go/cs/segreq"
 	segreqgrpc "github.com/scionproto/scion/go/cs/segreq/grpc"
@@ -437,6 +441,28 @@ func run(file string) error {
 	dsHealth.SetServingStatus("discovery", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(tcpServer, dsHealth)
 
+	var colibriStore reservationstorage.Store
+	var colibriInitialRsvs reservation_conf.Reservations
+	if cfg.Colibri.Enabled() {
+		db, err := storage.NewColibriStorage(cfg.Colibri.DB)
+		if err != nil {
+			return serrors.WrapStr("error initializing COLIBRI DB", err)
+		}
+		cap, err := reservation_conf.CapacitiesFromFile(cfg.Colibri.CapacitiesFile)
+		if err != nil {
+			return err
+		}
+		admitter := &admission.StatefulAdmission{
+			Capacities: cap,
+			Delta:      cfg.Colibri.Delta,
+		}
+		colibriStore = reservationstore.NewStore(topo.IA(), db, admitter)
+		colibriInitialRsvs, err = reservation_conf.ReservationsFromFile(cfg.Colibri.ReservationsFile)
+		if err != nil {
+			return serrors.WrapStr("error loading colibri initial reservation list", err)
+		}
+	}
+
 	promgrpc.Register(quicServer)
 	promgrpc.Register(tcpServer)
 	go func() {
@@ -509,6 +535,7 @@ func run(file string) error {
 		Inspector:       inspector,
 		Metrics:         metrics,
 		DRKeyStore:      drkeyServStore,
+		ColibriStore:    colibriStore,
 		MACGen:          macGen,
 		TopoProvider:    itopo.Provider(),
 		StaticInfo:      func() *beaconing.StaticInfoCfg { return staticInfo },
@@ -516,6 +543,7 @@ func run(file string) error {
 		OriginationInterval:  cfg.BS.OriginationInterval.Duration,
 		PropagationInterval:  cfg.BS.PropagationInterval.Duration,
 		DRKeyEpochInterval:   cfg.DRKey.EpochDuration.Duration,
+		ColibriInitialRsvs:   colibriInitialRsvs,
 		RegistrationInterval: cfg.BS.RegistrationInterval.Duration,
 		AllowIsdLoop:         isdLoopAllowed,
 	})

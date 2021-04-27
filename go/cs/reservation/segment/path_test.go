@@ -21,6 +21,7 @@ import (
 
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
@@ -175,7 +176,147 @@ func TestToFromBinary(t *testing.T) {
 	require.Empty(t, p.ToRaw())
 }
 
-func TestString(t *testing.T) {
-	p := segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
-	require.Equal(t, "0 1-ff00:0:1 1>1 1-ff00:0:2 0", p.String())
+func TestTransparentPathString(t *testing.T) {
+	cases := map[string]struct {
+		transparent segment.ReservationTransparentPath
+		str         string
+	}{
+		"empty": {
+			transparent: segmenttest.NewPathFromComponents(),
+			str:         "",
+		},
+		"one_step": {
+			transparent: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 0),
+			str:         "1-ff00:0:1#0,0",
+		},
+		"two_steps": {
+			transparent: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+			str:         "1-ff00:0:1#0,1 > 1-ff00:0:2#1,0",
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.str, tc.transparent.String())
+		})
+	}
+}
+
+func TestOpaquePathString(t *testing.T) {
+	cases := map[string]struct {
+		opaque segment.OpaquePath
+		str    string
+	}{
+		"empty": {
+			opaque: segmenttest.NewOpaquePathFromComponents(),
+			str:    "",
+		},
+		"one_step": {
+			opaque: segmenttest.NewOpaquePathFromComponents(0, 0),
+			str:    "0,0",
+		},
+		"two_steps": {
+			opaque: segmenttest.NewOpaquePathFromComponents(0, 1, 2, 0),
+			str:    "0,1 > 2,0",
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.str, tc.opaque.String())
+		})
+	}
+}
+
+func TestTransparentPathHasInterfaces(t *testing.T) {
+	cases := map[string]struct {
+		transparent segment.ReservationTransparentPath
+		expected    []snet.PathInterface
+	}{
+		"empty": {
+			transparent: segmenttest.NewPathFromComponents(),
+			expected:    segmenttest.NewIfaces(),
+		},
+		"two_steps": {
+			transparent: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0),
+			expected:    segmenttest.NewIfaces("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.expected, tc.transparent.Interfaces())
+		})
+	}
+}
+
+func TestNewOpaquePathFromInterfaces(t *testing.T) {
+	cases := map[string]struct {
+		ifaces    []snet.PathInterface
+		expectErr bool
+		opaque    segment.OpaquePath
+	}{
+		"empty": {
+			ifaces: segmenttest.NewIfaces(),
+			opaque: segmenttest.NewOpaquePathFromComponents(),
+		},
+		"one": {
+			ifaces:    segmenttest.NewIfaces("1-1", 1, 2, "1-1")[:1],
+			expectErr: true,
+			opaque:    nil,
+		},
+		"two": {
+			ifaces: segmenttest.NewIfaces("1-1", 1, 2, "1-1"),
+			opaque: segmenttest.NewOpaquePathFromComponents(0, 1, 2, 0),
+		},
+		"three": {
+			ifaces: segmenttest.NewIfaces("1-1", 1, 2, "1-1", 3, 4, "1-1"),
+			opaque: segmenttest.NewOpaquePathFromComponents(0, 1, 2, 3, 4, 0),
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			opaque, err := segment.NewOpaquePathFromInterfaces(tc.ifaces)
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.opaque, opaque)
+		})
+	}
+}
+
+func TestTransparentToOpaque(t *testing.T) {
+	cases := map[string]struct {
+		transparent segment.ReservationTransparentPath
+		expected    segment.OpaquePath
+	}{
+		"nil": {
+			transparent: nil,
+			expected:    segment.OpaquePath{},
+		},
+		"empty": {
+			transparent: segment.ReservationTransparentPath{},
+			expected:    segment.OpaquePath{},
+		},
+		"one step": {
+			transparent: segmenttest.NewPathFromComponents(0, "0-0", 1),
+			expected:    segmenttest.NewOpaquePathFromComponents(0, 1),
+		},
+		"two steps": {
+			transparent: segmenttest.NewPathFromComponents(0, "0-0", 1, 2, "0-0", 0),
+			expected:    segmenttest.NewOpaquePathFromComponents(0, 1, 2, 0),
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.transparent.Opaque())
+		})
+	}
 }

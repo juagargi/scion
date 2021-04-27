@@ -25,24 +25,66 @@ import (
 	"github.com/scionproto/scion/go/cs/reservation/segment/admission"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 
 // Store is the reservation store.
 type Store struct {
+	LocalIA  addr.IA
 	db       backend.DB         // aka reservation map
 	admitter admission.Admitter // the chosen admission entity
 }
 
 var _ reservationstorage.Store = (*Store)(nil)
 
+// TODO(juagargi) the store needs a quic socket using regular scion, and another using colibri
+
 // NewStore creates a new reservation store.
-func NewStore(db backend.DB, admitter admission.Admitter) *Store {
+func NewStore(localIA addr.IA, db backend.DB, admitter admission.Admitter) *Store {
 	return &Store{
+		LocalIA:  localIA,
 		db:       db,
 		admitter: admitter,
 	}
+}
+
+func (s *Store) GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) (
+	[]*segment.Reservation, error) {
+
+	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, src, dst)
+}
+
+// InitSegmentReservation will start a new segment reservation request. The source of
+// the request will have this very AS as source.
+func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupReq) error {
+	ID := reservation.SegmentID{
+		ASID:   s.LocalIA.A,
+		Suffix: [4]byte{0, 0, 0, 0},
+	}
+	// TODO(juagargi) with the quic socket ask for paths to dst and determine the type of path
+	// TODO(juagargi) with the quic socket, ask for paths and filter using the predicate
+	base, err := segment.NewRequest(req.Timestamp, &ID, 0, nil)
+	if err != nil {
+		return serrors.WrapStr("error creating source request", err)
+	}
+	req.Request = *base
+
+	ret, err := s.AdmitSegmentReservation(ctx, req)
+	if err != nil {
+		return serrors.WrapStr("cannot self admit request", err)
+	}
+	_ = ret
+
+	// rsv := segment.NewReservation()
+	// rsv.PathEndProps = req.PathProps
+	// rsv.TrafficSplit = req.SplitCls
+	// rsv.ID = req.ID
+	// if err := s.db.NewSegmentRsv(ctx, rsv); err != nil {
+	// 	return serrors.WrapStr("cannot create new segment reservation in db", err)
+	// }
+	return nil
 }
 
 // AdmitSegmentReservation receives a setup/renewal request to admit a segment reservation.

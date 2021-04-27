@@ -16,6 +16,7 @@ package conf
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"sort"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
@@ -49,6 +50,19 @@ func (c *Capacities) EgressInterfaces() []uint16            { return c.egIfs }
 func (c *Capacities) Capacity(from, to uint16) uint64       { return c.c.In2Eg[from][to] }
 func (c *Capacities) CapacityIngress(ingress uint16) uint64 { return c.c.CapIn[ingress] }
 func (c *Capacities) CapacityEgress(egress uint16) uint64   { return c.c.CapEg[egress] }
+
+func CapacitiesFromFile(filename string) (*Capacities, error) {
+	b, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, serrors.WrapStr("error loading capacities", err, "filename", filename)
+	}
+	cap := &Capacities{}
+	err = cap.UnmarshalJSON(b)
+	if err != nil {
+		return nil, serrors.WrapStr("error parsing capabilities", err, "filename", filename)
+	}
+	return cap, nil
+}
 
 // UnmarshalJSON deserializes into the json-aware internal data structure.
 func (c *Capacities) UnmarshalJSON(b []byte) error {

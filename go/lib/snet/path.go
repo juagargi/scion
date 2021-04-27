@@ -65,6 +65,14 @@ func (iface PathInterface) String() string {
 	return fmt.Sprintf("%s#%d", iface.IA, iface.ID)
 }
 
+// PathInterfacesHaver can return a list of interfaces.
+// The interface list returned typically has an even number, as it traverses
+// N ASeswith 2 interfaces each.
+type PathInterfacesHaver interface {
+	fmt.Stringer
+	Interfaces() []PathInterface
+}
+
 // PathMetadata contains supplementary information about a path.
 //
 // The information about MTU, Latency, Bandwidth etc. are based solely on data

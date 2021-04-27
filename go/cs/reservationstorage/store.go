@@ -20,6 +20,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	sgt "github.com/scionproto/scion/go/cs/reservation/segment"
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/infra/modules/cleaner"
 )
 
@@ -39,6 +40,12 @@ type Store interface {
 		base.MessageWithPath, error)
 
 	DeleteExpiredIndices(ctx context.Context) (int, error)
+
+	// as the source of reservations:
+
+	GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) ([]*sgt.Reservation, error)
+	// InitSegmentReservation starts a new segment reservation.
+	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
 }
 
 // TODO(juagargi) there is a number of functions missing: all regarding responses.
