@@ -342,7 +342,7 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 					return make([]*segment.Reservation, n), nil
 				})
 			// build requests from paths (tested elsewhere)
-			requests, err := entry.PrepareSetupRequests(tc.paths)
+			requests, err := entry.PrepareSetupRequests(tc.paths, now)
 			require.NoError(t, err)
 			// call and check
 			err = keeper.requestNSuccessfulRsvs(ctx, dstIA, entry, requests, tc.requiredCount)
@@ -645,9 +645,8 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 				requirements:  tc.requirements,
 				mutex:         new(sync.Mutex),
 				minActiveRsvs: 1,
-				activeRsvs:    nil,
 			}
-			requests, err := entry.PrepareSetupRequests(tc.paths)
+			requests, err := entry.PrepareSetupRequests(tc.paths, util.SecsToTime(10))
 			require.NoError(t, err)
 			require.Len(t, requests, tc.expected)
 			filtered := entry.requirements.predicate.EvalInterfaces(tc.paths)
@@ -688,7 +687,6 @@ func TestEntrySelectRequests(t *testing.T) {
 		},
 		mutex:         new(sync.Mutex),
 		minActiveRsvs: 1,
-		activeRsvs:    nil,
 	}
 	cases := map[string]struct {
 		requests    []*segment.SetupReq

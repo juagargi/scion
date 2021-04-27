@@ -121,9 +121,9 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 		// filter reservations
 		atLeastUntil := k.manager.Now().Add(k.minDuration)
-		fullyCompliant, askNewIndices, notCompliant :=
+		var notCompliant []*seg.Reservation
+		entry.compliantRsvs, entry.couldBeCompliant, notCompliant =
 			entry.SplitByCompliance(currentRsvs, atLeastUntil)
-		entry.activeRsvs = fullyCompliant
 		// report not compliant ones; don't delete them, they will expire eventually.
 		if len(notCompliant) > 0 {
 			log.Info("Non compliant reservations found (a change in requirements?)",
@@ -133,15 +133,15 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			}
 		}
 		// new indices:
-		if err := k.askNewIndices(ctx, askNewIndices, dstIA, entry); err != nil {
+		if err := k.askNewIndices(ctx, entry.couldBeCompliant, dstIA, entry); err != nil {
 			return err
 		}
 		// totally new reservations:
-		var requestCount int = entry.minActiveRsvs - len(entry.activeRsvs)
+		var requestCount int = entry.minActiveRsvs -
+			len(entry.compliantRsvs) - len(entry.couldBeCompliant)
 		if err := k.askNewReservations(ctx, requestCount, dstIA, entry, paths); err != nil {
 			return err
 		}
-
 	}
 	return nil
 }
@@ -156,12 +156,14 @@ func (k *keeper) askNewIndices(ctx context.Context, rsvs []*seg.Reservation, dst
 		for i, rsv := range rsvs {
 			paths[i] = rsv.Path
 		}
-		requests, err := entry.PrepareSetupRequests(paths)
+		requests, err := entry.PrepareSetupRequests(paths, k.manager.Now())
 		if err != nil {
 			return serrors.WrapStr("cannot setup new reservations", err, "paths", paths)
 		}
-		// add indices
+		// add indices and convert to renewal
 		for i, req := range requests {
+			req.Reservation = rsvs[i]
+			req.ID = rsvs[i].ID // this will be a renewal
 			if activeIndex := rsvs[i].ActiveIndex(); activeIndex != nil {
 				req.Index = activeIndex.Idx.Add(1)
 			}
@@ -179,7 +181,7 @@ func (k *keeper) askNewReservations(ctx context.Context, requiredSuccesful int, 
 
 	// TODO(juagargi) test this function (indices seen in requests should always be zero)
 	if requiredSuccesful > 0 {
-		requests, err := entry.PrepareSetupRequests(paths)
+		requests, err := entry.PrepareSetupRequests(paths, k.manager.Now())
 		if err != nil {
 			return serrors.WrapStr("cannot setup new reservations", err, "paths", paths)
 		}
@@ -212,10 +214,12 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 
 // activeEntry is a 1 to 1 association to a conf.ReservationEntry
 type activeEntry struct {
-	mutex         *sync.Mutex
-	requirements  entryRequirements
-	activeRsvs    []*seg.Reservation
-	minActiveRsvs int
+	mutex        *sync.Mutex
+	requirements entryRequirements
+	// activeRsvs    []*seg.Reservation
+	compliantRsvs    []*seg.Reservation // don't need to switch indices
+	couldBeCompliant []*seg.Reservation // need to switch indices
+	minActiveRsvs    int
 }
 
 // SplitByCompliance will split the reservations into three groups:
@@ -244,7 +248,7 @@ func (e *activeEntry) SplitByCompliance(rsvs []*seg.Reservation, atLeastUntil ti
 // PrepareSetupRequests creates new reservation requests compliant with the requirements.
 // This function creates as many reservations requests as there are
 // scion paths compatible with the requirements.
-func (e *activeEntry) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver) (
+func (e *activeEntry) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver, now time.Time) (
 	[]*seg.SetupReq, error) {
 
 	// filter paths
@@ -256,9 +260,14 @@ func (e *activeEntry) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver) (
 		if err != nil {
 			return nil, err
 		}
-		// TODO(juagargi) complete filling up the request (exp time, etc)
+		// request must be without ID, as it will be used to create a new reservation
 		req := &seg.SetupReq{
-			Request:    seg.Request{},
+			Request: seg.Request{
+				ID:        reservation.SegmentID{},
+				Timestamp: now,
+				Ingress:   opaque[0].Ingress,
+				Egress:    opaque[0].Egress,
+			},
 			MinBW:      e.requirements.minBW,
 			MaxBW:      e.requirements.maxBW,
 			SplitCls:   e.requirements.splitCls,
