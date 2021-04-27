@@ -4,6 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = [
         "bs_sample.go",
+        "colibri.go",
         "config.go",
         "drkey.go",
         "sample.go",

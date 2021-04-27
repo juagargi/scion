@@ -71,3 +71,10 @@ lifetime = "10m"
 # authorization tokens. If not set, the SCION ID is used instead.
 client_id = ""
 `
+
+const colibriSample = `
+# COLIBRI service configuration sample
+delta = 0.8
+capacities_file = "capacities.json"
+reservations_file = "reservations.json"
+`

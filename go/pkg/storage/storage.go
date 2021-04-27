@@ -21,6 +21,8 @@ import (
 
 	"github.com/scionproto/scion/go/cs/beacon"
 	sqlitebeacondb "github.com/scionproto/scion/go/cs/beacon/beacondbsqlite"
+	sqlitereservation "github.com/scionproto/scion/go/cs/reservation/sqlite"
+	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/config"
 	"github.com/scionproto/scion/go/lib/drkey"
@@ -184,6 +186,16 @@ func NewDRKeyLvl1Storage(c DBConfig) (drkey.Lvl1DB, error) {
 func NewDRKeyLvl2Storage(c DBConfig) (drkey.Lvl2DB, error) {
 	log.Info("Connecting DRKeyDB", "	", BackendSqlite, "connection", c.Connection)
 	db, err := drkeydbsqlite.NewLvl2Backend(c.Connection)
+	if err != nil {
+		return nil, err
+	}
+	SetConnLimits(db, c)
+	return db, nil
+}
+
+func NewColibriStorage(c DBConfig) (backend.DB, error) {
+	log.Info("Connecting COLIBRI DB", "backend", BackendSqlite)
+	db, err := sqlitereservation.New(c.Connection)
 	if err != nil {
 		return nil, err
 	}

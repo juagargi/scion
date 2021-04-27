@@ -73,3 +73,66 @@ func (idxs Indices) GetToken(i int) *reservation.Token            { return idxs[
 func (idxs Indices) Rotate(i int) base.IndicesInterface {
 	return append(idxs[i:], idxs[:i]...)
 }
+
+// IndexFilter returns true if the index is to be kept.
+// Returning false ensures the index is filtered out.
+type IndexFilter func(Index) bool
+
+// Filter uses the functional filters to return a list of indices where no index
+// returned false in their filters.
+func (idxs Indices) Filter(filters ...IndexFilter) Indices {
+	valid := make(Indices, 0)
+	for _, index := range idxs {
+		compliant := true
+		for _, filter := range filters {
+			if compliant = filter(index); !compliant {
+				break
+			}
+		}
+		if compliant {
+			valid = append(valid, index)
+		}
+	}
+	return valid
+}
+
+// ByExpiration filters out indices that expire on or before the specified time.
+func ByExpiration(atLeastUntil time.Time) IndexFilter {
+	return func(index Index) bool {
+		return index.Expiration.After(atLeastUntil)
+	}
+}
+
+// ByMinBW filters out all indices with a MinBW lower than specified.
+func ByMinBW(minBW reservation.BWCls) IndexFilter {
+	return func(index Index) bool {
+		return index.MinBW >= minBW
+	}
+}
+
+// ByMax filters out all indices with a MaxBW higher than specified.
+func ByMaxBW(maxBW reservation.BWCls) IndexFilter {
+	return func(index Index) bool {
+		return index.MaxBW <= maxBW
+	}
+}
+
+// NotConfirmed filters out indices that are not in a state active or pending.
+func NotConfirmed() IndexFilter {
+	return func(index Index) bool {
+		return index.state == IndexActive || index.state == IndexPending
+	}
+}
+
+// NotSwitchableFrom filters out indices not reachable from the argument.
+// A typical use would be to pass the active index to filter all non confirmed non future indices.
+func NotSwitchableFrom(index *Index) IndexFilter {
+	var heatDeathOfTheUniverse = time.Unix(1<<63-62135596801, 999999999) // aka infinity
+	atLeastUntil := heatDeathOfTheUniverse
+	if index != nil {
+		atLeastUntil = index.Expiration.Add(-time.Nanosecond) // so "A" is switchable from "A"
+	}
+	return func(ind Index) bool {
+		return NotConfirmed()(ind) && ByExpiration(atLeastUntil)(ind)
+	}
+}

@@ -734,22 +734,6 @@ func (p *scionPacketProcessor) processEPIC() (processResult, error) {
 	return result, nil
 }
 
-/*
-func (d *DataPlane) processCOLIBRI(ingressID uint16, rawPkt []byte, s slayers.SCION,
-	origPacket []byte, buffer gopacket.SerializeBuffer) (processResult, error) {
-
-	c := colibriPacketProcessor{
-		d:          d,
-		ingressID:  ingressID,
-		rawPkt:     rawPkt,
-		scionLayer: s,
-		origPacket: origPacket,
-		buffer:     buffer,
-	}
-	return c.process()
-}
-*/
-
 func (p *scionPacketProcessor) processCOLIBRI() (processResult, error) {
 
 	c := colibriPacketProcessor{

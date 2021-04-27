@@ -39,6 +39,10 @@ import (
 	"github.com/scionproto/scion/go/cs/config"
 	"github.com/scionproto/scion/go/cs/ifstate"
 	"github.com/scionproto/scion/go/cs/onehop"
+	reservation_conf "github.com/scionproto/scion/go/cs/reservation/conf"
+	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateful"
+	"github.com/scionproto/scion/go/cs/reservationstorage"
+	"github.com/scionproto/scion/go/cs/reservationstore"
 	segreggrpc "github.com/scionproto/scion/go/cs/segreg/grpc"
 	"github.com/scionproto/scion/go/cs/segreq"
 	segreqgrpc "github.com/scionproto/scion/go/cs/segreq/grpc"
@@ -510,6 +514,28 @@ func realMain() error {
 		return err
 	}
 
+	var colibriStore reservationstorage.Store
+	var colibriInitialRsvs reservation_conf.Reservations
+	if globalCfg.Colibri.Enabled() {
+		db, err := storage.NewColibriStorage(globalCfg.Colibri.DB)
+		if err != nil {
+			return serrors.WrapStr("error initializing COLIBRI DB", err)
+		}
+		cap, err := reservation_conf.CapacitiesFromFile(globalCfg.Colibri.CapacitiesFile)
+		if err != nil {
+			return err
+		}
+		admitter := &admission.StatefulAdmission{
+			Capacities: cap,
+			Delta:      globalCfg.Colibri.Delta,
+		}
+		colibriStore = reservationstore.NewStore(topo.IA(), db, admitter)
+		colibriInitialRsvs, err = reservation_conf.ReservationsFromFile(globalCfg.Colibri.ReservationsFile)
+		if err != nil {
+			return serrors.WrapStr("error loading colibri initial reservation list", err)
+		}
+	}
+
 	promgrpc.Register(quicServer)
 	promgrpc.Register(tcpServer)
 	go func() {
@@ -609,6 +635,7 @@ func realMain() error {
 		Inspector:       inspector,
 		Metrics:         metrics,
 		DRKeyStore:      drkeyServStore,
+		ColibriStore:    colibriStore,
 		MACGen:          macGen,
 		TopoProvider:    itopo.Provider(),
 		StaticInfo:      func() *beaconing.StaticInfoCfg { return staticInfo },
@@ -618,6 +645,7 @@ func realMain() error {
 		RegistrationInterval:      globalCfg.BS.RegistrationInterval.Duration,
 		DRKeyEpochInterval:        globalCfg.DRKey.EpochDuration.Duration,
 		HiddenPathRegistrationCfg: hpWriterCfg,
+		ColibriInitialRsvs:        colibriInitialRsvs,
 		AllowIsdLoop:              isdLoopAllowed,
 	})
 	if err != nil {
