@@ -47,9 +47,8 @@ import (
 
 type keeper struct {
 	manager     Manager
-	entries     map[addr.IA][]activeEntry
+	entries     map[addr.IA][]requirements
 	minDuration time.Duration // min validity in the future for the reservations
-	// TODO(juagargi) use minDuration in both the setup and in the renew, so that we always have indices ready to be switched
 }
 
 func NewKeeper(manager Manager, conf conf.Reservations) (
@@ -88,7 +87,7 @@ func (k *keeper) OneShot(ctx context.Context) error {
 	return nil
 }
 
-func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []activeEntry,
+func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []requirements,
 	paths []snet.PathInterfacesHaver) error {
 
 	// get reservations once and pass them along.
@@ -101,28 +100,18 @@ func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []a
 	if err != nil {
 		return serrors.WrapStr("keeping destination", err, "dst", dstIA)
 	}
-	// reservations in keeper.entries are Compliant or CouldBeCompliant,
-	// so they might have to switch indices
-	// TODO(juagargi) save the Compliant and CouldBeCompliant difference in the keeper
-	//
-	//
-
 	return nil
 }
 
 // setupsPerDestination process all entries for a given IA sequentially, to avoid
 // reservation racing. It creates the setup requests and later sends them.
-func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entries []activeEntry,
+func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entries []requirements,
 	paths []snet.PathInterfacesHaver, currentRsvs []*seg.Reservation) error {
 
 	for _, entry := range entries {
-		entry.mutex.Lock()
-		defer entry.mutex.Unlock()
-
 		// filter reservations
 		atLeastUntil := k.manager.Now().Add(k.minDuration)
-		var notCompliant []*seg.Reservation
-		entry.compliantRsvs, entry.couldBeCompliant, notCompliant =
+		compliantRsvs, couldBeCompliant, notCompliant :=
 			entry.SplitByCompliance(currentRsvs, atLeastUntil)
 		// report not compliant ones; don't delete them, they will expire eventually.
 		if len(notCompliant) > 0 {
@@ -133,12 +122,12 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			}
 		}
 		// new indices:
-		if err := k.askNewIndices(ctx, entry.couldBeCompliant, dstIA, entry); err != nil {
+		if err := k.askNewIndices(ctx, couldBeCompliant, dstIA, entry); err != nil {
 			return err
 		}
 		// totally new reservations:
 		var requestCount int = entry.minActiveRsvs -
-			len(entry.compliantRsvs) - len(entry.couldBeCompliant)
+			len(compliantRsvs) - len(couldBeCompliant)
 		if err := k.askNewReservations(ctx, requestCount, dstIA, entry, paths); err != nil {
 			return err
 		}
@@ -148,7 +137,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 // askNewIndices will prepare requests based on existing reservations and ask for new indices.
 func (k *keeper) askNewIndices(ctx context.Context, rsvs []*seg.Reservation, dstIA addr.IA,
-	entry activeEntry) error {
+	entry requirements) error {
 
 	// TODO(juagargi) test this function (the indices as seen in requests should be active+1)
 	if len(rsvs) > 0 {
@@ -177,7 +166,7 @@ func (k *keeper) askNewIndices(ctx context.Context, rsvs []*seg.Reservation, dst
 // askNewReservations creates new requests based on the paths and the entry and ensures
 // that at least `requiredSuccesful` are succesful.
 func (k *keeper) askNewReservations(ctx context.Context, requiredSuccesful int, dstIA addr.IA,
-	entry activeEntry, paths []snet.PathInterfacesHaver) error {
+	entry requirements, paths []snet.PathInterfacesHaver) error {
 
 	// TODO(juagargi) test this function (indices seen in requests should always be zero)
 	if requiredSuccesful > 0 {
@@ -193,7 +182,7 @@ func (k *keeper) askNewReservations(ctx context.Context, requiredSuccesful int, 
 
 // requestNSuccessfulRsvs uses the manager to request reservations in parallel, until
 // the pending count is reached, or there are no more available requests.
-func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entry activeEntry,
+func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entry requirements,
 	requests []*seg.SetupReq, pendingCount int) error {
 
 	var setups []*seg.SetupReq
@@ -212,88 +201,14 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 	return nil
 }
 
-// activeEntry is a 1 to 1 association to a conf.ReservationEntry
-type activeEntry struct {
-	mutex        *sync.Mutex
-	requirements entryRequirements
-	// activeRsvs    []*seg.Reservation
-	compliantRsvs    []*seg.Reservation // don't need to switch indices
-	couldBeCompliant []*seg.Reservation // need to switch indices
-	minActiveRsvs    int
-}
-
-// SplitByCompliance will split the reservations into three groups:
-// compliant, could be compliant and not compliant, according to the requirements of this entry.
-// For an explanation of compliance, see the type `Compliance`.
-func (e *activeEntry) SplitByCompliance(rsvs []*seg.Reservation, atLeastUntil time.Time) (
-	[]*seg.Reservation, []*seg.Reservation, []*seg.Reservation) {
-
-	compliant := make([]*seg.Reservation, 0)
-	couldBeCompliant := make([]*seg.Reservation, 0)
-	neverCompliant := make([]*seg.Reservation, 0)
-	for _, rsv := range rsvs {
-		compliance := e.requirements.Compliance(rsv, atLeastUntil)
-		switch compliance {
-		case Compliant:
-			compliant = append(compliant, rsv)
-		case CouldBeCompliant:
-			couldBeCompliant = append(couldBeCompliant, rsv)
-		case NeverCompliant:
-			neverCompliant = append(neverCompliant, rsv)
-		}
-	}
-	return compliant, couldBeCompliant, neverCompliant
-}
-
-// PrepareSetupRequests creates new reservation requests compliant with the requirements.
-// This function creates as many reservations requests as there are
-// scion paths compatible with the requirements.
-func (e *activeEntry) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver, now time.Time) (
-	[]*seg.SetupReq, error) {
-
-	// filter paths
-	filtered := e.requirements.predicate.EvalInterfaces(ifaces)
-	requests := make([]*seg.SetupReq, len(filtered))
-	// create setup requests
-	for i, p := range filtered {
-		opaque, err := seg.NewOpaquePathFromInterfaces(p.Interfaces())
-		if err != nil {
-			return nil, err
-		}
-		// request must be without ID, as it will be used to create a new reservation
-		req := &seg.SetupReq{
-			Request: seg.Request{
-				ID:        reservation.SegmentID{},
-				Timestamp: now,
-				Ingress:   opaque[0].Ingress,
-				Egress:    opaque[0].Egress,
-			},
-			MinBW:      e.requirements.minBW,
-			MaxBW:      e.requirements.maxBW,
-			SplitCls:   e.requirements.splitCls,
-			PathProps:  e.requirements.endProps,
-			AllocTrail: reservation.AllocationBeads{},
-			PathToDst:  opaque,
-		}
-		requests[i] = req
-	}
-	return requests, nil
-}
-
-func (e *activeEntry) SelectRequests(requests []*seg.SetupReq, n int) []int {
-	if n > len(requests) {
-		n = len(requests)
-	}
-	rand.Seed(time.Now().UnixNano()) // TODO(juagargi) select using better criteria
-	return rand.Perm(n)
-}
-
-type entryRequirements struct {
-	predicate *pathpol.Sequence
-	minBW     reservation.BWCls
-	maxBW     reservation.BWCls
-	splitCls  reservation.SplitCls
-	endProps  reservation.PathEndProps
+// requirements is a 1 to 1 association to a conf.ReservationEntry
+type requirements struct {
+	predicate     *pathpol.Sequence
+	minBW         reservation.BWCls
+	maxBW         reservation.BWCls
+	splitCls      reservation.SplitCls
+	endProps      reservation.PathEndProps
+	minActiveRsvs int
 }
 
 type Compliance int
@@ -317,22 +232,88 @@ func (c Compliance) String() string {
 	}
 }
 
+// SplitByCompliance will split the reservations into three groups:
+// compliant, could be compliant and not compliant, according to the requirements of this entry.
+// For an explanation of compliance, see the type `Compliance`.
+func (e *requirements) SplitByCompliance(rsvs []*seg.Reservation, atLeastUntil time.Time) (
+	[]*seg.Reservation, []*seg.Reservation, []*seg.Reservation) {
+
+	compliant := make([]*seg.Reservation, 0)
+	couldBeCompliant := make([]*seg.Reservation, 0)
+	neverCompliant := make([]*seg.Reservation, 0)
+	for _, rsv := range rsvs {
+		compliance := e.Compliance(rsv, atLeastUntil)
+		switch compliance {
+		case Compliant:
+			compliant = append(compliant, rsv)
+		case CouldBeCompliant:
+			couldBeCompliant = append(couldBeCompliant, rsv)
+		case NeverCompliant:
+			neverCompliant = append(neverCompliant, rsv)
+		}
+	}
+	return compliant, couldBeCompliant, neverCompliant
+}
+
+// PrepareSetupRequests creates new reservation requests compliant with the requirements.
+// This function creates as many reservations requests as there are
+// scion paths compatible with the requirements.
+func (e *requirements) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver, now time.Time) (
+	[]*seg.SetupReq, error) {
+
+	// filter paths
+	filtered := e.predicate.EvalInterfaces(ifaces)
+	requests := make([]*seg.SetupReq, len(filtered))
+	// create setup requests
+	for i, p := range filtered {
+		opaque, err := seg.NewOpaquePathFromInterfaces(p.Interfaces())
+		if err != nil {
+			return nil, err
+		}
+		// request must be without ID, as it will be used to create a new reservation
+		req := &seg.SetupReq{
+			Request: seg.Request{
+				ID:        reservation.SegmentID{},
+				Timestamp: now,
+				Ingress:   opaque[0].Ingress,
+				Egress:    opaque[0].Egress,
+			},
+			MinBW:      e.minBW,
+			MaxBW:      e.maxBW,
+			SplitCls:   e.splitCls,
+			PathProps:  e.endProps,
+			AllocTrail: reservation.AllocationBeads{},
+			PathToDst:  opaque,
+		}
+		requests[i] = req
+	}
+	return requests, nil
+}
+
+func (e *requirements) SelectRequests(requests []*seg.SetupReq, n int) []int {
+	if n > len(requests) {
+		n = len(requests)
+	}
+	rand.Seed(time.Now().UnixNano()) // TODO(juagargi) select using better criteria
+	return rand.Perm(n)
+}
+
 // Compliance checks the given reservation against the requirements and returns true if
 // it satisfies them, plus the reservation is good at least until the time in `atLeastUntil`.
-func (r entryRequirements) Compliance(rsv *seg.Reservation, atLeastUntil time.Time) Compliance {
+func (e requirements) Compliance(rsv *seg.Reservation, atLeastUntil time.Time) Compliance {
 	switch {
-	case rsv.TrafficSplit != r.splitCls:
+	case rsv.TrafficSplit != e.splitCls:
 		return NeverCompliant
-	case rsv.PathEndProps != r.endProps:
+	case rsv.PathEndProps != e.endProps:
 		return NeverCompliant
-	case len(r.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.Path})) == 0:
+	case len(e.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.Path})) == 0:
 		return NeverCompliant
 	}
 	indices := rsv.Indices.Filter(
 		seg.ByExpiration(atLeastUntil),
 		seg.NotSwitchableFrom(rsv.ActiveIndex()),
-		seg.ByMinBW(r.minBW),
-		seg.ByMaxBW(r.maxBW),
+		seg.ByMinBW(e.minBW),
+		seg.ByMaxBW(e.maxBW),
 	)
 	if len(indices) == 0 {
 		return CouldBeCompliant
@@ -354,8 +335,8 @@ func splitRequests(requests []*seg.SetupReq, indices []int) (
 	return a, b[:len(b)-len(a)]
 }
 
-func parseInitial(conf conf.Reservations) (map[addr.IA][]activeEntry, error) {
-	initial := make(map[addr.IA][]activeEntry)
+func parseInitial(conf conf.Reservations) (map[addr.IA][]requirements, error) {
+	initial := make(map[addr.IA][]requirements)
 	for _, r := range conf.Rsvs {
 		seq, err := pathpol.NewSequence(r.PathPredicate)
 		if err != nil {
@@ -371,15 +352,12 @@ func parseInitial(conf conf.Reservations) (map[addr.IA][]activeEntry, error) {
 				"min_bw", r.MinSize, "max_bw", r.MaxSize)
 		}
 
-		initial[r.DstAS] = append(initial[r.DstAS], activeEntry{
-			requirements: entryRequirements{
-				predicate: seq,
-				minBW:     r.MinSize,
-				maxBW:     r.MaxSize,
-				splitCls:  r.SplitCls,
-				endProps:  reservation.PathEndProps(r.EndProps),
-			},
-			mutex:         new(sync.Mutex),
+		initial[r.DstAS] = append(initial[r.DstAS], requirements{
+			predicate:     seq,
+			minBW:         r.MinSize,
+			maxBW:         r.MaxSize,
+			splitCls:      r.SplitCls,
+			endProps:      reservation.PathEndProps(r.EndProps),
 			minActiveRsvs: r.RequiredCount,
 		})
 	}

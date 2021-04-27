@@ -41,38 +41,42 @@ func TestKeepOneShot(t *testing.T) {
 	tomorrow := now.Add(3600 * 24 * time.Second)
 	endProps1 := reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer
 	cases := map[string]struct {
-		destinations  map[addr.IA][]entryRequirements
+		destinations  map[addr.IA][]requirements
 		paths         map[addr.IA][]snet.PathInterfacesHaver
 		reservations  map[addr.IA][]*segment.Reservation
 		expectedCalls int
 	}{
 		"regular": {
-			destinations: map[addr.IA][]entryRequirements{
+			destinations: map[addr.IA][]requirements{
 				xtest.MustParseIA("1-ff00:0:2"): {{
-					predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
-					minBW:     10,
-					maxBW:     42,
-					splitCls:  2,
-					endProps:  endProps1,
+					predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+					minBW:         10,
+					maxBW:         42,
+					splitCls:      2,
+					endProps:      endProps1,
+					minActiveRsvs: 1,
 				}, {
-					predicate: newSequence(t, "1-ff00:0:1 0+ 1-ff00:0:2"), // not direct
-					minBW:     10,
-					maxBW:     42,
-					splitCls:  2,
-					endProps:  endProps1,
+					predicate:     newSequence(t, "1-ff00:0:1 0+ 1-ff00:0:2"), // not direct
+					minBW:         10,
+					maxBW:         42,
+					splitCls:      2,
+					endProps:      endProps1,
+					minActiveRsvs: 1,
 				}},
 				xtest.MustParseIA("1-ff00:0:3"): {{
-					predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:3"), // direct
-					minBW:     10,
-					maxBW:     42,
-					splitCls:  2,
-					endProps:  endProps1,
+					predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:3"), // direct
+					minBW:         10,
+					maxBW:         42,
+					splitCls:      2,
+					endProps:      endProps1,
+					minActiveRsvs: 1,
 				}, {
-					predicate: newSequence(t, "1-ff00:0:1 0+ 1-ff00:0:3"), // not direct
-					minBW:     10,
-					maxBW:     42,
-					splitCls:  2,
-					endProps:  endProps1,
+					predicate:     newSequence(t, "1-ff00:0:1 0+ 1-ff00:0:3"), // not direct
+					minBW:         10,
+					maxBW:         42,
+					splitCls:      2,
+					endProps:      endProps1,
+					minActiveRsvs: 1,
 				}},
 			},
 			paths: map[addr.IA][]snet.PathInterfacesHaver{
@@ -120,19 +124,10 @@ func TestKeepOneShot(t *testing.T) {
 			now := util.SecsToTime(10)
 			localIA := xtest.MustParseIA("1-ff00:0:1")
 
-			entries := make(map[addr.IA][]activeEntry, len(tc.destinations))
-			for dst, requirements := range tc.destinations {
-				entries[dst] = make([]activeEntry, len(requirements))
-				for i, req := range requirements {
-					entries[dst][i].requirements = req
-					entries[dst][i].mutex = new(sync.Mutex)
-					entries[dst][i].minActiveRsvs = 1
-				}
-			}
 			manager := mockManager(ctrl, now, localIA)
 			keeper := keeper{
 				manager: manager,
-				entries: entries,
+				entries: tc.destinations,
 			}
 			store := mockStore(ctrl)
 			store.EXPECT().GetSegmentRsvsFromSrcDstIA(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -159,25 +154,27 @@ func TestKeepOneShot(t *testing.T) {
 
 func TestSetupsPerDestination(t *testing.T) {
 	cases := map[string]struct {
-		requirements  []entryRequirements
+		requirements  []requirements
 		paths         []snet.PathInterfacesHaver
 		expectedCalls int
 	}{
 		"regular": {
-			requirements: []entryRequirements{
+			requirements: []requirements{
 				{
-					predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
-					minBW:     10,
-					maxBW:     42,
-					splitCls:  2,
-					endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+					predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+					minBW:         10,
+					maxBW:         42,
+					splitCls:      2,
+					endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+					minActiveRsvs: 1,
 				},
 				{
-					predicate: newSequence(t, "1-ff00:0:1 0+ 1-ff00:0:2"), // not direct
-					minBW:     10,
-					maxBW:     42,
-					splitCls:  2,
-					endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+					predicate:     newSequence(t, "1-ff00:0:1 0+ 1-ff00:0:2"), // not direct
+					minBW:         10,
+					maxBW:         42,
+					splitCls:      2,
+					endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+					minActiveRsvs: 1,
 				},
 			},
 			paths: []snet.PathInterfacesHaver{
@@ -198,12 +195,6 @@ func TestSetupsPerDestination(t *testing.T) {
 			now := util.SecsToTime(10)
 			localIA := xtest.MustParseIA("1-ff00:0:1")
 			dstIA := xtest.MustParseIA("1-ff00:0:2")
-			entries := make([]activeEntry, len(tc.requirements))
-			for i, req := range tc.requirements {
-				entries[i].requirements = req
-				entries[i].mutex = new(sync.Mutex)
-				entries[i].minActiveRsvs = 1
-			}
 			noRsvs := []*segment.Reservation{}
 			manager := mockManager(ctrl, now, localIA)
 			keeper := keeper{
@@ -214,7 +205,7 @@ func TestSetupsPerDestination(t *testing.T) {
 					return make([]*segment.Reservation, len(reqs)), nil
 				})
 
-			err := keeper.setupsPerDestination(ctx, dstIA, entries, tc.paths, noRsvs)
+			err := keeper.setupsPerDestination(ctx, dstIA, tc.requirements, tc.paths, noRsvs)
 			require.NoError(t, err)
 		})
 	}
@@ -222,7 +213,7 @@ func TestSetupsPerDestination(t *testing.T) {
 
 func TestRequestNSuccessfulRsvs(t *testing.T) {
 	cases := map[string]struct {
-		requirements      entryRequirements
+		requirements      requirements
 		paths             []snet.PathInterfacesHaver
 		requiredCount     int // amount of rsvs we want
 		successfulPerCall int // manager will only obtain these per call
@@ -230,12 +221,13 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 		expectedReqs      []int // setup requests expected at the manager, per call. nil == error
 	}{
 		"empty": {
-			requirements: entryRequirements{
-				predicate: newSequence(t, ""),
-				minBW:     10,
-				maxBW:     42,
-				splitCls:  2,
-				endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+			requirements: requirements{
+				predicate:     newSequence(t, ""),
+				minBW:         10,
+				maxBW:         42,
+				splitCls:      2,
+				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				minActiveRsvs: 1,
 			},
 			paths:             []snet.PathInterfacesHaver{},
 			requiredCount:     1,
@@ -243,12 +235,13 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 			expectError:       true,
 		},
 		"ask 2 get 2": {
-			requirements: entryRequirements{
-				predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
-				minBW:     10,
-				maxBW:     42,
-				splitCls:  2,
-				endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+			requirements: requirements{
+				predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+				minBW:         10,
+				maxBW:         42,
+				splitCls:      2,
+				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				minActiveRsvs: 1,
 			},
 			paths: []snet.PathInterfacesHaver{
 				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0),
@@ -261,12 +254,13 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 			expectedReqs:      []int{2},
 		},
 		"ask too many": { // predicate(4 paths) -> 2 paths -> 2 requests; but desired is 4
-			requirements: entryRequirements{
-				predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
-				minBW:     10,
-				maxBW:     42,
-				splitCls:  2,
-				endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+			requirements: requirements{
+				predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+				minBW:         10,
+				maxBW:         42,
+				splitCls:      2,
+				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				minActiveRsvs: 1,
 			},
 			paths: []snet.PathInterfacesHaver{
 				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0), // direct
@@ -280,12 +274,13 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 			expectedReqs:      []int{2},
 		},
 		"ask 3 return 2": {
-			requirements: entryRequirements{
-				predicate: newSequence(t, ""),
-				minBW:     10,
-				maxBW:     42,
-				splitCls:  2,
-				endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+			requirements: requirements{
+				predicate:     newSequence(t, ""),
+				minBW:         10,
+				maxBW:         42,
+				splitCls:      2,
+				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				minActiveRsvs: 1,
 			},
 			paths: []snet.PathInterfacesHaver{
 				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0),
@@ -310,15 +305,10 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 			localIA := xtest.MustParseIA("1-ff00:0:1")
 			dstIA := xtest.MustParseIA("1-ff00:0:2")
 
-			entry := activeEntry{
-				requirements:  tc.requirements,
-				mutex:         new(sync.Mutex),
-				minActiveRsvs: 1,
-			}
 			manager := mockManager(ctrl, now, localIA)
 			keeper := keeper{
 				manager: manager,
-				entries: map[addr.IA][]activeEntry{dstIA: {entry}},
+				entries: map[addr.IA][]requirements{dstIA: {tc.requirements}},
 			}
 			// prepare the sequence of returns from the manager
 			managerMutex := new(sync.Mutex)
@@ -342,10 +332,11 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 					return make([]*segment.Reservation, n), nil
 				})
 			// build requests from paths (tested elsewhere)
-			requests, err := entry.PrepareSetupRequests(tc.paths, now)
+			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, now)
 			require.NoError(t, err)
 			// call and check
-			err = keeper.requestNSuccessfulRsvs(ctx, dstIA, entry, requests, tc.requiredCount)
+			err = keeper.requestNSuccessfulRsvs(ctx, dstIA,
+				tc.requirements, requests, tc.requiredCount)
 			if tc.expectError {
 				require.Error(t, err)
 			} else {
@@ -360,31 +351,32 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 	}
 }
 
-func TestActiveEntryFilter(t *testing.T) {
+func TestRequirementsFilter(t *testing.T) {
 	now := util.SecsToTime(0)
 	tomorrow := now.Add(3600 * 24 * time.Second)
-	requirements := entryRequirements{
-		predicate: newSequence(t, "1-ff00:0:1#0,1 1-ff00:0:2 0*"),
-		minBW:     10,
-		maxBW:     42,
-		splitCls:  2,
-		endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+	reqs := requirements{
+		predicate:     newSequence(t, "1-ff00:0:1#0,1 1-ff00:0:2 0*"),
+		minBW:         10,
+		maxBW:         42,
+		splitCls:      2,
+		endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+		minActiveRsvs: 1,
 	}
 
 	cases := map[string]struct {
-		requirements      entryRequirements
+		requirements      requirements
 		atLeastUntil      time.Time
 		expectedCompliant int
 		expectedMayBe     int
 		rsvs              []*segment.Reservation
 	}{
 		"empty": {
-			requirements: requirements,
+			requirements: reqs,
 			atLeastUntil: now,
 			rsvs:         nil,
 		},
 		"three_identical": {
-			requirements:      requirements,
+			requirements:      reqs,
 			atLeastUntil:      now,
 			expectedCompliant: 3,
 			rsvs: st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
@@ -393,10 +385,10 @@ func TestActiveEntryFilter(t *testing.T) {
 				st.ConfirmAllIndices(),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 		},
 		"a pending (non active) index of all rsvs is uncompliant": {
-			requirements:      requirements,
+			requirements:      reqs,
 			atLeastUntil:      now,
 			expectedCompliant: 3,
 			rsvs: st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
@@ -406,10 +398,10 @@ func TestActiveEntryFilter(t *testing.T) {
 				st.ConfirmAllIndices(),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 		},
 		"active index of first rsv is uncompliant but still one compliant index": {
-			requirements:      requirements,
+			requirements:      reqs,
 			atLeastUntil:      now,
 			expectedCompliant: 3,
 			rsvs: modOneRsv(st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
@@ -418,11 +410,11 @@ func TestActiveEntryFilter(t *testing.T) {
 				st.ConfirmAllIndices(),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 				0, st.ModIndex(0, st.WithBW(3, 0, 0))), // index 0 of rsv 0
 		},
 		"first rsv with two indices, both uncompliant": {
-			requirements:      requirements,
+			requirements:      reqs,
 			atLeastUntil:      now,
 			expectedCompliant: 2,
 			expectedMayBe:     1,
@@ -432,7 +424,7 @@ func TestActiveEntryFilter(t *testing.T) {
 				st.ConfirmAllIndices(),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 				0,                                   // first reservation
 				st.ModIndex(0, st.WithBW(3, 0, 0)),  // index 0
 				st.ModIndex(1, st.WithBW(3, 0, 0))), // index 1
@@ -442,13 +434,8 @@ func TestActiveEntryFilter(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			en := activeEntry{
-				requirements:  tc.requirements,
-				mutex:         new(sync.Mutex),
-				minActiveRsvs: 1,
-			}
 			compliant, couldBeCompliant, neverCompliant :=
-				en.SplitByCompliance(tc.rsvs, tc.atLeastUntil)
+				tc.requirements.SplitByCompliance(tc.rsvs, tc.atLeastUntil)
 			require.Len(t, compliant, tc.expectedCompliant)
 			require.Len(t, couldBeCompliant, tc.expectedMayBe)
 			require.Len(t, neverCompliant, len(tc.rsvs)-tc.expectedCompliant-tc.expectedMayBe)
@@ -456,44 +443,45 @@ func TestActiveEntryFilter(t *testing.T) {
 	}
 }
 
-func TestActiveEntryCompliance(t *testing.T) {
+func TestRequirementsCompliance(t *testing.T) {
 	now := util.SecsToTime(0)
 	tomorrow := now.Add(3600 * 24 * time.Second)
-	requirements := entryRequirements{
-		predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
-		minBW:     10,
-		maxBW:     42,
-		splitCls:  2,
-		endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+	reqs := requirements{
+		predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+		minBW:         10,
+		maxBW:         42,
+		splitCls:      2,
+		endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+		minActiveRsvs: 1,
 	}
 	cases := map[string]struct {
-		requirements       entryRequirements
+		requirements       requirements
 		rsv                *segment.Reservation
 		atLeastUntil       time.Time
 		expectedCompliance Compliance
 	}{
 		"compliant, one index": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: Compliant,
 		},
 		"one compliant index but bad traffic split": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(1),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: NeverCompliant,
 		},
 		"bad end props": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
@@ -503,70 +491,70 @@ func TestActiveEntryCompliance(t *testing.T) {
 			expectedCompliance: NeverCompliant,
 		},
 		"bad path": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 2, "1-ff00:0:3", 3, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: NeverCompliant,
 		},
 		"one non compliant index, minbw": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(1, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: CouldBeCompliant,
 		},
 		"one non compliant index, maxbw": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 44, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: CouldBeCompliant,
 		},
 		"one non compliant index, expired": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(now)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: CouldBeCompliant,
 		},
 		"no active indices": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: CouldBeCompliant,
 		},
 		"no indices": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: CouldBeCompliant,
 		},
 		"compliant in the past, not now": {
-			requirements: requirements,
+			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.AddIndex(st.WithBW(1, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(1), // will destroy index 0
 				st.WithTrafficSplit(2),
-				st.WithEndProps(requirements.endProps)),
+				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: CouldBeCompliant,
 		},
@@ -584,33 +572,35 @@ func TestActiveEntryCompliance(t *testing.T) {
 
 func TestEntryPrepareSetupRequests(t *testing.T) {
 	cases := map[string]struct {
-		requirements entryRequirements
+		requirements requirements
 		paths        []snet.PathInterfacesHaver
 		expected     int
 	}{
 		"empty": {
-			requirements: entryRequirements{},
+			requirements: requirements{},
 			paths:        nil,
 			expected:     0,
 		},
 		"no paths": {
-			requirements: entryRequirements{
-				predicate: newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
-				minBW:     10,
-				maxBW:     42,
-				splitCls:  2,
-				endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+			requirements: requirements{
+				predicate:     newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
+				minBW:         10,
+				maxBW:         42,
+				splitCls:      2,
+				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				minActiveRsvs: 1,
 			},
 			paths:    []snet.PathInterfacesHaver{},
 			expected: 0,
 		},
 		"starts here and ends there": {
-			requirements: entryRequirements{
-				predicate: newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
-				minBW:     10,
-				maxBW:     42,
-				splitCls:  2,
-				endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+			requirements: requirements{
+				predicate:     newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
+				minBW:         10,
+				maxBW:         42,
+				splitCls:      2,
+				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				minActiveRsvs: 1,
 			},
 			paths: []snet.PathInterfacesHaver{
 				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0),
@@ -621,12 +611,13 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 			expected: 4,
 		},
 		"all filtered out": {
-			requirements: entryRequirements{
-				predicate: newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
-				minBW:     10,
-				maxBW:     42,
-				splitCls:  2,
-				endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+			requirements: requirements{
+				predicate:     newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
+				minBW:         10,
+				maxBW:         42,
+				splitCls:      2,
+				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				minActiveRsvs: 1,
 			},
 			paths: []snet.PathInterfacesHaver{
 				st.NewPathFromComponents(0, "1-ff00:0:81", 1, 2, "1-ff00:0:2", 0),
@@ -641,15 +632,10 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			entry := activeEntry{
-				requirements:  tc.requirements,
-				mutex:         new(sync.Mutex),
-				minActiveRsvs: 1,
-			}
-			requests, err := entry.PrepareSetupRequests(tc.paths, util.SecsToTime(10))
+			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, util.SecsToTime(10))
 			require.NoError(t, err)
 			require.Len(t, requests, tc.expected)
-			filtered := entry.requirements.predicate.EvalInterfaces(tc.paths)
+			filtered := tc.requirements.predicate.EvalInterfaces(tc.paths)
 			require.Len(t, filtered, tc.expected) // this is internal, but forces 1 req per path
 			bagOfPaths := make(map[string]struct{}, len(filtered))
 			for _, p := range filtered {
@@ -677,15 +663,12 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 }
 
 func TestEntrySelectRequests(t *testing.T) {
-	entry := activeEntry{
-		requirements: entryRequirements{
-			predicate: newSequence(t, "1-ff00:0:1#0,1 1-ff00:0:2 0*"),
-			minBW:     10,
-			maxBW:     42,
-			splitCls:  2,
-			endProps:  reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
-		},
-		mutex:         new(sync.Mutex),
+	entry := requirements{
+		predicate:     newSequence(t, "1-ff00:0:1#0,1 1-ff00:0:2 0*"),
+		minBW:         10,
+		maxBW:         42,
+		splitCls:      2,
+		endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 		minActiveRsvs: 1,
 	}
 	cases := map[string]struct {
@@ -772,12 +755,12 @@ func TestSplitRequests(t *testing.T) {
 func TestParseInitial(t *testing.T) {
 	cases := map[string]struct {
 		conf            conf.Reservations
-		expectedEntries map[addr.IA][]activeEntry
+		expectedEntries map[addr.IA][]requirements
 		expectedError   bool
 	}{
 		"empty": {
 			conf:            conf.Reservations{},
-			expectedEntries: map[addr.IA][]activeEntry{},
+			expectedEntries: map[addr.IA][]requirements{},
 		},
 		"good": {
 			conf: conf.Reservations{Rsvs: []conf.ReservationEntry{
@@ -791,17 +774,14 @@ func TestParseInitial(t *testing.T) {
 					RequiredCount: 2,
 				},
 			}},
-			expectedEntries: map[addr.IA][]activeEntry{
+			expectedEntries: map[addr.IA][]requirements{
 				xtest.MustParseIA("1-ff00:0:2"): {
 					{
-						requirements: entryRequirements{
-							predicate: newSequence(t, ""),
-							minBW:     1,
-							maxBW:     2,
-							splitCls:  3,
-							endProps:  reservation.EndLocal,
-						},
-						mutex:         new(sync.Mutex),
+						predicate:     newSequence(t, ""),
+						minBW:         1,
+						maxBW:         2,
+						splitCls:      3,
+						endProps:      reservation.EndLocal,
 						minActiveRsvs: 2,
 					},
 				},
