@@ -45,6 +45,7 @@ import (
 	"github.com/scionproto/scion/go/cs/segreq"
 	segreqgrpc "github.com/scionproto/scion/go/cs/segreq/grpc"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/common"
 	libconfig "github.com/scionproto/scion/go/lib/config"
 	"github.com/scionproto/scion/go/lib/drkeystorage"
@@ -67,6 +68,7 @@ import (
 	"github.com/scionproto/scion/go/lib/topology"
 	"github.com/scionproto/scion/go/pkg/command"
 	"github.com/scionproto/scion/go/pkg/cs"
+	colgrpc "github.com/scionproto/scion/go/pkg/cs/colibri/grpc"
 	"github.com/scionproto/scion/go/pkg/cs/drkey"
 	drkeygrpc "github.com/scionproto/scion/go/pkg/cs/drkey/grpc"
 	cstrust "github.com/scionproto/scion/go/pkg/cs/trust"
@@ -74,6 +76,7 @@ import (
 	cstrustmetrics "github.com/scionproto/scion/go/pkg/cs/trust/metrics"
 	"github.com/scionproto/scion/go/pkg/discovery"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
 	dpb "github.com/scionproto/scion/go/pkg/proto/discovery"
 	"github.com/scionproto/scion/go/pkg/storage"
@@ -456,11 +459,17 @@ func run(file string) error {
 			Capacities: cap,
 			Delta:      cfg.Colibri.Delta,
 		}
-		colibriStore = reservationstore.NewStore(topo.IA(), db, admitter)
+		// TODO(juagargi) use coliquic here
+		colibriStore = reservationstore.NewStore(topo.IA(), db, admitter, dialer)
 		colibriInitialRsvs, err = reservation_conf.ReservationsFromFile(cfg.Colibri.ReservationsFile)
 		if err != nil {
 			return serrors.WrapStr("error loading colibri initial reservation list", err)
 		}
+
+		colibriService := &colgrpc.ColibriService{}
+		// colpb.RegisterColibriServer(quicServer, colibriService)
+		colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
+		colpb.RegisterColibriServer(colServer, colibriService)
 	}
 
 	promgrpc.Register(quicServer)

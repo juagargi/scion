@@ -374,7 +374,7 @@ func benchmarkAdmitSegmentReservation(b *testing.B, count int) {
 
 	cap := newCapacities()
 	admitter := newStatefulAdmitter(cap)
-	s := reservationstore.NewStore(xtest.MustParseIA("1-1"), db, admitter)
+	s := reservationstore.NewStore(xtest.MustParseIA("1-1"), db, admitter, nil)
 
 	AddSegmentReservation(b, db, "ff00:1:1", count)
 	ctx := context.Background()
@@ -408,7 +408,7 @@ func timeAdmitSegmentReservationTwoDimensions(t *testing.T,
 
 	cap := newCapacities()
 	admitter := newStatefulAdmitter(cap)
-	s := reservationstore.NewStore(xtest.MustParseIA("1-1"), db, admitter)
+	s := reservationstore.NewStore(xtest.MustParseIA("1-1"), db, admitter, nil)
 
 	thisASID := "ff00:10:111"
 	AddSegmentReservation(t, db, thisASID, sameSourceASIDCount)
@@ -464,7 +464,7 @@ func timeAdmitE2EReservationTwoDimensions(t *testing.T, countSegments, countE2E 
 	// now perform the actual E2E admission
 	cap := newCapacities()
 	admitter := newStatefulAdmitter(cap)
-	s := reservationstore.NewStore(xtest.MustParseIA("1-1"), db, admitter)
+	s := reservationstore.NewStore(xtest.MustParseIA("1-1"), db, admitter, nil)
 
 	successfulReq := newTestE2ESuccessReq(t, "ff00:1:1")
 	t0 := time.Now()

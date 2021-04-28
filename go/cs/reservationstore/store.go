@@ -28,6 +28,7 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
+	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 )
 
 // Store is the reservation store.
@@ -35,6 +36,7 @@ type Store struct {
 	LocalIA  addr.IA
 	db       backend.DB         // aka reservation map
 	admitter admission.Admitter // the chosen admission entity
+	dialer   *libgrpc.QUICDialer
 }
 
 var _ reservationstorage.Store = (*Store)(nil)
@@ -42,11 +44,14 @@ var _ reservationstorage.Store = (*Store)(nil)
 // TODO(juagargi) the store needs a quic socket using regular scion, and another using colibri
 
 // NewStore creates a new reservation store.
-func NewStore(localIA addr.IA, db backend.DB, admitter admission.Admitter) *Store {
+func NewStore(localIA addr.IA, db backend.DB, admitter admission.Admitter,
+	dialer *libgrpc.QUICDialer) *Store {
+
 	return &Store{
 		LocalIA:  localIA,
 		db:       db,
 		admitter: admitter,
+		dialer:   dialer,
 	}
 }
 
