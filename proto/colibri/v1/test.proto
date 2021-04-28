@@ -27,4 +27,13 @@ service Colibri {
 message TestingMessage{
     string message = 1;
     google.protobuf.Timestamp timestamp = 2;
+    bytes data = 3;
+}
+
+message SetupRequest{
+
+}
+
+message SetupResponse{
+
 }
