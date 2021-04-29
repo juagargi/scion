@@ -71,7 +71,7 @@ type TasksConfig struct {
 	PropagationInterval  time.Duration
 	RegistrationInterval time.Duration
 	DRKeyEpochInterval   time.Duration
-	ColibriInitialRsvs   coli_conf.Reservations
+	ColibriInitialRsvs   *coli_conf.Reservations
 
 	AllowIsdLoop bool
 }
@@ -231,7 +231,7 @@ func (t *TasksConfig) ColibriManager() (*periodic.Runner, error) {
 	topo := t.TopoProvider.Get()
 	mgr, err := reservationstore.NewColibriManager(topo.IA(), t.ColibriStore, t.ColibriInitialRsvs)
 	if err != nil {
-		return nil, err
+		return nil, serrors.WrapStr("could not start colibri manager", err)
 	}
 	return periodic.Start(mgr, 100*time.Millisecond, 100*time.Millisecond), nil
 }
@@ -257,7 +257,7 @@ func StartTasks(cfg TasksConfig) (*Tasks, error) {
 	segRevCleaner := revcache.NewCleaner(cfg.RevCache, "control_pathstorage_revocation")
 	colibriManager, err := cfg.ColibriManager()
 	if err != nil {
-		return nil, serrors.WrapStr("colibri manager failed while starting tasks", err)
+		return nil, err
 	}
 	return &Tasks{
 		Originator:      cfg.Originator(),

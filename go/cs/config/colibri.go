@@ -17,20 +17,41 @@ package config
 import (
 	"io"
 
+	colconf "github.com/scionproto/scion/go/cs/reservation/conf"
 	"github.com/scionproto/scion/go/lib/config"
 	"github.com/scionproto/scion/go/pkg/storage"
 )
 
 // ColibriConfig is the root configuration for all things reservation.
 type ColibriConfig struct {
-	DB               storage.DBConfig `toml:"colibri_db,omitempty"`
-	Delta            float64
-	CapacitiesFile   string `toml:"capacities_file"`   // cs/reservation/conf.Capacities
-	ReservationsFile string `toml:"reservations_file"` // cs/reservation/conf.Reservations
+	DB               storage.DBConfig      `toml:"db,omitempty"`
+	Delta            float64               `toml:"delta"`
+	CapacitiesFile   string                `toml:"capacities"`
+	ReservationsFile string                `toml:"reservations"`
+	Capacities       *colconf.Capacities   `toml:"omitempty"`
+	Reservations     *colconf.Reservations `toml:"omitempty"`
 }
 
 func (cfg *ColibriConfig) Validate() error {
+	var err error
+	if cfg.CapacitiesFile != "" {
+		cfg.Capacities, err = colconf.CapacitiesFromFile(cfg.CapacitiesFile)
+		if err != nil {
+			return err
+		}
+	}
+	if cfg.ReservationsFile != "" {
+		cfg.Reservations, err = colconf.ReservationsFromFile(cfg.ReservationsFile)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (cfg *ColibriConfig) InitDefaults() {
+	cfg.DB.InitDefaults()
+	cfg.Delta = 0.8
 }
 
 func (cfg *ColibriConfig) Sample(dst io.Writer, _ config.Path, _ config.CtxMap) {
@@ -39,8 +60,4 @@ func (cfg *ColibriConfig) Sample(dst io.Writer, _ config.Path, _ config.CtxMap) 
 
 func (cfg *ColibriConfig) ConfigName() string {
 	return "colibri"
-}
-
-func (cfg *ColibriConfig) Enabled() bool {
-	return cfg.DB.Connection != ""
 }

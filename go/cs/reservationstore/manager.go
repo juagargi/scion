@@ -43,20 +43,20 @@ type Manager interface {
 // manager takes care of the health of the segment reservations.
 type manager struct {
 	now        func() time.Time // replace in tests
+	wakeupTime time.Time        // no need to do anything until this time
 	keeper     *keeper
 	localIA    addr.IA
 	store      reservationstorage.Store
-	wakeupTime time.Time // no need to do anything until this time
 }
 
 func NewColibriManager(localIA addr.IA, store reservationstorage.Store,
-	initial conf.Reservations) (Manager, error) {
+	initial *conf.Reservations) (Manager, error) {
 
 	m := &manager{
 		now:        time.Now,
+		wakeupTime: time.Now().Add(-time.Nanosecond),
 		localIA:    localIA,
 		store:      store,
-		wakeupTime: time.Now().Add(-time.Second),
 	}
 
 	keeper, err := NewKeeper(m, initial)
@@ -79,6 +79,12 @@ func (m *manager) Run(ctx context.Context) {
 	}
 	logger.Debug("Reservation manager starting")
 	defer logger.Debug("Reservation manager finished")
+	wakeupTime, err := m.keeper.OneShot(ctx)
+	if err != nil {
+		logger.Error("while keeping the reservations", "err", err)
+	}
+	logger.Info("will wait until the specified time", "wakeup_time", wakeupTime)
+	m.wakeupTime = wakeupTime
 }
 
 func (m *manager) Now() time.Time {

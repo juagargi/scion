@@ -37,14 +37,15 @@ import (
 )
 
 func TestKeepOneShot(t *testing.T) {
-	now := util.SecsToTime(0)
-	tomorrow := now.Add(3600 * 24 * time.Second)
+	now := util.SecsToTime(10)
+	tomorrow := now.AddDate(0, 0, 1)
 	endProps1 := reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer
 	cases := map[string]struct {
-		destinations  map[addr.IA][]requirements
-		paths         map[addr.IA][]snet.PathInterfacesHaver
-		reservations  map[addr.IA][]*segment.Reservation
-		expectedCalls int
+		destinations          map[addr.IA][]requirements
+		paths                 map[addr.IA][]snet.PathInterfacesHaver
+		reservations          map[addr.IA][]*segment.Reservation
+		expectedRequestsCalls int
+		expectedWakeupTime    time.Time
 	}{
 		"regular": {
 			destinations: map[addr.IA][]requirements{
@@ -100,7 +101,7 @@ func TestKeepOneShot(t *testing.T) {
 						st.WithActiveIndex(0),
 						st.WithTrafficSplit(2),
 						st.WithEndProps(endProps1)),
-					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0
+					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0 to could be compliant
 				xtest.MustParseIA("1-ff00:0:3"): modOneRsv(
 					st.NewRsvs(2, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0),
 						st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
@@ -109,8 +110,39 @@ func TestKeepOneShot(t *testing.T) {
 						st.WithActiveIndex(0),
 						st.WithTrafficSplit(2),
 						st.WithEndProps(endProps1)),
-					0, st.ModIndex(0, st.WithBW(3, 0, 0))),
+					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0 to could be compliant
 			},
+			expectedRequestsCalls: 4,
+			expectedWakeupTime:    now.Add(minDuration),
+		},
+		"all compliant expiring tomorrow": {
+			destinations: map[addr.IA][]requirements{
+				xtest.MustParseIA("1-ff00:0:2"): {{
+					predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+					minBW:         10,
+					maxBW:         42,
+					splitCls:      2,
+					endProps:      endProps1,
+					minActiveRsvs: 1,
+				}},
+			},
+			paths: map[addr.IA][]snet.PathInterfacesHaver{
+				xtest.MustParseIA("1-ff00:0:2"): {
+					st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0), // direct
+				},
+			},
+			reservations: map[addr.IA][]*segment.Reservation{
+				xtest.MustParseIA("1-ff00:0:2"): st.NewRsvs(1,
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+					st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
+					st.AddIndex(st.WithBW(12, 24, 0),
+						st.WithExpiration(tomorrow.Add(24*time.Hour))),
+					st.WithActiveIndex(0),
+					st.WithTrafficSplit(2),
+					st.WithEndProps(endProps1)),
+			},
+			expectedRequestsCalls: 0,
+			expectedWakeupTime:    now.Add(sleepAtMost),
 		},
 	}
 	for name, tc := range cases {
@@ -121,7 +153,6 @@ func TestKeepOneShot(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			now := util.SecsToTime(10)
 			localIA := xtest.MustParseIA("1-ff00:0:1")
 
 			manager := mockManager(ctrl, now, localIA)
@@ -131,23 +162,26 @@ func TestKeepOneShot(t *testing.T) {
 			}
 			store := mockStore(ctrl)
 			store.EXPECT().GetSegmentRsvsFromSrcDstIA(gomock.Any(), gomock.Any(), gomock.Any()).
-				Times(2).DoAndReturn(func(_ context.Context, _ addr.IA, dstIA addr.IA) (
-				[]*segment.Reservation, error) {
+				Times(len(tc.destinations)).DoAndReturn(
+				func(_ context.Context, _ addr.IA, dstIA addr.IA) (
+					[]*segment.Reservation, error) {
 
-				return tc.reservations[dstIA], nil
-			})
+					return tc.reservations[dstIA], nil
+				})
 			manager.EXPECT().Store().AnyTimes().Return(store)
 			manager.EXPECT().PathsTo(gomock.Any()).Times(len(tc.destinations)).DoAndReturn(
 				func(dstIA addr.IA) ([]snet.PathInterfacesHaver, error) {
 					return tc.paths[dstIA], nil
 				})
-			manager.EXPECT().RequestMany(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
+			manager.EXPECT().RequestMany(gomock.Any(), gomock.Any()).
+				Times(tc.expectedRequestsCalls).DoAndReturn(
 				func(_ context.Context, reqs []*segment.SetupReq) ([]*segment.Reservation, error) {
 					return make([]*segment.Reservation, len(reqs)), nil
 				})
 
-			err := keeper.OneShot(ctx)
+			wakeupTime, err := keeper.OneShot(ctx)
 			require.NoError(t, err)
+			require.Equal(t, tc.expectedWakeupTime, wakeupTime)
 		})
 	}
 }
@@ -205,7 +239,7 @@ func TestSetupsPerDestination(t *testing.T) {
 					return make([]*segment.Reservation, len(reqs)), nil
 				})
 
-			err := keeper.setupsPerDestination(ctx, dstIA, tc.requirements, tc.paths, noRsvs)
+			_, err := keeper.setupsPerDestination(ctx, dstIA, tc.requirements, tc.paths, noRsvs)
 			require.NoError(t, err)
 		})
 	}

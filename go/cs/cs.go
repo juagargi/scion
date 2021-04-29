@@ -37,9 +37,7 @@ import (
 	"github.com/scionproto/scion/go/cs/config"
 	"github.com/scionproto/scion/go/cs/ifstate"
 	"github.com/scionproto/scion/go/cs/onehop"
-	reservation_conf "github.com/scionproto/scion/go/cs/reservation/conf"
 	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateful"
-	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/cs/reservationstore"
 	segreggrpc "github.com/scionproto/scion/go/cs/segreg/grpc"
 	"github.com/scionproto/scion/go/cs/segreq"
@@ -444,33 +442,21 @@ func run(file string) error {
 	dsHealth.SetServingStatus("discovery", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(tcpServer, dsHealth)
 
-	var colibriStore reservationstorage.Store
-	var colibriInitialRsvs reservation_conf.Reservations
-	if cfg.Colibri.Enabled() {
-		db, err := storage.NewColibriStorage(cfg.Colibri.DB)
-		if err != nil {
-			return serrors.WrapStr("error initializing COLIBRI DB", err)
-		}
-		cap, err := reservation_conf.CapacitiesFromFile(cfg.Colibri.CapacitiesFile)
-		if err != nil {
-			return err
-		}
-		admitter := &admission.StatefulAdmission{
-			Capacities: cap,
-			Delta:      cfg.Colibri.Delta,
-		}
-		// TODO(juagargi) use coliquic here
-		colibriStore = reservationstore.NewStore(topo.IA(), db, admitter, dialer)
-		colibriInitialRsvs, err = reservation_conf.ReservationsFromFile(cfg.Colibri.ReservationsFile)
-		if err != nil {
-			return serrors.WrapStr("error loading colibri initial reservation list", err)
-		}
-
-		colibriService := &colgrpc.ColibriService{}
-		// colpb.RegisterColibriServer(quicServer, colibriService)
-		colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
-		colpb.RegisterColibriServer(colServer, colibriService)
+	db, err := storage.NewColibriStorage(cfg.Colibri.DB)
+	if err != nil {
+		return serrors.WrapStr("error initializing COLIBRI DB", err)
 	}
+	admitter := &admission.StatefulAdmission{
+		Capacities: cfg.Colibri.Capacities,
+		Delta:      cfg.Colibri.Delta,
+	}
+	// TODO(juagargi) use coliquic here
+	colibriStore := reservationstore.NewStore(topo.IA(), db, admitter, dialer)
+
+	colibriService := &colgrpc.ColibriService{}
+	// colpb.RegisterColibriServer(quicServer, colibriService)
+	colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
+	colpb.RegisterColibriServer(colServer, colibriService)
 
 	promgrpc.Register(quicServer)
 	promgrpc.Register(tcpServer)
@@ -552,12 +538,12 @@ func run(file string) error {
 		OriginationInterval:  cfg.BS.OriginationInterval.Duration,
 		PropagationInterval:  cfg.BS.PropagationInterval.Duration,
 		DRKeyEpochInterval:   cfg.DRKey.EpochDuration.Duration,
-		ColibriInitialRsvs:   colibriInitialRsvs,
+		ColibriInitialRsvs:   cfg.Colibri.Reservations,
 		RegistrationInterval: cfg.BS.RegistrationInterval.Duration,
 		AllowIsdLoop:         isdLoopAllowed,
 	})
 	if err != nil {
-		serrors.WrapStr("starting periodic tasks", err)
+		return serrors.WrapStr("starting periodic tasks", err)
 	}
 	defer tasks.Kill()
 	log.Info("Started periodic tasks")

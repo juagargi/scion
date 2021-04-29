@@ -45,13 +45,22 @@ import (
 //
 // The keeper always knows the nearest point in time when a reservation will expire.
 
+// sleepAtLeast is the time duration that the keeper will sleep at a minimum, even
+// if it's called very frequently.
+const sleepAtLeast = 4 * time.Second
+
+const sleepAtMost = 5 * time.Minute
+
+// min validity in the future for the reservations
+const minDuration = time.Minute
+
 type keeper struct {
-	manager     Manager
-	entries     map[addr.IA][]requirements
-	minDuration time.Duration // min validity in the future for the reservations
+	sleepUntil time.Time // nothing to do in the keeper until this time
+	manager    Manager
+	entries    map[addr.IA][]requirements
 }
 
-func NewKeeper(manager Manager, conf conf.Reservations) (
+func NewKeeper(manager Manager, conf *conf.Reservations) (
 	*keeper, error) {
 
 	entries, err := parseInitial(conf)
@@ -59,58 +68,76 @@ func NewKeeper(manager Manager, conf conf.Reservations) (
 		return nil, err
 	}
 	return &keeper{
-		manager:     manager,
-		entries:     entries,
-		minDuration: time.Minute,
+		sleepUntil: time.Now().Add(-time.Nanosecond),
+		manager:    manager,
+		entries:    entries,
 	}, nil
 }
 
-func (k *keeper) OneShot(ctx context.Context) error {
+// OneShot returns the time when it expects to be called again. Before this time it has
+// nothing to do.
+func (k *keeper) OneShot(ctx context.Context) (time.Time, error) {
 	wg := sync.WaitGroup{}
+	wakeupTimes := make(chan time.Time, len(k.entries))
 	for dst, entries := range k.entries {
 		dst, entries := dst, entries
 		wg.Add(1)
-		go func() {
+		go func(c chan time.Time) {
 			defer log.HandlePanic()
 			defer wg.Done()
 			scionPaths, err := k.manager.PathsTo(dst)
 			if err != nil {
 				log.Error("keeping the reservations", "err", err)
 			}
-			err = k.keepDestination(ctx, dst, entries, scionPaths)
+			wakeup, err := k.keepDestination(ctx, dst, entries, scionPaths)
 			if err != nil {
 				log.Error("keeping the reservations", "err", err)
 			}
-		}()
+			c <- wakeup
+		}(wakeupTimes)
 	}
 	wg.Wait()
-	return nil
+	close(wakeupTimes)
+	earliest := k.manager.Now().Add(sleepAtMost)
+	for wakeup := range wakeupTimes {
+		if wakeup.Before(earliest) {
+			earliest = wakeup
+		}
+	}
+	if earliest.Sub(k.manager.Now()) < sleepAtLeast {
+		earliest = k.manager.Now().Add(sleepAtLeast)
+	}
+	return earliest, nil
 }
 
+// keepDestination will ensure that all reservations for dstIA exist and are compliant.
+// It returns the time until there is nothing to do for these reservations.
 func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []requirements,
-	paths []snet.PathInterfacesHaver) error {
+	paths []snet.PathInterfacesHaver) (time.Time, error) {
 
 	// get reservations once and pass them along.
 	rsvs, err := k.manager.Store().GetSegmentRsvsFromSrcDstIA(ctx, k.manager.LocalIA(), dstIA)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	// setup new reservations
-	err = k.setupsPerDestination(ctx, dstIA, entries, paths, rsvs)
+	sleepUntil, err := k.setupsPerDestination(ctx, dstIA, entries, paths, rsvs)
 	if err != nil {
-		return serrors.WrapStr("keeping destination", err, "dst", dstIA)
+		return sleepUntil, serrors.WrapStr("keeping destination", err, "dst", dstIA)
 	}
-	return nil
+	return sleepUntil, nil
 }
 
-// setupsPerDestination process all entries for a given IA sequentially, to avoid
+// setupsPerDestination processes all entries for a given IA sequentially, to avoid
 // reservation racing. It creates the setup requests and later sends them.
+// Returns the time until which there is nothing to do for these reservations.
 func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entries []requirements,
-	paths []snet.PathInterfacesHaver, currentRsvs []*seg.Reservation) error {
+	paths []snet.PathInterfacesHaver, currentRsvs []*seg.Reservation) (time.Time, error) {
 
+	wakeupTime := k.manager.Now().Add(sleepAtMost)
 	for _, entry := range entries {
 		// filter reservations
-		atLeastUntil := k.manager.Now().Add(k.minDuration)
+		atLeastUntil := k.manager.Now().Add(minDuration)
 		compliantRsvs, couldBeCompliant, notCompliant :=
 			entry.SplitByCompliance(currentRsvs, atLeastUntil)
 		// report not compliant ones; don't delete them, they will expire eventually.
@@ -123,16 +150,28 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		}
 		// new indices:
 		if err := k.askNewIndices(ctx, couldBeCompliant, dstIA, entry); err != nil {
-			return err
+			return time.Time{}, err
 		}
+		// reservations in couldBeComliant are now compliant
+
 		// totally new reservations:
 		var requestCount int = entry.minActiveRsvs -
 			len(compliantRsvs) - len(couldBeCompliant)
 		if err := k.askNewReservations(ctx, requestCount, dstIA, entry, paths); err != nil {
-			return err
+			return time.Time{}, err
+		}
+		// the couldBeCompliant reservations are good for minDuration,
+		if len(couldBeCompliant) > 0 && atLeastUntil.Before(wakeupTime) {
+			wakeupTime = atLeastUntil
+		}
+		// but we don't know about reservations from compliantRsvs
+		for _, rsv := range compliantRsvs {
+			if rsv.ActiveIndex().Expiration.Before(wakeupTime) {
+				wakeupTime = rsv.ActiveIndex().Expiration
+			}
 		}
 	}
-	return nil
+	return wakeupTime, nil
 }
 
 // askNewIndices will prepare requests based on existing reservations and ask for new indices.
@@ -335,7 +374,12 @@ func splitRequests(requests []*seg.SetupReq, indices []int) (
 	return a, b[:len(b)-len(a)]
 }
 
-func parseInitial(conf conf.Reservations) (map[addr.IA][]requirements, error) {
+func parseInitial(conf *conf.Reservations) (map[addr.IA][]requirements, error) {
+	if conf == nil {
+		log.Info("COLIBRI not keeping any reservations")
+		return nil, nil
+	}
+	log.Info("COLIBRI will keep reservations", "count", len(conf.Rsvs))
 	initial := make(map[addr.IA][]requirements)
 	for _, r := range conf.Rsvs {
 		seq, err := pathpol.NewSequence(r.PathPredicate)
