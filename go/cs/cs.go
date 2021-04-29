@@ -457,6 +457,13 @@ func run(file string) error {
 	// colpb.RegisterColibriServer(quicServer, colibriService)
 	colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
 	colpb.RegisterColibriServer(colServer, colibriService)
+	go func() {
+		defer log.HandlePanic()
+		lis := coliquic.NewConnListener(quicStack.Listener.Listener)
+		if err := colServer.Serve(lis); err != nil {
+			fatal.Fatal(err)
+		}
+	}()
 
 	promgrpc.Register(quicServer)
 	promgrpc.Register(tcpServer)
