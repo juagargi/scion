@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
-    srcs = ["coliquic.go"],
+    srcs = [
+        "client.go",
+        "server.go",
+    ],
     importpath = "github.com/scionproto/scion/go/lib/colibri/coliquic",
     visibility = ["//visibility:public"],
     deps = [
