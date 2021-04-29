@@ -882,7 +882,7 @@ func TestParseInitial(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			entries, err := parseInitial(tc.conf)
+			entries, err := parseInitial(&tc.conf)
 			if tc.expectedError {
 				require.Error(t, err)
 			} else {
