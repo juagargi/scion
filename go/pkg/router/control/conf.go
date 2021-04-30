@@ -164,6 +164,7 @@ var svcTypes = []addr.HostSVC{
 	addr.SvcSB,
 	addr.SvcSIG,
 	addr.SvcHPS,
+	addr.SvcCOL,
 }
 
 func confServices(dp Dataplane, cfg *Config) error {

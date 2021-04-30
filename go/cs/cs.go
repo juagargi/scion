@@ -379,6 +379,7 @@ func run(file string) error {
 	}
 	dpb.RegisterDiscoveryServiceServer(quicServer, ds)
 
+	log.Info("deleteme 1")
 	//DRKey feature
 	var drkeyServStore drkeystorage.ServiceStore
 	var quicTLSServer *grpc.Server
@@ -454,7 +455,7 @@ func run(file string) error {
 		Delta:      cfg.Colibri.Delta,
 	}
 
-	colibriStore, err := reservationstore.NewStore(topo, router, quicStack.Dialer, db, admitter)
+	colibriStore, err := reservationstore.NewStore(topo, router, dialer, db, admitter)
 	if err != nil {
 		return serrors.WrapStr("initializing colibri store", err)
 	}
@@ -463,6 +464,7 @@ func run(file string) error {
 	// colpb.RegisterColibriServer(quicServer, colibriService)
 	colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
 	colpb.RegisterColibriServer(colServer, colibriService)
+	log.Info("DELETEME %%%%%%%%% colibri grpc server listening", "addr", quicStack.Listener.Listener.Addr())
 	go func() {
 		defer log.HandlePanic()
 		lis := coliquic.NewConnListener(quicStack.Listener.Listener)

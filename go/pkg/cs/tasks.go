@@ -235,7 +235,7 @@ func (t *TasksConfig) ColibriManager() (*periodic.Runner, error) {
 	if err != nil {
 		return nil, serrors.WrapStr("could not start colibri manager", err)
 	}
-	// return periodic.Start(mgr, 100*time.Millisecond, 5*time.Second), nil
+	return periodic.Start(mgr, 100*time.Millisecond, 5*time.Second), nil
 	//
 	//
 	//
@@ -246,7 +246,7 @@ func (t *TasksConfig) ColibriManager() (*periodic.Runner, error) {
 	// to
 	// remote
 	// deleteme
-	return periodic.Start(mgr, 100*time.Millisecond, 5*time.Hour), nil // TODO(juagargi)
+	// return periodic.Start(mgr, 100*time.Millisecond, 5*time.Hour), nil // TODO(juagargi)
 }
 
 // Tasks keeps track of the running tasks.

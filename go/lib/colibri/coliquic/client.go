@@ -26,11 +26,16 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
+	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
+	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
-	"github.com/scionproto/scion/go/lib/snet/squic"
 	"github.com/scionproto/scion/go/lib/topology"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
+
+type GRPCClientDialer interface {
+	Dial(ctx context.Context, addr net.Addr) (*grpc.ClientConn, error)
+}
 
 // ServiceClientOperator can obtain COLIBRI gRPC clients to talk to the service.
 // The goal of this construction is to avoid dialing more than once to the same destination,
@@ -40,14 +45,15 @@ import (
 // - Ensure we return a gRPC client using the correct path (the path is used at the server to
 //   measure the BW used by the services).
 type ServiceClientOperator struct {
-	connDialer  *squic.ConnDialer
-	neighbors   map[uint16]*snet.SVCAddr // XXX(juagargi) this resolves to >1 UDPAddr per neighbor!
-	initialized bool
-	mutex       sync.Mutex
+	connDialer     GRPCClientDialer
+	neighbors      map[uint16]*snet.SVCAddr // XXX(juagargi) this resolves to >1 UDPAddr per neighbor!
+	initialized    bool
+	mutex          sync.Mutex
+	deletemeRouter snet.Router
 }
 
 func NewServiceClientOperator(topo topology.Topology, router snet.Router,
-	clientConn *squic.ConnDialer) (*ServiceClientOperator, error) {
+	clientConn GRPCClientDialer) (*ServiceClientOperator, error) {
 
 	operator := &ServiceClientOperator{
 		connDialer:  clientConn,
@@ -79,23 +85,22 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, path reservat
 	if !ok {
 		return nil, serrors.New("bad packet: no neighbor on specified egress", "egress", egressID)
 	}
-	// // prepare remote address with the new path
-	// rAddr.Path.Type = path.Path().Type()
-	// rAddr.Path.Raw = make([]byte, path.Path().Len())
-	// if err = path.Path().SerializeTo(rAddr.Path.Raw); err != nil {
-	// 	return nil, serrors.New("bac packet: cannot serialize path", "path", path)
-	// }
-	log.Error("DELETEME dialing", "addr", rAddr)
-	// TODO(juagargi) replace with a single connection
-	quicConn, err := o.connDialer.Dial(ctx, rAddr)
-	if err != nil {
-		return nil, err
+	rAddr = rAddr.Copy() // preserve the original data
+
+	// prepare remote address with the new path
+	p := path.Path()
+	switch p.Type() {
+	case scion.PathType: // don't touch the service path
+	case colibri.PathType: // replace the service path with this one
+		rAddr.Path.Type = p.Type()
+		rAddr.Path.Raw = make([]byte, p.Len())
+		if err = p.SerializeTo(rAddr.Path.Raw); err != nil {
+			return nil, serrors.New("bac packet: cannot serialize path", "path", path)
+		}
 	}
-	dialer := func(context.Context, string) (net.Conn, error) {
-		return quicConn, nil
-	}
-	conn, err := grpc.DialContext(ctx, rAddr.String(), grpc.WithInsecure(),
-		grpc.WithContextDialer(dialer))
+
+	log.Info("DELETEME dialing", "addr", rAddr)
+	conn, err := o.connDialer.Dial(ctx, rAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +110,7 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, path reservat
 // initialize waits in the background until this operator can obtain paths to all the remaining IAs.
 func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.Router) {
 
+	o.deletemeRouter = router
 	remainingIAs := make(map[uint16]addr.IA)
 	for _, name := range topo.BRNames() {
 		brInfo, _ := topo.BR(name)
@@ -130,7 +136,8 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.R
 					IA:      ia,
 					Path:    path.Path(),
 					NextHop: path.UnderlayNextHop(),
-					SVC:     addr.SvcCOL,
+					SVC:     addr.SvcCS,
+					// SVC:     addr.SvcCOL, // TODO(juagargi) don't know how to make LookupSVC return the right value for SvcCOL
 				}
 				delete(remainingIAs, egress)
 			}
@@ -140,5 +147,3 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.R
 		o.initialized = true
 	}()
 }
-
-// 2021-04-30 15:48:25.741503+0000 INFO

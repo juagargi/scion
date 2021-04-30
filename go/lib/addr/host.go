@@ -286,6 +286,8 @@ func (h HostSVC) BaseString() string {
 		return "SB"
 	case SvcSIG:
 		return "SIG"
+	case SvcCOL:
+		return "COL"
 	case SvcWildcard:
 		return "Wildcard"
 	default:

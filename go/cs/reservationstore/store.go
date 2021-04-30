@@ -32,7 +32,6 @@ import (
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
-	"github.com/scionproto/scion/go/lib/snet/squic"
 	"github.com/scionproto/scion/go/lib/topology"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
@@ -49,7 +48,7 @@ var _ reservationstorage.Store = (*Store)(nil)
 
 // NewStore creates a new reservation store.
 func NewStore(topo topology.Topology, router snet.Router,
-	dialer *squic.ConnDialer, db backend.DB, admitter admission.Admitter) (*Store, error) {
+	dialer coliquic.GRPCClientDialer, db backend.DB, admitter admission.Admitter) (*Store, error) {
 
 	operator, err := coliquic.NewServiceClientOperator(topo, router, dialer)
 	if err != nil {
@@ -167,14 +166,17 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		return serrors.WrapStr("cannot commit transaction", err, "id", req.ID)
 	}
 
-	log.Info("DELETEME ^^^^^^^^^^^^^^^^^^ forwarding!!")
+	deadline, ok := ctx.Deadline()
+	log.Info("DELETEME ^^^^^^^^^^^^^^^^^^ forwarding!!", "with_deadline", ok, "deadline", deadline)
 	// we checked IsLastAS==false, forward the request to the next COLIBRI service
 	client, err := s.operator.ColibriClient(ctx, req.Path())
 	if err != nil {
+		log.Info("deleteme bad packet structure??", "err", err.Error())
 		return serrors.WrapStr("bad packet structure", err)
 	}
 	res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
 	if err != nil {
+		log.Info("deleteme what the heck! the grpc client failed", "err", err)
 		return serrors.WrapStr("forwarded request failed", err)
 	}
 	log.Info("DELETEME MWMWMWMWMWMWMWMWMWMWMWMWMW", "message", res.Message)

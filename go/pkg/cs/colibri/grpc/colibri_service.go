@@ -32,6 +32,8 @@ type ColibriService struct {
 	Neighbors map[uint16]*snet.UDPAddr // egress ID to neighbor
 }
 
+var _ colpb.ColibriServer = (*ColibriService)(nil)
+
 func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
 	*colpb.TestingMessage, error) {
 
