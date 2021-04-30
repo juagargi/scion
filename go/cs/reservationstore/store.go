@@ -15,6 +15,7 @@
 package reservationstore
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"time"
@@ -26,9 +27,14 @@ import (
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
-	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
+	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/snet/squic"
+	"github.com/scionproto/scion/go/lib/topology"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
 // Store is the reservation store.
@@ -36,23 +42,25 @@ type Store struct {
 	LocalIA  addr.IA
 	db       backend.DB         // aka reservation map
 	admitter admission.Admitter // the chosen admission entity
-	dialer   *libgrpc.QUICDialer
+	operator *coliquic.ServiceClientOperator
 }
 
 var _ reservationstorage.Store = (*Store)(nil)
 
-// TODO(juagargi) the store needs a quic socket using regular scion, and another using colibri
-
 // NewStore creates a new reservation store.
-func NewStore(localIA addr.IA, db backend.DB, admitter admission.Admitter,
-	dialer *libgrpc.QUICDialer) *Store {
+func NewStore(topo topology.Topology, router snet.Router,
+	dialer *squic.ConnDialer, db backend.DB, admitter admission.Admitter) (*Store, error) {
 
+	operator, err := coliquic.NewServiceClientOperator(topo, router, dialer)
+	if err != nil {
+		return nil, err
+	}
 	return &Store{
-		LocalIA:  localIA,
+		LocalIA:  topo.IA(),
 		db:       db,
 		admitter: admitter,
-		dialer:   dialer,
-	}
+		operator: operator,
+	}, nil
 }
 
 func (s *Store) GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) (
@@ -64,31 +72,113 @@ func (s *Store) GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA
 // InitSegmentReservation will start a new segment reservation request. The source of
 // the request will have this very AS as source.
 func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupReq) error {
-	ID := reservation.SegmentID{
-		ASID:   s.LocalIA.A,
-		Suffix: [4]byte{0, 0, 0, 0},
+	if req.IsLastAS() {
+		return serrors.New("cannot initiate a reservation with this AS only in the path")
 	}
+	newSetup := true
+	ID := req.ID
+	if req.ID.IsEmpty() { // empty -> new setup
+		if req.Path() == nil {
+			return serrors.New("new requests misses the packet path")
+		}
+		ID = reservation.SegmentID{
+			ASID:   s.LocalIA.A,
+			Suffix: [4]byte{0, 0, 0, 0}, // the store will set this
+		}
+	} else {
+		newSetup = false
+		if req.ID.ASID != s.LocalIA.A {
+			return serrors.New("bad reservation id", "as", req.ID.ASID)
+		}
+		if bytes.Equal(req.ID.Suffix[:], []byte{0, 0, 0, 0}) {
+			return serrors.New("bad reservation id, blank suffix")
+		}
+	}
+
+	var err error
 	// TODO(juagargi) with the quic socket ask for paths to dst and determine the type of path
 	// TODO(juagargi) with the quic socket, ask for paths and filter using the predicate
-	base, err := segment.NewRequest(req.Timestamp, &ID, 0, nil)
-	if err != nil {
-		return serrors.WrapStr("error creating source request", err)
+	base := &req.Request
+	if newSetup {
+		base, err = segment.NewRequest(req.Timestamp, &ID, 0, req.Path().Copy())
+		if err != nil {
+			return serrors.WrapStr("error creating source request", err)
+		}
 	}
 	req.Request = *base
 
-	ret, err := s.AdmitSegmentReservation(ctx, req)
+	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return serrors.WrapStr("cannot self admit request", err)
+		return serrors.WrapStr("cannot create transaction", err, "id", req.ID)
 	}
-	_ = ret
+	defer tx.Rollback()
 
-	// rsv := segment.NewReservation()
-	// rsv.PathEndProps = req.PathProps
-	// rsv.TrafficSplit = req.SplitCls
-	// rsv.ID = req.ID
-	// if err := s.db.NewSegmentRsv(ctx, rsv); err != nil {
-	// 	return serrors.WrapStr("cannot create new segment reservation in db", err)
-	// }
+	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
+	if err != nil {
+		return serrors.WrapStr("cannot obtain segment reservation", err, "id", req.ID)
+	}
+
+	if rsv != nil && newSetup {
+		return serrors.New("found existing reservation in db for a new setup", "id", req.ID)
+	} else if rsv == nil && !newSetup {
+		return serrors.New("reservation not found for a renewal", "id", req.ID)
+	}
+	if newSetup {
+		// setup, create reservation and an index
+		rsv = segment.NewReservation()
+		rsv.Ingress = req.Ingress
+		rsv.Egress = req.Egress
+		if err = tx.NewSegmentRsv(ctx, rsv); err != nil {
+			return err
+		}
+	} else {
+		// renewal, ensure index is not used
+		index := rsv.Index(req.InfoField.Idx)
+		if index != nil {
+			return serrors.New("index from setup already in use",
+				"idx", req.InfoField.Idx, "id", req.ID)
+		}
+	}
+	req.Reservation = rsv
+	tok := &reservation.Token{InfoField: req.InfoField}
+	idx, err := rsv.NewIndexFromToken(tok, req.MinBW, req.MaxBW)
+	if err != nil {
+		return serrors.WrapStr("cannot create index from token", err, "id", req.ID)
+	}
+	index := rsv.Index(idx)
+
+	// checkpath type compatibility with end properties
+	if err := rsv.PathEndProps.ValidateWithPathType(rsv.PathType); err != nil {
+		return serrors.WrapStr("error validating end props and path type", err, "id", req.ID)
+	}
+
+	// compute admission max BW
+	err = s.admitter.AdmitRsv(ctx, tx, req)
+	if err != nil {
+		return serrors.WrapStr("segment not admitted", err, "id", req.ID, "index", req.Index)
+	}
+	// admitted; the request contains already the value inside the "allocation beads" of the rsv
+	index.AllocBW = req.AllocTrail[len(req.AllocTrail)-1].AllocBW
+
+	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
+		return serrors.WrapStr("cannot persist segment reservation", err, "id", req.ID)
+	}
+	if err := tx.Commit(); err != nil {
+		return serrors.WrapStr("cannot commit transaction", err, "id", req.ID)
+	}
+
+	log.Info("DELETEME ^^^^^^^^^^^^^^^^^^ forwarding!!")
+	// we checked IsLastAS==false, forward the request to the next COLIBRI service
+	client, err := s.operator.ColibriClient(ctx, req.Path())
+	if err != nil {
+		return serrors.WrapStr("bad packet structure", err)
+	}
+	res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
+	if err != nil {
+		return serrors.WrapStr("forwarded request failed", err)
+	}
+	log.Info("DELETEME MWMWMWMWMWMWMWMWMWMWMWMWMW", "message", res.Message)
+
 	return nil
 }
 
@@ -179,6 +269,17 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 			Response: *morphSegmentResponseToSuccess(response),
 			Token:    *index.Token,
 		}, nil
+	} else {
+		// forward the request to the next COLIBRI service
+		client, err := s.operator.ColibriClient(ctx, req.Path())
+		if err != nil {
+			return failedResponse, serrors.WrapStr("bad packet structure", err)
+		}
+		res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
+		if err != nil {
+			return failedResponse, serrors.WrapStr("forwarded request failed", err)
+		}
+		_ = res
 	}
 	// TODO(juagargi) refactor function
 	return req, nil

@@ -33,7 +33,7 @@ type Response struct {
 
 // NewResponse contructs the segment Response type.
 func NewResponse(ts time.Time, id *reservation.E2EID, idx reservation.IndexNumber,
-	path base.ColibriPath, accepted bool, failedHop uint8) (*Response, error) {
+	path base.PacketPath, accepted bool, failedHop uint8) (*Response, error) {
 
 	metadata, err := base.NewRequestMetadata(path)
 	if err != nil {

@@ -80,6 +80,22 @@ func NewPathFromRaw(buff []byte) (ReservationTransparentPath, error) {
 	return p, nil
 }
 
+func NewTransparentPathFromInterfaces(ifaces []snet.PathInterface) (ReservationTransparentPath, error) {
+	if len(ifaces)%2 != 0 {
+		return nil, serrors.New("wrong number of interfaces, not even", "ifaces", ifaces)
+	}
+	if len(ifaces) == 0 {
+		return ReservationTransparentPath{}, nil
+	}
+	transparent := make(ReservationTransparentPath, len(ifaces)/2+1)
+	for i := 0; i < len(transparent)-1; i++ {
+		transparent[i].Egress = uint16(ifaces[i*2].ID)
+		transparent[i].IA = ifaces[i*2].IA
+		transparent[i+1].Ingress = uint16(ifaces[i*2+1].ID)
+	}
+	return transparent, nil
+}
+
 // Validate returns an error if there is invalid data.
 func (p ReservationTransparentPath) Validate() error {
 	if len(p) < 2 {

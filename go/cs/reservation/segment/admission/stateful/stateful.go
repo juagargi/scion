@@ -127,7 +127,7 @@ func (a *StatefulAdmission) availableBW(ctx context.Context, x backend.ColibriSt
 		}
 	}
 	capIn := int64(a.Capacities.CapacityIngress(req.Ingress))
-	capEg := int64(a.Capacities.CapacityIngress(req.Ingress))
+	capEg := int64(a.Capacities.CapacityEgress(req.Egress))
 	freeIngress := uint64(maxSignedBW(0, capIn-int64(usedIngress)))
 	freeEgress := uint64(maxSignedBW(0, capEg-int64(usedEgress)))
 	free := float64(minBW(freeIngress, freeEgress))

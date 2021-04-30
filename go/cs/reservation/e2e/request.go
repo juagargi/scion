@@ -32,7 +32,7 @@ type Request struct {
 
 // NewRequest constructs the e2e Request type.
 func NewRequest(ts time.Time, id *reservation.E2EID, idx reservation.IndexNumber,
-	path base.ColibriPath) (*Request, error) {
+	path base.PacketPath) (*Request, error) {
 
 	metadata, err := base.NewRequestMetadata(path)
 	if err != nil {

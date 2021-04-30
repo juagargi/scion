@@ -55,7 +55,7 @@ cmd_topology() {
 
 build_binaries() {
     rm bin/*
-    bazel build //:scion //:scion-ci
+    bazel build //:scion //:scion-ci || return $?
     tar -kxf bazel-bin/scion.tar -C bin
     tar -kxf bazel-bin/scion-ci.tar -C bin
 }

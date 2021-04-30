@@ -21,7 +21,11 @@ import (
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
+	slayerspath "github.com/scionproto/scion/go/lib/slayers/path"
+	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/snet/path"
+	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"
 )
@@ -80,6 +84,54 @@ func NewIfaces(args ...interface{}) []snet.PathInterface {
 	list[len(list)-1].ID = common.IFIDType(args[len(args)-2].(int))
 	list[len(list)-1].IA = xtest.MustParseIA(args[len(args)-1].(string))
 	return list
+}
+
+// NewSnetPath is invoked like:
+// NewSnetPath("1-ff00:0:1", 1,  2, "1-ff00:1:2", 3,     4, "1-ff00:0:3"))
+func NewSnetPath(args ...interface{}) snet.Path {
+	ifaces := NewIfaces(args...)
+	opaque, err := segment.NewOpaquePathFromInterfaces(ifaces)
+	if err != nil {
+		panic(err)
+	}
+
+	rp := scion.Decoded{
+		Base: scion.Base{
+			PathMeta: scion.MetaHdr{
+				CurrINF: 0,
+				CurrHF:  0,
+				SegLen:  [3]uint8{uint8(len(opaque))},
+			},
+			NumINF:  1,
+			NumHops: len(opaque),
+		},
+		InfoFields: []*slayerspath.InfoField{{
+			ConsDir: true,
+		}},
+		HopFields: make([]*slayerspath.HopField, len(opaque)),
+	}
+
+	for i, iface := range opaque {
+		rp.HopFields[i] = &slayerspath.HopField{
+			ConsIngress: iface.Ingress,
+			ConsEgress:  iface.Egress,
+		}
+	}
+	buff := make([]byte, rp.Len())
+	err = rp.SerializeTo(buff)
+	if err != nil {
+		panic(err)
+	}
+
+	return path.Path{
+		Meta: snet.PathMetadata{
+			Interfaces: ifaces,
+		},
+		SPath: spath.Path{
+			Raw:  buff,
+			Type: scion.PathType,
+		},
+	}
 }
 
 func NewReservation() *segment.Reservation {

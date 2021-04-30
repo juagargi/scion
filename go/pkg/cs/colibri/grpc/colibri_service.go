@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/peer"
 
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
@@ -34,20 +35,20 @@ type ColibriService struct {
 func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
 	*colpb.TestingMessage, error) {
 
-	fmt.Println("DELETEME received call on TestPeer()")
+	log.Info("DELETEME received call on TestPeer()")
 	p, ok := peer.FromContext(ctx)
 	if !ok || p == nil {
-		fmt.Println("DELETEME weird, no peer", "peer", p)
+		log.Info("DELETEME weird, no peer", "peer", p)
 		return nil, serrors.New("no peer found")
 	}
 	raddr, ok := p.Addr.(*snet.UDPAddr)
 	if !ok || raddr == nil {
-		fmt.Println("DELETEME weird error, raddr is what?", "raddr", raddr, "ok", ok)
+		log.Info("DELETEME weird error, raddr is what?", "raddr", raddr, "ok", ok)
 		return nil, serrors.New("no valid raddr found")
 	}
 	// require.IsType(t, &snet.UDPAddr{}, p.Addr)
 	// require.Equal(t, colibri.PathType, p.Addr.(*snet.UDPAddr).Path.Type)
-	fmt.Println("DELETEME so far so good", "path_type", raddr.Path.Type)
+	log.Info("DELETEME so far so good", "path_type", raddr.Path.Type)
 	usage, ok, err := coliquic.UsageFromContext(ctx)
 	_, _, _ = usage, ok, err
 	return &colpb.TestingMessage{

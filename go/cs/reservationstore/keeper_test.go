@@ -112,8 +112,8 @@ func TestKeepOneShot(t *testing.T) {
 						st.WithEndProps(endProps1)),
 					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0 to could be compliant
 			},
-			expectedRequestsCalls: 4,
-			expectedWakeupTime:    now.Add(minDuration),
+			expectedRequestsCalls: 2,
+			expectedWakeupTime:    now.Add(sleepAtLeast),
 		},
 		"all compliant expiring tomorrow": {
 			destinations: map[addr.IA][]requirements{
@@ -169,8 +169,8 @@ func TestKeepOneShot(t *testing.T) {
 					return tc.reservations[dstIA], nil
 				})
 			manager.EXPECT().Store().AnyTimes().Return(store)
-			manager.EXPECT().PathsTo(gomock.Any()).Times(len(tc.destinations)).DoAndReturn(
-				func(dstIA addr.IA) ([]snet.PathInterfacesHaver, error) {
+			manager.EXPECT().PathsTo(gomock.Any(), gomock.Any()).Times(len(tc.destinations)).DoAndReturn(
+				func(_ context.Context, dstIA addr.IA) ([]snet.PathInterfacesHaver, error) {
 					return tc.paths[dstIA], nil
 				})
 			manager.EXPECT().RequestMany(gomock.Any(), gomock.Any()).
@@ -189,7 +189,7 @@ func TestKeepOneShot(t *testing.T) {
 func TestSetupsPerDestination(t *testing.T) {
 	cases := map[string]struct {
 		requirements  []requirements
-		paths         []snet.PathInterfacesHaver
+		paths         []snet.Path
 		expectedCalls int
 	}{
 		"regular": {
@@ -211,10 +211,10 @@ func TestSetupsPerDestination(t *testing.T) {
 					minActiveRsvs: 1,
 				},
 			},
-			paths: []snet.PathInterfacesHaver{
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0), // direct
-				st.NewPathFromComponents(0, "1-ff00:0:1", 2, 3, "1-ff00:0:2", 0), // direct
-				st.NewPathFromComponents(0, "1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:2", 0),
+			paths: []snet.Path{
+				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
+				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
+				st.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:2"),
 			},
 		},
 	}
@@ -248,7 +248,7 @@ func TestSetupsPerDestination(t *testing.T) {
 func TestRequestNSuccessfulRsvs(t *testing.T) {
 	cases := map[string]struct {
 		requirements      requirements
-		paths             []snet.PathInterfacesHaver
+		paths             []snet.Path
 		requiredCount     int // amount of rsvs we want
 		successfulPerCall int // manager will only obtain these per call
 		expectError       bool
@@ -263,7 +263,7 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
-			paths:             []snet.PathInterfacesHaver{},
+			paths:             []snet.Path{},
 			requiredCount:     1,
 			successfulPerCall: 1,
 			expectError:       true,
@@ -277,11 +277,11 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
-			paths: []snet.PathInterfacesHaver{
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 2, 3, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2", 0),
+			paths: []snet.Path{
+				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			requiredCount:     2,
 			successfulPerCall: 2,
@@ -296,11 +296,11 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
-			paths: []snet.PathInterfacesHaver{
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0), // direct
-				st.NewPathFromComponents(0, "1-ff00:0:1", 2, 3, "1-ff00:0:2", 0), // direct
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2", 0),
+			paths: []snet.Path{
+				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
+				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
+				st.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			requiredCount:     4,
 			successfulPerCall: 4,
@@ -316,11 +316,11 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
-			paths: []snet.PathInterfacesHaver{
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 2, 3, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2", 0),
+			paths: []snet.Path{
+				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			requiredCount:     3,
 			successfulPerCall: 2,
@@ -607,7 +607,7 @@ func TestRequirementsCompliance(t *testing.T) {
 func TestEntryPrepareSetupRequests(t *testing.T) {
 	cases := map[string]struct {
 		requirements requirements
-		paths        []snet.PathInterfacesHaver
+		paths        []snet.Path
 		expected     int
 	}{
 		"empty": {
@@ -624,7 +624,7 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
-			paths:    []snet.PathInterfacesHaver{},
+			paths:    []snet.Path{},
 			expected: 0,
 		},
 		"starts here and ends there": {
@@ -636,11 +636,11 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
-			paths: []snet.PathInterfacesHaver{
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 2, 3, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2", 0),
+			paths: []snet.Path{
+				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			expected: 4,
 		},
@@ -653,11 +653,11 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
-			paths: []snet.PathInterfacesHaver{
-				st.NewPathFromComponents(0, "1-ff00:0:81", 1, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:81", 2, 3, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:81", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2", 0),
-				st.NewPathFromComponents(0, "1-ff00:0:81", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2", 0),
+			paths: []snet.Path{
+				st.NewSnetPath("1-ff00:0:81", 1, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:81", 2, 3, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:81", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				st.NewSnetPath("1-ff00:0:81", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			expected: 0,
 		},
@@ -669,11 +669,11 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, util.SecsToTime(10))
 			require.NoError(t, err)
 			require.Len(t, requests, tc.expected)
-			filtered := tc.requirements.predicate.EvalInterfaces(tc.paths)
+			filtered := tc.requirements.predicate.Eval(tc.paths)
 			require.Len(t, filtered, tc.expected) // this is internal, but forces 1 req per path
 			bagOfPaths := make(map[string]struct{}, len(filtered))
 			for _, p := range filtered {
-				opaque, err := segment.NewOpaquePathFromInterfaces(p.Interfaces())
+				opaque, err := segment.NewOpaquePathFromInterfaces(p.Metadata().Interfaces)
 				require.NoError(t, err)
 				k := opaque.String()
 				_, ok := bagOfPaths[k]

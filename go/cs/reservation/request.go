@@ -14,28 +14,26 @@
 
 package reservation
 
-import (
-	"github.com/scionproto/scion/go/lib/serrors"
-)
+import "github.com/scionproto/scion/go/lib/serrors"
 
 // RequestMetadata contains information about the request, such as its forwarding path.
 // This base struct can be used by any request or response packets.
 type RequestMetadata struct {
-	path ColibriPath // the path the packet came / will go with
+	path PacketPath // the path the packet came / will go with
 }
 
 // NewRequestMetadata constructs the base Request type.
-func NewRequestMetadata(path ColibriPath) (*RequestMetadata, error) {
+func NewRequestMetadata(path PacketPath) (*RequestMetadata, error) {
 	if path == nil {
 		return nil, serrors.New("new request with nil path")
 	}
 	return &RequestMetadata{
-		path: path.Copy(),
+		path: path,
 	}, nil
 }
 
-// Path returns the ColibriPath in this metadata.
-func (m *RequestMetadata) Path() ColibriPath {
+// Path returns the PacketPath in this metadata.
+func (m *RequestMetadata) Path() PacketPath {
 	return m.path
 }
 

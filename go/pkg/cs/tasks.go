@@ -51,6 +51,7 @@ type TasksConfig struct {
 	Public          *net.UDPAddr
 	Intfs           *ifstate.Interfaces
 	OneHopConn      snet.PacketConn
+	Router          snet.Router
 	TrustDB         trust.DB
 	PathDB          pathdb.PathDB
 	RevCache        revcache.RevCache
@@ -229,11 +230,23 @@ func (t *TasksConfig) ColibriManager() (*periodic.Runner, error) {
 		return nil, nil
 	}
 	topo := t.TopoProvider.Get()
-	mgr, err := reservationstore.NewColibriManager(topo.IA(), t.ColibriStore, t.ColibriInitialRsvs)
+	mgr, err := reservationstore.NewColibriManager(topo.IA(), t.Router,
+		t.ColibriStore, t.ColibriInitialRsvs)
 	if err != nil {
 		return nil, serrors.WrapStr("could not start colibri manager", err)
 	}
-	return periodic.Start(mgr, 100*time.Millisecond, 100*time.Millisecond), nil
+	// return periodic.Start(mgr, 100*time.Millisecond, 5*time.Second), nil
+	//
+	//
+	//
+	//
+	//
+	// dont
+	// forget
+	// to
+	// remote
+	// deleteme
+	return periodic.Start(mgr, 100*time.Millisecond, 5*time.Hour), nil // TODO(juagargi)
 }
 
 // Tasks keeps track of the running tasks.

@@ -28,7 +28,6 @@ type ColibriPath struct {
 	InfoField *InfoField
 	// HopFields denote the COLIBRI hop fields.
 	HopFields []*HopField
-	// TODO(juagargi) there is a lot of indirection in the type. Include by value.
 }
 
 func (c *ColibriPath) DecodeFromBytes(b []byte) error {

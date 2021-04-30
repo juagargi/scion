@@ -35,7 +35,7 @@ type Manager interface {
 	LocalIA() addr.IA
 	Store() reservationstorage.Store
 	// TODO(juagargi) move to sub interface, e.g. pather, comms manager,...
-	PathsTo(dst addr.IA) ([]snet.PathInterfacesHaver, error)
+	PathsTo(ctx context.Context, dst addr.IA) ([]snet.Path, error)
 	Request(ctx context.Context, req *segment.SetupReq) (*segment.Reservation, error)
 	RequestMany(ctx context.Context, reqs []*segment.SetupReq) ([]*segment.Reservation, []error)
 }
@@ -47,9 +47,10 @@ type manager struct {
 	keeper     *keeper
 	localIA    addr.IA
 	store      reservationstorage.Store
+	router     snet.Router
 }
 
-func NewColibriManager(localIA addr.IA, store reservationstorage.Store,
+func NewColibriManager(localIA addr.IA, router snet.Router, store reservationstorage.Store,
 	initial *conf.Reservations) (Manager, error) {
 
 	m := &manager{
@@ -57,6 +58,7 @@ func NewColibriManager(localIA addr.IA, store reservationstorage.Store,
 		wakeupTime: time.Now().Add(-time.Nanosecond),
 		localIA:    localIA,
 		store:      store,
+		router:     router,
 	}
 
 	keeper, err := NewKeeper(m, initial)
@@ -99,9 +101,10 @@ func (m *manager) Store() reservationstorage.Store {
 	return m.store
 }
 
-func (m *manager) PathsTo(dst addr.IA) ([]snet.PathInterfacesHaver, error) {
-	// TODO
-	return nil, nil
+func (m *manager) PathsTo(ctx context.Context, dst addr.IA) ([]snet.Path, error) {
+	paths, err := m.router.AllRoutes(ctx, dst)
+	log.Debug("colibri manager requested paths", "dst", dst, "count", len(paths), "err", err)
+	return paths, err
 }
 
 func (m *manager) Request(ctx context.Context, req *segment.SetupReq) (

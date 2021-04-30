@@ -81,18 +81,18 @@ func (mr *MockManagerMockRecorder) Now() *gomock.Call {
 }
 
 // PathsTo mocks base method
-func (m *MockManager) PathsTo(arg0 addr.IA) ([]snet.PathInterfacesHaver, error) {
+func (m *MockManager) PathsTo(arg0 context.Context, arg1 addr.IA) ([]snet.Path, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PathsTo", arg0)
-	ret0, _ := ret[0].([]snet.PathInterfacesHaver)
+	ret := m.ctrl.Call(m, "PathsTo", arg0, arg1)
+	ret0, _ := ret[0].([]snet.Path)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PathsTo indicates an expected call of PathsTo
-func (mr *MockManagerMockRecorder) PathsTo(arg0 interface{}) *gomock.Call {
+func (mr *MockManagerMockRecorder) PathsTo(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PathsTo", reflect.TypeOf((*MockManager)(nil).PathsTo), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PathsTo", reflect.TypeOf((*MockManager)(nil).PathsTo), arg0, arg1)
 }
 
 // Request mocks base method

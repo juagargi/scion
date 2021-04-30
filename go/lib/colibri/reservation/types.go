@@ -15,6 +15,7 @@
 package reservation
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -90,6 +91,10 @@ func (id *SegmentID) ToRaw() []byte {
 
 func (id *SegmentID) String() string {
 	return fmt.Sprintf("%s-%x", id.ASID, id.Suffix)
+}
+
+func (id *SegmentID) IsEmpty() bool {
+	return id.ASID == 0 && bytes.Equal(id.Suffix[:], []byte{0, 0, 0, 0})
 }
 
 // E2EID identifies a COLIBRI E2E reservation. The suffix is different for each

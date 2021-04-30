@@ -36,13 +36,16 @@ type Request struct {
 
 // NewRequest constructs the segment Request type.
 func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
-	path base.ColibriPath) (*Request, error) {
+	path base.PacketPath) (*Request, error) {
 
 	metadata, err := base.NewRequestMetadata(path)
 	if err != nil {
 		return nil, serrors.WrapStr("new segment request", err)
 	}
-	ingressIFID, egressIFID := path.IngressEgressIFIDs()
+	ingressIFID, egressIFID, err := path.IngressEgressIFIDs()
+	if err != nil {
+		return nil, serrors.WrapStr("building request", err)
+	}
 	if id == nil {
 		return nil, serrors.New("new segment request with nil ID")
 	}

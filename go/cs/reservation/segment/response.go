@@ -35,7 +35,7 @@ var _ base.MessageWithPath = (*Response)(nil)
 
 // NewResponse contructs the segment Response type.
 func NewResponse(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
-	path base.ColibriPath, accepted bool, failedHop uint8) (*Response, error) {
+	path base.PacketPath, accepted bool, failedHop uint8) (*Response, error) {
 
 	metadata, err := base.NewRequestMetadata(path)
 	if err != nil {

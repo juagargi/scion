@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/conf"
 	seg "github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -85,7 +86,7 @@ func (k *keeper) OneShot(ctx context.Context) (time.Time, error) {
 		go func(c chan time.Time) {
 			defer log.HandlePanic()
 			defer wg.Done()
-			scionPaths, err := k.manager.PathsTo(dst)
+			scionPaths, err := k.manager.PathsTo(ctx, dst)
 			if err != nil {
 				log.Error("keeping the reservations", "err", err)
 			}
@@ -113,7 +114,7 @@ func (k *keeper) OneShot(ctx context.Context) (time.Time, error) {
 // keepDestination will ensure that all reservations for dstIA exist and are compliant.
 // It returns the time until there is nothing to do for these reservations.
 func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []requirements,
-	paths []snet.PathInterfacesHaver) (time.Time, error) {
+	paths []snet.Path) (time.Time, error) {
 
 	// get reservations once and pass them along.
 	rsvs, err := k.manager.Store().GetSegmentRsvsFromSrcDstIA(ctx, k.manager.LocalIA(), dstIA)
@@ -132,7 +133,7 @@ func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []r
 // reservation racing. It creates the setup requests and later sends them.
 // Returns the time until which there is nothing to do for these reservations.
 func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entries []requirements,
-	paths []snet.PathInterfacesHaver, currentRsvs []*seg.Reservation) (time.Time, error) {
+	paths []snet.Path, currentRsvs []*seg.Reservation) (time.Time, error) {
 
 	wakeupTime := k.manager.Now().Add(sleepAtMost)
 	for _, entry := range entries {
@@ -149,7 +150,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			}
 		}
 		// new indices:
-		if err := k.askNewIndices(ctx, couldBeCompliant, dstIA, entry); err != nil {
+		if err := k.askNewIndices(ctx, couldBeCompliant, dstIA, entry, atLeastUntil); err != nil {
 			return time.Time{}, err
 		}
 		// reservations in couldBeComliant are now compliant
@@ -176,28 +177,16 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 // askNewIndices will prepare requests based on existing reservations and ask for new indices.
 func (k *keeper) askNewIndices(ctx context.Context, rsvs []*seg.Reservation, dstIA addr.IA,
-	entry requirements) error {
+	entry requirements, atLeastUntil time.Time) error {
 
 	// TODO(juagargi) test this function (the indices as seen in requests should be active+1)
 	if len(rsvs) > 0 {
-		paths := make([]snet.PathInterfacesHaver, len(rsvs))
-		for i, rsv := range rsvs {
-			paths[i] = rsv.Path
-		}
-		requests, err := entry.PrepareSetupRequests(paths, k.manager.Now())
+		requests, err := entry.PrepareRenewalRequests(rsvs, k.manager.Now(), atLeastUntil)
 		if err != nil {
-			return serrors.WrapStr("cannot setup new reservations", err, "paths", paths)
-		}
-		// add indices and convert to renewal
-		for i, req := range requests {
-			req.Reservation = rsvs[i]
-			req.ID = rsvs[i].ID // this will be a renewal
-			if activeIndex := rsvs[i].ActiveIndex(); activeIndex != nil {
-				req.Index = activeIndex.Idx.Add(1)
-			}
+			return serrors.WrapStr("cannot request new indices", err)
 		}
 		// this will block until successfully finished
-		return k.requestNSuccessfulRsvs(ctx, dstIA, entry, requests, len(paths))
+		return k.requestNSuccessfulRsvs(ctx, dstIA, entry, requests, len(rsvs))
 	}
 	return nil
 }
@@ -205,7 +194,7 @@ func (k *keeper) askNewIndices(ctx context.Context, rsvs []*seg.Reservation, dst
 // askNewReservations creates new requests based on the paths and the entry and ensures
 // that at least `requiredSuccesful` are succesful.
 func (k *keeper) askNewReservations(ctx context.Context, requiredSuccesful int, dstIA addr.IA,
-	entry requirements, paths []snet.PathInterfacesHaver) error {
+	entry requirements, paths []snet.Path) error {
 
 	// TODO(juagargi) test this function (indices seen in requests should always be zero)
 	if requiredSuccesful > 0 {
@@ -235,7 +224,8 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 		pendingCount -= len(rsvs)
 	}
 	if pendingCount > 0 {
-		return serrors.New("could not request the minimum required of reservations", "dst", dstIA)
+		return serrors.New("could not request the minimum required of reservations",
+			"dst", dstIA, "requests_len", len(requests))
 	}
 	return nil
 }
@@ -297,25 +287,34 @@ func (e *requirements) SplitByCompliance(rsvs []*seg.Reservation, atLeastUntil t
 // PrepareSetupRequests creates new reservation requests compliant with the requirements.
 // This function creates as many reservations requests as there are
 // scion paths compatible with the requirements.
-func (e *requirements) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver, now time.Time) (
+func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time) (
 	[]*seg.SetupReq, error) {
 
 	// filter paths
-	filtered := e.predicate.EvalInterfaces(ifaces)
+	filtered := e.predicate.Eval(paths)
 	requests := make([]*seg.SetupReq, len(filtered))
 	// create setup requests
 	for i, p := range filtered {
-		opaque, err := seg.NewOpaquePathFromInterfaces(p.Interfaces())
+		opaque, err := seg.NewOpaquePathFromInterfaces(p.Metadata().Interfaces)
 		if err != nil {
 			return nil, err
 		}
-		// request must be without ID, as it will be used to create a new reservation
+
+		pp, err := base.NewPacketPath(p.Path())
+		if err != nil {
+			return nil, err
+		}
+		meta, err := base.NewRequestMetadata(pp)
+		if err != nil {
+			return nil, err
+		}
 		req := &seg.SetupReq{
 			Request: seg.Request{
-				ID:        reservation.SegmentID{},
-				Timestamp: now,
-				Ingress:   opaque[0].Ingress,
-				Egress:    opaque[0].Egress,
+				RequestMetadata: *meta,
+				ID:              reservation.SegmentID{}, // new source setup in store
+				Timestamp:       now,
+				Ingress:         0,
+				Egress:          opaque[0].Egress,
 			},
 			MinBW:      e.minBW,
 			MaxBW:      e.maxBW,
@@ -325,6 +324,39 @@ func (e *requirements) PrepareSetupRequests(ifaces []snet.PathInterfacesHaver, n
 			PathToDst:  opaque,
 		}
 		requests[i] = req
+	}
+	return requests, nil
+}
+
+func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expTime time.Time) (
+	[]*seg.SetupReq, error) {
+
+	requests := []*seg.SetupReq{}
+	for _, rsv := range rsvs {
+		if len(e.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.Path})) == 0 {
+			continue
+		}
+		// for i, p := range filtered {
+		opaque, err := seg.NewOpaquePathFromInterfaces(rsv.Path.Interfaces())
+		if err != nil {
+			return nil, err
+		}
+		req := &seg.SetupReq{
+			Request: seg.Request{ // without path in metadata (it will be set in the store)
+				ID:          rsv.ID, // new source setup in store
+				Timestamp:   now,
+				Ingress:     0,
+				Egress:      rsv.Egress,
+				Reservation: rsv,
+			},
+			MinBW:      rsv.ActiveIndex().MinBW,
+			MaxBW:      rsv.ActiveIndex().MaxBW,
+			SplitCls:   rsv.TrafficSplit,
+			PathProps:  rsv.PathEndProps,
+			AllocTrail: reservation.AllocationBeads{}, // at source
+			PathToDst:  opaque,
+		}
+		requests = append(requests, req)
 	}
 	return requests, nil
 }

@@ -230,10 +230,11 @@ func run(file string) error {
 		TopoProvider: itopo.Provider(),
 		Verifier:     verifier,
 	}
+	router := segreq.NewRouter(fetcherCfg)
 	provider.Router = trust.AuthRouter{
 		ISD:    topo.IA().I,
 		DB:     trustDB,
-		Router: segreq.NewRouter(fetcherCfg),
+		Router: router,
 	}
 
 	quicServer := grpc.NewServer(libgrpc.UnaryServerInterceptor())
@@ -404,7 +405,7 @@ func run(file string) error {
 					Dialer:      quicStack.TLSDialer,
 					Credentials: trust.GetTansportCredentials(tlsMgr),
 				},
-				Router: segreq.NewRouter(fetcherCfg),
+				Router: router,
 			},
 		}
 		drkeyServStore = &drkey.ServiceStore{
@@ -442,6 +443,8 @@ func run(file string) error {
 	dsHealth.SetServingStatus("discovery", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(tcpServer, dsHealth)
 
+	//////////////////////////////////////////////////////////////////////////////////////////////
+
 	db, err := storage.NewColibriStorage(cfg.Colibri.DB)
 	if err != nil {
 		return serrors.WrapStr("error initializing COLIBRI DB", err)
@@ -450,8 +453,11 @@ func run(file string) error {
 		Capacities: cfg.Colibri.Capacities,
 		Delta:      cfg.Colibri.Delta,
 	}
-	// TODO(juagargi) use coliquic here
-	colibriStore := reservationstore.NewStore(topo.IA(), db, admitter, dialer)
+
+	colibriStore, err := reservationstore.NewStore(topo, router, quicStack.Dialer, db, admitter)
+	if err != nil {
+		return serrors.WrapStr("initializing colibri store", err)
+	}
 
 	colibriService := &colgrpc.ColibriService{}
 	// colpb.RegisterColibriServer(quicServer, colibriService)
@@ -464,6 +470,8 @@ func run(file string) error {
 			fatal.Fatal(err)
 		}
 	}()
+
+	//////////////////////////////////////////////////////////////////////////////////////////////
 
 	promgrpc.Register(quicServer)
 	promgrpc.Register(tcpServer)
@@ -515,6 +523,7 @@ func run(file string) error {
 	tasks, err := cs.StartTasks(cs.TasksConfig{
 		Public:   nc.Public,
 		Intfs:    intfs,
+		Router:   router,
 		TrustDB:  trustDB,
 		PathDB:   pathDB,
 		RevCache: revCache,
