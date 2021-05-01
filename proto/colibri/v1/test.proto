@@ -22,6 +22,7 @@ import "google/protobuf/timestamp.proto";
 
 service Colibri {
     rpc TestPeer(TestingMessage) returns (TestingMessage) {}
+    rpc SetupSegment(SegmentSetupRequest) returns (SegmentSetupResponse) {}
 }
 
 message TestingMessage{
@@ -30,10 +31,58 @@ message TestingMessage{
     bytes data = 3;
 }
 
-message SetupRequest{
+// /////////////////////////////////////////////////
 
+message ReservationID {
+    uint64 asid = 1;
+    bytes suffix = 2;
 }
 
-message SetupResponse{
+message IndexState {
+    enum State {
+        PENDING = 0;
+        ACTIVE = 1;
+    }
+    State state = 1;
+}
 
+message PathEndProps {
+    bool local = 1;
+    bool transfer = 2;
+}
+
+message AllocationBead {
+    uint32 allocbw = 1;
+    uint32 maxbw = 2;
+}
+
+////////////////////////////////////////
+
+message Base {
+    ReservationID id = 1;
+    uint32 index = 2;
+    uint32 timestamp = 3;
+}
+
+
+message SegmentSetupRequest{
+    Base base = 1;
+    message Params {
+        uint32 minbw = 1;
+        uint32 maxbw = 2;
+        uint32 splitcls = 3;
+        PathEndProps props_at_start = 4;
+        PathEndProps props_at_end = 5;
+        bytes infofield = 6;
+        repeated AllocationBead allocationtrail = 7;
+    }
+    Params params = 2;
+}
+
+message SegmentSetupResponse{
+    Base base = 1;
+    oneof success_failure {
+        bytes token = 2;
+        SegmentSetupRequest.Params request = 3;
+    }
 }

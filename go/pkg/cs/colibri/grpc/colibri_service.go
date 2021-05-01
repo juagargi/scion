@@ -58,3 +58,9 @@ func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage
 		Data:    p.Addr.(*snet.UDPAddr).Path.Raw,
 	}, nil
 }
+
+func (s *ColibriService) SetupSegment(ctx context.Context, req *colpb.SegmentSetupRequest) (
+	*colpb.SegmentSetupResponse, error) {
+
+	return nil, nil
+}
