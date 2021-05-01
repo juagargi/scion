@@ -4,7 +4,9 @@ go_library(
     name = "go_default_library",
     srcs = [
         "fromctrl.go",
+        "fromprotobuf.go",
         "toctrl.go",
+        "toprotobuf.go",
     ],
     importpath = "github.com/scionproto/scion/go/cs/reservation/translate",
     visibility = ["//visibility:public"],
@@ -12,9 +14,12 @@ go_library(
         "//go/cs/reservation:go_default_library",
         "//go/cs/reservation/e2e:go_default_library",
         "//go/cs/reservation/segment:go_default_library",
+        "//go/lib/addr:go_default_library",
         "//go/lib/colibri/reservation:go_default_library",
         "//go/lib/ctrl/colibri_mgmt:go_default_library",
         "//go/lib/serrors:go_default_library",
+        "//go/lib/util:go_default_library",
+        "//go/pkg/proto/colibri:go_default_library",
         "//go/proto:go_default_library",
     ],
 )

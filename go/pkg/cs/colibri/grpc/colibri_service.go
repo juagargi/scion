@@ -20,6 +20,9 @@ import (
 
 	"google.golang.org/grpc/peer"
 
+	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/cs/reservation/translate"
+	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -28,8 +31,8 @@ import (
 )
 
 type ColibriService struct {
-	MyAddr    *snet.UDPAddr
-	Neighbors map[uint16]*snet.UDPAddr // egress ID to neighbor
+	MyAddr *snet.UDPAddr
+	Store  reservationstorage.Store
 }
 
 var _ colpb.ColibriServer = (*ColibriService)(nil)
@@ -59,8 +62,43 @@ func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage
 	}, nil
 }
 
-func (s *ColibriService) SetupSegment(ctx context.Context, req *colpb.SegmentSetupRequest) (
+func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
 	*colpb.SegmentSetupResponse, error) {
 
+	path, ingress, egress, err := extractPath(ctx)
+	if err != nil {
+		log.Error("setup segment", "err", err)
+		return nil, err
+	}
+	req, err := translate.SetupReq(msg, path, ingress, egress)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		// should send a message?
+		return nil, err
+	}
+	res, err := s.Store.AdmitSegmentReservation(ctx, req)
+	if err != nil {
+		// should send a message?
+		return nil, err
+	}
+	_ = res
 	return nil, nil
+}
+
+// extractPath returns the PacketPath, ingress and egress used with this RPC.
+func extractPath(ctx context.Context) (base.PacketPath, uint16, uint16, error) {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		return nil, 0, 0, serrors.New("no peer found")
+	}
+	raddr, ok := p.Addr.(*snet.UDPAddr)
+	if !ok || raddr == nil {
+		return nil, 0, 0, serrors.New("no valid scion address found", "addr", p.Addr)
+	}
+	path, err := base.NewPacketPath(raddr.Path)
+	if err != nil {
+		return path, 0, 0, err
+	}
+	ingress, egress, err := path.IngressEgressIFIDs()
+	return path, ingress, egress, err
 }

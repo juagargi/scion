@@ -24,6 +24,7 @@ import (
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/cs/reservation/segment/admission"
+	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -174,13 +175,28 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		log.Info("deleteme bad packet structure??", "err", err.Error())
 		return serrors.WrapStr("bad packet structure", err)
 	}
-	res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
+	res, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
+	// res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
 	if err != nil {
 		log.Info("deleteme what the heck! the grpc client failed", "err", err)
 		return serrors.WrapStr("forwarded request failed", err)
 	}
-	log.Info("DELETEME MWMWMWMWMWMWMWMWMWMWMWMWMW", "message", res.Message)
-
+	if _, failure := res.SuccessFailure.(*colpb.SegmentSetupResponse_Request); failure {
+		log.Info("deleteme admission failed down the path")
+		// remove the reservation here, it failed. Send clean up requests.
+		return nil
+	}
+	pbToken, ok := res.SuccessFailure.(*colpb.SegmentSetupResponse_Token)
+	if !ok {
+		log.Error("deleteme did not find a token in the successful response", "id", req.ID, "idx", req.Index)
+		return serrors.New("did not find a token in the successful response",
+			"id", req.ID, "idx", req.Index)
+	}
+	token, err := translate.Token(pbToken)
+	if err != nil {
+		return serrors.WrapStr("bad token received", err)
+	}
+	req.Reservation.Index(req.Index).Token = token
 	return nil
 }
 

@@ -37,6 +37,11 @@ func (m *RequestMetadata) Path() PacketPath {
 	return m.path
 }
 
+// SetPacketPath forces the PacketPath of this RequestMetadata to `path`.
+func (m *RequestMetadata) SetPacketPath(path PacketPath) {
+	m.path = path
+}
+
 // IsLastAS returns true if this hop is the last one (this AS is the destination).
 func (m *RequestMetadata) IsLastAS() bool {
 	return m.path.IndexOfCurrentHop() == m.path.NumberOfHops()-1

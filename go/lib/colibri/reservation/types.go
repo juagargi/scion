@@ -424,6 +424,22 @@ func (pep PathEndProps) ValidateWithPathType(pt PathType) error {
 	return nil
 }
 
+func (pep PathEndProps) StartLocal() bool {
+	return pep&StartLocal != 0
+}
+
+func (pep PathEndProps) StartTransfer() bool {
+	return pep&StartTransfer != 0
+}
+
+func (pep PathEndProps) EndLocal() bool {
+	return pep&EndLocal != 0
+}
+
+func (pep PathEndProps) EndTransfer() bool {
+	return pep&EndTransfer != 0
+}
+
 func NewPathEndProps(startLocal, startTransfer, endLocal, endTransfer bool) PathEndProps {
 	var props PathEndProps
 	if startLocal {
