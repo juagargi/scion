@@ -92,11 +92,10 @@ func (r *Reservation) ActiveIndex() *Index {
 	return &r.Indices[r.activeIndex]
 }
 
-// NewIndexAtSource creates a new index. The associated token is created from the arguments, and
-// automatically linked to the index. This function should be called only from the
-// AS originating the reservation.
+// NewIndex creates a new index. The associated token is created from the arguments, and
+// automatically linked to the index.
 // The expiration times must always be greater or equal than those in previous indices.
-func (r *Reservation) NewIndexAtSource(expTime time.Time, minBW, maxBW, allocBW reservation.BWCls,
+func (r *Reservation) NewIndex(expTime time.Time, minBW, maxBW, allocBW reservation.BWCls,
 	rlc reservation.RLC, pathType reservation.PathType) (reservation.IndexNumber, error) {
 
 	idx := reservation.IndexNumber(0)
@@ -113,21 +112,6 @@ func (r *Reservation) NewIndexAtSource(expTime time.Time, minBW, maxBW, allocBW 
 		},
 	}
 	index := NewIndex(idx, expTime, IndexTemporary, minBW, maxBW, allocBW, tok)
-	return r.addIndex(index)
-}
-
-// NewIndexFromToken creates a new index. The token argument is used to populate several
-// fields of the index. The token is not stored (on-path ASes don't need the token).
-// This function should be called from an AS that is on the reservation path
-// but not the originating one.
-func (r *Reservation) NewIndexFromToken(tok *reservation.Token, minBW, maxBW reservation.BWCls) (
-	reservation.IndexNumber, error) {
-
-	if tok == nil {
-		return 0, serrors.New("token is nil")
-	}
-	index := NewIndex(tok.Idx, tok.ExpirationTick.ToTime(), IndexTemporary, minBW, maxBW,
-		tok.BWCls, nil)
 	return r.addIndex(index)
 }
 

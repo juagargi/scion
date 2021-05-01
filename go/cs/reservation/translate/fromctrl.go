@@ -171,7 +171,6 @@ func newRequestSegmentSetup(ctrl *colibri_mgmt.SegmentSetup, ts time.Time,
 	}
 	s := &segment.SetupReq{
 		Request:    *r,
-		InfoField:  *inF,
 		MinBW:      reservation.BWCls(ctrl.MinBW),
 		MaxBW:      reservation.BWCls(ctrl.MaxBW),
 		SplitCls:   reservation.SplitCls(ctrl.SplitCls),

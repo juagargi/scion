@@ -68,13 +68,15 @@ message Base {
 message SegmentSetupRequest{
     Base base = 1;
     message Params {
-        uint32 minbw = 1;
-        uint32 maxbw = 2;
-        uint32 splitcls = 3;
-        PathEndProps props_at_start = 4;
-        PathEndProps props_at_end = 5;
-        bytes infofield = 6;
-        repeated AllocationBead allocationtrail = 7;
+        uint32 expiration_time = 1;
+        uint32 rlc = 2;
+        uint32 path_type = 3;
+        uint32 minbw = 4;
+        uint32 maxbw = 5;
+        uint32 splitcls = 6;
+        PathEndProps props_at_start = 7;
+        PathEndProps props_at_end = 8;
+        repeated AllocationBead allocationtrail = 9;
     }
     Params params = 2;
 }

@@ -267,7 +267,7 @@ func AddIndex(mods ...IndexMod) ReservationMod {
 		if rsv.Indices.Len() > 0 {
 			expTime = rsv.Indices.GetExpiration(rsv.Indices.Len() - 1)
 		}
-		idx, err := rsv.NewIndexAtSource(expTime, 0, 0, 0, 0, 0)
+		idx, err := rsv.NewIndex(expTime, 0, 0, 0, 0, 0)
 		if err != nil {
 			panic(err)
 		}

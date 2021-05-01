@@ -50,9 +50,9 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: reservation.BWCls(5).ToKbps(),
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "01234567", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndexAtSource(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
 				return []*segment.Reservation{rsv}
 			},
@@ -62,9 +62,9 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: 0,
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndexAtSource(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
 				return []*segment.Reservation{rsv}
 			},
@@ -74,20 +74,20 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: 309, // 181 + 128
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndexAtSource(util.SecsToTime(3), 1, 17, 7, 1,
+				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 17, 7, 1,
 					reservation.CorePath)
 				require.NoError(t, err)
 				rsvs := []*segment.Reservation{rsv}
 
 				rsv = testNewRsv(t, "ff00:1:1", "01234567", 1, 2, 5, 5, 5)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(3), 1, 8, 8, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 8, 8, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(3), 1, 7, 7, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 7, 7, 1, reservation.CorePath)
 				require.NoError(t, err)
 				rsvs = append(rsvs, rsv)
 
 				rsv = testNewRsv(t, "ff00:1:2", "01234567", 1, 2, 5, 5, 5)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(2), 1, 7, 7, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(2), 1, 7, 7, 1, reservation.CorePath)
 				require.NoError(t, err)
 				rsvs = append(rsvs, rsv)
 
@@ -803,10 +803,13 @@ func newTestRequest(t *testing.T, ingress, egress uint16,
 			Ingress:         ingress,
 			Egress:          egress,
 		},
-		MinBW:     minBW,
-		MaxBW:     maxBW,
-		SplitCls:  2,
-		PathProps: reservation.StartLocal | reservation.EndLocal,
+		ExpirationTime: util.SecsToTime(10),
+		RLC:            1,
+		PathType:       reservation.CorePath,
+		MinBW:          minBW,
+		MaxBW:          maxBW,
+		SplitCls:       2,
+		PathProps:      reservation.StartLocal | reservation.EndLocal,
 	}
 }
 
@@ -1031,9 +1034,9 @@ func prepareDBForAdmission(ctx context.Context, t *testing.T, db *sqlite.Backend
 	for _, r := range rsvs {
 		if r.ID == req.ID {
 			// its last index must be compatible with the request, so that the admission succeeds
-			lastIdx := req.InfoField.Idx
+			lastIdx := req.Index
 			for i := len(r.Indices) - 1; i >= 0; i-- {
-				r.Indices[i].Expiration = req.InfoField.ExpirationTick.ToTime()
+				r.Indices[i].Expiration = req.ExpirationTime
 				lastIdx = lastIdx.Sub(1)
 				r.Indices[i].Idx = lastIdx
 			}
@@ -1080,15 +1083,13 @@ func persistRsvFromAdmittedRequest(t *testing.T, db *sqlite.Backend, req segment
 		rsv.ID = req.ID
 		rsv.Ingress = req.Ingress
 		rsv.Egress = req.Egress
-		// err = db.NewSegmentRsv(ctx, rsv)
 		require.NoError(t, err)
 	} else {
-		index := rsv.Index(req.InfoField.Idx)
+		index := rsv.Index(req.Index)
 		require.Nil(t, index, "same index not allowed")
 	}
 	req.Reservation = rsv
-	tok := &reservation.Token{InfoField: req.InfoField}
-	idx, err := rsv.NewIndexFromToken(tok, req.MinBW, req.MaxBW)
+	idx, err := rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, 0, req.RLC, req.PathType)
 	require.NoError(t, err)
 	index := rsv.Index(idx)
 	// admitted; the request contains already the value inside the "allocation beads" of the rsv

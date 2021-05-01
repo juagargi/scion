@@ -26,9 +26,12 @@ func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
 	return &colpb.SegmentSetupRequest{
 		Base: PBufBase(&req.Request),
 		Params: &colpb.SegmentSetupRequest_Params{
-			Minbw:    uint32(req.MinBW),
-			Maxbw:    uint32(req.MaxBW),
-			Splitcls: uint32(req.SplitCls),
+			ExpirationTime: util.TimeToSecs(req.ExpirationTime),
+			Rlc:            uint32(req.RLC),
+			PathType:       uint32(req.PathType),
+			Minbw:          uint32(req.MinBW),
+			Maxbw:          uint32(req.MaxBW),
+			Splitcls:       uint32(req.SplitCls),
 			PropsAtStart: &colpb.PathEndProps{
 				Local:    req.PathProps.StartLocal(),
 				Transfer: req.PathProps.StartTransfer(),
@@ -37,7 +40,6 @@ func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
 				Local:    req.PathProps.EndLocal(),
 				Transfer: req.PathProps.EndTransfer(),
 			},
-			Infofield:       req.InfoField.ToRaw(),
 			Allocationtrail: PBufAllocTrail(req.AllocTrail),
 		},
 	}

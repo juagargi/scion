@@ -133,19 +133,25 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		}
 	} else {
 		// renewal, ensure index is not used
-		index := rsv.Index(req.InfoField.Idx)
+		index := rsv.Index(req.Index)
 		if index != nil {
 			return serrors.New("index from setup already in use",
-				"idx", req.InfoField.Idx, "id", req.ID)
+				"idx", req.Index, "id", req.ID)
 		}
 	}
 	req.Reservation = rsv
-	tok := &reservation.Token{InfoField: req.InfoField}
-	idx, err := rsv.NewIndexFromToken(tok, req.MinBW, req.MaxBW)
+
+	err = s.admitter.AdmitRsv(ctx, tx, req)
+	if err != nil {
+		return serrors.WrapStr("segment not admitted", err, "id", req.ID, "index", req.Index)
+	}
+	// admitted; the request contains already the value inside the "allocation beads" of the rsv
+	allocBW := req.AllocTrail[len(req.AllocTrail)-1].AllocBW
+
+	_, err = rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, allocBW, req.RLC, req.PathType)
 	if err != nil {
 		return serrors.WrapStr("cannot create index from token", err, "id", req.ID)
 	}
-	index := rsv.Index(idx)
 
 	// checkpath type compatibility with end properties
 	if err := rsv.PathEndProps.ValidateWithPathType(rsv.PathType); err != nil {
@@ -153,12 +159,6 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	}
 
 	// compute admission max BW
-	err = s.admitter.AdmitRsv(ctx, tx, req)
-	if err != nil {
-		return serrors.WrapStr("segment not admitted", err, "id", req.ID, "index", req.Index)
-	}
-	// admitted; the request contains already the value inside the "allocation beads" of the rsv
-	index.AllocBW = req.AllocTrail[len(req.AllocTrail)-1].AllocBW
 
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return serrors.WrapStr("cannot persist segment reservation", err, "id", req.ID)
@@ -237,10 +237,10 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 	if rsv != nil {
 		// renewal, ensure index is not used
-		index := rsv.Index(req.InfoField.Idx)
+		index := rsv.Index(req.Index)
 		if index != nil {
 			return failedResponse, serrors.New("index from setup already in use",
-				"idx", req.InfoField.Idx, "id", req.ID)
+				"idx", req.Index, "id", req.ID)
 		}
 	} else {
 		// setup, create reservation and an index
@@ -250,19 +250,6 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		rsv.Egress = req.Egress
 	}
 	req.Reservation = rsv
-	tok := &reservation.Token{InfoField: req.InfoField}
-	idx, err := rsv.NewIndexFromToken(tok, req.MinBW, req.MaxBW)
-	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create index from token", err,
-			"id", req.ID)
-	}
-	index := rsv.Index(idx)
-
-	// checkpath type compatibility with end properties
-	if err := rsv.PathEndProps.ValidateWithPathType(rsv.PathType); err != nil {
-		return failedResponse, serrors.WrapStr("error validating end props and path type", err,
-			"id", req.ID)
-	}
 
 	// compute admission max BW
 	err = s.admitter.AdmitRsv(ctx, tx, req)
@@ -271,7 +258,20 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 			"index", req.Index)
 	}
 	// admitted; the request contains already the value inside the "allocation beads" of the rsv
-	index.AllocBW = req.AllocTrail[len(req.AllocTrail)-1].AllocBW
+	allocBW := req.AllocTrail[len(req.AllocTrail)-1].AllocBW
+
+	idx, err := rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, allocBW,
+		req.RLC, req.Reservation.PathType)
+	if err != nil {
+		return failedResponse, serrors.WrapStr("cannot create new index", err)
+	}
+	index := rsv.Index(idx)
+
+	// checkpath type compatibility with end properties
+	if err := rsv.PathEndProps.ValidateWithPathType(rsv.PathType); err != nil {
+		return failedResponse, serrors.WrapStr("error validating end props and path type", err,
+			"id", req.ID)
+	}
 
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, serrors.WrapStr("cannot persist segment reservation", err,

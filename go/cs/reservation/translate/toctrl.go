@@ -191,7 +191,6 @@ func newSegmentSetup(msg *segment.SetupReq) *colibri_mgmt.SegmentSetup {
 			Local:    (msg.PathProps & reservation.EndLocal) != 0,
 			Transfer: (msg.PathProps & reservation.EndTransfer) != 0,
 		},
-		InfoField:       msg.InfoField.ToRaw(),
 		AllocationTrail: make([]*colibri_mgmt.AllocationBead, len(msg.AllocTrail)),
 	}
 	for i, bead := range msg.AllocTrail {

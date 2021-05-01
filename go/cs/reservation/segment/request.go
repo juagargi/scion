@@ -63,13 +63,15 @@ func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNu
 // This same type is used for renewal of the segment reservation.
 type SetupReq struct {
 	Request
-	InfoField  reservation.InfoField
-	MinBW      reservation.BWCls
-	MaxBW      reservation.BWCls
-	SplitCls   reservation.SplitCls
-	PathProps  reservation.PathEndProps
-	AllocTrail reservation.AllocationBeads
-	PathToDst  OpaquePath // requested path for the reservation
+	ExpirationTime time.Time
+	RLC            reservation.RLC
+	PathType       reservation.PathType
+	MinBW          reservation.BWCls
+	MaxBW          reservation.BWCls
+	SplitCls       reservation.SplitCls
+	PathProps      reservation.PathEndProps
+	AllocTrail     reservation.AllocationBeads
+	PathToDst      OpaquePath // requested path for the reservation
 }
 
 // PrevBW returns the minimum of the maximum bandwidths already granted by previous ASes.

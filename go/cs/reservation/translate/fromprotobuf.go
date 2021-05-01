@@ -39,6 +39,14 @@ func SetupReq(msg *colpb.SegmentSetupRequest,
 	if err != nil {
 		return nil, err
 	}
+	rlc, err := RLC(msg.Params.Rlc)
+	if err != nil {
+		return nil, err
+	}
+	pathType, err := PathType(msg.Params.PathType)
+	if err != nil {
+		return nil, err
+	}
 	minbw, err := BW(msg.Params.Minbw)
 	if err != nil {
 		return nil, err
@@ -59,9 +67,12 @@ func SetupReq(msg *colpb.SegmentSetupRequest,
 			Ingress:   ingress,
 			Egress:    egress,
 		},
-		MinBW:    minbw,
-		MaxBW:    maxbw,
-		SplitCls: splitcls,
+		ExpirationTime: util.SecsToTime(msg.Params.ExpirationTime),
+		RLC:            rlc,
+		PathType:       pathType,
+		MinBW:          minbw,
+		MaxBW:          maxbw,
+		SplitCls:       splitcls,
 		PathProps: reservation.NewPathEndProps(
 			msg.Params.PropsAtStart.Local,
 			msg.Params.PropsAtStart.Transfer,
@@ -79,6 +90,22 @@ func Index(msg uint32) (reservation.IndexNumber, error) {
 		return 0, serrors.New("index is out of range", "idx", msg)
 	}
 	return idx, idx.Validate()
+}
+
+func RLC(msg uint32) (reservation.RLC, error) {
+	rlc := reservation.RLC(msg)
+	if uint32(rlc) != msg {
+		return 0, serrors.New("rlc is out of range", "rlc", rlc)
+	}
+	return rlc, rlc.Validate()
+}
+
+func PathType(msg uint32) (reservation.PathType, error) {
+	pt := reservation.PathType(msg)
+	if uint32(pt) != msg {
+		return 0, serrors.New("path type is out of range", "path_type", pt)
+	}
+	return pt, pt.Validate()
 }
 
 func BW(msg uint32) (reservation.BWCls, error) {
