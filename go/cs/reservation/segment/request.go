@@ -34,6 +34,8 @@ type Request struct {
 	Reservation          *Reservation            // nil if no reservation yet
 }
 
+// TODO(juagargi) refactor Request: move Ingress, Egress to metadata
+
 // NewRequest constructs the segment Request type.
 func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
 	path base.PacketPath) (*Request, error) {

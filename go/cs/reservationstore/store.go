@@ -34,7 +34,6 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/topology"
-	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
 // Store is the reservation store.
@@ -175,35 +174,31 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		log.Info("deleteme bad packet structure??", "err", err.Error())
 		return serrors.WrapStr("bad packet structure", err)
 	}
-	res, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 	// res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
+	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 	if err != nil {
 		log.Info("deleteme what the heck! the grpc client failed", "err", err)
 		return serrors.WrapStr("forwarded request failed", err)
 	}
-	if _, failure := res.SuccessFailure.(*colpb.SegmentSetupResponse_Request); failure {
+	res, err := translate.SetupResponse(pbRes)
+	if err != nil {
+		return err
+	}
+	if _, failure := res.(*segment.SegmentSetupResponseFailure); failure {
 		log.Info("deleteme admission failed down the path")
+		// TODO(juagargi)
 		// remove the reservation here, it failed. Send clean up requests.
 		return nil
 	}
-	pbToken, ok := res.SuccessFailure.(*colpb.SegmentSetupResponse_Token)
-	if !ok {
-		log.Error("deleteme did not find a token in the successful response", "id", req.ID, "idx", req.Index)
-		return serrors.New("did not find a token in the successful response",
-			"id", req.ID, "idx", req.Index)
-	}
-	token, err := translate.Token(pbToken)
-	if err != nil {
-		return serrors.WrapStr("bad token received", err)
-	}
-	req.Reservation.Index(req.Index).Token = token
+	token := res.(*segment.SegmentSetupResponseSuccess).Token
+	req.Reservation.Index(req.Index).Token = &token
 	return nil
 }
 
 // AdmitSegmentReservation receives a setup/renewal request to admit a segment reservation.
 // It is expected that this AS is not the reservation initiator.
 func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupReq) (
-	base.MessageWithPath, error) {
+	segment.SegmentSetupResponse, error) {
 
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
 		return nil, serrors.WrapStr("error validating request", err, "id", req.ID)
@@ -213,13 +208,13 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 			"len_alloctrail", len(req.AllocTrail), "hf_count", req.Path().IndexOfCurrentHop())
 	}
 
-	response, err := s.prepareFailureSegmentResp(&req.Request)
-	if err != nil {
-		return nil, serrors.WrapStr("cannot construct response", err, "id", req.ID)
-	}
-	failedResponse := &segment.ResponseSetupFailure{
-		Response:    *response,
-		FailedSetup: req,
+	failedResponse := &segment.SegmentSetupResponseFailure{
+		SegmentSetupResponseBase: segment.SegmentSetupResponseBase{
+			ID:        req.ID,
+			Index:     req.Index,
+			Timestamp: time.Now(),
+		},
+		FailedRequest: req,
 	}
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
@@ -283,24 +278,23 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 	if req.IsLastAS() {
 		// TODO(juagargi) update token here
-		return &segment.ResponseSetupSuccess{
-			Response: *morphSegmentResponseToSuccess(response),
-			Token:    *index.Token,
+		return &segment.SegmentSetupResponseSuccess{
+			SegmentSetupResponseBase: failedResponse.SegmentSetupResponseBase,
+			Token:                    *index.Token,
 		}, nil
-	} else {
-		// forward the request to the next COLIBRI service
-		client, err := s.operator.ColibriClient(ctx, req.Path())
-		if err != nil {
-			return failedResponse, serrors.WrapStr("bad packet structure", err)
-		}
-		res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
-		if err != nil {
-			return failedResponse, serrors.WrapStr("forwarded request failed", err)
-		}
-		_ = res
 	}
-	// TODO(juagargi) refactor function
-	return req, nil
+	// forward the request to the next COLIBRI service
+	client, err := s.operator.ColibriClient(ctx, req.Path())
+	if err != nil {
+		return failedResponse, serrors.WrapStr("bad packet structure", err)
+	}
+
+	// res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
+	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
+	if err != nil {
+		return failedResponse, serrors.WrapStr("forwarded request failed", err)
+	}
+	return translate.SetupResponse(pbRes)
 }
 
 // ConfirmSegmentReservation changes the state of an index from temporary to confirmed.

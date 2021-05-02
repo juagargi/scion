@@ -22,6 +22,32 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 
+type SegmentSetupResponse interface {
+	isSegmentSetupResponse_Success_Failure()
+}
+
+type SegmentSetupResponseBase struct {
+	ID        reservation.SegmentID
+	Index     reservation.IndexNumber
+	Timestamp time.Time
+}
+
+type SegmentSetupResponseSuccess struct {
+	SegmentSetupResponseBase
+	Token reservation.Token
+}
+
+func (*SegmentSetupResponseSuccess) isSegmentSetupResponse_Success_Failure() {}
+
+type SegmentSetupResponseFailure struct {
+	SegmentSetupResponseBase
+	FailedRequest *SetupReq
+}
+
+func (*SegmentSetupResponseFailure) isSegmentSetupResponse_Success_Failure() {}
+
+/////// OLD TYPES TO DELETE (ALL):
+
 // Response is the base struct for any type of COLIBRI segment response.
 type Response struct {
 	base.RequestMetadata                         // information about the request (forwarding path)

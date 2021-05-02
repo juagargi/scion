@@ -27,7 +27,7 @@ import (
 // Store is the interface to interact with the reservation store.
 type Store interface {
 	AdmitSegmentReservation(ctx context.Context, req *sgt.SetupReq) (
-		base.MessageWithPath, error)
+		sgt.SegmentSetupResponse, error)
 	ConfirmSegmentReservation(ctx context.Context, req *sgt.IndexConfirmationReq) (
 		base.MessageWithPath, error)
 	CleanupSegmentReservation(ctx context.Context, req *sgt.CleanupReq) (
@@ -43,9 +43,9 @@ type Store interface {
 
 	// as the source of reservations:
 
-	GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) ([]*sgt.Reservation, error)
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
+	GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) ([]*sgt.Reservation, error)
 }
 
 // TODO(juagargi) there is a number of functions missing: all regarding responses.
