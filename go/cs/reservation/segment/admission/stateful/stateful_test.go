@@ -792,6 +792,7 @@ func newTestAdmitter(t *testing.T) *StatefulAdmission {
 func newTestRequest(t *testing.T, ingress, egress uint16,
 	minBW, maxBW reservation.BWCls) *segment.SetupReq {
 
+	// TODO(juagargi) unused args ingress,egress
 	ID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
 	require.NoError(t, err)
 	return &segment.SetupReq{
@@ -799,8 +800,6 @@ func newTestRequest(t *testing.T, ingress, egress uint16,
 			RequestMetadata: base.RequestMetadata{},
 			ID:              *ID,
 			Timestamp:       util.SecsToTime(1),
-			Ingress:         ingress,
-			Egress:          egress,
 		},
 		ExpirationTime: util.SecsToTime(10),
 		RLC:            1,
@@ -939,10 +938,10 @@ func prepareForMock(rsvs []*segment.Reservation, req *segment.SetupReq, globalCa
 		}
 		state := sourceStateMap[key]
 
-		if r.Egress == req.Egress {
+		if r.Egress == req.Egress() {
 			transitDem[r.Ingress] += uint64(float64(state.SrcDem) *
 				math.Min(inScalFctr, egScalFctr))
-			if r.Ingress == req.Ingress {
+			if r.Ingress == req.Ingress() {
 				transitAlloc += r.MaxBlockedBW()
 			}
 		}
@@ -959,7 +958,7 @@ func prepareMockForTubeRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 
 	db.EXPECT().GetSegmentRsvFromID(gomock.Any(), &req.ID).AnyTimes().Return(sameIDAsRequest, nil)
 
-	db.EXPECT().GetTransitDem(gomock.Any(), gomock.Any(), req.Egress).AnyTimes().
+	db.EXPECT().GetTransitDem(gomock.Any(), gomock.Any(), req.Egress()).AnyTimes().
 		DoAndReturn(
 			func(_ context.Context, ingress, _ uint16) (uint64, error) {
 				return transitDem[ingress], nil
@@ -999,7 +998,7 @@ func prepareMockForLinkRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 
 	db.EXPECT().GetSegmentRsvFromID(gomock.Any(), &req.ID).AnyTimes().Return(sameIDAsRequest, nil)
 
-	db.EXPECT().GetTransitAlloc(gomock.Any(), req.Ingress, req.Egress).AnyTimes().
+	db.EXPECT().GetTransitAlloc(gomock.Any(), req.Ingress(), req.Egress()).AnyTimes().
 		Return(transitAlloc, nil)
 
 	db.EXPECT().GetSourceState(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().
@@ -1065,10 +1064,10 @@ func prepareDBForAdmission(ctx context.Context, t *testing.T, db *sqlite.Backend
 	}
 	// transitDem and transitAlloc represent transits between all ingress and req.Egress
 	for ingress, demand := range transitDem {
-		err := db.PersistTransitDem(ctx, ingress, req.Egress, demand)
+		err := db.PersistTransitDem(ctx, ingress, req.Egress(), demand)
 		require.NoError(t, err)
 	}
-	err := db.PersistTransitAlloc(ctx, req.Ingress, req.Egress, transitAlloc)
+	err := db.PersistTransitAlloc(ctx, req.Ingress(), req.Egress(), transitAlloc)
 	require.NoError(t, err)
 }
 
@@ -1080,8 +1079,8 @@ func persistRsvFromAdmittedRequest(t *testing.T, db *sqlite.Backend, req segment
 	if rsv == nil {
 		rsv = segment.NewReservation()
 		rsv.ID = req.ID
-		rsv.Ingress = req.Ingress
-		rsv.Egress = req.Egress
+		rsv.Ingress = req.Ingress()
+		rsv.Egress = req.Egress()
 		require.NoError(t, err)
 	} else {
 		index := rsv.Index(req.Index)

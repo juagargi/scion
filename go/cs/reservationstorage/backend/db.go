@@ -33,7 +33,7 @@ type ReserverOnly interface {
 	GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA) (
 		[]*segment.Reservation, error)
 	// GetSegmentRsvFromPath searches for a segment reservation with the specified path.
-	GetSegmentRsvFromPath(ctx context.Context, path segment.ReservationTransparentPath) (
+	GetSegmentRsvFromPath(ctx context.Context, path segment.TransparentPath) (
 		*segment.Reservation, error)
 
 	// NewSegmentRsv creates a new segment reservation in the DB, with an unused reservation ID.

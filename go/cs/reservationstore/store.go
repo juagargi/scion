@@ -131,8 +131,8 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	if newSetup {
 		// setup, create reservation and an index
 		rsv = segment.NewReservation()
-		rsv.Ingress = req.Ingress
-		rsv.Egress = req.Egress
+		rsv.Ingress = req.Ingress()
+		rsv.Egress = req.Egress()
 		if err = tx.NewSegmentRsv(ctx, rsv); err != nil {
 			return err
 		}
@@ -243,8 +243,8 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		// setup, create reservation and an index
 		rsv = segment.NewReservation()
 		rsv.ID = req.ID
-		rsv.Ingress = req.Ingress
-		rsv.Egress = req.Egress
+		rsv.Ingress = req.Ingress()
+		rsv.Egress = req.Egress()
 	}
 	req.Reservation = rsv
 

@@ -30,11 +30,11 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-func NewPathFromComponents(chain ...interface{}) segment.ReservationTransparentPath {
+func NewPathFromComponents(chain ...interface{}) segment.TransparentPath {
 	if len(chain)%3 != 0 {
 		panic("wrong number of arguments")
 	}
-	p := segment.ReservationTransparentPath{}
+	p := segment.TransparentPath{}
 	for i := 0; i < len(chain); i += 3 {
 		p = append(p, segment.PathStepWithIA{
 			PathStep: segment.PathStep{

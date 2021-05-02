@@ -313,8 +313,6 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time, ex
 				RequestMetadata: *meta,
 				ID:              reservation.SegmentID{}, // new source setup in store
 				Timestamp:       now,
-				Ingress:         0,
-				Egress:          opaque[0].Egress,
 			},
 			ExpirationTime: expTime,
 			// RLC:            rlc,
@@ -349,8 +347,6 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 			Request: seg.Request{ // without path in metadata (it will be set in the store)
 				ID:          rsv.ID, // new source setup in store
 				Timestamp:   now,
-				Ingress:     0,
-				Egress:      rsv.Egress,
 				Reservation: rsv,
 			},
 			MinBW:      rsv.ActiveIndex().MinBW,

@@ -65,12 +65,12 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 	*colpb.SegmentSetupResponse, error) {
 
 	log.Info("DELETEME received call on SetupSegment()")
-	path, ingress, egress, err := extractPath(ctx)
+	path, err := extractPath(ctx)
 	if err != nil {
 		log.Error("setup segment", "err", err)
 		return nil, err
 	}
-	req, err := translate.SetupReq(msg, path, ingress, egress)
+	req, err := translate.SetupReq(msg, path)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
 		// should send a message?
@@ -87,24 +87,23 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 }
 
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
-func extractPath(ctx context.Context) (base.PacketPath, uint16, uint16, error) {
+func extractPath(ctx context.Context) (base.PacketPath, error) {
 	p, ok := peer.FromContext(ctx)
 	if !ok || p == nil {
 		log.Error("deleteme no peer found")
-		return nil, 0, 0, serrors.New("no peer found")
+		return nil, serrors.New("no peer found")
 	}
 	raddr, ok := p.Addr.(*snet.UDPAddr)
 	if !ok || raddr == nil {
 		log.Error("deleteme no scion address found")
-		return nil, 0, 0, serrors.New("no valid scion address found", "addr", p.Addr)
+		return nil, serrors.New("no valid scion address found", "addr", p.Addr)
 	}
 	log.Info("deleteme scion address", "addr", raddr)
 	path, err := base.NewPacketPath(raddr.Path)
 	if err != nil {
-		return path, 0, 0, err
+		return path, err
 	}
-	ingress, egress, err := path.IngressEgressIFIDs()
 	log.Info("deleteme path and interfaces", "path_type", raddr.Path.Type,
 		"packet_path", path)
-	return path, ingress, egress, err
+	return path, err
 }

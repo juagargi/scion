@@ -29,12 +29,8 @@ type Request struct {
 	ID                   reservation.SegmentID   // the ID this request refers to
 	Index                reservation.IndexNumber // the index this request refers to
 	Timestamp            time.Time               // the mandatory timestamp
-	Ingress              uint16                  // the interface the traffic uses to enter the AS
-	Egress               uint16                  // the interface the traffic uses to leave the AS
 	Reservation          *Reservation            // nil if no reservation yet
 }
-
-// TODO(juagargi) refactor Request: move Ingress, Egress to metadata
 
 // NewRequest constructs the segment Request type.
 func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
@@ -44,10 +40,6 @@ func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNu
 	if err != nil {
 		return nil, serrors.WrapStr("new segment request", err)
 	}
-	ingressIFID, egressIFID, err := path.IngressEgressIFIDs()
-	if err != nil {
-		return nil, serrors.WrapStr("building request", err)
-	}
 	if id == nil {
 		return nil, serrors.New("new segment request with nil ID")
 	}
@@ -56,8 +48,6 @@ func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNu
 		Timestamp:       ts,
 		ID:              *id,
 		Index:           idx,
-		Ingress:         ingressIFID,
-		Egress:          egressIFID,
 	}, nil
 }
 
@@ -77,8 +67,16 @@ type SetupReq struct {
 }
 
 // PrevBW returns the minimum of the maximum bandwidths already granted by previous ASes.
-func (r SetupReq) PrevBW() uint64 {
+func (r *SetupReq) PrevBW() uint64 {
 	return r.AllocTrail.MinMax().ToKbps()
+}
+
+func (r *SetupReq) Ingress() uint16 {
+	return 0
+}
+
+func (r *SetupReq) Egress() uint16 {
+	return 0
 }
 
 // SetupTelesReq represents a telescopic segment setup.

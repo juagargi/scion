@@ -109,6 +109,8 @@ func TestSumMaxBlockedBW(t *testing.T) {
 
 func TestAvailableBW(t *testing.T) {
 	req := newTestRequest(t, 1, 2, 5, 7)
+	ingress := req.Ingress()
+	egress := req.Egress()
 
 	cases := map[string]struct {
 		availBW uint64
@@ -121,9 +123,9 @@ func TestAvailableBW(t *testing.T) {
 			delta:   1,
 			req:     req,
 			setupDB: func(db *mock_backend.MockDB) {
-				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), &req.Ingress, nil).Return(
+				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), &ingress, nil).Return(
 					nil, nil)
-				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), nil, &req.Egress).Return(
+				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), nil, &egress).Return(
 					nil, nil)
 			},
 		},
@@ -134,11 +136,11 @@ func TestAvailableBW(t *testing.T) {
 			delta:   1,
 			req:     req,
 			setupDB: func(db *mock_backend.MockDB) {
-				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), &req.Ingress, nil).Return(
+				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), &ingress, nil).Return(
 					[]*segment.Reservation{
 						testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
 					}, nil)
-				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), nil, &req.Egress).Return(
+				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), nil, &egress).Return(
 					[]*segment.Reservation{
 						testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
 					}, nil)
@@ -149,12 +151,12 @@ func TestAvailableBW(t *testing.T) {
 			delta:   1,
 			req:     req,
 			setupDB: func(db *mock_backend.MockDB) {
-				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), &req.Ingress, nil).Return(
+				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), &ingress, nil).Return(
 					[]*segment.Reservation{
 						testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
 						testNewRsv(t, "ff00:1:2", "beefcafe", 1, 2, 5, 5, 5),
 					}, nil)
-				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), nil, &req.Egress).Return(
+				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), nil, &egress).Return(
 					[]*segment.Reservation{
 						testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
 						testNewRsv(t, "ff00:1:2", "beefcafe", 1, 2, 5, 5, 5),
@@ -166,12 +168,12 @@ func TestAvailableBW(t *testing.T) {
 			delta:   .5,
 			req:     req,
 			setupDB: func(db *mock_backend.MockDB) {
-				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), &req.Ingress, nil).Return(
+				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), &ingress, nil).Return(
 					[]*segment.Reservation{
 						testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
 						testNewRsv(t, "ff00:1:2", "beefcafe", 1, 2, 5, 5, 5),
 					}, nil)
-				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), nil, &req.Egress).Return(
+				db.EXPECT().GetSegmentRsvsFromIFPair(gomock.Any(), nil, &egress).Return(
 					[]*segment.Reservation{
 						testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5),
 						testNewRsv(t, "ff00:1:2", "beefcafe", 1, 2, 5, 5, 5),
@@ -457,6 +459,7 @@ func newTestAdmitter(t *testing.T) *StatelessAdmission {
 func newTestRequest(t *testing.T, ingress, egress uint16,
 	minBW, maxBW reservation.BWCls) *segment.SetupReq {
 
+	// TODO(juagargi) unused args ingress,egress
 	ID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
 	require.NoError(t, err)
 	return &segment.SetupReq{
@@ -464,8 +467,6 @@ func newTestRequest(t *testing.T, ingress, egress uint16,
 			RequestMetadata: base.RequestMetadata{},
 			ID:              *ID,
 			Timestamp:       util.SecsToTime(1),
-			Ingress:         ingress,
-			Egress:          egress,
 		},
 		MinBW:     minBW,
 		MaxBW:     maxBW,

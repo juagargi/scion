@@ -27,6 +27,10 @@ import (
 )
 
 // OpaquePath is used in e.g. setup requests, where the IAs should not be visible.
+// type OpaquePath struct {
+// 	Steps []PathStep
+// }
+
 type OpaquePath []PathStep
 
 // NewOpaquePathFromInterfaces constructs an OpaquePath given a list of snet.PathInterface .
@@ -54,23 +58,23 @@ func (p OpaquePath) String() string {
 	return strings.Join(strs, " > ")
 }
 
-// ReservationTransparentPath represents a reservation path, in the reservation order.
+// TransparentPath represents a reservation path, in the reservation order.
 // This path is seen only in the source of a segment reservation.
 // TODO(juagargi) there exists a ColibriPath that could be used instead, if we only
 // need equality. If we need to know the IDs of the transit ASes, it won't be possible.
-type ReservationTransparentPath []PathStepWithIA
+type TransparentPath []PathStepWithIA
 
-var _ snet.PathInterfacesHaver = (*ReservationTransparentPath)(nil)
+var _ snet.PathInterfacesHaver = (*TransparentPath)(nil)
 
-var _ io.Reader = (*ReservationTransparentPath)(nil)
+var _ io.Reader = (*TransparentPath)(nil)
 
 // NewPathFromRaw constructs a new Path from the byte representation.
-func NewPathFromRaw(buff []byte) (ReservationTransparentPath, error) {
+func NewPathFromRaw(buff []byte) (TransparentPath, error) {
 	if len(buff)%PathStepWithIALen != 0 {
 		return nil, serrors.New("buffer input is not a multiple of a path step", "len", len(buff))
 	}
 	steps := len(buff) / PathStepWithIALen
-	p := make(ReservationTransparentPath, steps)
+	p := make(TransparentPath, steps)
 	for i := 0; i < steps; i++ {
 		offset := i * PathStepWithIALen
 		p[i].Ingress = binary.BigEndian.Uint16(buff[offset:])
@@ -80,14 +84,14 @@ func NewPathFromRaw(buff []byte) (ReservationTransparentPath, error) {
 	return p, nil
 }
 
-func NewTransparentPathFromInterfaces(ifaces []snet.PathInterface) (ReservationTransparentPath, error) {
+func NewTransparentPathFromInterfaces(ifaces []snet.PathInterface) (TransparentPath, error) {
 	if len(ifaces)%2 != 0 {
 		return nil, serrors.New("wrong number of interfaces, not even", "ifaces", ifaces)
 	}
 	if len(ifaces) == 0 {
-		return ReservationTransparentPath{}, nil
+		return TransparentPath{}, nil
 	}
-	transparent := make(ReservationTransparentPath, len(ifaces)/2+1)
+	transparent := make(TransparentPath, len(ifaces)/2+1)
 	for i := 0; i < len(transparent)-1; i++ {
 		transparent[i].Egress = uint16(ifaces[i*2].ID)
 		transparent[i].IA = ifaces[i*2].IA
@@ -97,7 +101,7 @@ func NewTransparentPathFromInterfaces(ifaces []snet.PathInterface) (ReservationT
 }
 
 // Validate returns an error if there is invalid data.
-func (p ReservationTransparentPath) Validate() error {
+func (p TransparentPath) Validate() error {
 	if len(p) < 2 {
 		return serrors.New("invalid path length", "len", len(p))
 	}
@@ -111,8 +115,8 @@ func (p ReservationTransparentPath) Validate() error {
 	return nil
 }
 
-// Equal returns true if both ReservationTransparentPath contain the same values.
-func (p ReservationTransparentPath) Equal(o ReservationTransparentPath) bool {
+// Equal returns true if both TransparentPath contain the same values.
+func (p TransparentPath) Equal(o TransparentPath) bool {
 	if len(p) != len(o) {
 		return false
 	}
@@ -130,7 +134,7 @@ func (p ReservationTransparentPath) Equal(o ReservationTransparentPath) bool {
 // 0 > 1-1 > 1  , 2 > 1-2 > 3 . 4 > 1-3 > 0
 // becomes a list of snet.PathInterfaces like:
 // 1-1#1 , 1-2#2 , 1-2#3 , 1-3#4
-func (p ReservationTransparentPath) Interfaces() []snet.PathInterface {
+func (p TransparentPath) Interfaces() []snet.PathInterface {
 	if len(p) < 2 {
 		return []snet.PathInterface{}
 	}
@@ -147,7 +151,7 @@ func (p ReservationTransparentPath) Interfaces() []snet.PathInterface {
 // GetSrcIA returns the source IA in the path or a zero IA if the path is nil (it's not the
 // source AS of the reservation and has no access to the path of the reservation).
 // If the Path is not nil, it assumes is valid, i.e. it has at least length 2.
-func (p ReservationTransparentPath) GetSrcIA() addr.IA {
+func (p TransparentPath) GetSrcIA() addr.IA {
 	if len(p) == 0 {
 		return addr.IA{}
 	}
@@ -157,7 +161,7 @@ func (p ReservationTransparentPath) GetSrcIA() addr.IA {
 // GetDstIA returns the source IA in the path or a zero IA if the path is nil (it's not the
 // source AS of the reservation and has no access to the path of the reservation).
 // If the path is not nil, it assumes is valid, i.e. it has at least length 2.
-func (p ReservationTransparentPath) GetDstIA() addr.IA {
+func (p TransparentPath) GetDstIA() addr.IA {
 	if len(p) == 0 {
 		return addr.IA{}
 	}
@@ -165,14 +169,14 @@ func (p ReservationTransparentPath) GetDstIA() addr.IA {
 }
 
 // Len returns the length of this path in bytes, when serialized.
-func (p ReservationTransparentPath) Len() int {
+func (p TransparentPath) Len() int {
 	if len(p) == 0 {
 		return 0
 	}
 	return len(p) * PathStepWithIALen
 }
 
-func (p ReservationTransparentPath) Read(buff []byte) (int, error) {
+func (p TransparentPath) Read(buff []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -188,8 +192,8 @@ func (p ReservationTransparentPath) Read(buff []byte) (int, error) {
 	return p.Len(), nil
 }
 
-// ToRaw returns a buffer representing this ReservationTransparentPath.
-func (p ReservationTransparentPath) ToRaw() []byte {
+// ToRaw returns a buffer representing this TransparentPath.
+func (p TransparentPath) ToRaw() []byte {
 	if len(p) == 0 {
 		return nil
 	}
@@ -198,7 +202,7 @@ func (p ReservationTransparentPath) ToRaw() []byte {
 	return buff
 }
 
-func (p ReservationTransparentPath) String() string {
+func (p TransparentPath) String() string {
 	strs := make([]string, len(p))
 	for i, s := range p {
 		strs[i] = s.String()
@@ -206,7 +210,7 @@ func (p ReservationTransparentPath) String() string {
 	return strings.Join(strs, " > ")
 }
 
-func (p ReservationTransparentPath) Opaque() OpaquePath {
+func (p TransparentPath) Opaque() OpaquePath {
 	opaque := make(OpaquePath, len(p))
 	for i, step := range p {
 		opaque[i] = step.PathStep
@@ -222,7 +226,7 @@ type PathStep struct {
 	Egress  uint16
 }
 
-// PathStepWithIA is one step of the ReservationTransparentPath.
+// PathStepWithIA is one step of the TransparentPath.
 // These steps are specified at the source AS.
 type PathStepWithIA struct {
 	PathStep

@@ -68,20 +68,22 @@ func (a *StatelessAdmission) AdmitRsv(ctx context.Context, x backend.ColibriStor
 func (a *StatelessAdmission) availableBW(ctx context.Context, x backend.ColibriStorage,
 	req segment.SetupReq) (uint64, error) {
 
-	sameIngress, err := x.GetSegmentRsvsFromIFPair(ctx, &req.Ingress, nil)
+	ingress := req.Ingress()
+	sameIngress, err := x.GetSegmentRsvsFromIFPair(ctx, &ingress, nil)
 	if err != nil {
 		return 0, serrors.WrapStr("cannot get reservations using ingress", err,
-			"ingress", req.Ingress)
+			"ingress", ingress)
 	}
-	sameEgress, err := x.GetSegmentRsvsFromIFPair(ctx, nil, &req.Egress)
+	egress := req.Egress()
+	sameEgress, err := x.GetSegmentRsvsFromIFPair(ctx, nil, &egress)
 	if err != nil {
 		return 0, serrors.WrapStr("cannot get reservations using egress", err,
-			"egress", req.Egress)
+			"egress", egress)
 	}
 	bwIngress := sumMaxBlockedBW(sameIngress, req.ID)
-	freeIngress := a.Caps.CapacityIngress(req.Ingress) - bwIngress
+	freeIngress := a.Caps.CapacityIngress(ingress) - bwIngress
 	bwEgress := sumMaxBlockedBW(sameEgress, req.ID)
-	freeEgress := a.Caps.CapacityEgress(req.Egress) - bwEgress
+	freeEgress := a.Caps.CapacityEgress(egress) - bwEgress
 	// `free` excludes the BW from an existing reservation if its ID equals the request's ID
 	free := float64(minBW(freeIngress, freeEgress))
 	return uint64(free * a.Delta), nil
@@ -98,18 +100,18 @@ func (a *StatelessAdmission) idealBW(ctx context.Context, x backend.ColibriStora
 	if err != nil {
 		return 0, serrors.WrapStr("cannot compute link ratio", err)
 	}
-	cap := float64(a.Caps.CapacityEgress(req.Egress))
+	cap := float64(a.Caps.CapacityEgress(req.Egress()))
 	return uint64(cap * tubeRatio * linkRatio), nil
 }
 
 func (a *StatelessAdmission) tubeRatio(ctx context.Context, x backend.ColibriStorage,
 	req segment.SetupReq) (float64, error) {
 
-	transitDemand, err := a.transitDemand(ctx, x, req.Ingress, req)
+	transitDemand, err := a.transitDemand(ctx, x, req.Ingress(), req)
 	if err != nil {
 		return 0, serrors.WrapStr("cannot compute tube ratio", err)
 	}
-	capIn := a.Caps.CapacityIngress(req.Ingress)
+	capIn := a.Caps.CapacityIngress(req.Ingress())
 	numerator := minBW(capIn, transitDemand)
 
 	var sum uint64
@@ -140,13 +142,13 @@ func (a *StatelessAdmission) linkRatio(ctx context.Context, x backend.ColibriSto
 		grouped[req.ID.ASID] = make([]*segment.Reservation, 0)
 	}
 
-	egScalFctr := a.egScalFctr(grouped[req.ID.ASID], req.Egress, req)
+	egScalFctr := a.egScalFctr(grouped[req.ID.ASID], req.Egress(), req)
 	numerator := egScalFctr * float64(req.PrevBW())
 
 	var denom float64
 	for src, rsvs := range grouped {
-		egScalFctr = a.egScalFctr(rsvs, req.Egress, req)
-		srcAlloc := a.srcAlloc(rsvs, src, req.Ingress, req.Egress, req)
+		egScalFctr = a.egScalFctr(rsvs, req.Egress(), req)
+		srcAlloc := a.srcAlloc(rsvs, src, req.Ingress(), req.Egress(), req)
 		denom += egScalFctr * float64(srcAlloc)
 	}
 	if denom == 0 {
@@ -166,7 +168,7 @@ func (a *StatelessAdmission) transitDemand(ctx context.Context, x backend.Colibr
 	grouped := groupRsvsBySource(rsvs)
 	var sum uint64
 	for _, rsvs := range grouped {
-		dem := a.adjSrcDem(rsvs, ingress, req.Egress, req)
+		dem := a.adjSrcDem(rsvs, ingress, req.Egress(), req)
 		sum += dem
 	}
 	return sum, nil
@@ -232,7 +234,7 @@ func (a *StatelessAdmission) srcDem(rsvs []*segment.Reservation, ingress, egress
 	req segment.SetupReq) uint64 {
 
 	capIn := a.Caps.CapacityIngress(ingress)
-	capEg := a.Caps.CapacityEgress(req.Egress)
+	capEg := a.Caps.CapacityEgress(req.Egress())
 	var srcDem uint64
 	for _, r := range rsvs {
 		if r.Ingress == ingress && r.Egress == egress && r.ID != req.ID {
@@ -242,7 +244,7 @@ func (a *StatelessAdmission) srcDem(rsvs []*segment.Reservation, ingress, egress
 	}
 	// lastly, add the request demand from the request itself
 	if len(rsvs) > 0 && req.ID.ASID == rsvs[0].ID.ASID &&
-		req.Ingress == ingress && req.Egress == egress {
+		req.Ingress() == ingress && req.Egress() == egress {
 
 		capReqDem := minBW(capIn, capEg, req.MaxBW.ToKbps())
 		srcDem += capReqDem

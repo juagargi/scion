@@ -56,6 +56,15 @@ message AllocationBead {
     uint32 maxbw = 2;
 }
 
+message PathStep {
+    uint32 ingress = 1;
+    uint32 egress =2;
+}
+
+message OpaquePath {
+    repeated PathStep steps = 1;
+}
+
 ////////////////////////////////////////
 
 message Base {
@@ -77,6 +86,7 @@ message SegmentSetupRequest{
         PathEndProps props_at_start = 7;
         PathEndProps props_at_end = 8;
         repeated AllocationBead allocationtrail = 9;
+        OpaquePath opaque = 10;
     }
     Params params = 2;
 }
