@@ -320,7 +320,7 @@ func TestTubeRatio(t *testing.T) {
 			adm := newTestAdmitter(t)
 			defer finish()
 
-			adm.Capacities = &testCapacities{
+			adm.Caps = &testCapacities{
 				Cap:    tc.globalCapacity,
 				Ifaces: tc.interfaces,
 			}
@@ -428,7 +428,7 @@ func TestLinkRatio(t *testing.T) {
 			adm := newTestAdmitter(t)
 			defer finish()
 
-			adm.Capacities = &testCapacities{
+			adm.Caps = &testCapacities{
 				Cap:    1024 * 1024,
 				Ifaces: []uint16{1, 2, 3},
 			}
@@ -620,7 +620,7 @@ func TestTubeRatioAfterAdmission(t *testing.T) {
 			t.Parallel()
 			db := newTestDB(t)
 			adm := newTestAdmitter(t)
-			adm.Capacities = &testCapacities{
+			adm.Caps = &testCapacities{
 				Cap:    tc.globalCapacity,
 				Ifaces: tc.interfaces,
 			}
@@ -723,7 +723,7 @@ func TestLinkRatioAfterAdmission(t *testing.T) {
 			t.Parallel()
 			db := newTestDB(t)
 			adm := newTestAdmitter(t)
-			adm.Capacities = &testCapacities{
+			adm.Caps = &testCapacities{
 				Cap:    1024 * 1024,
 				Ifaces: []uint16{1, 2, 3},
 			}
@@ -758,7 +758,6 @@ var _ base.Capacities = (*testCapacities)(nil)
 
 func (c *testCapacities) IngressInterfaces() []uint16           { return c.Ifaces }
 func (c *testCapacities) EgressInterfaces() []uint16            { return c.Ifaces }
-func (c *testCapacities) Capacity(from, to uint16) uint64       { return c.Cap }
 func (c *testCapacities) CapacityIngress(ingress uint16) uint64 { return c.Cap }
 func (c *testCapacities) CapacityEgress(egress uint16) uint64   { return c.Cap }
 
@@ -781,7 +780,7 @@ func newTestDB(t *testing.T) *sqlite.Backend {
 
 func newTestAdmitter(t *testing.T) *StatefulAdmission {
 	return &StatefulAdmission{
-		Capacities: &testCapacities{
+		Caps: &testCapacities{
 			Cap:    1024, // 1MBps
 			Ifaces: []uint16{1, 2},
 		},

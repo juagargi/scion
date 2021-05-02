@@ -52,6 +52,8 @@ func (cfg *ColibriConfig) Validate() error {
 func (cfg *ColibriConfig) InitDefaults() {
 	cfg.DB.InitDefaults()
 	cfg.Delta = 0.8
+	cfg.Capacities = &colconf.Capacities{}
+	cfg.Reservations = &colconf.Reservations{}
 }
 
 func (cfg *ColibriConfig) Sample(dst io.Writer, _ config.Path, _ config.CtxMap) {

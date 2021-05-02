@@ -29,11 +29,15 @@ import (
 
 // StatelessAdmission can admit a segment reservation without any state other than the DB.
 type StatelessAdmission struct {
-	Capacities base.Capacities // aka capacity matrix
-	Delta      float64         // fraction of free BW that can be reserved in one request
+	Caps  base.Capacities // aka capacity matrix
+	Delta float64         // fraction of free BW that can be reserved in one request
 }
 
 var _ admission.Admitter = (*StatelessAdmission)(nil)
+
+func (a *StatelessAdmission) Capacities() base.Capacities {
+	return a.Caps
+}
 
 // AdmitRsv admits a segment reservation. The request will be modified with the allowed and
 // maximum bandwidths if they were computed. It can also return an error that must be checked.
@@ -75,9 +79,9 @@ func (a *StatelessAdmission) availableBW(ctx context.Context, x backend.ColibriS
 			"egress", req.Egress)
 	}
 	bwIngress := sumMaxBlockedBW(sameIngress, req.ID)
-	freeIngress := a.Capacities.CapacityIngress(req.Ingress) - bwIngress
+	freeIngress := a.Caps.CapacityIngress(req.Ingress) - bwIngress
 	bwEgress := sumMaxBlockedBW(sameEgress, req.ID)
-	freeEgress := a.Capacities.CapacityEgress(req.Egress) - bwEgress
+	freeEgress := a.Caps.CapacityEgress(req.Egress) - bwEgress
 	// `free` excludes the BW from an existing reservation if its ID equals the request's ID
 	free := float64(minBW(freeIngress, freeEgress))
 	return uint64(free * a.Delta), nil
@@ -94,7 +98,7 @@ func (a *StatelessAdmission) idealBW(ctx context.Context, x backend.ColibriStora
 	if err != nil {
 		return 0, serrors.WrapStr("cannot compute link ratio", err)
 	}
-	cap := float64(a.Capacities.CapacityEgress(req.Egress))
+	cap := float64(a.Caps.CapacityEgress(req.Egress))
 	return uint64(cap * tubeRatio * linkRatio), nil
 }
 
@@ -105,16 +109,16 @@ func (a *StatelessAdmission) tubeRatio(ctx context.Context, x backend.ColibriSto
 	if err != nil {
 		return 0, serrors.WrapStr("cannot compute tube ratio", err)
 	}
-	capIn := a.Capacities.CapacityIngress(req.Ingress)
+	capIn := a.Caps.CapacityIngress(req.Ingress)
 	numerator := minBW(capIn, transitDemand)
 
 	var sum uint64
-	for _, in := range a.Capacities.IngressInterfaces() {
+	for _, in := range a.Caps.IngressInterfaces() {
 		dem, err := a.transitDemand(ctx, x, in, req)
 		if err != nil {
 			return 0, serrors.WrapStr("cannot compute tube ratio", err)
 		}
-		sum += minBW(a.Capacities.CapacityIngress(in), dem)
+		sum += minBW(a.Caps.CapacityIngress(in), dem)
 	}
 	if sum == 0 {
 		return 1, nil
@@ -183,7 +187,7 @@ func (a *StatelessAdmission) adjSrcDem(rsvs []*segment.Reservation, ingress, egr
 func (a *StatelessAdmission) inScalFctr(rsvs []*segment.Reservation, ingress uint16,
 	req segment.SetupReq) float64 {
 
-	capIn := a.Capacities.CapacityIngress(ingress)
+	capIn := a.Caps.CapacityIngress(ingress)
 	inDem := a.inDem(rsvs, ingress, req)
 	if inDem == 0 {
 		return 1
@@ -195,7 +199,7 @@ func (a *StatelessAdmission) inScalFctr(rsvs []*segment.Reservation, ingress uin
 func (a *StatelessAdmission) egScalFctr(rsvs []*segment.Reservation, egress uint16,
 	req segment.SetupReq) float64 {
 
-	capEg := a.Capacities.CapacityEgress(egress)
+	capEg := a.Caps.CapacityEgress(egress)
 	egDem := a.egDem(rsvs, egress, req)
 	if egDem == 0 {
 		return 1
@@ -207,7 +211,7 @@ func (a *StatelessAdmission) inDem(rsvs []*segment.Reservation, ingress uint16,
 	req segment.SetupReq) uint64 {
 
 	var inDem uint64
-	for _, eg := range a.Capacities.EgressInterfaces() {
+	for _, eg := range a.Caps.EgressInterfaces() {
 		inDem += a.srcDem(rsvs, ingress, eg, req)
 	}
 	return inDem
@@ -217,7 +221,7 @@ func (a *StatelessAdmission) egDem(rsvs []*segment.Reservation, egress uint16,
 	req segment.SetupReq) uint64 {
 
 	var egDem uint64
-	for _, in := range a.Capacities.IngressInterfaces() {
+	for _, in := range a.Caps.IngressInterfaces() {
 		egDem += a.srcDem(rsvs, in, egress, req)
 	}
 	return egDem
@@ -227,8 +231,8 @@ func (a *StatelessAdmission) egDem(rsvs []*segment.Reservation, egress uint16,
 func (a *StatelessAdmission) srcDem(rsvs []*segment.Reservation, ingress, egress uint16,
 	req segment.SetupReq) uint64 {
 
-	capIn := a.Capacities.CapacityIngress(ingress)
-	capEg := a.Capacities.CapacityEgress(req.Egress)
+	capIn := a.Caps.CapacityIngress(ingress)
+	capEg := a.Caps.CapacityEgress(req.Egress)
 	var srcDem uint64
 	for _, r := range rsvs {
 		if r.Ingress == ingress && r.Egress == egress && r.ID != req.ID {

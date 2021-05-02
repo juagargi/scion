@@ -26,7 +26,6 @@ import (
 type Capacities interface {
 	IngressInterfaces() []uint16
 	EgressInterfaces() []uint16
-	Capacity(from, to uint16) uint64 // TODO(juagargi) this method is never used
 	CapacityIngress(ingress uint16) uint64
 	CapacityEgress(egress uint16) uint64
 }
@@ -46,7 +45,7 @@ type PacketPath interface {
 func NewPacketPath(spath spath.Path) (PacketPath, error) {
 	switch spath.Type {
 	case scion.PathType:
-		p := scion.Raw{}
+		p := scion.Decoded{}
 		if err := p.DecodeFromBytes(spath.Raw); err != nil {
 			return nil, err
 		}
@@ -71,10 +70,11 @@ func NewColibriPath(p colibri.ColibriPath) *colibriPath {
 }
 
 type scionPath struct {
-	scion.Raw
+	// scion.Raw  // TODO(juagargi) turn to Raw after debugging
+	Raw scion.Decoded
 }
 
-func NewScionPath(p scion.Raw) *scionPath {
+func NewScionPath(p scion.Decoded) *scionPath {
 	return &scionPath{p}
 }
 
@@ -122,14 +122,8 @@ func (p *scionPath) IndexOfCurrentHop() int {
 }
 
 func (p *scionPath) IngressEgressIFIDs() (uint16, uint16, error) {
-	hf, err := p.Raw.GetCurrentHopField()
-	if err != nil {
-		return 0, 0, err
-	}
-	inf, err := p.Raw.GetCurrentInfoField()
-	if err != nil {
-		return 0, 0, err
-	}
+	hf := p.Raw.HopFields[int(p.Raw.PathMeta.CurrHF)]
+	inf := p.Raw.InfoFields[(p.Raw.PathMeta.CurrINF)]
 	if inf.ConsDir {
 		return hf.ConsIngress, hf.ConsEgress, nil
 	}

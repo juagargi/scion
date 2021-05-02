@@ -451,16 +451,17 @@ func run(file string) error {
 		return serrors.WrapStr("error initializing COLIBRI DB", err)
 	}
 	admitter := &admission.StatefulAdmission{
-		Capacities: cfg.Colibri.Capacities,
-		Delta:      cfg.Colibri.Delta,
+		Caps:  cfg.Colibri.Capacities,
+		Delta: cfg.Colibri.Delta,
 	}
-
 	colibriStore, err := reservationstore.NewStore(topo, router, dialer, db, admitter)
 	if err != nil {
 		return serrors.WrapStr("initializing colibri store", err)
 	}
 
-	colibriService := &colgrpc.ColibriService{}
+	colibriService := &colgrpc.ColibriService{
+		Store: colibriStore,
+	}
 	// colpb.RegisterColibriServer(quicServer, colibriService)
 	colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
 	colpb.RegisterColibriServer(colServer, colibriService)

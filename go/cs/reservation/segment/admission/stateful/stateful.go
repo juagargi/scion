@@ -29,11 +29,15 @@ import (
 
 // StatefulAdmission can admit a segment reservation without any state other than the DB.
 type StatefulAdmission struct {
-	Capacities base.Capacities // aka capacity matrix
-	Delta      float64         // fraction of free BW that can be reserved in one request
+	Caps  base.Capacities // aka capacity matrix
+	Delta float64         // fraction of free BW that can be reserved in one request
 }
 
 var _ admission.Admitter = (*StatefulAdmission)(nil)
+
+func (a *StatefulAdmission) Capacities() base.Capacities {
+	return a.Caps
+}
 
 // AdmitRsv admits a segment reservation. The request will be modified with the allowed and
 // maximum bandwidths if they were computed. It can also return an error that must be checked.
@@ -126,8 +130,8 @@ func (a *StatefulAdmission) availableBW(ctx context.Context, x backend.ColibriSt
 			usedEgress -= blocked
 		}
 	}
-	capIn := int64(a.Capacities.CapacityIngress(req.Ingress))
-	capEg := int64(a.Capacities.CapacityEgress(req.Egress))
+	capIn := int64(a.Caps.CapacityIngress(req.Ingress))
+	capEg := int64(a.Caps.CapacityEgress(req.Egress))
 	freeIngress := uint64(maxSignedBW(0, capIn-int64(usedIngress)))
 	freeEgress := uint64(maxSignedBW(0, capEg-int64(usedEgress)))
 	free := float64(minBW(freeIngress, freeEgress))
@@ -146,7 +150,7 @@ func (a *StatefulAdmission) idealBW(ctx context.Context, x backend.ColibriStorag
 	if err != nil {
 		return 0, serrors.WrapStr("cannot compute link ratio", err)
 	}
-	cap := float64(a.Capacities.CapacityEgress(req.Egress))
+	cap := float64(a.Caps.CapacityEgress(req.Egress))
 	return uint64(cap * tubeRatio * linkRatio), nil
 }
 
@@ -158,10 +162,10 @@ func (a *StatefulAdmission) tubeRatio(ctx context.Context, x backend.ColibriStor
 		return 0, serrors.WrapStr("cannot compute transit demand", err)
 	}
 	pad.TransitDem = transitDemand
-	capIn := a.Capacities.CapacityIngress(req.Ingress)
+	capIn := a.Caps.CapacityIngress(req.Ingress)
 	numerator := minBW(capIn, transitDemand)
 	sumTransits := numerator
-	for _, in := range a.Capacities.IngressInterfaces() {
+	for _, in := range a.Caps.IngressInterfaces() {
 		if in == req.Ingress {
 			continue
 		}
@@ -170,7 +174,7 @@ func (a *StatefulAdmission) tubeRatio(ctx context.Context, x backend.ColibriStor
 			return 0, serrors.WrapStr("computing tube ratio failed", err)
 		}
 
-		sumTransits += minBW(a.Capacities.CapacityIngress(in), transitDem)
+		sumTransits += minBW(a.Caps.CapacityIngress(in), transitDem)
 	}
 	return float64(numerator) / float64(sumTransits), nil
 }
@@ -305,8 +309,8 @@ func (a *StatefulAdmission) srcDem(ctx context.Context, x backend.ColibriStorage
 		return 0, serrors.WrapStr("computing src dem failed", err)
 	}
 	if ingress == req.Ingress && egress == req.Egress {
-		capIn := a.Capacities.CapacityIngress(ingress)
-		capEg := a.Capacities.CapacityEgress(egress)
+		capIn := a.Caps.CapacityIngress(ingress)
+		capEg := a.Caps.CapacityEgress(egress)
 		// substract DB's capReqDem(req.ID)
 		rsv, err := x.GetSegmentRsvFromID(ctx, &req.ID)
 		if err != nil {
@@ -325,14 +329,14 @@ func (a *StatefulAdmission) computeInScalFctr(ingress uint16, inDem uint64) floa
 	if inDem == 0 {
 		return 1
 	}
-	return float64(minBW(inDem, a.Capacities.CapacityIngress(ingress))) / float64(inDem)
+	return float64(minBW(inDem, a.Caps.CapacityIngress(ingress))) / float64(inDem)
 }
 
 func (a *StatefulAdmission) computeEgScalFctr(egress uint16, egDem uint64) float64 {
 	if egDem == 0 {
 		return 1
 	}
-	return float64(minBW(egDem, a.Capacities.CapacityEgress(egress))) / float64(egDem)
+	return float64(minBW(egDem, a.Caps.CapacityEgress(egress))) / float64(egDem)
 }
 
 func (a *StatefulAdmission) inScalFctr(ctx context.Context, x backend.ColibriStorage,

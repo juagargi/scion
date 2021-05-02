@@ -38,7 +38,7 @@ import (
 
 // Store is the reservation store.
 type Store struct {
-	LocalIA  addr.IA
+	localIA  addr.IA            // TODO(juagargi) bind the logger to use the localIA in messages
 	db       backend.DB         // aka reservation map
 	admitter admission.Admitter // the chosen admission entity
 	operator *coliquic.ServiceClientOperator
@@ -50,12 +50,18 @@ var _ reservationstorage.Store = (*Store)(nil)
 func NewStore(topo topology.Topology, router snet.Router,
 	dialer coliquic.GRPCClientDialer, db backend.DB, admitter admission.Admitter) (*Store, error) {
 
+	// check that the admitter is well configured
+	cap := admitter.Capacities()
+	for _, ifid := range append(topo.InterfaceIDs(), 0) {
+		log.Info("colibri admission capacity", "ifid", ifid,
+			"ingress", cap.CapacityIngress(uint16(ifid)), "egress", cap.CapacityEgress(uint16(ifid)))
+	}
 	operator, err := coliquic.NewServiceClientOperator(topo, router, dialer)
 	if err != nil {
 		return nil, err
 	}
 	return &Store{
-		LocalIA:  topo.IA(),
+		localIA:  topo.IA(),
 		db:       db,
 		admitter: admitter,
 		operator: operator,
@@ -81,12 +87,12 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 			return serrors.New("new requests misses the packet path")
 		}
 		ID = reservation.SegmentID{
-			ASID:   s.LocalIA.A,
+			ASID:   s.localIA.A,
 			Suffix: [4]byte{0, 0, 0, 0}, // the store will set this
 		}
 	} else {
 		newSetup = false
-		if req.ID.ASID != s.LocalIA.A {
+		if req.ID.ASID != s.localIA.A {
 			return serrors.New("bad reservation id", "as", req.ID.ASID)
 		}
 		if bytes.Equal(req.ID.Suffix[:], []byte{0, 0, 0, 0}) {
@@ -149,7 +155,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 
 	_, err = rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, allocBW, req.RLC, req.PathType)
 	if err != nil {
-		return serrors.WrapStr("cannot create index from token", err, "id", req.ID)
+		return serrors.WrapStr("cannot create new index", err, "id", req.ID)
 	}
 
 	// checkpath type compatibility with end properties
@@ -203,10 +209,6 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
 		return nil, serrors.WrapStr("error validating request", err, "id", req.ID)
 	}
-	if req.Path().IndexOfCurrentHop() != len(req.AllocTrail) {
-		return nil, serrors.New("inconsistent number of hops",
-			"len_alloctrail", len(req.AllocTrail), "hf_count", req.Path().IndexOfCurrentHop())
-	}
 
 	failedResponse := &segment.SegmentSetupResponseFailure{
 		SegmentSetupResponseBase: segment.SegmentSetupResponseBase{
@@ -246,14 +248,16 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 	req.Reservation = rsv
 
+	log.Debug("deleteme 10")
 	// compute admission max BW
 	err = s.admitter.AdmitRsv(ctx, tx, req)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("segment not admitted", err, "id", req.ID,
-			"index", req.Index)
+		return failedResponse, serrors.WrapStr("segment not admitted", err, "@ia", s.localIA,
+			"id", req.ID, "index", req.Index)
 	}
 	// admitted; the request contains already the value inside the "allocation beads" of the rsv
 	allocBW := req.AllocTrail[len(req.AllocTrail)-1].AllocBW
+	log.Debug("deleteme 12")
 
 	idx, err := rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, allocBW,
 		req.RLC, req.Reservation.PathType)
@@ -261,6 +265,7 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, serrors.WrapStr("cannot create new index", err)
 	}
 	index := rsv.Index(idx)
+	log.Debug("deleteme 13")
 
 	// checkpath type compatibility with end properties
 	if err := rsv.PathEndProps.ValidateWithPathType(rsv.PathType); err != nil {
@@ -276,6 +281,7 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, serrors.WrapStr("cannot commit transaction", err, "id", req.ID)
 	}
 
+	log.Debug("deleteme 15")
 	if req.IsLastAS() {
 		// TODO(juagargi) update token here
 		return &segment.SegmentSetupResponseSuccess{
@@ -673,7 +679,7 @@ func (s *Store) prepareFailureSegmentResp(req *segment.Request) (*segment.Respon
 	}
 
 	response, err := segment.NewResponse(time.Now(), &req.ID, req.Index, revPath,
-		false, uint8(req.Path().IndexOfCurrentHop()))
+		false, uint8(req.Path().IndexOfCurrentHop())) // TODO(juagargi) IndexOfCurrentHop won't work!!
 	if err != nil {
 		return nil, serrors.WrapStr("cannot construct segment response", err)
 	}

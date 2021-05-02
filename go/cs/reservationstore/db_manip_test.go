@@ -24,12 +24,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
-	"github.com/scionproto/scion/go/cs/reservation/segment/admission"
-	"github.com/scionproto/scion/go/cs/reservation/segment/admission/stateful"
-	"github.com/scionproto/scion/go/cs/reservation/segment/admission/stateless"
 	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
-	"github.com/scionproto/scion/go/cs/reservation/sqlite"
-	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
@@ -78,7 +73,6 @@ var _ base.Capacities = (*testCapacities)(nil)
 
 func (c *testCapacities) IngressInterfaces() []uint16           { return c.Ifaces }
 func (c *testCapacities) EgressInterfaces() []uint16            { return c.Ifaces }
-func (c *testCapacities) Capacity(from, to uint16) uint64       { return c.Cap }
 func (c *testCapacities) CapacityIngress(ingress uint16) uint64 { return c.Cap }
 func (c *testCapacities) CapacityEgress(egress uint16) uint64   { return c.Cap }
 
@@ -119,112 +113,9 @@ func newTestE2EReservation(t testing.TB, ASID string) *e2e.Reservation {
 	return rsv
 }
 
-// newAllocationBeads (1,2,3,4) returns two beads {alloc: 1, max: 2}, {alloc:3, max:4}
-func newAllocationBeads(beads ...reservation.BWCls) reservation.AllocationBeads {
-	if len(beads)%2 != 0 {
-		panic("must have an even number of parameters")
-	}
-	ret := make(reservation.AllocationBeads, len(beads)/2)
-	for i := 0; i < len(beads); i += 2 {
-		ret[i/2] = reservation.AllocationBead{AllocBW: beads[i], MaxBW: beads[i+1]}
-	}
-	return ret
-}
-
-func segmentIDFromRaw(t testing.TB, ASID, suffix string) *reservation.SegmentID {
-	t.Helper()
-	ID, err := reservation.NewSegmentID(xtest.MustParseAS(ASID), xtest.MustParseHexString(suffix))
-	require.NoError(t, err)
-	return ID
-}
-
 func e2eIDFromRaw(t testing.TB, ASID, suffix string) *reservation.E2EID {
 	t.Helper()
 	ID, err := reservation.NewE2EID(xtest.MustParseAS(ASID), xtest.MustParseHexString(suffix))
 	require.NoError(t, err)
 	return ID
-}
-
-func newDB(t testing.TB) backend.DB {
-	t.Helper()
-	db, err := sqlite.New("file::memory:")
-	require.NoError(t, err)
-	// db.SetMaxOpenConns(10)
-	return db
-}
-
-func newCapacities() base.Capacities {
-	return &testCapacities{
-		Cap:    1024 * 1024, // 1GBps
-		Ifaces: []uint16{1, 2},
-	}
-}
-
-func newStatelessAdmitter(cap base.Capacities) admission.Admitter {
-	admitter := &stateless.StatelessAdmission{
-		Capacities: cap,
-		Delta:      1,
-	}
-	return admitter
-}
-func newStatefulAdmitter(cap base.Capacities) admission.Admitter {
-	admitter := &stateful.StatefulAdmission{
-		Capacities: cap,
-		Delta:      1,
-	}
-	return admitter
-}
-
-// newTestRequest creates a request ID ff00:1:1 beefcafe
-func newTestSegmentRequest(t testing.TB, ASID string, ingress, egress uint16,
-	minBW, maxBW reservation.BWCls) *segment.SetupReq {
-
-	t.Helper()
-
-	ID := segmentIDFromRaw(t, ASID, "beefcafe")
-	path := test.NewTestPath()
-	meta, err := base.NewRequestMetadata(path)
-	require.NoError(t, err)
-	return &segment.SetupReq{
-		Request: segment.Request{
-			RequestMetadata: *meta,
-			ID:              *ID,
-			Timestamp:       util.SecsToTime(1),
-			Ingress:         ingress,
-			Egress:          egress,
-		},
-		MinBW:     minBW,
-		MaxBW:     maxBW,
-		SplitCls:  2,
-		PathProps: reservation.StartLocal | reservation.EndLocal,
-	}
-}
-
-func newTestE2ESetupRequest(t testing.TB, ASID string) *e2e.SetupReq {
-	t.Helper()
-
-	ID := e2eIDFromRaw(t, ASID, "beefcafebeefcafebeef")
-	path := test.NewTestPath()
-	baseReq, err := e2e.NewRequest(util.SecsToTime(1), ID, 1, path)
-	require.NoError(t, err)
-	segmentRsvs := []reservation.SegmentID{
-		*segmentIDFromRaw(t, ASID, "00000001"),
-		*segmentIDFromRaw(t, "ff00:2:2", "beefcafe"),
-		*segmentIDFromRaw(t, "ff00:3:3", "beefcafe"),
-	}
-	ASCountPerSegment := []uint8{4, 4, 5}
-	trail := []reservation.BWCls{5, 5}
-	setup, err := e2e.NewSetupRequest(baseReq, segmentRsvs, ASCountPerSegment, 5, trail)
-	require.NoError(t, err)
-	return setup
-}
-
-func newTestE2ESuccessReq(t testing.TB, ASID string) *e2e.SetupReqSuccess {
-	token, err := reservation.TokenFromRaw(
-		xtest.MustParseHexString("16ebdb4f0d042500003f001002bad1ce003f001002facade"))
-	require.NoError(t, err)
-	return &e2e.SetupReqSuccess{
-		SetupReq: *newTestE2ESetupRequest(t, ASID),
-		Token:    *token,
-	}
 }

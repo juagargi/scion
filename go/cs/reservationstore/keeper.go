@@ -158,7 +158,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		// totally new reservations:
 		var requestCount int = entry.minActiveRsvs -
 			len(compliantRsvs) - len(couldBeCompliant)
-		if err := k.askNewReservations(ctx, requestCount, dstIA, entry, paths); err != nil {
+		if err := k.askNewReservations(ctx, requestCount, dstIA, entry, paths, atLeastUntil); err != nil {
 			return time.Time{}, err
 		}
 		// the couldBeCompliant reservations are good for minDuration,
@@ -194,11 +194,11 @@ func (k *keeper) askNewIndices(ctx context.Context, rsvs []*seg.Reservation, dst
 // askNewReservations creates new requests based on the paths and the entry and ensures
 // that at least `requiredSuccesful` are succesful.
 func (k *keeper) askNewReservations(ctx context.Context, requiredSuccesful int, dstIA addr.IA,
-	entry requirements, paths []snet.Path) error {
+	entry requirements, paths []snet.Path, expTime time.Time) error {
 
 	// TODO(juagargi) test this function (indices seen in requests should always be zero)
 	if requiredSuccesful > 0 {
-		requests, err := entry.PrepareSetupRequests(paths, k.manager.Now())
+		requests, err := entry.PrepareSetupRequests(paths, k.manager.Now(), expTime)
 		if err != nil {
 			return serrors.WrapStr("cannot setup new reservations", err, "paths", paths)
 		}
@@ -287,7 +287,7 @@ func (e *requirements) SplitByCompliance(rsvs []*seg.Reservation, atLeastUntil t
 // PrepareSetupRequests creates new reservation requests compliant with the requirements.
 // This function creates as many reservations requests as there are
 // scion paths compatible with the requirements.
-func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time) (
+func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time, expTime time.Time) (
 	[]*seg.SetupReq, error) {
 
 	// filter paths
@@ -316,6 +316,10 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time) (
 				Ingress:         0,
 				Egress:          opaque[0].Egress,
 			},
+			ExpirationTime: expTime,
+			// RLC:            rlc,
+			// PathType:       pathType,
+			PathType:   reservation.CorePath, // TODO(juagargi) replace after tests
 			MinBW:      e.minBW,
 			MaxBW:      e.maxBW,
 			SplitCls:   e.splitCls,

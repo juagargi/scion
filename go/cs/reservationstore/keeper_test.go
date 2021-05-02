@@ -366,7 +366,7 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 					return make([]*segment.Reservation, n), nil
 				})
 			// build requests from paths (tested elsewhere)
-			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, now)
+			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, now, now.Add(time.Hour))
 			require.NoError(t, err)
 			// call and check
 			err = keeper.requestNSuccessfulRsvs(ctx, dstIA,
@@ -666,7 +666,8 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, util.SecsToTime(10))
+			now := util.SecsToTime(10)
+			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, now, now.Add(time.Hour))
 			require.NoError(t, err)
 			require.Len(t, requests, tc.expected)
 			filtered := tc.requirements.predicate.Eval(tc.paths)
