@@ -63,7 +63,7 @@ type SetupReq struct {
 	SplitCls       reservation.SplitCls
 	PathProps      reservation.PathEndProps
 	AllocTrail     reservation.AllocationBeads
-	PathToDst      OpaquePath // requested path for the reservation
+	PathToDst      *OpaquePath // requested path for the reservation
 }
 
 // PrevBW returns the minimum of the maximum bandwidths already granted by previous ASes.

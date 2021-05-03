@@ -29,7 +29,7 @@ type Reservation struct {
 	activeIndex  int                      // -1 <= activeIndex < len(Indices)
 	Ingress      uint16                   // ingress interface ID: reservation packets enter
 	Egress       uint16                   // egress interface ID: reservation packets leave
-	Path         TransparentPath          // empty if not at the source of the reservation
+	Path         *TransparentPath         // empty if not at the source of the reservation
 	PathType     reservation.PathType     // the type of path (up,core,down)
 	PathEndProps reservation.PathEndProps // the properties for stitching and start/end
 	TrafficSplit reservation.SplitCls     // the traffic split between control and data planes

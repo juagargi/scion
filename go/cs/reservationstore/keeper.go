@@ -295,7 +295,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time, ex
 	requests := make([]*seg.SetupReq, len(filtered))
 	// create setup requests
 	for i, p := range filtered {
-		opaque, err := seg.NewOpaquePathFromInterfaces(p.Metadata().Interfaces)
+		opaque, err := seg.OpaquePathFromInterfaces(p.Metadata().Interfaces)
 		if err != nil {
 			return nil, err
 		}
@@ -339,7 +339,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 			continue
 		}
 		// for i, p := range filtered {
-		opaque, err := seg.NewOpaquePathFromInterfaces(rsv.Path.Interfaces())
+		opaque, err := seg.OpaquePathFromInterfaces(rsv.Path.Interfaces())
 		if err != nil {
 			return nil, err
 		}

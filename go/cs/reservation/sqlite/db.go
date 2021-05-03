@@ -163,7 +163,7 @@ func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA 
 
 // GetSegmentRsvFromPath searches for a segment reservation with the specified path.
 func (x *executor) GetSegmentRsvFromPath(ctx context.Context,
-	path segment.TransparentPath) (*segment.Reservation, error) {
+	path *segment.TransparentPath) (*segment.Reservation, error) {
 
 	rsvs, err := getSegReservations(ctx, x.db, "WHERE path = ?", []interface{}{path.ToRaw()})
 	if err != nil {
@@ -687,7 +687,7 @@ func buildSegRsvFromFields(ctx context.Context, x db.Sqler, fields *rsvFields) (
 	binary.BigEndian.PutUint32(rsv.ID.Suffix[:], fields.Suffix)
 	rsv.Ingress = fields.Ingress
 	rsv.Egress = fields.Egress
-	p, err := segment.NewPathFromRaw(fields.Path)
+	p, err := segment.TransparentPathFromRaw(fields.Path)
 	if err != nil {
 		return nil, err
 	}

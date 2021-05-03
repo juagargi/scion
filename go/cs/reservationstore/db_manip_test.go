@@ -80,7 +80,7 @@ func (c *testCapacities) CapacityEgress(egress uint16) uint64   { return c.Cap }
 func newTestSegmentReservation(t testing.TB, ASID string) *segment.Reservation {
 	t.Helper()
 	r := segment.NewReservation()
-	r.Path = segment.TransparentPath{}
+	r.Path = &segment.TransparentPath{}
 	r.ID.ASID = xtest.MustParseAS(ASID)
 	r.Ingress = 0
 	r.Egress = 1

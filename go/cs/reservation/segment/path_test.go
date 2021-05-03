@@ -27,7 +27,7 @@ import (
 
 func TestValidatePath(t *testing.T) {
 	tc := map[string]struct {
-		Path    segment.TransparentPath
+		Path    *segment.TransparentPath
 		IsValid bool
 	}{
 		"src-dst": {
@@ -57,66 +57,6 @@ func TestValidatePath(t *testing.T) {
 	}
 }
 
-func TestEqualPath(t *testing.T) {
-	tc := map[string]struct {
-		Path1   segment.TransparentPath
-		Path2   segment.TransparentPath
-		IsEqual bool
-	}{
-		"eq1": {
-			Path1:   segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			Path2:   segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			IsEqual: true,
-		},
-		"eq2": {
-			Path1: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:1:10", 3,
-				1, "1-ff00:0:2", 0),
-			Path2: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:1:10", 3,
-				1, "1-ff00:0:2", 0),
-			IsEqual: true,
-		},
-		"eq3": {
-			Path1:   nil,
-			Path2:   nil,
-			IsEqual: true,
-		},
-		"eq4": {
-			Path1:   nil,
-			Path2:   make(segment.TransparentPath, 0),
-			IsEqual: true,
-		},
-		"neq1": {
-			Path1:   segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			Path2:   segmenttest.NewPathFromComponents(1, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			IsEqual: false,
-		},
-		"neq2": {
-			Path1:   segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			Path2:   segmenttest.NewPathFromComponents(0, "1-ff00:0:3", 1, 1, "1-ff00:0:2", 0),
-			IsEqual: false,
-		},
-		"neq3": {
-			Path1:   segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			Path2:   segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0),
-			IsEqual: false,
-		},
-		"neq4": {
-			Path1: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:1:10", 3,
-				1, "1-ff00:0:2", 0),
-			Path2:   segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:1:10", 3),
-			IsEqual: false,
-		},
-	}
-	for name, tc := range tc {
-		name, tc := name, tc
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			eq := tc.Path1.Equal(tc.Path2)
-			require.Equal(t, tc.IsEqual, eq)
-		})
-	}
-}
-
 func TestGetIAs(t *testing.T) {
 	p := segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
 	require.Equal(t, xtest.MustParseIA("1-ff00:0:1"), p.GetSrcIA())
@@ -124,20 +64,12 @@ func TestGetIAs(t *testing.T) {
 	p = nil
 	require.Equal(t, xtest.MustParseIA("0-0"), p.GetSrcIA())
 	require.Equal(t, xtest.MustParseIA("0-0"), p.GetDstIA())
-	p = make(segment.TransparentPath, 0)
+	p = &segment.TransparentPath{}
 	require.Equal(t, xtest.MustParseIA("0-0"), p.GetSrcIA())
 	require.Equal(t, xtest.MustParseIA("0-0"), p.GetDstIA())
-}
-
-func TestPathLen(t *testing.T) {
-	p := segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
-	require.Equal(t, 2*12, p.Len())
-	p = segment.TransparentPath{}
-	require.Equal(t, 0, p.Len())
-	p = nil
-	require.Equal(t, 0, p.Len())
-	p = make(segment.TransparentPath, 0)
-	require.Equal(t, 0, p.Len())
+	p = &segment.TransparentPath{Steps: make([]segment.PathStepWithIA, 0)}
+	require.Equal(t, xtest.MustParseIA("0-0"), p.GetSrcIA())
+	require.Equal(t, xtest.MustParseIA("0-0"), p.GetDstIA())
 }
 
 func TestToFromBinary(t *testing.T) {
@@ -152,7 +84,7 @@ func TestToFromBinary(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2*12, c)
 
-	anotherP, err := segment.NewPathFromRaw(buff)
+	anotherP, err := segment.TransparentPathFromRaw(buff)
 	require.NoError(t, err)
 	require.Equal(t, p, anotherP)
 
@@ -160,38 +92,38 @@ func TestToFromBinary(t *testing.T) {
 	require.Equal(t, buff, anotherBuff)
 	// wrong buffer
 	buff = buff[:len(buff)-1]
-	_, err = segment.NewPathFromRaw(buff)
+	_, err = segment.TransparentPathFromRaw(buff)
 	require.Error(t, err)
 	// empty and nil buffer
-	p, err = segment.NewPathFromRaw(nil)
+	p, err = segment.TransparentPathFromRaw(nil)
 	require.NoError(t, err)
-	require.Empty(t, p)
-	p, err = segment.NewPathFromRaw([]byte{})
+	require.Empty(t, p.Steps)
+	p, err = segment.TransparentPathFromRaw([]byte{})
 	require.NoError(t, err)
-	require.Empty(t, p)
+	require.Empty(t, p.Steps)
 	// empty and nil path
 	p = nil
 	require.Empty(t, p.ToRaw())
-	p = make(segment.TransparentPath, 0)
+	p = &segment.TransparentPath{}
 	require.Empty(t, p.ToRaw())
 }
 
 func TestTransparentPathString(t *testing.T) {
 	cases := map[string]struct {
-		transparent segment.TransparentPath
+		transparent *segment.TransparentPath
 		str         string
 	}{
 		"empty": {
 			transparent: segmenttest.NewPathFromComponents(),
-			str:         "",
+			str:         "[curr.step = 0]",
 		},
 		"one_step": {
 			transparent: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 0),
-			str:         "1-ff00:0:1#0,0",
+			str:         "1-ff00:0:1#0,0 [curr.step = 0]",
 		},
 		"two_steps": {
 			transparent: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			str:         "1-ff00:0:1#0,1 > 1-ff00:0:2#1,0",
+			str:         "1-ff00:0:1#0,1 > 1-ff00:0:2#1,0 [curr.step = 0]",
 		},
 	}
 	for name, tc := range cases {
@@ -205,20 +137,20 @@ func TestTransparentPathString(t *testing.T) {
 
 func TestOpaquePathString(t *testing.T) {
 	cases := map[string]struct {
-		opaque segment.OpaquePath
+		opaque *segment.OpaquePath
 		str    string
 	}{
 		"empty": {
 			opaque: segmenttest.NewOpaquePathFromComponents(),
-			str:    "",
+			str:    "[curr.step = 0]",
 		},
 		"one_step": {
 			opaque: segmenttest.NewOpaquePathFromComponents(0, 0),
-			str:    "0,0",
+			str:    "0,0 [curr.step = 0]",
 		},
 		"two_steps": {
 			opaque: segmenttest.NewOpaquePathFromComponents(0, 1, 2, 0),
-			str:    "0,1 > 2,0",
+			str:    "0,1 > 2,0 [curr.step = 0]",
 		},
 	}
 	for name, tc := range cases {
@@ -232,7 +164,7 @@ func TestOpaquePathString(t *testing.T) {
 
 func TestTransparentPathHasInterfaces(t *testing.T) {
 	cases := map[string]struct {
-		transparent segment.TransparentPath
+		transparent *segment.TransparentPath
 		expected    []snet.PathInterface
 	}{
 		"empty": {
@@ -257,7 +189,7 @@ func TestNewOpaquePathFromInterfaces(t *testing.T) {
 	cases := map[string]struct {
 		ifaces    []snet.PathInterface
 		expectErr bool
-		opaque    segment.OpaquePath
+		opaque    *segment.OpaquePath
 	}{
 		"empty": {
 			ifaces: segmenttest.NewIfaces(),
@@ -280,7 +212,7 @@ func TestNewOpaquePathFromInterfaces(t *testing.T) {
 	for name, tc := range cases {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
-			opaque, err := segment.NewOpaquePathFromInterfaces(tc.ifaces)
+			opaque, err := segment.OpaquePathFromInterfaces(tc.ifaces)
 			if tc.expectErr {
 				require.Error(t, err)
 			} else {
@@ -293,16 +225,16 @@ func TestNewOpaquePathFromInterfaces(t *testing.T) {
 
 func TestTransparentToOpaque(t *testing.T) {
 	cases := map[string]struct {
-		transparent segment.TransparentPath
-		expected    segment.OpaquePath
+		transparent *segment.TransparentPath
+		expected    *segment.OpaquePath
 	}{
 		"nil": {
 			transparent: nil,
-			expected:    segment.OpaquePath{},
+			expected:    nil,
 		},
 		"empty": {
-			transparent: segment.TransparentPath{},
-			expected:    segment.OpaquePath{},
+			transparent: &segment.TransparentPath{Steps: []segment.PathStepWithIA{}},
+			expected:    &segment.OpaquePath{Steps: []segment.PathStep{}},
 		},
 		"one step": {
 			transparent: segmenttest.NewPathFromComponents(0, "0-0", 1),

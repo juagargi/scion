@@ -71,7 +71,7 @@ func TestReservationValidate(t *testing.T) {
 	err := r.Validate()
 	require.NoError(t, err)
 	// wrong path
-	r.Path = segment.TransparentPath{}
+	r.Path = &segment.TransparentPath{}
 	err = r.Validate()
 	require.Error(t, err)
 	// more than one active index

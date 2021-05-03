@@ -30,13 +30,13 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-func NewPathFromComponents(chain ...interface{}) segment.TransparentPath {
+func NewPathFromComponents(chain ...interface{}) *segment.TransparentPath {
 	if len(chain)%3 != 0 {
 		panic("wrong number of arguments")
 	}
-	p := segment.TransparentPath{}
+	p := &segment.TransparentPath{}
 	for i := 0; i < len(chain); i += 3 {
-		p = append(p, segment.PathStepWithIA{
+		p.Steps = append(p.Steps, segment.PathStepWithIA{
 			PathStep: segment.PathStep{
 				Ingress: uint16(chain[i].(int)),
 				Egress:  uint16(chain[i+2].(int)),
@@ -47,14 +47,16 @@ func NewPathFromComponents(chain ...interface{}) segment.TransparentPath {
 	return p
 }
 
-func NewOpaquePathFromComponents(ids ...uint16) segment.OpaquePath {
+func NewOpaquePathFromComponents(ids ...uint16) *segment.OpaquePath {
 	if len(ids)%2 != 0 {
 		panic("wrong number of arguments")
 	}
-	p := make(segment.OpaquePath, len(ids)/2)
+	p := &segment.OpaquePath{
+		Steps: make([]segment.PathStep, len(ids)/2),
+	}
 	for i := 0; i < len(ids); i += 2 {
-		p[i/2].Ingress = ids[i]
-		p[i/2].Egress = ids[i+1]
+		p.Steps[i/2].Ingress = ids[i]
+		p.Steps[i/2].Egress = ids[i+1]
 	}
 	return p
 }
@@ -90,7 +92,7 @@ func NewIfaces(args ...interface{}) []snet.PathInterface {
 // NewSnetPath("1-ff00:0:1", 1,  2, "1-ff00:1:2", 3,     4, "1-ff00:0:3"))
 func NewSnetPath(args ...interface{}) snet.Path {
 	ifaces := NewIfaces(args...)
-	opaque, err := segment.NewOpaquePathFromInterfaces(ifaces)
+	opaque, err := segment.OpaquePathFromInterfaces(ifaces)
 	if err != nil {
 		panic(err)
 	}
@@ -100,18 +102,18 @@ func NewSnetPath(args ...interface{}) snet.Path {
 			PathMeta: scion.MetaHdr{
 				CurrINF: 0,
 				CurrHF:  0,
-				SegLen:  [3]uint8{uint8(len(opaque))},
+				SegLen:  [3]uint8{uint8(len(opaque.Steps))},
 			},
 			NumINF:  1,
-			NumHops: len(opaque),
+			NumHops: len(opaque.Steps),
 		},
 		InfoFields: []*slayerspath.InfoField{{
 			ConsDir: true,
 		}},
-		HopFields: make([]*slayerspath.HopField, len(opaque)),
+		HopFields: make([]*slayerspath.HopField, len(opaque.Steps)),
 	}
 
-	for i, iface := range opaque {
+	for i, iface := range opaque.Steps {
 		rp.HopFields[i] = &slayerspath.HopField{
 			ConsIngress: iface.Ingress,
 			ConsEgress:  iface.Egress,
