@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"google.golang.org/grpc/peer"
+	"google.golang.org/protobuf/proto"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/translate"
@@ -64,7 +65,8 @@ func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage
 func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
 	*colpb.SegmentSetupResponse, error) {
 
-	log.Info("DELETEME received call on SetupSegment()")
+	sizeeeeeeeeeeee := proto.Size(msg)
+	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Params.Opaque)
 	path, err := extractPath(ctx)
 	if err != nil {
 		log.Error("setup segment", "err", err)
@@ -76,13 +78,16 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 		// should send a message?
 		return nil, err
 	}
+	log.Info("deleteme path after translation", "path", req.PathToDst)
 	res, err := s.Store.AdmitSegmentReservation(ctx, req)
 	if err != nil {
 		log.Error("colibri store returned an error", "err", err)
 		// should send a message?
 		return nil, err
 	}
+	log.Info("deleteme after store", "res", res)
 	pbRes := translate.PBufSetupResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
 	return pbRes, nil
 }
 

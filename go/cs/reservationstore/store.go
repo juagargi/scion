@@ -17,6 +17,7 @@ package reservationstore
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math"
 	"time"
 
@@ -74,122 +75,154 @@ func (s *Store) GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA
 	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, src, dst)
 }
 
+func (s *Store) err(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf(fmt.Sprintf("@%s: ", s.localIA) + err.Error())
+}
+
+func (s *Store) errNew(msg string, params ...interface{}) error {
+	return s.err(serrors.New(msg, params...))
+}
+
+func (s *Store) errWrapStr(msg string, err error, params ...interface{}) error {
+	return s.err(serrors.WrapStr(msg, err, params...))
+}
+
 // InitSegmentReservation will start a new segment reservation request. The source of
 // the request will have this very AS as source.
 func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupReq) error {
 	if req.IsLastAS() {
-		return serrors.New("cannot initiate a reservation with this AS only in the path")
+		return s.errNew("cannot initiate a reservation with this AS only in the path")
 	}
 	newSetup := true
 	ID := req.ID
+	log.Info("deleteme path current step", "curr.step", req.PathToDst.CurrentStep)
 	if req.ID.IsEmpty() { // empty -> new setup
-		if req.Path() == nil {
-			return serrors.New("new requests misses the packet path")
-		}
 		ID = reservation.SegmentID{
 			ASID:   s.localIA.A,
 			Suffix: [4]byte{0, 0, 0, 0}, // the store will set this
 		}
+		req.ID = ID
 	} else {
 		newSetup = false
 		if req.ID.ASID != s.localIA.A {
-			return serrors.New("bad reservation id", "as", req.ID.ASID)
+			return s.errNew("bad reservation id", "as", req.ID.ASID)
 		}
 		if bytes.Equal(req.ID.Suffix[:], []byte{0, 0, 0, 0}) {
-			return serrors.New("bad reservation id, blank suffix")
+			return s.errNew("bad reservation id, blank suffix")
 		}
 	}
 
 	var err error
+	if err = req.Validate(); err != nil {
+		return s.err(err)
+	}
 	// TODO(juagargi) with the quic socket ask for paths to dst and determine the type of path
 	// TODO(juagargi) with the quic socket, ask for paths and filter using the predicate
 	base := &req.Request
 	if newSetup {
 		base, err = segment.NewRequest(req.Timestamp, &ID, 0, req.Path().Copy())
 		if err != nil {
-			return serrors.WrapStr("error creating source request", err)
+			return s.errWrapStr("error creating source request", err)
 		}
 	}
 	req.Request = *base
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return serrors.WrapStr("cannot create transaction", err, "id", req.ID)
+		return s.errWrapStr("cannot create transaction", err, "id", req.ID)
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
-		return serrors.WrapStr("cannot obtain segment reservation", err, "id", req.ID)
+		return s.errWrapStr("cannot obtain segment reservation", err, "id", req.ID)
 	}
 
 	if rsv != nil && newSetup {
-		return serrors.New("found existing reservation in db for a new setup", "id", req.ID)
+		return s.errNew("found existing reservation in db for a new setup", "id", req.ID)
 	} else if rsv == nil && !newSetup {
-		return serrors.New("reservation not found for a renewal", "id", req.ID)
+		return s.errNew("reservation not found for a renewal", "id", req.ID)
 	}
 	if newSetup {
 		// setup, create reservation and an index
-		rsv = segment.NewReservation()
+		rsv = segment.NewReservation(req.ID.ASID)
+		rsv.ID = req.ID
 		rsv.Ingress = req.Ingress()
 		rsv.Egress = req.Egress()
-		if err = tx.NewSegmentRsv(ctx, rsv); err != nil {
-			return err
-		}
+		rsv.PathType = req.PathType
+		rsv.PathEndProps = req.PathProps
+		rsv.TrafficSplit = req.SplitCls
+		// if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
+		// 	return s.err(err)
+		// }
+		// req.ID = rsv.ID
 	} else {
 		// renewal, ensure index is not used
 		index := rsv.Index(req.Index)
 		if index != nil {
-			return serrors.New("index from setup already in use",
+			return s.errNew("index from setup already in use",
 				"idx", req.Index, "id", req.ID)
 		}
 	}
 	req.Reservation = rsv
 
+	// compute admission max BW
 	err = s.admitter.AdmitRsv(ctx, tx, req)
 	if err != nil {
-		return serrors.WrapStr("segment not admitted", err, "id", req.ID, "index", req.Index)
+		return s.errWrapStr("segment not admitted", err, "id", req.ID, "index", req.Index)
 	}
 	// admitted; the request contains already the value inside the "allocation beads" of the rsv
 	allocBW := req.AllocTrail[len(req.AllocTrail)-1].AllocBW
 
 	_, err = rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, allocBW, req.RLC, req.PathType)
 	if err != nil {
-		return serrors.WrapStr("cannot create new index", err, "id", req.ID)
+		return s.errWrapStr("cannot create new index", err, "id", req.ID)
 	}
 
 	// checkpath type compatibility with end properties
 	if err := rsv.PathEndProps.ValidateWithPathType(rsv.PathType); err != nil {
-		return serrors.WrapStr("error validating end props and path type", err, "id", req.ID)
+		return s.errWrapStr("error validating end props and path type", err, "id", req.ID)
 	}
 
-	// compute admission max BW
-
-	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
-		return serrors.WrapStr("cannot persist segment reservation", err, "id", req.ID)
+	if newSetup {
+		if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
+			return s.err(err)
+		}
+		req.ID = rsv.ID
+	} else {
+		if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
+			return s.errWrapStr("cannot persist segment reservation", err, "id", req.ID)
+		}
 	}
 	if err := tx.Commit(); err != nil {
-		return serrors.WrapStr("cannot commit transaction", err, "id", req.ID)
+		return s.errWrapStr("cannot commit transaction", err, "id", req.ID)
 	}
 
 	deadline, ok := ctx.Deadline()
-	log.Info("DELETEME ^^^^^^^^^^^^^^^^^^ forwarding!!", "with_deadline", ok, "deadline", deadline)
+	log.Info("DELETEME ^^^^^^^^^^^^^^^^^^ forwarding!!", "with_deadline", ok, "deadline", deadline, "ID", req.ID)
+
 	// we checked IsLastAS==false, forward the request to the next COLIBRI service
-	client, err := s.operator.ColibriClient(ctx, req.Path())
+	client, err := s.operator.ColibriClient(ctx, req.Egress(), req.Path())
 	if err != nil {
 		log.Info("deleteme bad packet structure??", "err", err.Error())
-		return serrors.WrapStr("bad packet structure", err)
+		return s.errWrapStr("bad packet structure", err)
 	}
+
+	req.PathToDst.CurrentStep++ // moving forward to next colibri service
 	// res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
 	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 	if err != nil {
 		log.Info("deleteme what the heck! the grpc client failed", "err", err)
-		return serrors.WrapStr("forwarded request failed", err)
+		return s.errWrapStr("forwarded request failed", err)
 	}
 	res, err := translate.SetupResponse(pbRes)
 	if err != nil {
-		return err
+		return s.err(err)
 	}
+	log.Info("deleteme received response from remote colibri", "res", res, "err", err)
 	if _, failure := res.(*segment.SegmentSetupResponseFailure); failure {
 		log.Info("deleteme admission failed down the path")
 		// TODO(juagargi)
@@ -198,6 +231,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	}
 	token := res.(*segment.SegmentSetupResponseSuccess).Token
 	req.Reservation.Index(req.Index).Token = &token
+	log.Info("deleteme reservation setup complete")
 	return nil
 }
 
@@ -207,7 +241,7 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	segment.SegmentSetupResponse, error) {
 
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, serrors.WrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
 	failedResponse := &segment.SegmentSetupResponseFailure{
@@ -219,16 +253,24 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		FailedRequest: req,
 	}
 
+	if err := req.Validate(); err != nil {
+		return failedResponse, s.err(err)
+	}
+
+	if req.ID.IsEmptySuffix() {
+		return failedResponse, s.errNew("empty suffix not allowed", "id", req.ID)
+	}
+
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create transaction", err,
+		return failedResponse, s.errWrapStr("cannot create transaction", err,
 			"id", req.ID)
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot obtain segment reservation", err,
+		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
 			"id", req.ID)
 	}
 
@@ -236,15 +278,18 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		// renewal, ensure index is not used
 		index := rsv.Index(req.Index)
 		if index != nil {
-			return failedResponse, serrors.New("index from setup already in use",
+			return failedResponse, s.errNew("index from setup already in use",
 				"idx", req.Index, "id", req.ID)
 		}
 	} else {
 		// setup, create reservation and an index
-		rsv = segment.NewReservation()
+		rsv = segment.NewReservation(req.ID.ASID)
 		rsv.ID = req.ID
 		rsv.Ingress = req.Ingress()
 		rsv.Egress = req.Egress()
+		rsv.PathType = req.PathType
+		rsv.PathEndProps = req.PathProps
+		rsv.TrafficSplit = req.SplitCls
 	}
 	req.Reservation = rsv
 
@@ -252,33 +297,34 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	// compute admission max BW
 	err = s.admitter.AdmitRsv(ctx, tx, req)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("segment not admitted", err, "@ia", s.localIA,
+		return failedResponse, s.errWrapStr("segment not admitted", err, "@ia", s.localIA,
 			"id", req.ID, "index", req.Index)
 	}
 	// admitted; the request contains already the value inside the "allocation beads" of the rsv
 	allocBW := req.AllocTrail[len(req.AllocTrail)-1].AllocBW
-	log.Debug("deleteme 12")
+	log.Info("deleteme 12", "req.Reservation.Pathtype", req.Reservation.PathType, "req.pathtype", req.PathType)
 
 	idx, err := rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, allocBW,
 		req.RLC, req.Reservation.PathType)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create new index", err)
+		return failedResponse, s.errWrapStr("cannot create new index", err)
 	}
 	index := rsv.Index(idx)
-	log.Debug("deleteme 13")
+	log.Info("deleteme 13")
+	log.Info("deleteme token inside index", "token", index.Token)
 
 	// checkpath type compatibility with end properties
 	if err := rsv.PathEndProps.ValidateWithPathType(rsv.PathType); err != nil {
-		return failedResponse, serrors.WrapStr("error validating end props and path type", err,
+		return failedResponse, s.errWrapStr("error validating end props and path type", err,
 			"id", req.ID)
 	}
 
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
-		return failedResponse, serrors.WrapStr("cannot persist segment reservation", err,
+		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID)
 	}
 	if err := tx.Commit(); err != nil {
-		return failedResponse, serrors.WrapStr("cannot commit transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot commit transaction", err, "id", req.ID)
 	}
 
 	log.Debug("deleteme 15")
@@ -290,17 +336,22 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 		}, nil
 	}
 	// forward the request to the next COLIBRI service
-	client, err := s.operator.ColibriClient(ctx, req.Path())
+	log.Info("deleteme dialing grpc")
+	client, err := s.operator.ColibriClient(ctx, req.Egress(), req.Path())
 	if err != nil {
-		return failedResponse, serrors.WrapStr("bad packet structure", err)
+		return failedResponse, s.errWrapStr("bad packet structure", err)
 	}
 
+	req.PathToDst.CurrentStep++ // moving forward to next colibri service
 	// res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
 	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
+	log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("forwarded request failed", err)
+		return failedResponse, s.errWrapStr("forwarded request failed", err)
 	}
-	return translate.SetupResponse(pbRes)
+	res, err := translate.SetupResponse(pbRes)
+	log.Info("deleteme response after translation", "res", res, "err", err)
+	return res, err
 }
 
 // ConfirmSegmentReservation changes the state of an index from temporary to confirmed.
@@ -308,12 +359,12 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 	base.MessageWithPath, error) {
 
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, serrors.WrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
 	response, err := s.prepareFailureSegmentResp(&req.Request)
 	if err != nil {
-		return nil, serrors.WrapStr("cannot construct response", err, "id", req.ID)
+		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID)
 	}
 	failedResponse := &segment.ResponseIndexConfirmationFailure{
 		Response:  *response,
@@ -322,25 +373,25 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot obtain segment reservation", err,
+		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
 			"id", req.ID)
 	}
 	if err := rsv.SetIndexConfirmed(req.Index); err != nil {
-		return failedResponse, serrors.WrapStr("cannot set index to confirmed", err,
+		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
 			"id", req.ID)
 	}
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
-		return failedResponse, serrors.WrapStr("cannot persist segment reservation", err,
+		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID)
 	}
 	if err := tx.Commit(); err != nil {
-		return failedResponse, serrors.WrapStr("cannot commit transaction", err,
+		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID)
 	}
 	if req.IsLastAS() {
@@ -356,12 +407,12 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Clea
 	base.MessageWithPath, error) {
 
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, serrors.WrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
 	response, err := s.prepareFailureSegmentResp(&req.Request)
 	if err != nil {
-		return nil, serrors.WrapStr("cannot construct response", err, "id", req.ID)
+		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID)
 	}
 	failedResponse := &segment.ResponseCleanupFailure{
 		Response:  *response,
@@ -370,25 +421,25 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Clea
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot obtain segment reservation", err,
+		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
 			"id", req.ID)
 	}
 	if err := rsv.RemoveIndex(req.Index); err != nil {
-		return failedResponse, serrors.WrapStr("cannot delete segment reservation index", err,
+		return failedResponse, s.errWrapStr("cannot delete segment reservation index", err,
 			"id", req.ID, "index", req.Index)
 	}
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
-		return failedResponse, serrors.WrapStr("cannot persist segment reservation", err,
+		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID)
 	}
 	if err := tx.Commit(); err != nil {
-		return failedResponse, serrors.WrapStr("cannot commit transaction", err,
+		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID)
 	}
 
@@ -405,12 +456,12 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *segment.Tea
 	base.MessageWithPath, error) {
 
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, serrors.WrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
 	response, err := s.prepareFailureSegmentResp(&req.Request)
 	if err != nil {
-		return nil, serrors.WrapStr("cannot construct response", err, "id", req.ID)
+		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID)
 	}
 	failedResponse := &segment.ResponseTeardownFailure{
 		Response:  *response,
@@ -419,16 +470,16 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *segment.Tea
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
 	}
 	defer tx.Rollback()
 
 	if err := tx.DeleteSegmentRsv(ctx, &req.ID); err != nil {
-		return failedResponse, serrors.WrapStr("cannot teardown reservation", err,
+		return failedResponse, s.errWrapStr("cannot teardown reservation", err,
 			"id", req.ID)
 	}
 	if err := tx.Commit(); err != nil {
-		return failedResponse, serrors.WrapStr("cannot commit transaction", err,
+		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID)
 	}
 
@@ -446,12 +497,12 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 
 	req := request.GetCommonSetupReq()
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, serrors.WrapStr("error validating e2e request", err, "id", req.ID.String())
+		return nil, s.errWrapStr("error validating e2e request", err, "id", req.ID.String())
 	}
 
 	response, err := s.prepareFailureE2EResp(&req.Request)
 	if err != nil {
-		return nil, serrors.WrapStr("cannot construct response", err, "id", req.ID.String())
+		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID.String())
 	}
 	var failedResponse base.MessageWithPath
 	failedResponse = &e2e.ResponseSetupFailure{
@@ -463,29 +514,29 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 	// sanity check: all successful requests are SetupReqSuccess. Failed ones are SetupReqFailure.
 	if request.IsSuccessful() {
 		if _, ok := request.(*e2e.SetupReqSuccess); !ok {
-			return failedResponse, serrors.New("logic error, successful request can be casted")
+			return failedResponse, s.errNew("logic error, successful request can be casted")
 		}
 	} else {
 		if _, ok := request.(*e2e.SetupReqFailure); !ok {
-			return failedResponse, serrors.New("logic error, failed request can be casted")
+			return failedResponse, s.errNew("logic error, failed request can be casted")
 		}
 	}
 
 	if len(req.SegmentRsvs) == 0 || len(req.SegmentRsvs) > 3 {
-		return failedResponse, serrors.New("invalid number of segment reservations for an e2e one",
+		return failedResponse, s.errNew("invalid number of segment reservations for an e2e one",
 			"count", len(req.SegmentRsvs))
 	}
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create transaction", err,
+		return failedResponse, s.errWrapStr("cannot create transaction", err,
 			"id", req.ID.String())
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetE2ERsvFromID(ctx, &req.ID)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot obtain e2e reservation", err,
+		return failedResponse, s.errWrapStr("cannot obtain e2e reservation", err,
 			"id", req.ID.String())
 	}
 
@@ -493,7 +544,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 	if rsv != nil {
 		// renewal
 		if index := rsv.Index(req.Index); index != nil {
-			return failedResponse, serrors.New("already existing e2e index", "id", req.ID.String(),
+			return failedResponse, s.errNew("already existing e2e index", "id", req.ID.String(),
 				"idx", req.Index)
 		}
 	} else {
@@ -505,23 +556,23 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 		for i, id := range segRsvIDs {
 			r, err := tx.GetSegmentRsvFromID(ctx, &id)
 			if err != nil || r == nil {
-				return failedResponse, serrors.WrapStr("cannot get segment rsv for e2e admission",
+				return failedResponse, s.errWrapStr("cannot get segment rsv for e2e admission",
 					err, "e2e_id", req.ID.String(), "seg_id", id.String())
 			}
 			rsv.SegmentReservations[i] = r
 		}
 	}
 	if len(rsv.SegmentReservations) == 0 {
-		return failedResponse, serrors.New("there is no segment rsv. associated to this e2e rsv.",
+		return failedResponse, s.errNew("there is no segment rsv. associated to this e2e rsv.",
 			"id", req.ID.String(), "idx", req.Index)
 	} else {
 		for i, r := range rsv.SegmentReservations {
 			if r == nil {
-				return failedResponse, serrors.New("there is no segment rsv. associated to "+
+				return failedResponse, s.errNew("there is no segment rsv. associated to "+
 					"this e2e rsv.", "id", req.ID.String(), "seg_id", segRsvIDs[i].String())
 			}
 			if r.ActiveIndex() == nil {
-				return failedResponse, serrors.New("seg. rsv. for e2e rsv has no active index",
+				return failedResponse, s.errNew("seg. rsv. for e2e rsv has no active index",
 					"id", req.ID.String(), "seg_id", r.ID.String())
 			}
 		}
@@ -529,7 +580,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 
 	idx, err := rsv.NewIndex(req.Timestamp)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create index in e2e admission", err,
+		return failedResponse, s.errWrapStr("cannot create index in e2e admission", err,
 			"e2e_id", req.ID.String())
 	}
 	index := rsv.Index(idx)
@@ -540,7 +591,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 
 	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot compute free bw for e2e admission", err,
+		return failedResponse, s.errWrapStr("cannot compute free bw for e2e admission", err,
 			"e2e_id", rsv.ID.String())
 	}
 	free = free + rsv.AllocResv() // don't count this E2E request in the used BW
@@ -548,13 +599,13 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 	if req.Transfer() {
 		// this AS must stitch two segment rsvs. according to the request
 		if len(segRsvIDs) == 1 {
-			return failedResponse, serrors.New("e2e setup request with transfer inconsistent",
+			return failedResponse, s.errNew("e2e setup request with transfer inconsistent",
 				"e2e_id", req.ID.String(), "req_sgmt_rsvs_count", req.SegmentRsvASCount,
 				"trail_len", len(req.AllocationTrail))
 		}
 		freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv)
 		if err != nil {
-			return failedResponse, serrors.WrapStr("cannot compute transfer", err,
+			return failedResponse, s.errWrapStr("cannot compute transfer", err,
 				"id", req.ID.String())
 		}
 		freeOutgoing += rsv.AllocResv() // do not count this rsv's BW
@@ -576,19 +627,19 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 			asARequest.AllocationTrail = append(asARequest.AllocationTrail, maxWillingToAlloc)
 			failedResponse = asARequest
 		}
-		return failedResponse, serrors.WrapStr("e2e not admitted", err, "id", req.ID.String(),
+		return failedResponse, s.errWrapStr("e2e not admitted", err, "id", req.ID.String(),
 			"index", req.Index)
 	}
 
 	// admitted so far
 	// TODO(juagargi) update token here
 	if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-		return failedResponse, serrors.WrapStr("cannot persist e2e reservation", err,
+		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
 			"id", req.ID.String())
 	}
 
 	if err := tx.Commit(); err != nil {
-		return failedResponse, serrors.WrapStr("cannot commit transaction", err,
+		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID.String())
 	}
 
@@ -613,12 +664,12 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) 
 	base.MessageWithPath, error) {
 
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, serrors.WrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
 	response, err := s.prepareFailureE2EResp(&req.Request)
 	if err != nil {
-		return nil, serrors.WrapStr("cannot construct response", err, "id", req.ID)
+		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID)
 	}
 	failedResponse := &e2e.ResponseCleanupFailure{
 		Response:  *response,
@@ -627,25 +678,25 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) 
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetE2ERsvFromID(ctx, &req.ID)
 	if err != nil {
-		return failedResponse, serrors.WrapStr("cannot obtain e2e reservation", err,
+		return failedResponse, s.errWrapStr("cannot obtain e2e reservation", err,
 			"id", req.ID)
 	}
 	if err := rsv.RemoveIndex(req.Index); err != nil {
-		return failedResponse, serrors.WrapStr("cannot delete e2e reservation index", err,
+		return failedResponse, s.errWrapStr("cannot delete e2e reservation index", err,
 			"id", req.ID, "index", req.Index)
 	}
 	if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-		return failedResponse, serrors.WrapStr("cannot persist e2e reservation", err,
+		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
 			"id", req.ID)
 	}
 	if err := tx.Commit(); err != nil {
-		return failedResponse, serrors.WrapStr("cannot commit transaction", err,
+		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID)
 	}
 
@@ -675,13 +726,13 @@ func (s *Store) validateAuthenticators(req *base.RequestMetadata) error {
 func (s *Store) prepareFailureSegmentResp(req *segment.Request) (*segment.Response, error) {
 	revPath := req.Path().Copy()
 	if err := revPath.Reverse(); err != nil {
-		return nil, serrors.WrapStr("cannot reverse path for response", err)
+		return nil, s.errWrapStr("cannot reverse path for response", err)
 	}
 
 	response, err := segment.NewResponse(time.Now(), &req.ID, req.Index, revPath,
 		false, uint8(req.Path().IndexOfCurrentHop())) // TODO(juagargi) IndexOfCurrentHop won't work!!
 	if err != nil {
-		return nil, serrors.WrapStr("cannot construct segment response", err)
+		return nil, s.errWrapStr("cannot construct segment response", err)
 	}
 	return response, nil
 }
@@ -691,13 +742,13 @@ func (s *Store) prepareFailureSegmentResp(req *segment.Request) (*segment.Respon
 func (s *Store) prepareFailureE2EResp(req *e2e.Request) (*e2e.Response, error) {
 	revPath := req.Path().Copy()
 	if err := revPath.Reverse(); err != nil {
-		return nil, serrors.WrapStr("cannot reverse path for response", err)
+		return nil, s.errWrapStr("cannot reverse path for response", err)
 	}
 
 	response, err := e2e.NewResponse(time.Now(), &req.ID, req.Index, revPath,
 		false, uint8(req.Path().IndexOfCurrentHop()))
 	if err != nil {
-		return nil, serrors.WrapStr("cannot construct e2e response", err)
+		return nil, s.errWrapStr("cannot construct e2e response", err)
 	}
 	return response, nil
 }

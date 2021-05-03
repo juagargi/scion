@@ -34,7 +34,7 @@ func SetupReq(msg *colpb.SegmentSetupRequest, path base.PacketPath) (*segment.Se
 	if err != nil {
 		return nil, err
 	}
-	expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, err :=
+	expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, opaque, err :=
 		segmentSetupRequest_Params(msg.Params)
 	if err != nil {
 		return nil, err
@@ -53,6 +53,7 @@ func SetupReq(msg *colpb.SegmentSetupRequest, path base.PacketPath) (*segment.Se
 		SplitCls:       splitcls,
 		PathProps:      pathProps,
 		AllocTrail:     allocTrail,
+		PathToDst:      opaque,
 	}
 	req.SetPacketPath(path)
 	return req, nil
@@ -72,7 +73,7 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 			Token:                    *tok,
 		}
 	case *colpb.SegmentSetupResponse_Request:
-		expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, err :=
+		expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, opaque, err :=
 			segmentSetupRequest_Params(oneof.Request)
 		if err != nil {
 			return nil, err
@@ -97,6 +98,7 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 				SplitCls:       splitcls,
 				PathProps:      pathProps,
 				AllocTrail:     allocTrail,
+				PathToDst:      opaque,
 			},
 		}
 	}
@@ -176,6 +178,21 @@ func AllocTrail(msg []*colpb.AllocationBead) col.AllocationBeads {
 	return trail
 }
 
+func OpaquePath(msg *colpb.OpaquePath) *segment.OpaquePath {
+	if msg == nil {
+		return nil
+	}
+	opaque := &segment.OpaquePath{
+		CurrentStep: int(msg.CurrentStep),
+		Steps:       make([]segment.PathStep, len(msg.Steps)),
+	}
+	for i, step := range msg.Steps {
+		opaque.Steps[i].Ingress = uint16(step.Ingress)
+		opaque.Steps[i].Egress = uint16(step.Egress)
+	}
+	return opaque
+}
+
 func segmentSetupRequest_Base(msg *colpb.Base) (ID *col.SegmentID, idx col.IndexNumber,
 	timestamp time.Time, err error) {
 	ID, err = SegmentID(msg.Id)
@@ -187,9 +204,10 @@ func segmentSetupRequest_Base(msg *colpb.Base) (ID *col.SegmentID, idx col.Index
 	return
 }
 
-func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (
-	expTime time.Time, rlc col.RLC, pathType col.PathType, minbw col.BWCls, maxbw col.BWCls,
-	splitcls col.SplitCls, pathProps col.PathEndProps, allocTrail col.AllocationBeads, err error) {
+func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (expTime time.Time,
+	rlc col.RLC, pathType col.PathType, minbw col.BWCls, maxbw col.BWCls, splitcls col.SplitCls,
+	pathProps col.PathEndProps, allocTrail col.AllocationBeads,
+	opaque *segment.OpaquePath, err error) {
 
 	expTime = util.SecsToTime(msg.ExpirationTime)
 	rlc, err = RLC(msg.Rlc)
@@ -218,5 +236,6 @@ func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (
 		msg.PropsAtEnd.Local,
 		msg.PropsAtEnd.Transfer)
 	allocTrail = AllocTrail(msg.Allocationtrail)
+	opaque = OpaquePath(msg.Opaque)
 	return
 }

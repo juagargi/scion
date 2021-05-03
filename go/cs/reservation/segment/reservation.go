@@ -18,6 +18,7 @@ import (
 	"time"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
@@ -35,8 +36,11 @@ type Reservation struct {
 	TrafficSplit reservation.SplitCls     // the traffic split between control and data planes
 }
 
-func NewReservation() *Reservation {
+func NewReservation(asid addr.AS) *Reservation {
 	return &Reservation{
+		ID: reservation.SegmentID{
+			ASID: asid,
+		},
 		activeIndex: -1,
 	}
 }

@@ -41,6 +41,7 @@ func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
 				Transfer: req.PathProps.EndTransfer(),
 			},
 			Allocationtrail: PBufAllocTrail(req.AllocTrail),
+			Opaque:          PBufOpaque(req.PathToDst),
 		},
 	}
 }
@@ -93,4 +94,19 @@ func PBufAllocTrail(trail reservation.AllocationBeads) []*colpb.AllocationBead {
 		}
 	}
 	return beads
+}
+
+func PBufOpaque(opaque *segment.OpaquePath) *colpb.OpaquePath {
+	steps := make([]*colpb.PathStep, len(opaque.Steps))
+	for i, step := range opaque.Steps {
+		steps[i] = &colpb.PathStep{
+			Ingress: uint32(step.Ingress),
+			Egress:  uint32(step.Egress),
+		}
+	}
+	return &colpb.OpaquePath{
+		CurrentStep: uint32(opaque.CurrentStep),
+		Steps:       steps,
+	}
+
 }

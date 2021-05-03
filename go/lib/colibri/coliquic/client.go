@@ -66,7 +66,8 @@ func NewServiceClientOperator(topo topology.Topology, router snet.Router,
 }
 
 // ColibriClient finds or creates a ColibriClient to be used for the path argument.
-func (o *ServiceClientOperator) ColibriClient(ctx context.Context, path reservation.PacketPath) (
+func (o *ServiceClientOperator) ColibriClient(ctx context.Context, egressID uint16,
+	path reservation.PacketPath) (
 	colpb.ColibriClient, error) {
 
 	o.mutex.Lock()
@@ -74,11 +75,6 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, path reservat
 	if !o.initialized {
 		return nil, serrors.New("client operator not yet initialized",
 			"neighbor_count", len(o.neighbors))
-	}
-	// get the remote address; the fields are the same with the exception of the path
-	_, egressID, err := path.IngressEgressIFIDs()
-	if err != nil {
-		return nil, err
 	}
 
 	rAddr, ok := o.neighbors[egressID]
@@ -94,7 +90,7 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, path reservat
 	case colibri.PathType: // replace the service path with this one
 		rAddr.Path.Type = p.Type()
 		rAddr.Path.Raw = make([]byte, p.Len())
-		if err = p.SerializeTo(rAddr.Path.Raw); err != nil {
+		if err := p.SerializeTo(rAddr.Path.Raw); err != nil {
 			return nil, serrors.New("bac packet: cannot serialize path", "path", path)
 		}
 	}

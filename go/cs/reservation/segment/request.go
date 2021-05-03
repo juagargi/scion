@@ -51,6 +51,16 @@ func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNu
 	}, nil
 }
 
+func (r *Request) Validate() error {
+	if r.Path() == nil {
+		return serrors.New("no transport path in request")
+	}
+	if r.ID.ASID == 0 {
+		return serrors.New("bad AS id in request", "asid", r.ID.ASID)
+	}
+	return nil
+}
+
 // SetupReq is a segment reservation setup request.
 // This same type is used for renewal of the segment reservation.
 type SetupReq struct {
@@ -63,7 +73,25 @@ type SetupReq struct {
 	SplitCls       reservation.SplitCls
 	PathProps      reservation.PathEndProps
 	AllocTrail     reservation.AllocationBeads
-	PathToDst      *OpaquePath // requested path for the reservation
+	PathToDst      *OpaquePath // requested path (maybe different than transport)
+}
+
+func (r *SetupReq) Validate() error {
+	if err := r.Request.Validate(); err != nil {
+		return err
+	}
+	if r.PathToDst == nil || len(r.PathToDst.Steps) <= r.PathToDst.CurrentStep {
+		return serrors.New("bad path to destination in setup request", "path", r.PathToDst)
+	}
+	if len(r.AllocTrail) > len(r.PathToDst.Steps) {
+		return serrors.New("inconsistent trail and setup path", "trail", r.AllocTrail,
+			"path", r.PathToDst)
+	}
+	return nil
+}
+
+func (r *SetupReq) IsLastAS() bool { // override the use of the RequestMetadata.path with PathToDst
+	return r.PathToDst.CurrentStep == len(r.PathToDst.Steps)-1
 }
 
 // PrevBW returns the minimum of the maximum bandwidths already granted by previous ASes.
@@ -72,11 +100,19 @@ func (r *SetupReq) PrevBW() uint64 {
 }
 
 func (r *SetupReq) Ingress() uint16 {
-	return 0
+	p := r.PathToDst
+	if p == nil || p.CurrentStep >= len(p.Steps) {
+		panic("deleteme return 0")
+	}
+	return p.Steps[p.CurrentStep].Ingress
 }
 
 func (r *SetupReq) Egress() uint16 {
-	return 0
+	p := r.PathToDst
+	if p == nil || p.CurrentStep >= len(p.Steps) {
+		panic("deleteme return 0")
+	}
+	return p.Steps[p.CurrentStep].Egress
 }
 
 // SetupTelesReq represents a telescopic segment setup.

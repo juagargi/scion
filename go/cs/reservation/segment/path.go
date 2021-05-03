@@ -66,11 +66,11 @@ func (p *OpaquePath) String() string {
 
 // TransparentPath represents a reservation path, in the reservation order.
 // This path is seen only in the source of a segment reservation.
-// TODO(juagargi) there exists a ColibriPath that could be used instead, if we only
-// need equality. If we need to know the IDs of the transit ASes, it won't be possible.
+// It is analogous to snet.Path.
+// TODO(juagargi) there exists snet.Path and should be used instead of transparent path.
 type TransparentPath struct {
 	Steps       []PathStepWithIA
-	CurrentStep int
+	CurrentStep int // TODO(juagargi) this is unnecessary, remove
 }
 
 var _ snet.PathInterfacesHaver = (*TransparentPath)(nil)
@@ -240,6 +240,8 @@ type PathStep struct {
 	Egress  uint16
 }
 
+const pathStepLen = 2 + 2
+
 // PathStepWithIA is one step of the TransparentPath.
 // These steps are specified at the source AS.
 type PathStepWithIA struct {
@@ -248,7 +250,7 @@ type PathStepWithIA struct {
 }
 
 // pathStepWithIALen amounts for Ingress+Egress+IA bytes.
-const pathStepWithIALen = 2 + 2 + 8
+const pathStepWithIALen = pathStepLen + 8
 
 func (s *PathStepWithIA) String() string {
 	return fmt.Sprintf("%s#%d,%d", s.IA.String(), s.Ingress, s.Egress)

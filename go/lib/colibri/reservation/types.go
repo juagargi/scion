@@ -93,8 +93,12 @@ func (id *SegmentID) String() string {
 	return fmt.Sprintf("%s-%x", id.ASID, id.Suffix)
 }
 
+func (id *SegmentID) IsEmptySuffix() bool {
+	return bytes.Equal(id.Suffix[:], []byte{0, 0, 0, 0})
+}
+
 func (id *SegmentID) IsEmpty() bool {
-	return id.ASID == 0 && bytes.Equal(id.Suffix[:], []byte{0, 0, 0, 0})
+	return id.ASID == 0 && id.IsEmptySuffix()
 }
 
 // E2EID identifies a COLIBRI E2E reservation. The suffix is different for each

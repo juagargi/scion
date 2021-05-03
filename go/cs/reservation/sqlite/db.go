@@ -682,8 +682,7 @@ func buildSegRsvFromFields(ctx context.Context, x db.Sqler, fields *rsvFields) (
 	if err != nil {
 		return nil, err
 	}
-	rsv := segment.NewReservation()
-	rsv.ID.ASID = addr.AS(fields.AsID)
+	rsv := segment.NewReservation(addr.AS(fields.AsID))
 	binary.BigEndian.PutUint32(rsv.ID.Suffix[:], fields.Suffix)
 	rsv.Ingress = fields.Ingress
 	rsv.Egress = fields.Egress
