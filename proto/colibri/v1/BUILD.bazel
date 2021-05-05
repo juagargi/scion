@@ -3,7 +3,7 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 proto_library(
     name = "colibri",
     srcs = [
-        "test.proto",
+        "service.proto",
     ],
     visibility = ["//visibility:public"],
     deps = [
