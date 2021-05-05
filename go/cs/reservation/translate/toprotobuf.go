@@ -25,7 +25,7 @@ import (
 func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
 
 	return &colpb.SegmentSetupRequest{
-		Base: PBufBaseFromReq(&req.Request),
+		Base: PBufMsgId(&req.MsgId),
 		Params: &colpb.SegmentSetupRequest_Params{
 			ExpirationTime: util.TimeToSecs(req.ExpirationTime),
 			Rlc:            uint32(req.RLC),
@@ -63,26 +63,22 @@ func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResp
 			Request: PBufSetupReq(r.FailedRequest).Params,
 		}
 	}
-	pbRes.Base = &colpb.MsgId{
-		Id:        PBufID(&base.ID),
-		Index:     uint32(base.Index),
-		Timestamp: util.TimeToSecs(base.Timestamp),
-	}
+	pbRes.Base = PBufMsgId(base)
 	return pbRes
+}
+
+func PBufMsgId(msgId *base.MsgId) *colpb.MsgId {
+	return &colpb.MsgId{
+		Id:        PBufID(&msgId.ID),
+		Index:     uint32(msgId.Index),
+		Timestamp: util.TimeToSecs(msgId.Timestamp),
+	}
 }
 
 func PBufID(id *reservation.SegmentID) *colpb.ReservationID {
 	return &colpb.ReservationID{
 		Asid:   uint64(id.ASID),
 		Suffix: append(id.Suffix[:0:0], id.Suffix[:]...),
-	}
-}
-
-func PBufBaseFromReq(base *segment.Request) *colpb.MsgId {
-	return &colpb.MsgId{
-		Id:        PBufID(&base.ID),
-		Index:     uint32(base.Index),
-		Timestamp: util.TimeToSecs(base.Timestamp),
 	}
 }
 

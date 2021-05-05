@@ -15,12 +15,14 @@
 package translate
 
 import (
+	"fmt"
 	"time"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/util"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
@@ -116,6 +118,20 @@ func MsgID(msg *colpb.MsgId) (*base.MsgId, error) {
 		Index:     idx,
 		Timestamp: timestamp,
 	}, nil
+}
+
+func Response(msg *colpb.Response) base.Response {
+	switch r := msg.SuccessFailure.(type) {
+	case *colpb.Response_Success_:
+		return &base.ResponseSuccess{}
+	case *colpb.Response_Failure_:
+		return &base.ResponseFailure{
+			ErrorCode: r.Failure.ErrorCode,
+			Message:   r.Failure.Message,
+		}
+	default:
+		panic(fmt.Sprintf("unknown type %s", common.TypeOf(msg.SuccessFailure)))
+	}
 }
 
 func Index(msg uint32) (col.IndexNumber, error) {

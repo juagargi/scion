@@ -27,5 +27,16 @@ type MsgId struct {
 }
 
 type Response interface {
-	isResponse()
+	isResponse_SuccessFailure()
 }
+
+type ResponseSuccess struct{}
+
+func (r *ResponseSuccess) isResponse_SuccessFailure() {}
+
+type ResponseFailure struct {
+	ErrorCode uint32
+	Message   string
+}
+
+func (r *ResponseFailure) isResponse_SuccessFailure() {}
