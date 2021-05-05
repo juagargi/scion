@@ -25,11 +25,9 @@ import (
 // Request is the base struct for any type of COLIBRI segment request.
 // It contains a reference to the reservation it requests, or nil if not yet created.
 type Request struct {
-	base.RequestMetadata                         // information about the request (forwarding path)
-	ID                   reservation.SegmentID   // the ID this request refers to
-	Index                reservation.IndexNumber // the index this request refers to
-	Timestamp            time.Time               // the mandatory timestamp
-	Reservation          *Reservation            // nil if no reservation yet
+	base.RequestMetadata // information about the request (forwarding path)
+	base.MsgId
+	Reservation *Reservation // nil if no reservation yet
 }
 
 // NewRequest constructs the segment Request type.
@@ -45,9 +43,11 @@ func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNu
 	}
 	return &Request{
 		RequestMetadata: *metadata,
-		Timestamp:       ts,
-		ID:              *id,
-		Index:           idx,
+		MsgId: base.MsgId{
+			Timestamp: ts,
+			ID:        *id,
+			Index:     idx,
+		},
 	}, nil
 }
 

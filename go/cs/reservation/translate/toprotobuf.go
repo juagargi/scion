@@ -63,7 +63,7 @@ func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResp
 			Request: PBufSetupReq(r.FailedRequest).Params,
 		}
 	}
-	pbRes.Base = &colpb.Base{
+	pbRes.Base = &colpb.MsgId{
 		Id:        PBufID(&base.ID),
 		Index:     uint32(base.Index),
 		Timestamp: util.TimeToSecs(base.Timestamp),
@@ -78,8 +78,8 @@ func PBufID(id *reservation.SegmentID) *colpb.ReservationID {
 	}
 }
 
-func PBufBaseFromReq(base *segment.Request) *colpb.Base {
-	return &colpb.Base{
+func PBufBaseFromReq(base *segment.Request) *colpb.MsgId {
+	return &colpb.MsgId{
 		Id:        PBufID(&base.ID),
 		Index:     uint32(base.Index),
 		Timestamp: util.TimeToSecs(base.Timestamp),

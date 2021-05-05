@@ -30,7 +30,7 @@ func SetupReq(msg *colpb.SegmentSetupRequest, path base.PacketPath) (*segment.Se
 	if msg == nil || msg.Base == nil || msg.Params == nil {
 		return nil, serrors.New("incomplete message", "msg", msg)
 	}
-	ID, idx, timestamp, err := segmentSetupRequest_Base(msg.Base)
+	msgId, err := MsgID(msg.Base)
 	if err != nil {
 		return nil, err
 	}
@@ -41,9 +41,7 @@ func SetupReq(msg *colpb.SegmentSetupRequest, path base.PacketPath) (*segment.Se
 	}
 	req := &segment.SetupReq{
 		Request: segment.Request{
-			ID:        *ID,
-			Index:     idx,
-			Timestamp: timestamp,
+			MsgId: *msgId,
 		},
 		ExpirationTime: expTime,
 		RLC:            rlc,
@@ -61,7 +59,10 @@ func SetupReq(msg *colpb.SegmentSetupRequest, path base.PacketPath) (*segment.Se
 
 func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupResponse, error) {
 	var res segment.SegmentSetupResponse
-	base := &base.MsgId{}
+	msgId, err := MsgID(msg.Base)
+	if err != nil {
+		return nil, err
+	}
 	switch oneof := msg.SuccessFailure.(type) {
 	case *colpb.SegmentSetupResponse_Token:
 		tok, err := col.TokenFromRaw(oneof.Token)
@@ -69,7 +70,7 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 			return nil, err
 		}
 		res = &segment.SegmentSetupResponseSuccess{
-			MsgId: *base,
+			MsgId: *msgId,
 			Token: *tok,
 		}
 	case *colpb.SegmentSetupResponse_Request:
@@ -78,17 +79,12 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 		if err != nil {
 			return nil, err
 		}
-		ID, idx, timestamp, err := segmentSetupRequest_Base(msg.Base)
-		if err != nil {
-			return nil, err
-		}
+
 		res = &segment.SegmentSetupResponseFailure{
-			MsgId: *base,
+			MsgId: *msgId,
 			FailedRequest: &segment.SetupReq{
 				Request: segment.Request{
-					ID:        *ID,
-					Index:     idx,
-					Timestamp: timestamp,
+					MsgId: *msgId,
 				},
 				ExpirationTime: expTime,
 				RLC:            rlc,
@@ -102,14 +98,24 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 			},
 		}
 	}
-	ID, idx, timestamp, err := segmentSetupRequest_Base(msg.Base)
+	return res, nil
+}
+
+func MsgID(msg *colpb.MsgId) (*base.MsgId, error) {
+	ID, err := SegmentID(msg.Id)
 	if err != nil {
 		return nil, err
 	}
-	base.ID = *ID
-	base.Index = idx
-	base.Timestamp = timestamp
-	return res, nil
+	idx, err := Index(msg.Index)
+	if err != nil {
+		return nil, err
+	}
+	timestamp := util.SecsToTime(msg.Timestamp)
+	return &base.MsgId{
+		ID:        *ID,
+		Index:     idx,
+		Timestamp: timestamp,
+	}, nil
 }
 
 func Index(msg uint32) (col.IndexNumber, error) {
@@ -191,17 +197,6 @@ func OpaquePath(msg *colpb.OpaquePath) *segment.OpaquePath {
 		opaque.Steps[i].Egress = uint16(step.Egress)
 	}
 	return opaque
-}
-
-func segmentSetupRequest_Base(msg *colpb.Base) (ID *col.SegmentID, idx col.IndexNumber,
-	timestamp time.Time, err error) {
-	ID, err = SegmentID(msg.Id)
-	if err != nil {
-		return
-	}
-	idx, err = Index(msg.Index)
-	timestamp = util.SecsToTime(msg.Timestamp)
-	return
 }
 
 func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (expTime time.Time,

@@ -23,9 +23,9 @@ import "google/protobuf/timestamp.proto";
 service Colibri {
     rpc TestPeer(TestingMessage) returns (TestingMessage) {}
     rpc SetupSegment(SegmentSetupRequest) returns (SegmentSetupResponse) {}
-    rpc TeardownSegment(Base) returns (Response) {}
-    rpc ConfirmSegmentIndex(Base) returns (Response) {}
-    rpc CleanupSegmentIndex(Base) returns (Response) {}
+    rpc TeardownSegment(MsgId) returns (Response) {}
+    rpc ConfirmSegmentIndex(MsgId) returns (Response) {}
+    rpc CleanupSegmentIndex(MsgId) returns (Response) {}
 
 }
 
@@ -72,7 +72,7 @@ message OpaquePath {
 
 ////////////////////////////////////////
 
-message Base {
+message MsgId {
     ReservationID id = 1;
     uint32 index = 2;
     uint32 timestamp = 3;
@@ -80,7 +80,7 @@ message Base {
 
 
 message SegmentSetupRequest {
-    Base base = 1;
+    MsgId base = 1;
     message Params {
         uint32 expiration_time = 1;
         uint32 rlc = 2;
@@ -97,7 +97,7 @@ message SegmentSetupRequest {
 }
 
 message SegmentSetupResponse {
-    Base base = 1;
+    MsgId base = 1;
     oneof success_failure {
         bytes token = 2;
         SegmentSetupRequest.Params request = 3;

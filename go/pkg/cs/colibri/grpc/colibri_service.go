@@ -91,19 +91,19 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 	return pbRes, nil
 }
 
-func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Base) (
+func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.MsgId) (
 	*colpb.Response, error) {
 
 	return nil, nil
 }
 
-func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Base) (
+func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.MsgId) (
 	*colpb.Response, error) {
 
 	return nil, nil
 }
 
-func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Base) (
+func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.MsgId) (
 	*colpb.Response, error) {
 
 	return nil, nil
