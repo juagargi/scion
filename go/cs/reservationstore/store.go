@@ -339,7 +339,7 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	log.Info("deleteme dialing grpc")
 	client, err := s.operator.ColibriClient(ctx, req.Egress(), req.Path())
 	if err != nil {
-		return failedResponse, s.errWrapStr("bad packet structure", err)
+		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 	}
 
 	req.PathToDst.CurrentStep++ // moving forward to next colibri service
@@ -356,19 +356,19 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 // ConfirmSegmentReservation changes the state of an index from temporary to confirmed.
 func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.IndexConfirmationReq) (
-	base.MessageWithPath, error) {
+	base.Response, error) {
 
 	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
-	response, err := s.prepareFailureSegmentResp(&req.Request)
-	if err != nil {
-		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID)
+	failedResponse := &base.ResponseFailure{
+		ErrorCode: 1,
+		Message:   "failed to confirm index",
 	}
-	failedResponse := &segment.ResponseIndexConfirmationFailure{
-		Response:  *response,
-		ErrorCode: 1, // TODO(juagargi) specify error codes for every response
+
+	if err := req.Validate(); err != nil {
+		return failedResponse, s.err(err)
 	}
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
@@ -382,6 +382,9 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
 			"id", req.ID)
 	}
+	if rsv == nil {
+		return failedResponse, s.errNew("no reservation found", "id", req.ID)
+	}
 	if err := rsv.SetIndexConfirmed(req.Index); err != nil {
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
 			"id", req.ID)
@@ -394,12 +397,22 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID)
 	}
+
 	if req.IsLastAS() {
-		return &segment.ResponseIndexConfirmationSuccess{
-			Response: *morphSegmentResponseToSuccess(response),
-		}, nil
+		return &base.ResponseSuccess{}, nil
 	}
-	return req, nil
+	// forward to next colibri service
+	// client, err := s.operator.ColibriClient(ctx, req.Egress(), req.Path())
+	client, err := s.operator.ColibriClient(ctx, 666, req.Path())
+	if err != nil {
+		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+	}
+
+	pbRes, err := client.ConfirmSegmentIndex(ctx, translate.PBufMsgId(&req.MsgId))
+	if err != nil {
+		return failedResponse, s.errWrapStr("forwarded request failed", err)
+	}
+	return translate.Response(pbRes), nil
 }
 
 // CleanupSegmentReservation deletes an index from a segment reservation.
