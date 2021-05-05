@@ -26,21 +26,15 @@ type SegmentSetupResponse interface {
 	isSegmentSetupResponse_Success_Failure()
 }
 
-type SegmentSetupResponseBase struct {
-	ID        reservation.SegmentID
-	Index     reservation.IndexNumber
-	Timestamp time.Time
-}
-
 type SegmentSetupResponseSuccess struct {
-	SegmentSetupResponseBase
+	base.MsgId
 	Token reservation.Token
 }
 
 func (*SegmentSetupResponseSuccess) isSegmentSetupResponse_Success_Failure() {}
 
 type SegmentSetupResponseFailure struct {
-	SegmentSetupResponseBase
+	base.MsgId
 	FailedRequest *SetupReq
 }
 

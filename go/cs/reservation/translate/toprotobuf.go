@@ -15,6 +15,7 @@
 package translate
 
 import (
+	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
@@ -48,16 +49,16 @@ func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
 
 func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResponse {
 	pbRes := &colpb.SegmentSetupResponse{}
-	var base *segment.SegmentSetupResponseBase
+	var base *base.MsgId
 
 	switch r := res.(type) {
 	case *segment.SegmentSetupResponseSuccess:
-		base = &r.SegmentSetupResponseBase
+		base = &r.MsgId
 		pbRes.SuccessFailure = &colpb.SegmentSetupResponse_Token{
 			Token: r.Token.ToRaw(),
 		}
 	case *segment.SegmentSetupResponseFailure:
-		base = &r.SegmentSetupResponseBase
+		base = &r.MsgId
 		pbRes.SuccessFailure = &colpb.SegmentSetupResponse_Request{
 			Request: PBufSetupReq(r.FailedRequest).Params,
 		}

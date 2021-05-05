@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "index.go",
         "request.go",
+        "request_response.go",
         "types.go",
     ],
     importpath = "github.com/scionproto/scion/go/cs/reservation",

@@ -61,7 +61,7 @@ func SetupReq(msg *colpb.SegmentSetupRequest, path base.PacketPath) (*segment.Se
 
 func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupResponse, error) {
 	var res segment.SegmentSetupResponse
-	base := &segment.SegmentSetupResponseBase{}
+	base := &base.MsgId{}
 	switch oneof := msg.SuccessFailure.(type) {
 	case *colpb.SegmentSetupResponse_Token:
 		tok, err := col.TokenFromRaw(oneof.Token)
@@ -69,8 +69,8 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 			return nil, err
 		}
 		res = &segment.SegmentSetupResponseSuccess{
-			SegmentSetupResponseBase: *base,
-			Token:                    *tok,
+			MsgId: *base,
+			Token: *tok,
 		}
 	case *colpb.SegmentSetupResponse_Request:
 		expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, opaque, err :=
@@ -83,7 +83,7 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 			return nil, err
 		}
 		res = &segment.SegmentSetupResponseFailure{
-			SegmentSetupResponseBase: *base,
+			MsgId: *base,
 			FailedRequest: &segment.SetupReq{
 				Request: segment.Request{
 					ID:        *ID,

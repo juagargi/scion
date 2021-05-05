@@ -245,7 +245,7 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 
 	failedResponse := &segment.SegmentSetupResponseFailure{
-		SegmentSetupResponseBase: segment.SegmentSetupResponseBase{
+		MsgId: base.MsgId{
 			ID:        req.ID,
 			Index:     req.Index,
 			Timestamp: time.Now(),
@@ -331,8 +331,8 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	if req.IsLastAS() {
 		// TODO(juagargi) update token here
 		return &segment.SegmentSetupResponseSuccess{
-			SegmentSetupResponseBase: failedResponse.SegmentSetupResponseBase,
-			Token:                    *index.Token,
+			MsgId: failedResponse.MsgId,
+			Token: *index.Token,
 		}, nil
 	}
 	// forward the request to the next COLIBRI service
