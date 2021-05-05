@@ -23,6 +23,10 @@ import "google/protobuf/timestamp.proto";
 service Colibri {
     rpc TestPeer(TestingMessage) returns (TestingMessage) {}
     rpc SetupSegment(SegmentSetupRequest) returns (SegmentSetupResponse) {}
+    rpc TeardownSegment(Base) returns (Response) {}
+    rpc ConfirmSegmentIndex(Base) returns (Response) {}
+    rpc CleanupSegmentIndex(Base) returns (Response) {}
+
 }
 
 message TestingMessage{
@@ -75,7 +79,7 @@ message Base {
 }
 
 
-message SegmentSetupRequest{
+message SegmentSetupRequest {
     Base base = 1;
     message Params {
         uint32 expiration_time = 1;
@@ -92,10 +96,22 @@ message SegmentSetupRequest{
     Params params = 2;
 }
 
-message SegmentSetupResponse{
+message SegmentSetupResponse {
     Base base = 1;
     oneof success_failure {
         bytes token = 2;
         SegmentSetupRequest.Params request = 3;
+    }
+}
+
+message Response {
+    message Success {}
+    message Failure {
+        uint32 error_code = 1;
+        string message = 2;
+    }
+    oneof success_failure {
+        Success success = 1;
+        Failure failure = 2;
     }
 }

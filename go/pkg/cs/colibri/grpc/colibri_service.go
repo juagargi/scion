@@ -91,6 +91,24 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 	return pbRes, nil
 }
 
+func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Base) (
+	*colpb.Response, error) {
+
+	return nil, nil
+}
+
+func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Base) (
+	*colpb.Response, error) {
+
+	return nil, nil
+}
+
+func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Base) (
+	*colpb.Response, error) {
+
+	return nil, nil
+}
+
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
 func extractPath(ctx context.Context) (base.PacketPath, error) {
 	p, ok := peer.FromContext(ctx)

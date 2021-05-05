@@ -667,6 +667,86 @@ func (*SegmentSetupResponse_Token) isSegmentSetupResponse_SuccessFailure() {}
 
 func (*SegmentSetupResponse_Request) isSegmentSetupResponse_SuccessFailure() {}
 
+type Response struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to SuccessFailure:
+	//	*Response_Success_
+	//	*Response_Failure_
+	SuccessFailure isResponse_SuccessFailure `protobuf_oneof:"success_failure"`
+}
+
+func (x *Response) Reset() {
+	*x = Response{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Response) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Response) ProtoMessage() {}
+
+func (x *Response) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Response.ProtoReflect.Descriptor instead.
+func (*Response) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10}
+}
+
+func (m *Response) GetSuccessFailure() isResponse_SuccessFailure {
+	if m != nil {
+		return m.SuccessFailure
+	}
+	return nil
+}
+
+func (x *Response) GetSuccess() *Response_Success {
+	if x, ok := x.GetSuccessFailure().(*Response_Success_); ok {
+		return x.Success
+	}
+	return nil
+}
+
+func (x *Response) GetFailure() *Response_Failure {
+	if x, ok := x.GetSuccessFailure().(*Response_Failure_); ok {
+		return x.Failure
+	}
+	return nil
+}
+
+type isResponse_SuccessFailure interface {
+	isResponse_SuccessFailure()
+}
+
+type Response_Success_ struct {
+	Success *Response_Success `protobuf:"bytes,1,opt,name=success,proto3,oneof"`
+}
+
+type Response_Failure_ struct {
+	Failure *Response_Failure `protobuf:"bytes,2,opt,name=failure,proto3,oneof"`
+}
+
+func (*Response_Success_) isResponse_SuccessFailure() {}
+
+func (*Response_Failure_) isResponse_SuccessFailure() {}
+
 type SegmentSetupRequest_Params struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -687,7 +767,7 @@ type SegmentSetupRequest_Params struct {
 func (x *SegmentSetupRequest_Params) Reset() {
 	*x = SegmentSetupRequest_Params{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[11]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -700,7 +780,7 @@ func (x *SegmentSetupRequest_Params) String() string {
 func (*SegmentSetupRequest_Params) ProtoMessage() {}
 
 func (x *SegmentSetupRequest_Params) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[11]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -784,6 +864,99 @@ func (x *SegmentSetupRequest_Params) GetOpaque() *OpaquePath {
 		return x.Opaque
 	}
 	return nil
+}
+
+type Response_Success struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *Response_Success) Reset() {
+	*x = Response_Success{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Response_Success) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Response_Success) ProtoMessage() {}
+
+func (x *Response_Success) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Response_Success.ProtoReflect.Descriptor instead.
+func (*Response_Success) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10, 0}
+}
+
+type Response_Failure struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ErrorCode uint32 `protobuf:"varint,1,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	Message   string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+}
+
+func (x *Response_Failure) Reset() {
+	*x = Response_Failure{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Response_Failure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Response_Failure) ProtoMessage() {}
+
+func (x *Response_Failure) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Response_Failure.ProtoReflect.Descriptor instead.
+func (*Response_Failure) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10, 1}
+}
+
+func (x *Response_Failure) GetErrorCode() uint32 {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return 0
+}
+
+func (x *Response_Failure) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
 }
 
 var File_proto_colibri_v1_service_proto protoreflect.FileDescriptor
@@ -884,23 +1057,52 @@ var file_proto_colibri_v1_service_proto_rawDesc = []byte{
 	0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65,
 	0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x2e, 0x50, 0x61, 0x72, 0x61, 0x6d,
 	0x73, 0x48, 0x00, 0x52, 0x07, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x42, 0x11, 0x0a, 0x0f,
-	0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x32,
-	0xbc, 0x01, 0x0a, 0x07, 0x43, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x12, 0x50, 0x0a, 0x08, 0x54,
-	0x65, 0x73, 0x74, 0x50, 0x65, 0x65, 0x72, 0x12, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x69,
-	0x6e, 0x67, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x1a, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73,
-	0x74, 0x69, 0x6e, 0x67, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x22, 0x00, 0x12, 0x5f, 0x0a,
-	0x0c, 0x53, 0x65, 0x74, 0x75, 0x70, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x12, 0x25, 0x2e,
+	0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x22,
+	0xec, 0x01, 0x0a, 0x08, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3e, 0x0a, 0x07,
+	0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e,
 	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31,
-	0x2e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x1a, 0x26, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c,
-	0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53,
-	0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x32,
-	0x5a, 0x30, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x73, 0x63, 0x69,
-	0x6f, 0x6e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x73, 0x63, 0x69, 0x6f, 0x6e, 0x2f, 0x67, 0x6f,
-	0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x63, 0x6f, 0x6c, 0x69, 0x62,
-	0x72, 0x69, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2e, 0x53, 0x75, 0x63, 0x63, 0x65, 0x73,
+	0x73, 0x48, 0x00, 0x52, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x3e, 0x0a, 0x07,
+	0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31,
+	0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2e, 0x46, 0x61, 0x69, 0x6c, 0x75, 0x72,
+	0x65, 0x48, 0x00, 0x52, 0x07, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x1a, 0x09, 0x0a, 0x07,
+	0x53, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x1a, 0x42, 0x0a, 0x07, 0x46, 0x61, 0x69, 0x6c, 0x75,
+	0x72, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x5f, 0x63, 0x6f, 0x64, 0x65,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x09, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x43, 0x6f, 0x64,
+	0x65, 0x12, 0x18, 0x0a, 0x07, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x07, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x42, 0x11, 0x0a, 0x0f, 0x73,
+	0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x32, 0x9f,
+	0x03, 0x0a, 0x07, 0x43, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x12, 0x50, 0x0a, 0x08, 0x54, 0x65,
+	0x73, 0x74, 0x50, 0x65, 0x65, 0x72, 0x12, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63,
+	0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x69, 0x6e,
+	0x67, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x1a, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73, 0x74,
+	0x69, 0x6e, 0x67, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x22, 0x00, 0x12, 0x5f, 0x0a, 0x0c,
+	0x53, 0x65, 0x74, 0x75, 0x70, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x12, 0x25, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e,
+	0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75,
+	0x65, 0x73, 0x74, 0x1a, 0x26, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69,
+	0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65,
+	0x74, 0x75, 0x70, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x47, 0x0a,
+	0x0f, 0x54, 0x65, 0x61, 0x72, 0x64, 0x6f, 0x77, 0x6e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74,
+	0x12, 0x16, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69,
+	0x2e, 0x76, 0x31, 0x2e, 0x42, 0x61, 0x73, 0x65, 0x1a, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x70,
+	0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4b, 0x0a, 0x13, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x72,
+	0x6d, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x16, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31,
+	0x2e, 0x42, 0x61, 0x73, 0x65, 0x1a, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f,
+	0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x22, 0x00, 0x12, 0x4b, 0x0a, 0x13, 0x43, 0x6c, 0x65, 0x61, 0x6e, 0x75, 0x70, 0x53, 0x65,
+	0x67, 0x6d, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x16, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x42, 0x61,
+	0x73, 0x65, 0x1a, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62,
+	0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
+	0x42, 0x32, 0x5a, 0x30, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x73,
+	0x63, 0x69, 0x6f, 0x6e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x73, 0x63, 0x69, 0x6f, 0x6e, 0x2f,
+	0x67, 0x6f, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x63, 0x6f, 0x6c,
+	0x69, 0x62, 0x72, 0x69, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -916,7 +1118,7 @@ func file_proto_colibri_v1_service_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_colibri_v1_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_colibri_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_colibri_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_proto_colibri_v1_service_proto_goTypes = []interface{}{
 	(IndexState_State)(0),              // 0: proto.colibri.v1.IndexState.State
 	(*TestingMessage)(nil),             // 1: proto.colibri.v1.TestingMessage
@@ -929,31 +1131,42 @@ var file_proto_colibri_v1_service_proto_goTypes = []interface{}{
 	(*Base)(nil),                       // 8: proto.colibri.v1.Base
 	(*SegmentSetupRequest)(nil),        // 9: proto.colibri.v1.SegmentSetupRequest
 	(*SegmentSetupResponse)(nil),       // 10: proto.colibri.v1.SegmentSetupResponse
-	(*SegmentSetupRequest_Params)(nil), // 11: proto.colibri.v1.SegmentSetupRequest.Params
-	(*timestamp.Timestamp)(nil),        // 12: google.protobuf.Timestamp
+	(*Response)(nil),                   // 11: proto.colibri.v1.Response
+	(*SegmentSetupRequest_Params)(nil), // 12: proto.colibri.v1.SegmentSetupRequest.Params
+	(*Response_Success)(nil),           // 13: proto.colibri.v1.Response.Success
+	(*Response_Failure)(nil),           // 14: proto.colibri.v1.Response.Failure
+	(*timestamp.Timestamp)(nil),        // 15: google.protobuf.Timestamp
 }
 var file_proto_colibri_v1_service_proto_depIdxs = []int32{
-	12, // 0: proto.colibri.v1.TestingMessage.timestamp:type_name -> google.protobuf.Timestamp
+	15, // 0: proto.colibri.v1.TestingMessage.timestamp:type_name -> google.protobuf.Timestamp
 	0,  // 1: proto.colibri.v1.IndexState.state:type_name -> proto.colibri.v1.IndexState.State
 	6,  // 2: proto.colibri.v1.OpaquePath.steps:type_name -> proto.colibri.v1.PathStep
 	2,  // 3: proto.colibri.v1.Base.id:type_name -> proto.colibri.v1.ReservationID
 	8,  // 4: proto.colibri.v1.SegmentSetupRequest.base:type_name -> proto.colibri.v1.Base
-	11, // 5: proto.colibri.v1.SegmentSetupRequest.params:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
+	12, // 5: proto.colibri.v1.SegmentSetupRequest.params:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
 	8,  // 6: proto.colibri.v1.SegmentSetupResponse.base:type_name -> proto.colibri.v1.Base
-	11, // 7: proto.colibri.v1.SegmentSetupResponse.request:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
-	4,  // 8: proto.colibri.v1.SegmentSetupRequest.Params.props_at_start:type_name -> proto.colibri.v1.PathEndProps
-	4,  // 9: proto.colibri.v1.SegmentSetupRequest.Params.props_at_end:type_name -> proto.colibri.v1.PathEndProps
-	5,  // 10: proto.colibri.v1.SegmentSetupRequest.Params.allocationtrail:type_name -> proto.colibri.v1.AllocationBead
-	7,  // 11: proto.colibri.v1.SegmentSetupRequest.Params.opaque:type_name -> proto.colibri.v1.OpaquePath
-	1,  // 12: proto.colibri.v1.Colibri.TestPeer:input_type -> proto.colibri.v1.TestingMessage
-	9,  // 13: proto.colibri.v1.Colibri.SetupSegment:input_type -> proto.colibri.v1.SegmentSetupRequest
-	1,  // 14: proto.colibri.v1.Colibri.TestPeer:output_type -> proto.colibri.v1.TestingMessage
-	10, // 15: proto.colibri.v1.Colibri.SetupSegment:output_type -> proto.colibri.v1.SegmentSetupResponse
-	14, // [14:16] is the sub-list for method output_type
-	12, // [12:14] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	12, // 7: proto.colibri.v1.SegmentSetupResponse.request:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
+	13, // 8: proto.colibri.v1.Response.success:type_name -> proto.colibri.v1.Response.Success
+	14, // 9: proto.colibri.v1.Response.failure:type_name -> proto.colibri.v1.Response.Failure
+	4,  // 10: proto.colibri.v1.SegmentSetupRequest.Params.props_at_start:type_name -> proto.colibri.v1.PathEndProps
+	4,  // 11: proto.colibri.v1.SegmentSetupRequest.Params.props_at_end:type_name -> proto.colibri.v1.PathEndProps
+	5,  // 12: proto.colibri.v1.SegmentSetupRequest.Params.allocationtrail:type_name -> proto.colibri.v1.AllocationBead
+	7,  // 13: proto.colibri.v1.SegmentSetupRequest.Params.opaque:type_name -> proto.colibri.v1.OpaquePath
+	1,  // 14: proto.colibri.v1.Colibri.TestPeer:input_type -> proto.colibri.v1.TestingMessage
+	9,  // 15: proto.colibri.v1.Colibri.SetupSegment:input_type -> proto.colibri.v1.SegmentSetupRequest
+	8,  // 16: proto.colibri.v1.Colibri.TeardownSegment:input_type -> proto.colibri.v1.Base
+	8,  // 17: proto.colibri.v1.Colibri.ConfirmSegmentIndex:input_type -> proto.colibri.v1.Base
+	8,  // 18: proto.colibri.v1.Colibri.CleanupSegmentIndex:input_type -> proto.colibri.v1.Base
+	1,  // 19: proto.colibri.v1.Colibri.TestPeer:output_type -> proto.colibri.v1.TestingMessage
+	10, // 20: proto.colibri.v1.Colibri.SetupSegment:output_type -> proto.colibri.v1.SegmentSetupResponse
+	11, // 21: proto.colibri.v1.Colibri.TeardownSegment:output_type -> proto.colibri.v1.Response
+	11, // 22: proto.colibri.v1.Colibri.ConfirmSegmentIndex:output_type -> proto.colibri.v1.Response
+	11, // 23: proto.colibri.v1.Colibri.CleanupSegmentIndex:output_type -> proto.colibri.v1.Response
+	19, // [19:24] is the sub-list for method output_type
+	14, // [14:19] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_proto_colibri_v1_service_proto_init() }
@@ -1083,7 +1296,43 @@ func file_proto_colibri_v1_service_proto_init() {
 			}
 		}
 		file_proto_colibri_v1_service_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Response); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SegmentSetupRequest_Params); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Response_Success); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Response_Failure); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1099,13 +1348,17 @@ func file_proto_colibri_v1_service_proto_init() {
 		(*SegmentSetupResponse_Token)(nil),
 		(*SegmentSetupResponse_Request)(nil),
 	}
+	file_proto_colibri_v1_service_proto_msgTypes[10].OneofWrappers = []interface{}{
+		(*Response_Success_)(nil),
+		(*Response_Failure_)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_colibri_v1_service_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
@@ -1134,6 +1387,9 @@ const _ = grpc.SupportPackageIsVersion6
 type ColibriClient interface {
 	TestPeer(ctx context.Context, in *TestingMessage, opts ...grpc.CallOption) (*TestingMessage, error)
 	SetupSegment(ctx context.Context, in *SegmentSetupRequest, opts ...grpc.CallOption) (*SegmentSetupResponse, error)
+	TeardownSegment(ctx context.Context, in *Base, opts ...grpc.CallOption) (*Response, error)
+	ConfirmSegmentIndex(ctx context.Context, in *Base, opts ...grpc.CallOption) (*Response, error)
+	CleanupSegmentIndex(ctx context.Context, in *Base, opts ...grpc.CallOption) (*Response, error)
 }
 
 type colibriClient struct {
@@ -1162,10 +1418,40 @@ func (c *colibriClient) SetupSegment(ctx context.Context, in *SegmentSetupReques
 	return out, nil
 }
 
+func (c *colibriClient) TeardownSegment(ctx context.Context, in *Base, opts ...grpc.CallOption) (*Response, error) {
+	out := new(Response)
+	err := c.cc.Invoke(ctx, "/proto.colibri.v1.Colibri/TeardownSegment", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *colibriClient) ConfirmSegmentIndex(ctx context.Context, in *Base, opts ...grpc.CallOption) (*Response, error) {
+	out := new(Response)
+	err := c.cc.Invoke(ctx, "/proto.colibri.v1.Colibri/ConfirmSegmentIndex", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *colibriClient) CleanupSegmentIndex(ctx context.Context, in *Base, opts ...grpc.CallOption) (*Response, error) {
+	out := new(Response)
+	err := c.cc.Invoke(ctx, "/proto.colibri.v1.Colibri/CleanupSegmentIndex", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ColibriServer is the server API for Colibri service.
 type ColibriServer interface {
 	TestPeer(context.Context, *TestingMessage) (*TestingMessage, error)
 	SetupSegment(context.Context, *SegmentSetupRequest) (*SegmentSetupResponse, error)
+	TeardownSegment(context.Context, *Base) (*Response, error)
+	ConfirmSegmentIndex(context.Context, *Base) (*Response, error)
+	CleanupSegmentIndex(context.Context, *Base) (*Response, error)
 }
 
 // UnimplementedColibriServer can be embedded to have forward compatible implementations.
@@ -1177,6 +1463,15 @@ func (*UnimplementedColibriServer) TestPeer(context.Context, *TestingMessage) (*
 }
 func (*UnimplementedColibriServer) SetupSegment(context.Context, *SegmentSetupRequest) (*SegmentSetupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetupSegment not implemented")
+}
+func (*UnimplementedColibriServer) TeardownSegment(context.Context, *Base) (*Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TeardownSegment not implemented")
+}
+func (*UnimplementedColibriServer) ConfirmSegmentIndex(context.Context, *Base) (*Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmSegmentIndex not implemented")
+}
+func (*UnimplementedColibriServer) CleanupSegmentIndex(context.Context, *Base) (*Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CleanupSegmentIndex not implemented")
 }
 
 func RegisterColibriServer(s *grpc.Server, srv ColibriServer) {
@@ -1219,6 +1514,60 @@ func _Colibri_SetupSegment_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Colibri_TeardownSegment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Base)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ColibriServer).TeardownSegment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.colibri.v1.Colibri/TeardownSegment",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ColibriServer).TeardownSegment(ctx, req.(*Base))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Colibri_ConfirmSegmentIndex_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Base)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ColibriServer).ConfirmSegmentIndex(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.colibri.v1.Colibri/ConfirmSegmentIndex",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ColibriServer).ConfirmSegmentIndex(ctx, req.(*Base))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Colibri_CleanupSegmentIndex_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Base)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ColibriServer).CleanupSegmentIndex(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.colibri.v1.Colibri/CleanupSegmentIndex",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ColibriServer).CleanupSegmentIndex(ctx, req.(*Base))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Colibri_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.colibri.v1.Colibri",
 	HandlerType: (*ColibriServer)(nil),
@@ -1230,6 +1579,18 @@ var _Colibri_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetupSegment",
 			Handler:    _Colibri_SetupSegment_Handler,
+		},
+		{
+			MethodName: "TeardownSegment",
+			Handler:    _Colibri_TeardownSegment_Handler,
+		},
+		{
+			MethodName: "ConfirmSegmentIndex",
+			Handler:    _Colibri_ConfirmSegmentIndex_Handler,
+		},
+		{
+			MethodName: "CleanupSegmentIndex",
+			Handler:    _Colibri_CleanupSegmentIndex_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
