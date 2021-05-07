@@ -134,7 +134,6 @@ func (p *scionPath) Path() path.Path {
 	return &p.Raw
 }
 
+// TODO(juagargi) remove this
 // MessageWithPath is any message received at the colibri service, from the BR.
-type MessageWithPath interface {
-	Path() PacketPath
-}
+type MessageWithPath interface{}

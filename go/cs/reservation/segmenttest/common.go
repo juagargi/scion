@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	slayerspath "github.com/scionproto/scion/go/lib/slayers/path"
@@ -30,18 +31,16 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-func NewPathFromComponents(chain ...interface{}) *segment.TransparentPath {
+func NewPathFromComponents(chain ...interface{}) *segment.OpaquePath {
 	if len(chain)%3 != 0 {
 		panic("wrong number of arguments")
 	}
-	p := &segment.TransparentPath{}
+	p := &segment.OpaquePath{}
 	for i := 0; i < len(chain); i += 3 {
-		p.Steps = append(p.Steps, segment.PathStepWithIA{
-			PathStep: segment.PathStep{
-				Ingress: uint16(chain[i].(int)),
-				Egress:  uint16(chain[i+2].(int)),
-			},
-			IA: xtest.MustParseIA(chain[i+1].(string)),
+		p.Steps = append(p.Steps, segment.PathStep{
+			Ingress: uint16(chain[i].(int)),
+			Egress:  uint16(chain[i+2].(int)),
+			IA:      xtest.MustParseIA(chain[i+1].(string)),
 		})
 	}
 	return p
@@ -150,7 +149,7 @@ type ReservationMod func(*segment.Reservation) *segment.Reservation
 
 // NewRsv creates a reservation configured via functional options.
 func NewRsv(mods ...ReservationMod) *segment.Reservation {
-	rsv := segment.NewReservation()
+	rsv := segment.NewReservation(addr.AS(0))
 	return ModRsv(rsv, mods...)
 }
 
@@ -195,9 +194,9 @@ func WithID(as, suffix string) ReservationMod {
 }
 
 func WithPath(path ...interface{}) ReservationMod {
-	transparent := NewPathFromComponents(path...)
+	opaque := NewPathFromComponents(path...)
 	return func(rsv *segment.Reservation) *segment.Reservation {
-		rsv.Path = transparent
+		rsv.PathAtSource = opaque
 		return rsv
 	}
 }

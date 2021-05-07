@@ -24,30 +24,23 @@ import (
 
 // Request is the base struct for any type of COLIBRI e2e request.
 type Request struct {
-	base.RequestMetadata                         // information about the request (forwarding path)
-	ID                   reservation.E2EID       // the ID this request refers to
-	Index                reservation.IndexNumber // the index this request refers to
-	Timestamp            time.Time               // the mandatory timestamp
+	ID        reservation.E2EID       // the ID this request refers to
+	Index     reservation.IndexNumber // the index this request refers to
+	Timestamp time.Time               // the mandatory timestamp
 }
 
 // NewRequest constructs the e2e Request type.
 func NewRequest(ts time.Time, id *reservation.E2EID, idx reservation.IndexNumber,
 	path base.PacketPath) (*Request, error) {
 
-	metadata, err := base.NewRequestMetadata(path)
-	if err != nil {
-		return nil, serrors.WrapStr("new segment request", err)
-	}
-
 	if id == nil {
 		return nil, serrors.New("new e2e request with nil ID")
 	}
 
 	return &Request{
-		RequestMetadata: *metadata,
-		ID:              *id,
-		Index:           idx,
-		Timestamp:       ts,
+		ID:        *id,
+		Index:     idx,
+		Timestamp: ts,
 	}, nil
 }
 

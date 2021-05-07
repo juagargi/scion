@@ -4,7 +4,6 @@ go_library(
     name = "go_default_library",
     srcs = [
         "index.go",
-        "request.go",
         "request_response.go",
         "types.go",
     ],

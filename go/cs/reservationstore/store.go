@@ -98,7 +98,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	}
 	newSetup := true
 	ID := req.ID
-	log.Info("deleteme path current step", "curr.step", req.PathToDst.CurrentStep)
+	log.Info("deleteme path current step", "curr.step", req.Path.CurrentStep)
 	if req.ID.IsEmpty() { // empty -> new setup
 		ID = reservation.SegmentID{
 			ASID:   s.localIA.A,
@@ -123,7 +123,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	// TODO(juagargi) with the quic socket, ask for paths and filter using the predicate
 	base := &req.Request
 	if newSetup {
-		base, err = segment.NewRequest(req.Timestamp, &ID, 0, req.Path().Copy())
+		base, err = segment.NewRequest(req.Timestamp, &ID, 0, req.Path.Copy())
 		if err != nil {
 			return s.errWrapStr("error creating source request", err)
 		}
@@ -155,6 +155,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		rsv.PathType = req.PathType
 		rsv.PathEndProps = req.PathProps
 		rsv.TrafficSplit = req.SplitCls
+		rsv.PathAtSource = req.PathAtSource
 		// if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
 		// 	return s.err(err)
 		// }
@@ -205,13 +206,13 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	log.Info("DELETEME ^^^^^^^^^^^^^^^^^^ forwarding!!", "with_deadline", ok, "deadline", deadline, "ID", req.ID)
 
 	// we checked IsLastAS==false, forward the request to the next COLIBRI service
-	client, err := s.operator.ColibriClient(ctx, req.Egress(), req.Path())
+	client, err := s.operator.ColibriClient(ctx, req.Path)
 	if err != nil {
 		log.Info("deleteme bad packet structure??", "err", err.Error())
 		return s.errWrapStr("bad packet structure", err)
 	}
 
-	req.PathToDst.CurrentStep++ // moving forward to next colibri service
+	req.Path.CurrentStep++ // moving forward to next colibri service
 	// res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
 	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 	if err != nil {
@@ -240,7 +241,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupReq) (
 	segment.SegmentSetupResponse, error) {
 
-	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
+	if err := s.validateAuthenticators(&req.Request); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
@@ -337,12 +338,12 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 	// forward the request to the next COLIBRI service
 	log.Info("deleteme dialing grpc")
-	client, err := s.operator.ColibriClient(ctx, req.Egress(), req.Path())
+	client, err := s.operator.ColibriClient(ctx, req.Path)
 	if err != nil {
 		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 	}
 
-	req.PathToDst.CurrentStep++ // moving forward to next colibri service
+	req.Path.CurrentStep++ // moving forward to next colibri service
 	// res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
 	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 	log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
@@ -358,7 +359,7 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.IndexConfirmationReq) (
 	base.Response, error) {
 
-	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
+	if err := s.validateAuthenticators(&req.Request); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
@@ -402,13 +403,12 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 		return &base.ResponseSuccess{}, nil
 	}
 	// forward to next colibri service
-	// client, err := s.operator.ColibriClient(ctx, req.Egress(), req.Path())
-	client, err := s.operator.ColibriClient(ctx, 666, req.Path())
+	client, err := s.operator.ColibriClient(ctx, req.Path)
 	if err != nil {
 		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 	}
 
-	pbRes, err := client.ConfirmSegmentIndex(ctx, translate.PBufMsgId(&req.MsgId))
+	pbRes, err := client.ConfirmSegmentIndex(ctx, translate.PBufRequest(&req.Request))
 	if err != nil {
 		return failedResponse, s.errWrapStr("forwarded request failed", err)
 	}
@@ -419,7 +419,7 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.CleanupReq) (
 	base.MessageWithPath, error) {
 
-	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
+	if err := s.validateAuthenticators(&req.Request); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
@@ -468,7 +468,7 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Clea
 func (s *Store) TearDownSegmentReservation(ctx context.Context, req *segment.TeardownReq) (
 	base.MessageWithPath, error) {
 
-	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
+	if err := s.validateAuthenticators(&req.Request); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
@@ -509,9 +509,9 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 	base.MessageWithPath, error) {
 
 	req := request.GetCommonSetupReq()
-	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, s.errWrapStr("error validating e2e request", err, "id", req.ID.String())
-	}
+	// if err := s.validateAuthenticators(&req.Request); err != nil {
+	// 	return nil, s.errWrapStr("error validating e2e request", err, "id", req.ID.String())
+	// }
 
 	response, err := s.prepareFailureE2EResp(&req.Request)
 	if err != nil {
@@ -676,9 +676,9 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 func (s *Store) CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) (
 	base.MessageWithPath, error) {
 
-	if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
-	}
+	// if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
+	// 	return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+	// }
 
 	response, err := s.prepareFailureE2EResp(&req.Request)
 	if err != nil {
@@ -713,11 +713,11 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) 
 			"id", req.ID)
 	}
 
-	if req.IsLastAS() {
-		return &e2e.ResponseCleanupSuccess{
-			Response: *morphE2EResponseToSuccess(response),
-		}, nil
-	}
+	// if req.Request.IsLastAS() {
+	// 	return &e2e.ResponseCleanupSuccess{
+	// 		Response: *morphE2EResponseToSuccess(response),
+	// 	}, nil
+	// }
 
 	return req, nil
 }
@@ -728,7 +728,7 @@ func (s *Store) DeleteExpiredIndices(ctx context.Context) (int, error) {
 }
 
 // validateAuthenticators checks that the authenticators are correct.
-func (s *Store) validateAuthenticators(req *base.RequestMetadata) error {
+func (s *Store) validateAuthenticators(req *segment.Request) error {
 	// TODO(juagargi) validate request
 	// DRKey authentication of request (will be left undone for later)
 	return nil
@@ -737,13 +737,8 @@ func (s *Store) validateAuthenticators(req *base.RequestMetadata) error {
 // prepareFailureSegmentResp will create a failure segment response, which
 // is sent in the reverse path that the request had.
 func (s *Store) prepareFailureSegmentResp(req *segment.Request) (*segment.Response, error) {
-	revPath := req.Path().Copy()
-	if err := revPath.Reverse(); err != nil {
-		return nil, s.errWrapStr("cannot reverse path for response", err)
-	}
-
-	response, err := segment.NewResponse(time.Now(), &req.ID, req.Index, revPath,
-		false, uint8(req.Path().IndexOfCurrentHop())) // TODO(juagargi) IndexOfCurrentHop won't work!!
+	response, err := segment.NewResponse(time.Now(), &req.ID, req.Index,
+		false, uint8(req.Path.CurrentStep)) // TODO(juagargi) IndexOfCurrentHop won't work!!
 	if err != nil {
 		return nil, s.errWrapStr("cannot construct segment response", err)
 	}
@@ -753,17 +748,13 @@ func (s *Store) prepareFailureSegmentResp(req *segment.Request) (*segment.Respon
 // prepareFailureE2EResp will create a failure e2e response, which
 // is sent in the reverse path that the request had.
 func (s *Store) prepareFailureE2EResp(req *e2e.Request) (*e2e.Response, error) {
-	revPath := req.Path().Copy()
-	if err := revPath.Reverse(); err != nil {
-		return nil, s.errWrapStr("cannot reverse path for response", err)
-	}
-
-	response, err := e2e.NewResponse(time.Now(), &req.ID, req.Index, revPath,
-		false, uint8(req.Path().IndexOfCurrentHop()))
-	if err != nil {
-		return nil, s.errWrapStr("cannot construct e2e response", err)
-	}
-	return response, nil
+	// response, err := e2e.NewResponse(time.Now(), &req.ID, req.Index,
+	// 	false, uint8(req.Path.IndexOfCurrentHop()))
+	// if err != nil {
+	// 	return nil, s.errWrapStr("cannot construct e2e response", err)
+	// }
+	// return response, nil
+	return nil, nil
 }
 
 func morphSegmentResponseToSuccess(resp *segment.Response) *segment.Response {

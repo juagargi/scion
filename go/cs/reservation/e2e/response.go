@@ -17,37 +17,30 @@ package e2e
 import (
 	"time"
 
-	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 
 // Response is the base struct for any type of COLIBRI e2e response.
 type Response struct {
-	base.RequestMetadata                         // information about the request (forwarding path)
-	ID                   reservation.E2EID       // the ID this request refers to
-	Index                reservation.IndexNumber // the index this request refers to
-	Accepted             bool                    // success or failure type of response
-	FailedHop            uint8                   // if accepted is false, the AS that failed it
+	ID        reservation.E2EID       // the ID this request refers to
+	Index     reservation.IndexNumber // the index this request refers to
+	Accepted  bool                    // success or failure type of response
+	FailedHop uint8                   // if accepted is false, the AS that failed it
 }
 
 // NewResponse contructs the segment Response type.
 func NewResponse(ts time.Time, id *reservation.E2EID, idx reservation.IndexNumber,
-	path base.PacketPath, accepted bool, failedHop uint8) (*Response, error) {
+	accepted bool, failedHop uint8) (*Response, error) {
 
-	metadata, err := base.NewRequestMetadata(path)
-	if err != nil {
-		return nil, serrors.WrapStr("new segment request", err)
-	}
 	if id == nil {
 		return nil, serrors.New("new segment response with nil ID")
 	}
 	return &Response{
-		RequestMetadata: *metadata,
-		ID:              *id,
-		Index:           reservation.IndexNumber(idx),
-		Accepted:        accepted,
-		FailedHop:       failedHop,
+		ID:        *id,
+		Index:     reservation.IndexNumber(idx),
+		Accepted:  accepted,
+		FailedHop: failedHop,
 	}, nil
 }
 

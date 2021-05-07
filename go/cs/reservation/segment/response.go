@@ -44,32 +44,26 @@ func (*SegmentSetupResponseFailure) isSegmentSetupResponse_Success_Failure() {}
 
 // Response is the base struct for any type of COLIBRI segment response.
 type Response struct {
-	base.RequestMetadata                         // information about the request (forwarding path)
-	ID                   reservation.SegmentID   // the ID this request refers to
-	Index                reservation.IndexNumber // the index this request refers to
-	Accepted             bool                    // success or failure type of response
-	FailedHop            uint8                   // if accepted is false, the AS that failed it
+	ID        reservation.SegmentID   // the ID this request refers to
+	Index     reservation.IndexNumber // the index this request refers to
+	Accepted  bool                    // success or failure type of response
+	FailedHop uint8                   // if accepted is false, the AS that failed it
 }
 
 var _ base.MessageWithPath = (*Response)(nil)
 
 // NewResponse contructs the segment Response type.
 func NewResponse(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
-	path base.PacketPath, accepted bool, failedHop uint8) (*Response, error) {
+	accepted bool, failedHop uint8) (*Response, error) {
 
-	metadata, err := base.NewRequestMetadata(path)
-	if err != nil {
-		return nil, serrors.WrapStr("new segment request", err)
-	}
 	if id == nil {
 		return nil, serrors.New("new segment response with nil ID")
 	}
 	return &Response{
-		RequestMetadata: *metadata,
-		ID:              *id,
-		Index:           reservation.IndexNumber(idx),
-		Accepted:        accepted,
-		FailedHop:       failedHop,
+		ID:        *id,
+		Index:     reservation.IndexNumber(idx),
+		Accepted:  accepted,
+		FailedHop: failedHop,
 	}, nil
 }
 

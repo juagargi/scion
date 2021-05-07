@@ -15,7 +15,6 @@
 package translate
 
 import (
-	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
@@ -25,7 +24,7 @@ import (
 func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
 
 	return &colpb.SegmentSetupRequest{
-		Base: PBufMsgId(&req.MsgId),
+		Base: PBufRequest(&req.Request),
 		Params: &colpb.SegmentSetupRequest_Params{
 			ExpirationTime: util.TimeToSecs(req.ExpirationTime),
 			Rlc:            uint32(req.RLC),
@@ -42,36 +41,32 @@ func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
 				Transfer: req.PathProps.EndTransfer(),
 			},
 			Allocationtrail: PBufAllocTrail(req.AllocTrail),
-			Opaque:          PBufOpaque(req.PathToDst),
 		},
 	}
 }
 
 func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResponse {
 	pbRes := &colpb.SegmentSetupResponse{}
-	var base *base.MsgId
 
 	switch r := res.(type) {
 	case *segment.SegmentSetupResponseSuccess:
-		base = &r.MsgId
 		pbRes.SuccessFailure = &colpb.SegmentSetupResponse_Token{
 			Token: r.Token.ToRaw(),
 		}
 	case *segment.SegmentSetupResponseFailure:
-		base = &r.MsgId
 		pbRes.SuccessFailure = &colpb.SegmentSetupResponse_Request{
 			Request: PBufSetupReq(r.FailedRequest).Params,
 		}
 	}
-	pbRes.Base = PBufMsgId(base)
 	return pbRes
 }
 
-func PBufMsgId(msgId *base.MsgId) *colpb.MsgId {
-	return &colpb.MsgId{
-		Id:        PBufID(&msgId.ID),
-		Index:     uint32(msgId.Index),
-		Timestamp: util.TimeToSecs(msgId.Timestamp),
+func PBufRequest(req *segment.Request) *colpb.Request {
+	return &colpb.Request{
+		Id:        PBufID(&req.ID),
+		Index:     uint32(req.Index),
+		Timestamp: util.TimeToSecs(req.Timestamp),
+		Opaque:    PBufOpaque(req.Path),
 	}
 }
 
@@ -104,6 +99,8 @@ func PBufOpaque(opaque *segment.OpaquePath) *colpb.OpaquePath {
 	return &colpb.OpaquePath{
 		CurrentStep: uint32(opaque.CurrentStep),
 		Steps:       steps,
+		SpathType:   uint32(opaque.Spath.Type),
+		SpathRaw:    opaque.Spath.Raw,
 	}
 
 }

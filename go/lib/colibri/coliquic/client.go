@@ -22,7 +22,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -66,17 +66,19 @@ func NewServiceClientOperator(topo topology.Topology, router snet.Router,
 }
 
 // ColibriClient finds or creates a ColibriClient to be used for the path argument.
-func (o *ServiceClientOperator) ColibriClient(ctx context.Context, egressID uint16,
-	path reservation.PacketPath) (
+func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *segment.OpaquePath) (
 	colpb.ColibriClient, error) {
 
 	o.mutex.Lock()
 	defer o.mutex.Unlock()
+
 	if !o.initialized {
 		return nil, serrors.New("client operator not yet initialized",
 			"neighbor_count", len(o.neighbors))
 	}
 
+	egressID := opaque.Steps[opaque.CurrentStep].Egress
+	spath := opaque.Spath
 	rAddr, ok := o.neighbors[egressID]
 	if !ok {
 		return nil, serrors.New("bad packet: no neighbor on specified egress", "egress", egressID)
@@ -84,15 +86,10 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, egressID uint
 	rAddr = rAddr.Copy() // preserve the original data
 
 	// prepare remote address with the new path
-	p := path.Path()
-	switch p.Type() {
+	switch spath.Type {
 	case scion.PathType: // don't touch the service path
 	case colibri.PathType: // replace the service path with this one
-		rAddr.Path.Type = p.Type()
-		rAddr.Path.Raw = make([]byte, p.Len())
-		if err := p.SerializeTo(rAddr.Path.Raw); err != nil {
-			return nil, serrors.New("bac packet: cannot serialize path", "path", path)
-		}
+		rAddr.Path = spath.Copy()
 	}
 
 	log.Info("DELETEME dialing", "addr", rAddr)

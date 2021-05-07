@@ -66,7 +66,7 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 	*colpb.SegmentSetupResponse, error) {
 
 	sizeeeeeeeeeeee := proto.Size(msg)
-	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Params.Opaque)
+	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Base.Opaque)
 	path, err := extractPath(ctx)
 	if err != nil {
 		log.Error("setup segment", "err", err)
@@ -78,7 +78,7 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 		// should send a message?
 		return nil, err
 	}
-	log.Info("deleteme path after translation", "path", req.PathToDst)
+	log.Info("deleteme path after translation", "path", req.Path)
 	res, err := s.Store.AdmitSegmentReservation(ctx, req)
 	if err != nil {
 		log.Error("colibri store returned an error", "err", err)
@@ -91,19 +91,19 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 	return pbRes, nil
 }
 
-func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.MsgId) (
+func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
 	return nil, nil
 }
 
-func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.MsgId) (
+func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
 	return nil, nil
 }
 
-func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.MsgId) (
+func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
 	return nil, nil

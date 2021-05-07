@@ -295,37 +295,28 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time, ex
 	requests := make([]*seg.SetupReq, len(filtered))
 	// create setup requests
 	for i, p := range filtered {
-		opaque, err := seg.OpaquePathFromInterfaces(p.Metadata().Interfaces)
-		if err != nil {
-			return nil, err
-		}
-
-		pp, err := base.NewPacketPath(p.Path())
-		if err != nil {
-			return nil, err
-		}
-		meta, err := base.NewRequestMetadata(pp)
+		opaque, err := seg.OpaquePathFromSnet(p)
 		if err != nil {
 			return nil, err
 		}
 		req := &seg.SetupReq{
 			Request: seg.Request{
-				RequestMetadata: *meta,
 				MsgId: base.MsgId{
 					ID:        reservation.SegmentID{}, // new source setup in store
 					Timestamp: now,
 				},
+				Path: opaque,
 			},
 			ExpirationTime: expTime,
 			// RLC:            rlc,
 			// PathType:       pathType,
-			PathType:   reservation.CorePath, // TODO(juagargi) replace after tests
-			MinBW:      e.minBW,
-			MaxBW:      e.maxBW,
-			SplitCls:   e.splitCls,
-			PathProps:  e.endProps,
-			AllocTrail: reservation.AllocationBeads{},
-			PathToDst:  opaque,
+			PathType:     reservation.CorePath, // TODO(juagargi) replace after tests
+			MinBW:        e.minBW,
+			MaxBW:        e.maxBW,
+			SplitCls:     e.splitCls,
+			PathProps:    e.endProps,
+			AllocTrail:   reservation.AllocationBeads{},
+			PathAtSource: opaque,
 		}
 		requests[i] = req
 	}
@@ -337,13 +328,8 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 
 	requests := []*seg.SetupReq{}
 	for _, rsv := range rsvs {
-		if len(e.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.Path})) == 0 {
+		if len(e.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.PathAtSource})) == 0 {
 			continue
-		}
-		// for i, p := range filtered {
-		opaque, err := seg.OpaquePathFromInterfaces(rsv.Path.Interfaces())
-		if err != nil {
-			return nil, err
 		}
 		req := &seg.SetupReq{
 			Request: seg.Request{ // without path in metadata (it will be set in the store)
@@ -351,14 +337,15 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 					ID:        rsv.ID, // new source setup in store
 					Timestamp: now,
 				},
+				Path:        rsv.PathAtSource,
 				Reservation: rsv,
 			},
-			MinBW:      rsv.ActiveIndex().MinBW,
-			MaxBW:      rsv.ActiveIndex().MaxBW,
-			SplitCls:   rsv.TrafficSplit,
-			PathProps:  rsv.PathEndProps,
-			AllocTrail: reservation.AllocationBeads{}, // at source
-			PathToDst:  opaque,
+			MinBW:        rsv.ActiveIndex().MinBW,
+			MaxBW:        rsv.ActiveIndex().MaxBW,
+			SplitCls:     rsv.TrafficSplit,
+			PathProps:    rsv.PathEndProps,
+			AllocTrail:   reservation.AllocationBeads{}, // at source
+			PathAtSource: rsv.PathAtSource,
 		}
 		requests = append(requests, req)
 	}
@@ -381,7 +368,7 @@ func (e requirements) Compliance(rsv *seg.Reservation, atLeastUntil time.Time) C
 		return NeverCompliant
 	case rsv.PathEndProps != e.endProps:
 		return NeverCompliant
-	case len(e.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.Path})) == 0:
+	case len(e.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.PathAtSource})) == 0:
 		return NeverCompliant
 	}
 	indices := rsv.Indices.Filter(

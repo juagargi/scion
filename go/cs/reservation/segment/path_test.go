@@ -12,243 +12,94 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package segment_test
+package segment
 
 import (
+	"encoding/hex"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/scionproto/scion/go/cs/reservation/segment"
-	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
-	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
+	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/xtest"
+	"github.com/stretchr/testify/require"
 )
 
-func TestValidatePath(t *testing.T) {
-	tc := map[string]struct {
-		Path    *segment.TransparentPath
-		IsValid bool
-	}{
-		"src-dst": {
-			Path:    segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			IsValid: true,
-		},
-		"invalid dst": {
-			Path:    segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 2),
-			IsValid: false,
-		},
-		"invalid src": {
-			Path:    segmenttest.NewPathFromComponents(2, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			IsValid: false,
-		},
-	}
-	for name, tc := range tc {
-		name, tc := name, tc
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			err := tc.Path.Validate()
-			if tc.IsValid {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err)
-			}
-		})
-	}
-}
-
-func TestGetIAs(t *testing.T) {
-	p := segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
-	require.Equal(t, xtest.MustParseIA("1-ff00:0:1"), p.GetSrcIA())
-	require.Equal(t, xtest.MustParseIA("1-ff00:0:2"), p.GetDstIA())
-	p = nil
-	require.Equal(t, xtest.MustParseIA("0-0"), p.GetSrcIA())
-	require.Equal(t, xtest.MustParseIA("0-0"), p.GetDstIA())
-	p = &segment.TransparentPath{}
-	require.Equal(t, xtest.MustParseIA("0-0"), p.GetSrcIA())
-	require.Equal(t, xtest.MustParseIA("0-0"), p.GetDstIA())
-	p = &segment.TransparentPath{Steps: make([]segment.PathStepWithIA, 0)}
-	require.Equal(t, xtest.MustParseIA("0-0"), p.GetSrcIA())
-	require.Equal(t, xtest.MustParseIA("0-0"), p.GetDstIA())
-}
-
-func TestToFromBinary(t *testing.T) {
-	p := segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
-	var buff []byte
-	_, err := p.Read(buff)
-	require.Error(t, err)
-	_, err = p.Read(buff)
-	require.Error(t, err)
-	buff = make([]byte, 2*12)
-	c, err := p.Read(buff)
-	require.NoError(t, err)
-	require.Equal(t, 2*12, c)
-
-	anotherP, err := segment.TransparentPathFromRaw(buff)
-	require.NoError(t, err)
-	require.Equal(t, p, anotherP)
-
-	anotherBuff := p.ToRaw()
-	require.Equal(t, buff, anotherBuff)
-	// wrong buffer
-	buff = buff[:len(buff)-1]
-	_, err = segment.TransparentPathFromRaw(buff)
-	require.Error(t, err)
-	// empty and nil buffer
-	p, err = segment.TransparentPathFromRaw(nil)
-	require.NoError(t, err)
-	require.Empty(t, p.Steps)
-	p, err = segment.TransparentPathFromRaw([]byte{})
-	require.NoError(t, err)
-	require.Empty(t, p.Steps)
-	// empty and nil path
-	p = nil
-	require.Empty(t, p.ToRaw())
-	p = &segment.TransparentPath{}
-	require.Empty(t, p.ToRaw())
-}
-
-func TestTransparentPathString(t *testing.T) {
+func TestOpaqueToRawFromRaw(t *testing.T) {
 	cases := map[string]struct {
-		transparent *segment.TransparentPath
-		str         string
-	}{
-		"empty": {
-			transparent: segmenttest.NewPathFromComponents(),
-			str:         "[curr.step = 0]",
-		},
-		"one_step": {
-			transparent: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 0),
-			str:         "1-ff00:0:1#0,0 [curr.step = 0]",
-		},
-		"two_steps": {
-			transparent: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-			str:         "1-ff00:0:1#0,1 > 1-ff00:0:2#1,0 [curr.step = 0]",
-		},
-	}
-	for name, tc := range cases {
-		name, tc := name, tc
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tc.str, tc.transparent.String())
-		})
-	}
-}
-
-func TestOpaquePathString(t *testing.T) {
-	cases := map[string]struct {
-		opaque *segment.OpaquePath
-		str    string
-	}{
-		"empty": {
-			opaque: segmenttest.NewOpaquePathFromComponents(),
-			str:    "[curr.step = 0]",
-		},
-		"one_step": {
-			opaque: segmenttest.NewOpaquePathFromComponents(0, 0),
-			str:    "0,0 [curr.step = 0]",
-		},
-		"two_steps": {
-			opaque: segmenttest.NewOpaquePathFromComponents(0, 1, 2, 0),
-			str:    "0,1 > 2,0 [curr.step = 0]",
-		},
-	}
-	for name, tc := range cases {
-		name, tc := name, tc
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tc.str, tc.opaque.String())
-		})
-	}
-}
-
-func TestTransparentPathHasInterfaces(t *testing.T) {
-	cases := map[string]struct {
-		transparent *segment.TransparentPath
-		expected    []snet.PathInterface
-	}{
-		"empty": {
-			transparent: segmenttest.NewPathFromComponents(),
-			expected:    segmenttest.NewIfaces(),
-		},
-		"two_steps": {
-			transparent: segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0),
-			expected:    segmenttest.NewIfaces("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
-		},
-	}
-	for name, tc := range cases {
-		name, tc := name, tc
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tc.expected, tc.transparent.Interfaces())
-		})
-	}
-}
-
-func TestNewOpaquePathFromInterfaces(t *testing.T) {
-	cases := map[string]struct {
-		ifaces    []snet.PathInterface
-		expectErr bool
-		opaque    *segment.OpaquePath
-	}{
-		"empty": {
-			ifaces: segmenttest.NewIfaces(),
-			opaque: segmenttest.NewOpaquePathFromComponents(),
-		},
-		"one": {
-			ifaces:    segmenttest.NewIfaces("1-1", 1, 2, "1-1")[:1],
-			expectErr: true,
-			opaque:    nil,
-		},
-		"two": {
-			ifaces: segmenttest.NewIfaces("1-1", 1, 2, "1-1"),
-			opaque: segmenttest.NewOpaquePathFromComponents(0, 1, 2, 0),
-		},
-		"three": {
-			ifaces: segmenttest.NewIfaces("1-1", 1, 2, "1-1", 3, 4, "1-1"),
-			opaque: segmenttest.NewOpaquePathFromComponents(0, 1, 2, 3, 4, 0),
-		},
-	}
-	for name, tc := range cases {
-		name, tc := name, tc
-		t.Run(name, func(t *testing.T) {
-			opaque, err := segment.OpaquePathFromInterfaces(tc.ifaces)
-			if tc.expectErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-			require.Equal(t, tc.opaque, opaque)
-		})
-	}
-}
-
-func TestTransparentToOpaque(t *testing.T) {
-	cases := map[string]struct {
-		transparent *segment.TransparentPath
-		expected    *segment.OpaquePath
+		opaque *OpaquePath
 	}{
 		"nil": {
-			transparent: nil,
-			expected:    nil,
+			opaque: nil,
 		},
 		"empty": {
-			transparent: &segment.TransparentPath{Steps: []segment.PathStepWithIA{}},
-			expected:    &segment.OpaquePath{Steps: []segment.PathStep{}},
+			opaque: &OpaquePath{
+				CurrentStep: 0,
+				Steps:       []PathStep{},
+				Spath: spath.Path{
+					Raw: []byte{},
+				},
+			},
 		},
-		"one step": {
-			transparent: segmenttest.NewPathFromComponents(0, "0-0", 1),
-			expected:    segmenttest.NewOpaquePathFromComponents(0, 1),
+		"no spath": {
+			opaque: &OpaquePath{
+				CurrentStep: 1,
+				Steps: []PathStep{
+					{
+						Ingress: 0,
+						Egress:  1,
+						IA:      xtest.MustParseIA("1-ff00:0:111"),
+					},
+					{
+						Ingress: 4,
+						Egress:  0,
+						IA:      xtest.MustParseIA("1-ff00:0:110"),
+					},
+				},
+				Spath: spath.Path{
+					Raw: []byte{},
+				},
+			},
 		},
-		"two steps": {
-			transparent: segmenttest.NewPathFromComponents(0, "0-0", 1, 2, "0-0", 0),
-			expected:    segmenttest.NewOpaquePathFromComponents(0, 1, 2, 0),
+		"some spath": {
+			opaque: &OpaquePath{
+				CurrentStep: 1,
+				Steps: []PathStep{
+					{
+						Ingress: 0,
+						Egress:  1,
+						IA:      xtest.MustParseIA("1-ff00:0:111"),
+					},
+					{
+						Ingress: 4,
+						Egress:  0,
+						IA:      xtest.MustParseIA("1-ff00:0:110"),
+					},
+				},
+				Spath: spath.Path{
+					Type: colibri.PathType,
+					Raw:  xtest.MustParseHexString("beefcafe"),
+				},
+			},
+		},
+		"only spath": {
+			opaque: &OpaquePath{
+				CurrentStep: 111,
+				Steps:       []PathStep{},
+				Spath: spath.Path{
+					Type: colibri.PathType,
+					Raw:  xtest.MustParseHexString("beefcafe"),
+				},
+			},
 		},
 	}
 	for name, tc := range cases {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, tc.expected, tc.transparent.Opaque())
+			t.Parallel()
+			raw := tc.opaque.ToRaw()
+			opaque, err := OpaquePathFromRaw(raw)
+			require.NoError(t, err, "buffer=%s", hex.EncodeToString(raw))
+			require.Equal(t, tc.opaque, opaque, "buffer=%s", hex.EncodeToString(raw))
 		})
 	}
 }

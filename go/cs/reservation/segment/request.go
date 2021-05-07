@@ -25,35 +25,33 @@ import (
 // Request is the base struct for any type of COLIBRI segment request.
 // It contains a reference to the reservation it requests, or nil if not yet created.
 type Request struct {
-	base.RequestMetadata // information about the request (forwarding path)
 	base.MsgId
+	Path        *OpaquePath  // the path to the destination. It represents the hops of the reservation.
 	Reservation *Reservation // nil if no reservation yet
 }
 
 // NewRequest constructs the segment Request type.
 func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
-	path base.PacketPath) (*Request, error) {
+	path *OpaquePath) (*Request, error) {
 
-	metadata, err := base.NewRequestMetadata(path)
-	if err != nil {
-		return nil, serrors.WrapStr("new segment request", err)
-	}
 	if id == nil {
 		return nil, serrors.New("new segment request with nil ID")
 	}
 	return &Request{
-		RequestMetadata: *metadata,
 		MsgId: base.MsgId{
 			Timestamp: ts,
 			ID:        *id,
 			Index:     idx,
 		},
+		Path: path,
 	}, nil
 }
 
+// Validate ensures the data in the request is consistent. Calling methods on the request
+// before a call to Validate may result in invalid behavior or panic.
 func (r *Request) Validate() error {
-	if r.Path() == nil {
-		return serrors.New("no transport path in request")
+	if r.Path == nil || len(r.Path.Steps) <= r.Path.CurrentStep {
+		return serrors.New("bad path in request", "path", r.Path)
 	}
 	if r.ID.ASID == 0 {
 		return serrors.New("bad AS id in request", "asid", r.ID.ASID)
@@ -61,10 +59,29 @@ func (r *Request) Validate() error {
 	return nil
 }
 
+func (r *Request) IsLastAS() bool { // override the use of the RequestMetadata.path with PathToDst
+	return r.Path.CurrentStep == len(r.Path.Steps)-1
+}
+
+// Ingress returns the ingress interface of this step for this request.
+// Do not call Ingress without validating the request first.
+func (r *Request) Ingress() uint16 {
+	p := r.Path
+	return p.Steps[p.CurrentStep].Ingress
+}
+
+// Egress returns the egress interface of this step for this request.
+// Do not call Egress without validating the request first.
+func (r *Request) Egress() uint16 {
+	p := r.Path
+	return p.Steps[p.CurrentStep].Egress
+}
+
 // SetupReq is a segment reservation setup request.
 // This same type is used for renewal of the segment reservation.
 type SetupReq struct {
 	Request
+
 	ExpirationTime time.Time
 	RLC            reservation.RLC
 	PathType       reservation.PathType
@@ -73,46 +90,23 @@ type SetupReq struct {
 	SplitCls       reservation.SplitCls
 	PathProps      reservation.PathEndProps
 	AllocTrail     reservation.AllocationBeads
-	PathToDst      *OpaquePath // requested path (maybe different than transport)
+	PathAtSource   *OpaquePath // requested path (maybe different than transport)
 }
 
 func (r *SetupReq) Validate() error {
 	if err := r.Request.Validate(); err != nil {
 		return err
 	}
-	if r.PathToDst == nil || len(r.PathToDst.Steps) <= r.PathToDst.CurrentStep {
-		return serrors.New("bad path to destination in setup request", "path", r.PathToDst)
-	}
-	if len(r.AllocTrail) > len(r.PathToDst.Steps) {
+	if len(r.AllocTrail) > len(r.Path.Steps) {
 		return serrors.New("inconsistent trail and setup path", "trail", r.AllocTrail,
-			"path", r.PathToDst)
+			"path", r.Path)
 	}
 	return nil
-}
-
-func (r *SetupReq) IsLastAS() bool { // override the use of the RequestMetadata.path with PathToDst
-	return r.PathToDst.CurrentStep == len(r.PathToDst.Steps)-1
 }
 
 // PrevBW returns the minimum of the maximum bandwidths already granted by previous ASes.
 func (r *SetupReq) PrevBW() uint64 {
 	return r.AllocTrail.MinMax().ToKbps()
-}
-
-func (r *SetupReq) Ingress() uint16 {
-	p := r.PathToDst
-	if p == nil || p.CurrentStep >= len(p.Steps) {
-		panic("deleteme return 0")
-	}
-	return p.Steps[p.CurrentStep].Ingress
-}
-
-func (r *SetupReq) Egress() uint16 {
-	p := r.PathToDst
-	if p == nil || p.CurrentStep >= len(p.Steps) {
-		panic("deleteme return 0")
-	}
-	return p.Steps[p.CurrentStep].Egress
 }
 
 // SetupTelesReq represents a telescopic segment setup.

@@ -161,25 +161,6 @@ func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA 
 	return getSegReservations(ctx, x.db, condition, params)
 }
 
-// GetSegmentRsvFromPath searches for a segment reservation with the specified path.
-func (x *executor) GetSegmentRsvFromPath(ctx context.Context,
-	path *segment.TransparentPath) (*segment.Reservation, error) {
-
-	rsvs, err := getSegReservations(ctx, x.db, "WHERE path = ?", []interface{}{path.ToRaw()})
-	if err != nil {
-		return nil, err
-	}
-	switch len(rsvs) {
-	case 0:
-		return nil, nil
-	case 1:
-		return rsvs[0], nil
-	default:
-		return nil, db.NewDataError("more than 1 segment reservation found for a path", nil,
-			"path", path.String())
-	}
-}
-
 // GetAllSegmentRsvs returns all segment reservations.
 func (x *executor) GetAllSegmentRsvs(ctx context.Context) ([]*segment.Reservation, error) {
 	return getSegReservations(ctx, x.db, "", nil)
@@ -592,12 +573,13 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 	if rsv.ActiveIndex() != nil {
 		activeIndex = int(rsv.ActiveIndex().Idx)
 	}
+	p := rsv.PathAtSource
 	const query = `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress,
 		path, end_props, traffic_split, src_ia, dst_ia,active_index)
 		VALUES (?, ?,?,?,?,?,?,?,?,?)`
 	res, err := x.ExecContext(ctx, query, rsv.ID.ASID, suffix,
-		rsv.Ingress, rsv.Egress, rsv.Path.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,
-		rsv.Path.GetSrcIA().IAInt(), rsv.Path.GetDstIA().IAInt(), activeIndex)
+		rsv.Ingress, rsv.Egress, p.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,
+		p.SrcIA().IAInt(), p.DstIA().IAInt(), activeIndex)
 	if err != nil {
 		return err
 	}
@@ -686,11 +668,12 @@ func buildSegRsvFromFields(ctx context.Context, x db.Sqler, fields *rsvFields) (
 	binary.BigEndian.PutUint32(rsv.ID.Suffix[:], fields.Suffix)
 	rsv.Ingress = fields.Ingress
 	rsv.Egress = fields.Egress
-	p, err := segment.TransparentPathFromRaw(fields.Path)
+
+	p, err := segment.OpaquePathFromRaw(fields.Path)
 	if err != nil {
 		return nil, err
 	}
-	rsv.Path = p
+	rsv.PathAtSource = p
 	rsv.PathEndProps = reservation.PathEndProps(fields.EndProps)
 	rsv.TrafficSplit = reservation.SplitCls(fields.TrafficSplit)
 	rsv.Indices = indices

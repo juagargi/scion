@@ -17,19 +17,35 @@ package segment
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
+	slayerspath "github.com/scionproto/scion/go/lib/slayers/path"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/spath"
 )
 
 // OpaquePath is used in e.g. setup requests, where the IAs should not be visible.
 type OpaquePath struct {
-	Steps       []PathStep
 	CurrentStep int
+	Steps       []PathStep // could contain IAs
+	Spath       spath.Path // from slayers
+}
+
+func OpaquePathFromSnet(path snet.Path) (*OpaquePath, error) {
+	if path == nil {
+		return nil, nil
+	}
+	opaque, err := OpaquePathFromInterfaces(path.Metadata().Interfaces)
+	if err != nil {
+		return opaque, err
+	}
+	opaque.Spath = spath.Path{
+		Type: path.Path().Type,
+		Raw:  append([]byte{}, path.Path().Raw...),
+	}
+	return opaque, nil
 }
 
 // OpaquePathFromInterfaces constructs an OpaquePath given a list of snet.PathInterface .
@@ -51,6 +67,25 @@ func OpaquePathFromInterfaces(ifaces []snet.PathInterface) (*OpaquePath, error) 
 	return opaque, nil
 }
 
+func (p *OpaquePath) Interfaces() []snet.PathInterface {
+	if p == nil {
+		return []snet.PathInterface{}
+	}
+	ifaces := make([]snet.PathInterface, len(p.Steps)/2)
+	for i := 0; i < len(ifaces); i++ {
+
+	}
+	return nil
+}
+
+func (p *OpaquePath) Copy() *OpaquePath {
+	return &OpaquePath{
+		Steps:       append(p.Steps[:0:0], p.Steps...),
+		CurrentStep: p.CurrentStep,
+		Spath:       p.Spath.Copy(),
+	}
+}
+
 func (p *OpaquePath) String() string {
 	strs := make([]string, len(p.Steps))
 	for i, s := range p.Steps {
@@ -64,172 +99,88 @@ func (p *OpaquePath) String() string {
 	return str
 }
 
-// TransparentPath represents a reservation path, in the reservation order.
-// This path is seen only in the source of a segment reservation.
-// It is analogous to snet.Path.
-// TODO(juagargi) there exists snet.Path and should be used instead of transparent path.
-type TransparentPath struct {
-	Steps       []PathStepWithIA
-	CurrentStep int // TODO(juagargi) this is unnecessary, remove
+func (p *OpaquePath) ToRaw() []byte {
+	if p == nil {
+		return []byte{}
+	}
+	// currentStep + len(steps) + steps + spath_type + spath_raw
+	length := 2 + 2 + len(p.Steps)*pathStepLen + 1 + len(p.Spath.Raw)
+	buff := make([]byte, length)
+	initialBuff := buff
+	binary.BigEndian.PutUint16(buff, uint16(p.CurrentStep))
+	buff = buff[2:]
+	binary.BigEndian.PutUint16(buff, uint16(len(p.Steps)))
+	buff = buff[2:]
+	for _, step := range p.Steps {
+		binary.BigEndian.PutUint16(buff, step.Ingress)
+		binary.BigEndian.PutUint16(buff[2:], step.Egress)
+		binary.BigEndian.PutUint64(buff[4:], uint64(step.IA.IAInt()))
+		buff = buff[12:]
+	}
+	p.Spath.Type = slayerspath.Type(buff[0])
+	n := copy(buff[1:], p.Spath.Raw)
+	if n != len(p.Spath.Raw) {
+		panic("internal logic error")
+	}
+	return initialBuff
 }
 
-var _ snet.PathInterfacesHaver = (*TransparentPath)(nil)
-
-var _ io.Reader = (*TransparentPath)(nil)
-
-// TransparentPathFromRaw constructs a new Path from the byte representation.
-func TransparentPathFromRaw(buff []byte) (*TransparentPath, error) {
-	if len(buff)%pathStepWithIALen != 0 {
-		return nil, serrors.New("buffer input is not a multiple of a path step", "len", len(buff))
-	}
-	steps := len(buff) / pathStepWithIALen
-	p := &TransparentPath{
-		Steps: make([]PathStepWithIA, steps),
-	}
-	for i := 0; i < steps; i++ {
-		offset := i * pathStepWithIALen
-		p.Steps[i].Ingress = binary.BigEndian.Uint16(buff[offset:])
-		p.Steps[i].Egress = binary.BigEndian.Uint16(buff[offset+2:])
-		p.Steps[i].IA = addr.IAFromRaw(buff[offset+4:])
-	}
-	return p, nil
-}
-
-func TransparentPathFromInterfaces(ifaces []snet.PathInterface) (*TransparentPath, error) {
-	if len(ifaces)%2 != 0 {
-		return nil, serrors.New("wrong number of interfaces, not even", "ifaces", ifaces)
-	}
-	if len(ifaces) == 0 {
+func OpaquePathFromRaw(raw []byte) (*OpaquePath, error) {
+	if len(raw) == 0 {
 		return nil, nil
 	}
-	transparent := &TransparentPath{
-		Steps: make([]PathStepWithIA, len(ifaces)/2+1),
+	// currentStep + len(steps) + steps + spath_type + spath_raw
+	if len(raw) < 5 {
+		return nil, serrors.New("buffer too small")
 	}
-	for i := 0; i < len(transparent.Steps)-1; i++ {
-		transparent.Steps[i].Egress = uint16(ifaces[i*2].ID)
-		transparent.Steps[i].IA = ifaces[i*2].IA
-		transparent.Steps[i+1].Ingress = uint16(ifaces[i*2+1].ID)
+	currStep := int(binary.BigEndian.Uint16(raw))
+	raw = raw[2:]
+	stepCount := int(binary.BigEndian.Uint16(raw))
+	raw = raw[2:]
+	if len(raw) < stepCount*pathStepLen {
+		return nil, serrors.New("buffer too small for these path", "step_count", stepCount,
+			"len", len(raw))
 	}
-	return transparent, nil
+	steps := make([]PathStep, stepCount)
+	for i := 0; i < stepCount; i++ {
+		steps[i].Ingress = binary.BigEndian.Uint16(raw)
+		steps[i].Egress = binary.BigEndian.Uint16(raw[2:])
+		steps[i].IA = addr.IAInt(binary.BigEndian.Uint64(raw[4:])).IA()
+		raw = raw[12:]
+	}
+	return &OpaquePath{
+		CurrentStep: currStep,
+		Steps:       steps,
+		Spath: spath.Path{
+			Type: slayerspath.Type(raw[0]),
+			Raw:  append([]byte{}, raw[1:]...),
+		},
+	}, nil
 }
 
-// Validate returns an error if there is invalid data.
-func (p *TransparentPath) Validate() error {
-	if len(p.Steps) < 2 {
-		return serrors.New("invalid path length", "len", len(p.Steps))
-	}
-	if p.Steps[0].Ingress != 0 {
-		return serrors.New("wrong ingress interface for source", "ingress", p.Steps[0].Ingress)
-	}
-	if p.Steps[len(p.Steps)-1].Egress != 0 {
-		return serrors.New("wrong egress interface for destination",
-			"egress ID", p.Steps[len(p.Steps)-1].Ingress)
-	}
-	return nil
-}
-
-// Interfaces returns the interfaces in this transparent path.
-// The expected convention for a list of interfaces always go egress and then ingress.
-// So a transparent path like:
-// 0 > 1-1 > 1  , 2 > 1-2 > 3 . 4 > 1-3 > 0
-// becomes a list of snet.PathInterfaces like:
-// 1-1#1 , 1-2#2 , 1-2#3 , 1-3#4
-func (p *TransparentPath) Interfaces() []snet.PathInterface {
-	if p == nil || len(p.Steps) < 2 {
-		return []snet.PathInterface{}
-	}
-	ifaces := make([]snet.PathInterface, len(p.Steps)*2-2)
-	for i := 0; i < len(ifaces); i += 2 {
-		ifaces[i].IA = p.Steps[(i+1)/2].IA
-		ifaces[i].ID = common.IFIDType(p.Steps[(i+1)/2].Egress)
-		ifaces[i+1].IA = p.Steps[i/2+1].IA
-		ifaces[i+1].ID = common.IFIDType(p.Steps[i/2+1].Ingress)
-	}
-	return ifaces
-}
-
-// GetSrcIA returns the source IA in the path or a zero IA if the path is nil (it's not the
-// source AS of the reservation and has no access to the path of the reservation).
-// If the Path is not nil, it assumes is valid, i.e. it has at least length 2.
-func (p *TransparentPath) GetSrcIA() addr.IA {
-	if p == nil || len(p.Steps) == 0 {
+func (p *OpaquePath) SrcIA() addr.IA {
+	if p == nil {
 		return addr.IA{}
 	}
 	return p.Steps[0].IA
 }
 
-// GetDstIA returns the source IA in the path or a zero IA if the path is nil (it's not the
-// source AS of the reservation and has no access to the path of the reservation).
-// If the path is not nil, it assumes is valid, i.e. it has at least length 2.
-func (p *TransparentPath) GetDstIA() addr.IA {
-	if p == nil || len(p.Steps) == 0 {
+func (p *OpaquePath) DstIA() addr.IA {
+	if p == nil {
 		return addr.IA{}
 	}
 	return p.Steps[len(p.Steps)-1].IA
 }
 
-// byteCount returns the length of this path in bytes, when serialized.
-func (p *TransparentPath) byteCount() int {
-	if p == nil || len(p.Steps) == 0 {
-		return 0
-	}
-	return len(p.Steps) * pathStepWithIALen
-}
-
-func (p *TransparentPath) Read(buff []byte) (int, error) {
-	if p == nil || len(p.Steps) == 0 {
-		return 0, nil
-	}
-	if len(buff) < p.byteCount() {
-		return 0, serrors.New("buffer too small", "min_size", p.byteCount(), "actual_size", len(buff))
-	}
-	for i, s := range p.Steps {
-		offset := i * pathStepWithIALen
-		binary.BigEndian.PutUint16(buff[offset:], s.Ingress)
-		binary.BigEndian.PutUint16(buff[offset+2:], s.Egress)
-		binary.BigEndian.PutUint64(buff[offset+4:], uint64(s.IA.IAInt()))
-	}
-	return p.byteCount(), nil
-}
-
-// ToRaw returns a buffer representing this TransparentPath.
-func (p *TransparentPath) ToRaw() []byte {
-	if p == nil || len(p.Steps) == 0 {
-		return nil
-	}
-	buff := make([]byte, p.byteCount())
-	p.Read(buff)
-	return buff
-}
-
-func (p *TransparentPath) String() string {
-	if p == nil {
-		return "nil"
-	}
-	strs := make([]string, len(p.Steps))
-	for i, s := range p.Steps {
-		strs[i] = s.String()
-	}
-	str := strings.Join(strs, " > ")
-	if len(str) > 0 {
-		str += " "
-	}
-	str += fmt.Sprintf("[curr.step = %d]", p.CurrentStep)
-	return str
-}
-
-func (p *TransparentPath) Opaque() *OpaquePath {
+func (p *OpaquePath) Validate() error {
 	if p == nil {
 		return nil
 	}
-	opaque := &OpaquePath{
-		Steps:       make([]PathStep, len(p.Steps)),
-		CurrentStep: p.CurrentStep,
+	steps := p.Steps
+	if len(steps) < 2 {
+		return serrors.New("wrong number of steps", "count", len(steps))
 	}
-	for i, step := range p.Steps {
-		opaque.Steps[i] = step.PathStep
-	}
-	return opaque
+	return nil
 }
 
 // PathStep is one hop of the OpaquePath.
@@ -238,20 +189,7 @@ func (p *TransparentPath) Opaque() *OpaquePath {
 type PathStep struct {
 	Ingress uint16
 	Egress  uint16
+	IA      addr.IA
 }
 
-const pathStepLen = 2 + 2
-
-// PathStepWithIA is one step of the TransparentPath.
-// These steps are specified at the source AS.
-type PathStepWithIA struct {
-	PathStep
-	IA addr.IA
-}
-
-// pathStepWithIALen amounts for Ingress+Egress+IA bytes.
-const pathStepWithIALen = pathStepLen + 8
-
-func (s *PathStepWithIA) String() string {
-	return fmt.Sprintf("%s#%d,%d", s.IA.String(), s.Ingress, s.Egress)
-}
+const pathStepLen = 2 + 2 + 8

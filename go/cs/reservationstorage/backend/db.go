@@ -32,9 +32,6 @@ type ReserverOnly interface {
 	// GetSegmentRsvsFromSrcDstIA returns all reservations that start at src AS and end in dst AS.
 	GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA) (
 		[]*segment.Reservation, error)
-	// GetSegmentRsvFromPath searches for a segment reservation with the specified path.
-	GetSegmentRsvFromPath(ctx context.Context, path *segment.TransparentPath) (
-		*segment.Reservation, error)
 
 	// NewSegmentRsv creates a new segment reservation in the DB, with an unused reservation ID.
 	// The created ID is set in the reservation pointer argument. Used by setup req.

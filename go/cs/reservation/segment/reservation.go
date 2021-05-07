@@ -30,10 +30,10 @@ type Reservation struct {
 	activeIndex  int                      // -1 <= activeIndex < len(Indices)
 	Ingress      uint16                   // ingress interface ID: reservation packets enter
 	Egress       uint16                   // egress interface ID: reservation packets leave
-	Path         *TransparentPath         // empty if not at the source of the reservation
 	PathType     reservation.PathType     // the type of path (up,core,down)
 	PathEndProps reservation.PathEndProps // the properties for stitching and start/end
 	TrafficSplit reservation.SplitCls     // the traffic split between control and data planes
+	PathAtSource *OpaquePath              // when this reservation object is at its source
 }
 
 func NewReservation(asid addr.AS) *Reservation {
@@ -68,24 +68,14 @@ func (r *Reservation) Validate() error {
 			activeIndex = i
 		}
 	}
-	var err error
-	if r.Path != nil {
-		if r.Ingress != 0 {
-			return serrors.New("reservation starts in this AS but ingress interface is not zero",
-				"ingress_if", r.Ingress)
-		}
-		err = r.Path.Validate()
-	} else if r.Ingress == 0 {
+	if r.Ingress == 0 {
 		return serrors.New("reservation does not start in this AS but ingress interface is zero")
 	}
-	if err != nil {
-		return serrors.WrapStr("validating reservation, path failed", err)
-	}
-	err = r.PathEndProps.Validate()
+	err := r.PathEndProps.Validate()
 	if err != nil {
 		return serrors.WrapStr("validating reservation, end properties failed", err)
 	}
-	return nil
+	return r.PathAtSource.Validate()
 }
 
 // ActiveIndex returns the currently active Index for this reservation, or nil if none.
