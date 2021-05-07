@@ -54,8 +54,13 @@ func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResp
 			Token: r.Token.ToRaw(),
 		}
 	case *segment.SegmentSetupResponseFailure:
-		pbRes.SuccessFailure = &colpb.SegmentSetupResponse_Request{
-			Request: PBufSetupReq(r.FailedRequest).Params,
+		pbRes.SuccessFailure = &colpb.SegmentSetupResponse_Failure_{
+			Failure: &colpb.SegmentSetupResponse_Failure{
+				Request: PBufSetupReq(r.FailedRequest).Params,
+				Failure: &colpb.Response_Failure{
+					Message: r.Message,
+				},
+			},
 		}
 	}
 	return pbRes

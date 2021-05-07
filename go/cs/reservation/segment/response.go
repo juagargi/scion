@@ -36,6 +36,7 @@ func (*SegmentSetupResponseSuccess) isSegmentSetupResponse_Success_Failure() {}
 type SegmentSetupResponseFailure struct {
 	base.MsgId
 	FailedRequest *SetupReq
+	Message       string
 }
 
 func (*SegmentSetupResponseFailure) isSegmentSetupResponse_Success_Failure() {}

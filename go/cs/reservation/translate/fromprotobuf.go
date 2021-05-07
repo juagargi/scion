@@ -68,9 +68,9 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 		res = &segment.SegmentSetupResponseSuccess{
 			Token: *tok,
 		}
-	case *colpb.SegmentSetupResponse_Request:
+	case *colpb.SegmentSetupResponse_Failure_:
 		expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, err :=
-			segmentSetupRequest_Params(oneof.Request)
+			segmentSetupRequest_Params(oneof.Failure.Request)
 		if err != nil {
 			return nil, err
 		}
@@ -85,6 +85,7 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 				PathProps:      pathProps,
 				AllocTrail:     allocTrail,
 			},
+			Message: oneof.Failure.Failure.Message,
 		}
 	}
 	return res, nil

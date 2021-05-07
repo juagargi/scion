@@ -35,6 +35,7 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/topology"
+	"github.com/scionproto/scion/go/lib/xtest"
 )
 
 // Store is the reservation store.
@@ -156,10 +157,6 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		rsv.PathEndProps = req.PathProps
 		rsv.TrafficSplit = req.SplitCls
 		rsv.PathAtSource = req.PathAtSource
-		// if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
-		// 	return s.err(err)
-		// }
-		// req.ID = rsv.ID
 	} else {
 		// renewal, ensure index is not used
 		index := rsv.Index(req.Index)
@@ -213,7 +210,6 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	}
 
 	req.Path.CurrentStep++ // moving forward to next colibri service
-	// res, err := client.TestPeer(ctx, &colpb.TestingMessage{Message: "from admission at AS"})
 	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 	if err != nil {
 		log.Info("deleteme what the heck! the grpc client failed", "err", err)
@@ -224,8 +220,8 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		return s.err(err)
 	}
 	log.Info("deleteme received response from remote colibri", "res", res, "err", err)
-	if _, failure := res.(*segment.SegmentSetupResponseFailure); failure {
-		log.Info("deleteme admission failed down the path")
+	if failure, ok := res.(*segment.SegmentSetupResponseFailure); ok {
+		log.Info("deleteme admission failed down the path", "message", failure.Message)
 		// TODO(juagargi)
 		// remove the reservation here, it failed. Send clean up requests.
 		return nil
@@ -252,6 +248,18 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 			Timestamp: time.Now(),
 		},
 		FailedRequest: req,
+	}
+
+	if s.localIA == xtest.MustParseIA("1-ff00:0:112") {
+		//
+		//
+		//
+		// deleteme delemete
+		//
+		//
+		//
+		failedResponse.Message = "failing because deleteme in 1-ff00:0:112"
+		return failedResponse, s.errNew("failing because deleteme")
 	}
 
 	if err := req.Validate(); err != nil {

@@ -99,9 +99,13 @@ message SegmentSetupRequest {
 }
 
 message SegmentSetupResponse {
+    message Failure {
+        Response.Failure failure = 1;
+        SegmentSetupRequest.Params request = 2;
+    }
     oneof success_failure {
-        bytes token = 2;
-        SegmentSetupRequest.Params request = 3;
+        bytes token = 1;
+        Failure failure = 2;
     }
 }
 
