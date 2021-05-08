@@ -42,12 +42,14 @@ type Manager interface {
 
 // manager takes care of the health of the segment reservations.
 type manager struct {
-	now        func() time.Time // replace in tests
-	wakeupTime time.Time        // no need to do anything until this time
-	keeper     *keeper
-	localIA    addr.IA
-	store      reservationstorage.Store
-	router     snet.Router
+	now           func() time.Time // replace in tests
+	wakeupTime    time.Time        // no need to do anything until this time
+	wakeupExpirer time.Time        // wake up the colibri reservation expire routine
+	wakeupKeeper  time.Time        // wake up the keeper (new rsvs/indices)
+	keeper        *keeper          // handles new rsvs/indices
+	localIA       addr.IA
+	store         reservationstorage.Store
+	router        snet.Router
 }
 
 func NewColibriManager(localIA addr.IA, router snet.Router, store reservationstorage.Store,
@@ -76,17 +78,42 @@ func (m *manager) Name() string {
 func (m *manager) Run(ctx context.Context) {
 	logger := log.FromCtx(ctx)
 
-	if time.Now().Before(m.wakeupTime) {
+	now := time.Now()
+	if now.Before(m.wakeupTime) {
 		return
 	}
-	logger.Debug("Reservation manager starting")
-	defer logger.Debug("Reservation manager finished")
-	wakeupTime, err := m.keeper.OneShot(ctx)
-	if err != nil {
-		logger.Error("while keeping the reservations", "err", err)
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		defer log.HandlePanic()
+		defer wg.Done()
+		logger.Debug("Reservation manager starting")
+		defer logger.Debug("Reservation manager finished")
+
+		wakeupTime, err := m.keeper.OneShot(ctx)
+		if err != nil {
+			logger.Error("while keeping the reservations", "err", err)
+		}
+		logger.Info("will wait until the specified time", "wakeup_time", wakeupTime)
+		m.wakeupTime = wakeupTime
+	}()
+
+	go func() {
+		defer log.HandlePanic()
+		defer wg.Done()
+		n, wakeupTime, err := m.store.DeleteExpiredIndices(ctx)
+		logger.Info("deleteme EXPIRER", "n", n, "err", err)
+		if err != nil {
+			logger.Error("deleting expired indices", "count", n, "err", err)
+		}
+		m.wakeupExpirer = wakeupTime
+	}()
+	wg.Wait()
+	if m.wakeupKeeper.Before(m.wakeupExpirer) {
+		m.wakeupTime = m.wakeupKeeper
+	} else {
+		m.wakeupTime = m.wakeupExpirer
 	}
-	logger.Info("will wait until the specified time", "wakeup_time", wakeupTime)
-	m.wakeupTime = wakeupTime
 }
 
 func (m *manager) Now() time.Time {

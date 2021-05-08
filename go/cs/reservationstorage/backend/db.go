@@ -65,6 +65,9 @@ type ReserverAndTransit interface {
 	// Used on schedule.
 	DeleteExpiredIndices(ctx context.Context, now time.Time) (int, error)
 
+	// NextExpirationTime returns the nearest moment in time when an index will expire.
+	NextExpirationTime(ctx context.Context) (time.Time, error)
+
 	// GetE2ERsvFromID finds the end to end resevation given its ID.
 	GetE2ERsvFromID(ctx context.Context, ID *reservation.E2EID) (*e2e.Reservation, error)
 	// GetE2ERsvsOnSegRsv returns the e2e reservations running on top of a given segment one.

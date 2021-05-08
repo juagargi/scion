@@ -731,8 +731,13 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) 
 }
 
 // DeleteExpiredIndices will just call the DB's method to delete the expired indices.
-func (s *Store) DeleteExpiredIndices(ctx context.Context) (int, error) {
-	return s.db.DeleteExpiredIndices(ctx, time.Now())
+func (s *Store) DeleteExpiredIndices(ctx context.Context) (int, time.Time, error) {
+	n, err := s.db.DeleteExpiredIndices(ctx, time.Now())
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	exp, err := s.db.NextExpirationTime(ctx)
+	return n, exp, err
 }
 
 // validateAuthenticators checks that the authenticators are correct.
