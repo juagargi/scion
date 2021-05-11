@@ -319,11 +319,11 @@ func (x *executor) DeleteExpiredIndices(ctx context.Context, now time.Time) (int
 
 func (x *executor) NextExpirationTime(ctx context.Context) (time.Time, error) {
 	var expSeg, expE2E uint32
-	row := x.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(expiration),-1) FROM e2e_index`)
+	row := x.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(expiration),0xFFFFFFFF) FROM e2e_index`)
 	if err := row.Scan(&expE2E); err != nil {
 		return time.Time{}, err
 	}
-	row = x.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(expiration),-1) FROM seg_index`)
+	row = x.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(expiration),0xFFFFFFFF) FROM seg_index`)
 	if err := row.Scan(&expSeg); err != nil {
 		return time.Time{}, err
 	}

@@ -88,7 +88,7 @@ func (k *keeper) OneShot(ctx context.Context) (time.Time, error) {
 			defer wg.Done()
 			scionPaths, err := k.manager.PathsTo(ctx, dst)
 			if err != nil {
-				log.Error("keeping the reservations", "err", err)
+				log.Error("keeping the reservations, querying paths", "err", err)
 			}
 			wakeup, err := k.keepDestination(ctx, dst, entries, scionPaths)
 			if err != nil {
@@ -198,7 +198,8 @@ func (k *keeper) askNewReservations(ctx context.Context, requiredSuccesful int, 
 
 	// TODO(juagargi) test this function (indices seen in requests should always be zero)
 	if requiredSuccesful > 0 {
-		requests, err := entry.PrepareSetupRequests(paths, k.manager.Now(), expTime)
+		requests, err := entry.PrepareSetupRequests(paths, k.manager.LocalIA().A,
+			k.manager.Now(), expTime)
 		if err != nil {
 			return serrors.WrapStr("cannot setup new reservations", err, "paths", paths)
 		}
@@ -287,7 +288,7 @@ func (e *requirements) SplitByCompliance(rsvs []*seg.Reservation, atLeastUntil t
 // PrepareSetupRequests creates new reservation requests compliant with the requirements.
 // This function creates as many reservations requests as there are
 // scion paths compatible with the requirements.
-func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time, expTime time.Time) (
+func (e *requirements) PrepareSetupRequests(paths []snet.Path, localAS addr.AS, now time.Time, expTime time.Time) (
 	[]*seg.SetupReq, error) {
 
 	// filter paths
@@ -302,7 +303,9 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path, now time.Time, ex
 		req := &seg.SetupReq{
 			Request: seg.Request{
 				MsgId: base.MsgId{
-					ID:        reservation.SegmentID{}, // new source setup in store
+					ID: reservation.SegmentID{
+						ASID: localAS,
+					},
 					Timestamp: now,
 				},
 				Path: opaque,

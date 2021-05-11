@@ -101,6 +101,20 @@ func (r *SetupReq) Validate() error {
 		return serrors.New("inconsistent trail and setup path", "trail", r.AllocTrail,
 			"path", r.Path)
 	}
+	if err := r.PathProps.ValidateWithPathType(r.PathType); err != nil {
+		return serrors.New("incompatible path type and props", "path_type", r.PathType,
+			"props", r.PathProps)
+	}
+	return nil
+}
+
+func (r *SetupReq) ValidateForReservation(rsv *Reservation) error {
+	if r.PathType != rsv.PathType {
+		return serrors.New("different path type", "req", r.PathType, "rsv", rsv.PathType)
+	}
+	if r.PathProps != rsv.PathEndProps {
+		return serrors.New("different path end props.", "req", r.PathProps, "rsv", rsv.PathEndProps)
+	}
 	return nil
 }
 

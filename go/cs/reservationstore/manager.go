@@ -87,6 +87,9 @@ func (m *manager) Run(ctx context.Context) {
 	go func() {
 		defer log.HandlePanic()
 		defer wg.Done()
+		if now.Before(m.wakeupKeeper) {
+			return
+		}
 		logger.Debug("Reservation manager starting")
 		defer logger.Debug("Reservation manager finished")
 
@@ -95,14 +98,17 @@ func (m *manager) Run(ctx context.Context) {
 			logger.Error("while keeping the reservations", "err", err)
 		}
 		logger.Info("will wait until the specified time", "wakeup_time", wakeupTime)
-		m.wakeupTime = wakeupTime
+		m.wakeupKeeper = wakeupTime
 	}()
 
 	go func() {
 		defer log.HandlePanic()
 		defer wg.Done()
+		if now.Before(m.wakeupExpirer) {
+			return
+		}
 		n, wakeupTime, err := m.store.DeleteExpiredIndices(ctx)
-		logger.Info("deleteme EXPIRER", "n", n, "err", err)
+		logger.Info("deleteme EXPIRER", "n", n, "wakeup", wakeupTime, "err", err)
 		if err != nil {
 			logger.Error("deleting expired indices", "count", n, "err", err)
 		}
