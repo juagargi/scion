@@ -133,7 +133,3 @@ func (p *scionPath) IngressEgressIFIDs() (uint16, uint16, error) {
 func (p *scionPath) Path() path.Path {
 	return &p.Raw
 }
-
-// TODO(juagargi) remove this
-// MessageWithPath is any message received at the colibri service, from the BR.
-type MessageWithPath interface{}

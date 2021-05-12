@@ -15,6 +15,7 @@
 package translate
 
 import (
+	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
@@ -72,6 +73,24 @@ func PBufRequest(req *segment.Request) *colpb.Request {
 		Index:     uint32(req.Index),
 		Timestamp: util.TimeToSecs(req.Timestamp),
 		Opaque:    PBufOpaque(req.Path),
+	}
+}
+
+func PBufResponse(res base.Response) *colpb.Response {
+	switch r := res.(type) {
+	case *base.ResponseSuccess:
+		return &colpb.Response{SuccessFailure: &colpb.Response_Success_{}}
+	case *base.ResponseFailure:
+		return &colpb.Response{
+			SuccessFailure: &colpb.Response_Failure_{
+				Failure: &colpb.Response_Failure{
+					ErrorCode: r.ErrorCode,
+					Message:   r.Message,
+				},
+			},
+		}
+	default:
+		return nil
 	}
 }
 

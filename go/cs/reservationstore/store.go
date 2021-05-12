@@ -117,11 +117,39 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		return s.errNew("reservation not found for a renewal", "id", req.ID)
 	}
 
+	origPath := req.Request.Path.Copy()
+	rollbackChanges := func() {
+		// uses the `req` that will have the new ID and index, but the original path
+		req := &segment.Request{
+			MsgId: req.MsgId,
+			Path:  origPath,
+		}
+		var res base.Response
+		var err error
+		if newSetup {
+			res, err = s.TearDownSegmentReservation(ctx, req)
+		} else {
+			res, err = s.CleanupSegmentReservation(ctx, req)
+		}
+		log.Debug("cleaning reservations down the path", "new_setup", newSetup,
+			"res", res, "err", err)
+		if err != nil {
+			log.Error("while cleaning reservations down the path an error occurred",
+				"new_setup", newSetup, "err", err, "res", res)
+		} else if _, ok := res.(*base.ResponseSuccess); !ok {
+			log.Error("while cleaning reservations down the path, received failure response",
+				"new_setup", newSetup, "res", res)
+		}
+	}
 	res, err := s.admitSegmentReservation(ctx, req)
 	if err != nil {
+		log.Info("deleteme admit segment returned error", "err", err)
+		rollbackChanges()
 		return err
 	}
 	if _, ok := res.(*segment.SegmentSetupResponseSuccess); !ok {
+		log.Info("deleteme admit segment returned failure", "res", res)
+		rollbackChanges()
 		return serrors.New("failure in setup", "response", res)
 	}
 	return nil
@@ -139,20 +167,18 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 }
 
 // ConfirmSegmentReservation changes the state of an index from temporary to confirmed.
-func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.IndexConfirmationReq) (
+func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Request) (
 	base.Response, error) {
 
-	if err := s.validateAuthenticators(&req.Request); err != nil {
+	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
-	failedResponse := &base.ResponseFailure{
-		ErrorCode: 1,
-		Message:   "failed to confirm index",
-	}
+	failedResponse := s.prepareFailureResp("failed to confirm index")
 
 	if err := req.Validate(); err != nil {
-		return failedResponse, s.err(err)
+		failedResponse.Message = "request validation failed: " + err.Error()
+		return failedResponse, nil
 	}
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
@@ -167,7 +193,8 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 			"id", req.ID)
 	}
 	if rsv == nil {
-		return failedResponse, s.errNew("no reservation found", "id", req.ID)
+		failedResponse.Message = "no reservation found"
+		return failedResponse, nil
 	}
 	if err := rsv.SetIndexConfirmed(req.Index); err != nil {
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
@@ -191,7 +218,7 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 	}
 
-	pbRes, err := client.ConfirmSegmentIndex(ctx, translate.PBufRequest(&req.Request))
+	pbRes, err := client.ConfirmSegmentIndex(ctx, translate.PBufRequest(req))
 	if err != nil {
 		return failedResponse, s.errWrapStr("forwarded request failed", err)
 	}
@@ -199,20 +226,18 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Inde
 }
 
 // CleanupSegmentReservation deletes an index from a segment reservation.
-func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.CleanupReq) (
-	base.MessageWithPath, error) {
+func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Request) (
+	base.Response, error) {
 
-	if err := s.validateAuthenticators(&req.Request); err != nil {
+	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
-	response, err := s.prepareFailureSegmentResp(&req.Request)
-	if err != nil {
-		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID)
-	}
-	failedResponse := &segment.ResponseCleanupFailure{
-		Response:  *response,
-		ErrorCode: 1,
+	failedResponse := s.prepareFailureResp("failed to cleanup index")
+
+	if err := req.Validate(); err != nil {
+		failedResponse.Message = "request validation failed: " + err.Error()
+		return failedResponse, nil
 	}
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
@@ -226,6 +251,11 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Clea
 		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
 			"id", req.ID)
 	}
+	if rsv == nil {
+		failedResponse.Message = "no reservation found"
+		return failedResponse, nil
+	}
+
 	if err := rsv.RemoveIndex(req.Index); err != nil {
 		return failedResponse, s.errWrapStr("cannot delete segment reservation index", err,
 			"id", req.ID, "index", req.Index)
@@ -240,29 +270,39 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Clea
 	}
 
 	if req.IsLastAS() {
-		return &segment.ResponseCleanupSuccess{
-			Response: *morphSegmentResponseToSuccess(response),
-		}, nil
+		return &base.ResponseSuccess{}, nil
 	}
-	return req, nil
+	// forward to next colibri service
+	client, err := s.operator.ColibriClient(ctx, req.Path)
+	if err != nil {
+		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+	}
+
+	pbRes, err := client.CleanupSegmentIndex(ctx, translate.PBufRequest(req))
+	if err != nil {
+		return failedResponse, s.errWrapStr("forwarded request failed", err)
+	}
+	return translate.Response(pbRes), nil
 }
 
 // TearDownSegmentReservation removes a whole segment reservation.
-func (s *Store) TearDownSegmentReservation(ctx context.Context, req *segment.TeardownReq) (
-	base.MessageWithPath, error) {
+func (s *Store) TearDownSegmentReservation(ctx context.Context, req *segment.Request) (
+	base.Response, error) {
 
-	if err := s.validateAuthenticators(&req.Request); err != nil {
+	log.Info("deleteme deleteme 1")
+
+	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
+	log.Info("deleteme deleteme 2")
 
-	response, err := s.prepareFailureSegmentResp(&req.Request)
-	if err != nil {
-		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID)
+	failedResponse := s.prepareFailureResp("failed to teardown segment")
+
+	if err := req.Validate(); err != nil {
+		failedResponse.Message = "request validation failed: " + err.Error()
+		return failedResponse, nil
 	}
-	failedResponse := &segment.ResponseTeardownFailure{
-		Response:  *response,
-		ErrorCode: 1,
-	}
+	log.Info("deleteme deleteme 3")
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
@@ -270,42 +310,49 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *segment.Tea
 	}
 	defer tx.Rollback()
 
+	log.Info("deleteme deleteme 4")
+
 	if err := tx.DeleteSegmentRsv(ctx, &req.ID); err != nil {
 		return failedResponse, s.errWrapStr("cannot teardown reservation", err,
 			"id", req.ID)
 	}
+	log.Info("deleteme deleteme 5")
+
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID)
 	}
 
+	log.Info("deleteme deleteme 6")
+
 	if req.IsLastAS() {
-		return &segment.ResponseTeardownSuccess{
-			Response: *morphSegmentResponseToSuccess(response),
-		}, nil
+		log.Info("deleteme deleteme 7")
+
+		return &base.ResponseSuccess{}, nil
 	}
-	return req, nil
+	// forward to next colibri service
+	client, err := s.operator.ColibriClient(ctx, req.Path)
+	log.Info("deleteme deleteme 8", "err", err)
+	if err != nil {
+		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+	}
+	log.Info("deleteme deleteme 9")
+
+	pbRes, err := client.TeardownSegment(ctx, translate.PBufRequest(req))
+	log.Info("deleteme deleteme 10", "pbres", pbRes)
+	if err != nil {
+		log.Info("deleteme deleteme 11", "err", err)
+		return failedResponse, s.errWrapStr("forwarded request failed", err)
+	}
+	return translate.Response(pbRes), nil
 }
 
-// AdmitE2EReservation will atempt to admit an e2e reservation.
+// AdmitE2EReservation will attempt to admit an e2e reservation.
 func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupRequest) (
-	base.MessageWithPath, error) {
+	base.Response, error) {
 
 	req := request.GetCommonSetupReq()
-	// if err := s.validateAuthenticators(&req.Request); err != nil {
-	// 	return nil, s.errWrapStr("error validating e2e request", err, "id", req.ID.String())
-	// }
-
-	response, err := s.prepareFailureE2EResp(&req.Request)
-	if err != nil {
-		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID.String())
-	}
-	var failedResponse base.MessageWithPath
-	failedResponse = &e2e.ResponseSetupFailure{
-		Response:  *response,
-		ErrorCode: 1,
-		MaxBWs:    req.AllocationTrail,
-	}
+	failedResponse := s.prepareFailureResp("cannot admit e2e reservation")
 
 	// sanity check: all successful requests are SetupReqSuccess. Failed ones are SetupReqFailure.
 	if request.IsSuccessful() {
@@ -410,67 +457,61 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 		}
 	}
 
-	if !request.IsSuccessful() || req.RequestedBW.ToKbps() > free {
-		maxWillingToAlloc := reservation.BWClsFromBW(free)
-		if req.Location() == e2e.Destination {
-			asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
-			asAResponse.MaxBWs = append(asAResponse.MaxBWs, maxWillingToAlloc)
-		} else {
-			asARequest := &e2e.SetupReqFailure{
-				SetupReq:  *req,
-				ErrorCode: 1,
-			}
-			asARequest.AllocationTrail = append(asARequest.AllocationTrail, maxWillingToAlloc)
-			failedResponse = asARequest
-		}
-		return failedResponse, s.errWrapStr("e2e not admitted", err, "id", req.ID.String(),
-			"index", req.Index)
-	}
+	// TODO(juagargi) fix response type
+	// if !request.IsSuccessful() || req.RequestedBW.ToKbps() > free {
+	// 	maxWillingToAlloc := reservation.BWClsFromBW(free)
+	// 	if req.Location() == e2e.Destination {
+	// 		asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
+	// 		asAResponse.MaxBWs = append(asAResponse.MaxBWs, maxWillingToAlloc)
+	// 	} else {
+	// 			asARequest := &e2e.SetupReqFailure{
+	// 				SetupReq:  *req,
+	// 				ErrorCode: 1,
+	// 			}
+	// 			asARequest.AllocationTrail = append(asARequest.AllocationTrail, maxWillingToAlloc)
+	// 			failedResponse = asARequest
+	// 	}
+	// 	return failedResponse, s.errWrapStr("e2e not admitted", err, "id", req.ID.String(),
+	// 		"index", req.Index)
+	// }
 
-	// admitted so far
-	// TODO(juagargi) update token here
-	if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
-			"id", req.ID.String())
-	}
+	// // admitted so far
+	// // TODO(juagargi) update token here
+	// if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
+	// 	return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
+	// 		"id", req.ID.String())
+	// }
 
-	if err := tx.Commit(); err != nil {
-		return failedResponse, s.errWrapStr("cannot commit transaction", err,
-			"id", req.ID.String())
-	}
+	// if err := tx.Commit(); err != nil {
+	// 	return failedResponse, s.errWrapStr("cannot commit transaction", err,
+	// 		"id", req.ID.String())
+	// }
 
-	var msg base.MessageWithPath
-	if req.Location() == e2e.Destination {
-		asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
-		msg = &e2e.ResponseSetupSuccess{
-			Response: *morphE2EResponseToSuccess(&asAResponse.Response),
-			Token:    *index.Token,
-		}
-	} else {
-		msg = &e2e.SetupReqSuccess{
-			SetupReq: *req,
-			Token:    *index.Token,
-		}
-	}
-	return msg, nil
+	// var msg base.MessageWithPath
+	// if req.Location() == e2e.Destination {
+	// 	asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
+	// 	msg = &e2e.ResponseSetupSuccess{
+	// 		Response: *morphE2EResponseToSuccess(&asAResponse.Response),
+	// 		Token:    *index.Token,
+	// 	}
+	// } else {
+	// 	msg = &e2e.SetupReqSuccess{
+	// 		SetupReq: *req,
+	// 		Token:    *index.Token,
+	// 	}
+	// }
+	// return msg, nil
+	return &base.ResponseSuccess{}, nil
 }
 
 // CleanupE2EReservation will remove an index from an e2e reservation.
 func (s *Store) CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) (
-	base.MessageWithPath, error) {
+	base.Response, error) {
 
 	// if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
 	// 	return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	// }
-
-	response, err := s.prepareFailureE2EResp(&req.Request)
-	if err != nil {
-		return nil, s.errWrapStr("cannot construct response", err, "id", req.ID)
-	}
-	failedResponse := &e2e.ResponseCleanupFailure{
-		Response:  *response,
-		ErrorCode: 1,
-	}
+	failedResponse := s.prepareFailureResp("cannot cleanup e2e reservation")
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
@@ -502,7 +543,7 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) 
 	// 	}, nil
 	// }
 
-	return req, nil
+	return &base.ResponseSuccess{}, nil
 }
 
 // DeleteExpiredIndices will just call the DB's method to delete the expired indices.
@@ -522,32 +563,18 @@ func (s *Store) validateAuthenticators(req *segment.Request) error {
 	return nil
 }
 
-// prepareFailureSegmentResp will create a failure segment response, which
+// prepareFailureResp will create a failure response, which
 // is sent in the reverse path that the request had.
-func (s *Store) prepareFailureSegmentResp(req *segment.Request) (*segment.Response, error) {
-	response, err := segment.NewResponse(time.Now(), &req.ID, req.Index,
-		false, uint8(req.Path.CurrentStep)) // TODO(juagargi) IndexOfCurrentHop won't work!!
-	if err != nil {
-		return nil, s.errWrapStr("cannot construct segment response", err)
+func (s *Store) prepareFailureResp(message string) *base.ResponseFailure {
+	return &base.ResponseFailure{
+		Message: message,
 	}
-	return response, nil
-}
-
-// prepareFailureE2EResp will create a failure e2e response, which
-// is sent in the reverse path that the request had.
-func (s *Store) prepareFailureE2EResp(req *e2e.Request) (*e2e.Response, error) {
-	// response, err := e2e.NewResponse(time.Now(), &req.ID, req.Index,
-	// 	false, uint8(req.Path.IndexOfCurrentHop()))
-	// if err != nil {
-	// 	return nil, s.errWrapStr("cannot construct e2e response", err)
-	// }
-	// return response, nil
-	return nil, nil
 }
 
 func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupReq) (
 	segment.SegmentSetupResponse, error) {
 
+	log.Info("deleteme 1 admit segment reservation")
 	failedResponse := &segment.SegmentSetupResponseFailure{
 		MsgId: base.MsgId{
 			ID:        req.ID,
@@ -561,11 +588,14 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		failedResponse.Message = "request failed validation: " + err.Error()
 		return failedResponse, nil
 	}
+	log.Info("deleteme 2 admit segment reservation")
 
 	if req.ID.IsEmptySuffix() && req.Path.CurrentStep != 0 {
 		failedResponse.Message = "empty suffix not allowed if not at source AS"
 		return failedResponse, nil
 	}
+
+	log.Info("deleteme 3 admit segment reservation")
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
@@ -574,11 +604,15 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 	defer tx.Rollback()
 
+	log.Info("deleteme 4 admit segment reservation")
+
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
 		failedResponse.Message = "looking for reservation: " + err.Error()
 		return failedResponse, s.errWrapStr("looking for reservation", err, "id", req.ID)
 	}
+
+	log.Info("deleteme 5 admit segment reservation")
 
 	switch {
 	case rsv != nil: // renewal, ensure index is not used
@@ -600,6 +634,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, nil
 	}
 	req.Reservation = rsv
+	log.Info("deleteme 6 admit segment reservation")
 
 	if err := req.ValidateForReservation(rsv); err != nil {
 		failedResponse.Message = "error validating request with reservation: " + err.Error()
@@ -659,7 +694,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 	}
 
-	req.Path.CurrentStep++ // moving forward to next colibri service
+	//	req.Path.CurrentStep++ // moving forward to next colibri service
 	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 	log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
 	if err != nil {
@@ -669,18 +704,6 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	res, err := translate.SetupResponse(pbRes)
 	log.Info("deleteme response after translation", "res", res, "err", err)
 	return res, err
-}
-
-func morphSegmentResponseToSuccess(resp *segment.Response) *segment.Response {
-	resp.Accepted = true
-	resp.FailedHop = 0
-	return resp
-}
-
-func morphE2EResponseToSuccess(resp *e2e.Response) *e2e.Response {
-	resp.Accepted = true
-	resp.FailedHop = 0
-	return resp
 }
 
 func sumAllBW(rsvs []*e2e.Reservation) uint64 {
@@ -737,30 +760,30 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	return uint64(effectiveE2eTraffic) - total, nil
 }
 
-type deadMansSwitch struct {
-	cancelled    bool
-	callWhenDead func()
-}
+// type deadMansSwitch struct {
+// 	cancelled    bool
+// 	callWhenDead func()
+// }
 
-// IfDead prepares a dead man's switch that takes a function to execute when dead.
-// Since we don't have execution when out of scope (or function) we return a function to
-// be called with defer to simulate the dead that triggers the switch.
-// To cancel the execution of the function, unarm the switch.
-// Returns the deferrable function and the switch object.
-func IfDead(fcn func()) (func(), *deadMansSwitch) {
-	s := &deadMansSwitch{
-		callWhenDead: fcn,
-	}
-	return s.whenImDead, s
-}
+// // IfDead prepares a dead man's switch that takes a function to execute when dead.
+// // Since we don't have execution when out of scope (or function) we return a function to
+// // be called with defer to simulate the dead that triggers the switch.
+// // To cancel the execution of the function, unarm the switch.
+// // Returns the deferrable function and the switch object.
+// func IfDead(fcn func()) (func(), *deadMansSwitch) {
+// 	s := &deadMansSwitch{
+// 		callWhenDead: fcn,
+// 	}
+// 	return s.whenImDead, s
+// }
 
-// Unarm sets the switch not to action when dead.
-func (s *deadMansSwitch) Unarm() {
-	s.cancelled = true
-}
+// // Unarm sets the switch not to action when dead.
+// func (s *deadMansSwitch) Unarm() {
+// 	s.cancelled = true
+// }
 
-func (s *deadMansSwitch) whenImDead() {
-	if !s.cancelled {
-		s.callWhenDead()
-	}
-}
+// func (s *deadMansSwitch) whenImDead() {
+// 	if !s.cancelled {
+// 		s.callWhenDead()
+// 	}
+// }

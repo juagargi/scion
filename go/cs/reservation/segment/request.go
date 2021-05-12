@@ -26,8 +26,7 @@ import (
 // It contains a reference to the reservation it requests, or nil if not yet created.
 type Request struct {
 	base.MsgId
-	Path        *OpaquePath  // the path to the destination. It represents the hops of the reservation.
-	Reservation *Reservation // nil if no reservation yet
+	Path *OpaquePath // the path to the destination. It represents the hops of the reservation.
 }
 
 // NewRequest constructs the segment Request type.
@@ -90,7 +89,8 @@ type SetupReq struct {
 	SplitCls       reservation.SplitCls
 	PathProps      reservation.PathEndProps
 	AllocTrail     reservation.AllocationBeads
-	PathAtSource   *OpaquePath // requested path (maybe different than transport)
+	PathAtSource   *OpaquePath  // requested path (maybe different than transport)
+	Reservation    *Reservation // nil if no reservation yet
 }
 
 func (r *SetupReq) Validate() error {
@@ -121,27 +121,4 @@ func (r *SetupReq) ValidateForReservation(rsv *Reservation) error {
 // PrevBW returns the minimum of the maximum bandwidths already granted by previous ASes.
 func (r *SetupReq) PrevBW() uint64 {
 	return r.AllocTrail.MinMax().ToKbps()
-}
-
-// SetupTelesReq represents a telescopic segment setup.
-type SetupTelesReq struct {
-	SetupReq
-	BaseID reservation.SegmentID
-}
-
-// TeardownReq requests the AS to remove a given index from the DB. If this is the last index
-// in the reservation, the reservation will be completely removed.
-type TeardownReq struct {
-	Request
-}
-
-// IndexConfirmationReq is used to change the state on an index (e.g. from temporary to pending).
-type IndexConfirmationReq struct {
-	Request
-	State IndexState
-}
-
-// CleanupReq is used to clean an index.
-type CleanupReq struct {
-	Request
 }

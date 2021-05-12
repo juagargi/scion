@@ -28,16 +28,16 @@ import (
 type Store interface {
 	AdmitSegmentReservation(ctx context.Context, req *sgt.SetupReq) (
 		sgt.SegmentSetupResponse, error)
-	ConfirmSegmentReservation(ctx context.Context, req *sgt.IndexConfirmationReq) (
+	ConfirmSegmentReservation(ctx context.Context, req *sgt.Request) (
 		base.Response, error)
-	CleanupSegmentReservation(ctx context.Context, req *sgt.CleanupReq) (
-		base.MessageWithPath, error)
-	TearDownSegmentReservation(ctx context.Context, req *sgt.TeardownReq) (
-		base.MessageWithPath, error)
+	CleanupSegmentReservation(ctx context.Context, req *sgt.Request) (
+		base.Response, error)
+	TearDownSegmentReservation(ctx context.Context, req *sgt.Request) (
+		base.Response, error)
 	AdmitE2EReservation(ctx context.Context, req e2e.SetupRequest) (
-		base.MessageWithPath, error)
+		base.Response, error)
 	CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) (
-		base.MessageWithPath, error)
+		base.Response, error)
 
 	// DeleteExpiredIndices returns the number of indices deleted, and the time for the
 	// next expiration

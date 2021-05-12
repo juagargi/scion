@@ -95,6 +95,7 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *segme
 	log.Info("DELETEME dialing", "addr", rAddr)
 	conn, err := o.connDialer.Dial(ctx, rAddr)
 	if err != nil {
+		log.Info("deleteme deleteme deleteme error dialing a quic connection")
 		return nil, err
 	}
 	return colpb.NewColibriClient(conn), nil

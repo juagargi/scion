@@ -65,14 +65,15 @@ func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage
 func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
 	*colpb.SegmentSetupResponse, error) {
 
+	msg.Base.Opaque.CurrentStep++
 	sizeeeeeeeeeeee := proto.Size(msg)
 	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Base.Opaque)
-	path, err := extractPath(ctx)
-	if err != nil {
-		log.Error("setup segment", "err", err)
-		return nil, err
-	}
-	req, err := translate.SetupReq(msg, path)
+	// path, err := extractPath(ctx)
+	// if err != nil {
+	// 	log.Error("setup segment", "err", err)
+	// 	return nil, err
+	// }
+	req, err := translate.SetupReq(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
 		// should send a message?
@@ -94,23 +95,72 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	return nil, nil
+	log.Info("DELETEME received call on TeardownSegment()")
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.TearDownSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
 }
 
 func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	return nil, nil
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.ConfirmSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
 }
 
 func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	return nil, nil
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.CleanupSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
 }
 
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
 func extractPath(ctx context.Context) (base.PacketPath, error) {
+	// TODO(juagargi) move from PacketPath to OpaquePath
+	// TODO(juagargi) call this function to check that the transport path matches that
+	// of base.Request.Path if the trasport path is of colibri type.
 	p, ok := peer.FromContext(ctx)
 	if !ok || p == nil {
 		log.Error("deleteme no peer found")

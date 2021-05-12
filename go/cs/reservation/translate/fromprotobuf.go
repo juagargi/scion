@@ -30,7 +30,7 @@ import (
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
-func SetupReq(msg *colpb.SegmentSetupRequest, path base.PacketPath) (*segment.SetupReq, error) {
+func SetupReq(msg *colpb.SegmentSetupRequest) (*segment.SetupReq, error) {
 	if msg == nil || msg.Base == nil || msg.Params == nil {
 		return nil, serrors.New("incomplete message", "msg", msg)
 	}

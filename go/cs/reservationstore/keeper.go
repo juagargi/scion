@@ -340,8 +340,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 					ID:        rsv.ID, // new source setup in store
 					Timestamp: now,
 				},
-				Path:        rsv.PathAtSource,
-				Reservation: rsv,
+				Path: rsv.PathAtSource,
 			},
 			MinBW:        rsv.ActiveIndex().MinBW,
 			MaxBW:        rsv.ActiveIndex().MaxBW,
@@ -349,6 +348,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 			PathProps:    rsv.PathEndProps,
 			AllocTrail:   reservation.AllocationBeads{}, // at source
 			PathAtSource: rsv.PathAtSource,
+			Reservation:  rsv,
 		}
 		requests = append(requests, req)
 	}

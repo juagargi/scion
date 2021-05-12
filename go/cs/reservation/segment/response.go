@@ -15,11 +15,8 @@
 package segment
 
 import (
-	"time"
-
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
-	"github.com/scionproto/scion/go/lib/serrors"
 )
 
 type SegmentSetupResponse interface {
@@ -40,77 +37,3 @@ type SegmentSetupResponseFailure struct {
 }
 
 func (*SegmentSetupResponseFailure) isSegmentSetupResponse_Success_Failure() {}
-
-/////// OLD TYPES TO DELETE (ALL):
-
-// Response is the base struct for any type of COLIBRI segment response.
-type Response struct {
-	ID        reservation.SegmentID   // the ID this request refers to
-	Index     reservation.IndexNumber // the index this request refers to
-	Accepted  bool                    // success or failure type of response
-	FailedHop uint8                   // if accepted is false, the AS that failed it
-}
-
-var _ base.MessageWithPath = (*Response)(nil)
-
-// NewResponse contructs the segment Response type.
-func NewResponse(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
-	accepted bool, failedHop uint8) (*Response, error) {
-
-	if id == nil {
-		return nil, serrors.New("new segment response with nil ID")
-	}
-	return &Response{
-		ID:        *id,
-		Index:     reservation.IndexNumber(idx),
-		Accepted:  accepted,
-		FailedHop: failedHop,
-	}, nil
-}
-
-// ResponseSetupSuccess is the response to a success setup. It's sent on the reverse direction.
-type ResponseSetupSuccess struct {
-	Response
-	Token reservation.Token
-}
-
-// ResponseSetupFailure is the response to a failed setup. It's sent on the reverse direction.
-type ResponseSetupFailure struct {
-	Response
-	FailedSetup *SetupReq
-}
-
-// ResponseTeardownSuccess is sent by the last AS in the reverse path.
-type ResponseTeardownSuccess struct {
-	Response
-}
-
-// ResponseTeardownFailure is sent in the reverse path.
-type ResponseTeardownFailure struct {
-	Response
-	ErrorCode uint8
-}
-
-// ResponseIndexConfirmationSuccess is a successful index confirmation. The target state is
-// echoed in the response.
-type ResponseIndexConfirmationSuccess struct {
-	Response
-	State IndexState
-}
-
-// ResponseIndexConfirmationFailure is a failed index confirmation.
-type ResponseIndexConfirmationFailure struct {
-	Response
-	ErrorCode uint8
-}
-
-// ResponseCleanupSuccess is a response to a successful cleanup request.
-type ResponseCleanupSuccess struct {
-	Response
-}
-
-// ResponseCleanupFailure is a failed index cleanup.
-type ResponseCleanupFailure struct {
-	Response
-	ErrorCode uint8
-}
