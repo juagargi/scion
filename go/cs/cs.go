@@ -468,7 +468,10 @@ func run(file string) error {
 	log.Info("DELETEME %%%%%%%%% colibri grpc server listening", "addr", quicStack.Listener.Listener.Addr())
 	go func() {
 		defer log.HandlePanic()
-		lis := coliquic.NewConnListener(quicStack.Listener.Listener)
+		lis, err := coliquic.ColibriListener(topo.IA())
+		if err != nil {
+			fatal.Fatal(err)
+		}
 		if err := colServer.Serve(lis); err != nil {
 			fatal.Fatal(err)
 		}

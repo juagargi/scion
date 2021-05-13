@@ -46,7 +46,7 @@ type GRPCClientDialer interface {
 //   measure the BW used by the services).
 type ServiceClientOperator struct {
 	connDialer     GRPCClientDialer
-	neighbors      map[uint16]*snet.SVCAddr // XXX(juagargi) this resolves to >1 UDPAddr per neighbor!
+	neighbors      map[uint16]*snet.UDPAddr // XXX(juagargi) this resolves to >1 UDPAddr per neighbor!
 	initialized    bool
 	mutex          sync.Mutex
 	deletemeRouter snet.Router
@@ -57,7 +57,7 @@ func NewServiceClientOperator(topo topology.Topology, router snet.Router,
 
 	operator := &ServiceClientOperator{
 		connDialer:  clientConn,
-		neighbors:   make(map[uint16]*snet.SVCAddr, len(topo.InterfaceIDs())),
+		neighbors:   make(map[uint16]*snet.UDPAddr, len(topo.InterfaceIDs())),
 		initialized: false,
 	}
 	operator.initialize(topo, router)
@@ -105,6 +105,11 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *segme
 func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.Router) {
 
 	o.deletemeRouter = router
+	udpaddr, err := net.ResolveUDPAddr("udp", "localhost:4321")
+	if err != nil {
+		log.Error("deleteme error initializing localhost", "err", err)
+		panic(err)
+	}
 	remainingIAs := make(map[uint16]addr.IA)
 	for _, name := range topo.BRNames() {
 		brInfo, _ := topo.BR(name)
@@ -125,13 +130,12 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.R
 				if err != nil || path == nil {
 					continue
 				}
-				// XXX(juagargi) this assumes we'll use the same endhost address for SvcCOL
-				o.neighbors[egress] = &snet.SVCAddr{
+				o.neighbors[egress] = &snet.UDPAddr{ // TODO(juagargi) should be a SVCAddr instead
 					IA:      ia,
 					Path:    path.Path(),
 					NextHop: path.UnderlayNextHop(),
-					SVC:     addr.SvcCS,
-					// SVC:     addr.SvcCOL, // TODO(juagargi) don't know how to make LookupSVC return the right value for SvcCOL
+					Host:    udpaddr, // SVC: addr.SvcCOL,
+
 				}
 				delete(remainingIAs, egress)
 			}

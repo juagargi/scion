@@ -27,12 +27,15 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
+	"github.com/scionproto/scion/go/lib/infra/infraenv"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/snet/squic"
+	"github.com/scionproto/scion/go/lib/sock/reliable"
 )
 
 // GetColibriPath returns the (last) COLIBRI path used with this quic Session, or nil if none.
@@ -51,6 +54,43 @@ func GetColibriPath(session quic.Session) (*colibri.ColibriPath, error) {
 		}
 	}
 	return colPath, nil
+}
+
+func ColibriListener(localIA addr.IA) (net.Listener, error) {
+	// as seen in NetworkConfig.initQUICSockets:
+	dispatcherService := reliable.NewDispatcher("")
+	serverNet := &snet.SCIONNetwork{
+		LocalIA: localIA,
+		Dispatcher: &snet.DefaultPacketDispatcherService{
+			Dispatcher:  dispatcherService,
+			SCMPHandler: ignoreSCMP{},
+		},
+	}
+	// TODO(juagargi) read it from topo file and pass it along
+	serverAddr, err := net.ResolveUDPAddr("udp", "localhost:4321")
+	if err != nil {
+		return nil, err
+	}
+	packetConn, err := serverNet.Listen(context.Background(), "udp", serverAddr, addr.SvcCOL)
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig, err := infraenv.GenerateTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	quicListener, err := quic.Listen(packetConn, tlsConfig, nil)
+	if err != nil {
+		return nil, err
+	}
+	return squic.NewConnListener(quicListener), nil
+}
+
+type ignoreSCMP struct{}
+
+func (ignoreSCMP) Handle(pkt *snet.Packet) error {
+	// Always reattempt reads from the socket.
+	return nil
 }
 
 func NewConnListener(listener quic.Listener) net.Listener {
