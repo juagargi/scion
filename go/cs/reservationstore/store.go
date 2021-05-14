@@ -589,7 +589,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		failedResponse.Message = "request failed validation: " + err.Error()
 		return failedResponse, nil
 	}
-	log.Info("deleteme 2 admit segment reservation")
+	log.Info("deleteme 2 admit segment reservation", "id", req.ID, "curr_step", req.Path.CurrentStep)
 
 	if req.ID.IsEmptySuffix() && req.Path.CurrentStep != 0 {
 		failedResponse.Message = "empty suffix not allowed if not at source AS"
@@ -613,16 +613,14 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, s.errWrapStr("looking for reservation", err, "id", req.ID)
 	}
 
-	log.Info("deleteme 5 admit segment reservation")
+	log.Info("deleteme 5 admit segment reservation", "req_id", req.ID, "rsv", rsv)
 
-	switch {
-	case rsv != nil: // renewal, ensure index is not used
-		index := rsv.Index(req.Index)
-		if index != nil {
-			failedResponse.Message = "index from setup already in use"
+	if rsv != nil { // renewal, ensure index is not used
+		if rsv.Index(req.Index) != nil {
+			failedResponse.Message = fmt.Sprintf("index from setup already in use: %d", req.Index)
 			return failedResponse, nil
 		}
-	case req.ID.IsEmptySuffix(): // setup, create reservation and an index
+	} else {
 		rsv = segment.NewReservation(req.ID.ASID)
 		rsv.ID = req.ID
 		rsv.Ingress = req.Ingress()
@@ -630,9 +628,6 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		rsv.PathType = req.PathType
 		rsv.PathEndProps = req.PathProps
 		rsv.TrafficSplit = req.SplitCls
-	default:
-		failedResponse.Message = "reservation not found"
-		return failedResponse, nil
 	}
 	req.Reservation = rsv
 	log.Info("deleteme 6 admit segment reservation")
@@ -662,8 +657,10 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	index := rsv.Index(idx)
 	log.Info("deleteme 13")
 	log.Info("deleteme token inside index", "token", index.Token)
+	log.Info("deleteme", "id", rsv.ID)
 
 	if req.ID.IsEmptySuffix() && req.Path.CurrentStep == 0 {
+		log.Info("deleteme 14")
 		if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
 			failedResponse.Message = "error creating new reservation at source: " + err.Error()
 			return failedResponse, s.err(err)
@@ -674,11 +671,12 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, s.errWrapStr("persisting segment reservation", err, "id", req.ID)
 	}
 	if err := tx.Commit(); err != nil {
+		log.Info("deleteme 15")
 		failedResponse.Message = "cannot commit transaction: " + err.Error()
 		return failedResponse, s.errWrapStr("cannot commit transaction", err, "id", req.ID)
 	}
 
-	log.Debug("deleteme 15")
+	log.Debug("deleteme 16", "id", rsv.ID)
 	if req.IsLastAS() {
 		// TODO(juagargi) update token here
 		return &segment.SegmentSetupResponseSuccess{
@@ -695,7 +693,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 	}
 
-	//	req.Path.CurrentStep++ // moving forward to next colibri service
+	log.Debug("deleteme 19", "id", req.ID)
 	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 	log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
 	if err != nil {
