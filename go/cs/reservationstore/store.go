@@ -153,6 +153,9 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		rollbackChanges()
 		return serrors.New("failure in setup", "response", res)
 	}
+	suc := res.(*segment.SegmentSetupResponseSuccess)
+	log.Info("deleteme $$$$$$$$$ TOKEN $$$$$$$$$ TOKEN $$$$$$$$$", "token", suc.Token)
+
 	return nil
 }
 
@@ -668,41 +671,74 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		req.ID = rsv.ID
 	} else if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		failedResponse.Message = "cannot persist segment reservation: " + err.Error()
-		return failedResponse, s.errWrapStr("persisting segment reservation", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("persisting segment reservation", err)
 	}
 	if err := tx.Commit(); err != nil {
 		log.Info("deleteme 15")
 		failedResponse.Message = "cannot commit transaction: " + err.Error()
-		return failedResponse, s.errWrapStr("cannot commit transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot commit transaction", err)
 	}
 
 	log.Debug("deleteme 16", "id", rsv.ID)
+	var token *reservation.Token
 	if req.IsLastAS() {
-		// TODO(juagargi) update token here
-		return &segment.SegmentSetupResponseSuccess{
-			MsgId: failedResponse.MsgId,
-			Token: *index.Token,
-		}, nil
-	}
+		token = index.Token
+	} else {
+		// forward the request to the next COLIBRI service
+		log.Info("deleteme dialing grpc")
+		client, err := s.operator.ColibriClient(ctx, req.Path)
+		if err != nil {
+			failedResponse.Message = "error forwarding request: " + err.Error()
+			return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+		}
 
-	// forward the request to the next COLIBRI service
-	log.Info("deleteme dialing grpc")
-	client, err := s.operator.ColibriClient(ctx, req.Path)
-	if err != nil {
-		failedResponse.Message = "error forwarding request: " + err.Error()
-		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+		log.Debug("deleteme 19", "id", req.ID)
+		pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
+		log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
+		if err != nil {
+			failedResponse.Message = "error in forwarded request: " + err.Error()
+			return failedResponse, s.errWrapStr("forwarded request failed", err)
+		}
+		res, err := translate.SetupResponse(pbRes)
+		log.Info("deleteme response after translation", "res", res, "err", err)
+		if suc, ok := res.(*segment.SegmentSetupResponseSuccess); ok {
+			token = &suc.Token
+		} else {
+			log.Debug("failure from downstream, returning it as well")
+			return res, nil
+		}
 	}
-
-	log.Debug("deleteme 19", "id", req.ID)
-	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
-	log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
+	// update token
+	currStep := req.Path.Steps[req.Path.CurrentStep]
+	log.Info("deleteme $$$$$$$$$ TOKEN updated", "curr_step", req.Path.CurrentStep)
+	// TODO(juagargi) compute MAC for token
+	token.HopFields = append(token.HopFields, reservation.HopField{
+		Ingress: currStep.Ingress,
+		Egress:  currStep.Egress,
+		// Mac: ,
+	})
+	log.Info("deleteme 220 rsv index token", "index.token", index.Token)
+	// store token
+	index.Token = token
+	log.Info("deleteme 221 rsv index token", "index.token", index.Token)
+	tx, err = s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		failedResponse.Message = "error in forwarded request: " + err.Error()
-		return failedResponse, s.errWrapStr("forwarded request failed", err)
+		failedResponse.Message = "storing token, cannot create transaction: " + err.Error()
+		return failedResponse, s.errWrapStr("storing token, cannot create transaction", err)
 	}
-	res, err := translate.SetupResponse(pbRes)
-	log.Info("deleteme response after translation", "res", res, "err", err)
-	return res, err
+	defer tx.Rollback()
+	if err := tx.PersistSegmentRsv(ctx, rsv); err != nil {
+		failedResponse.Message = "storing token, cannot persist rsv: " + err.Error()
+		return failedResponse, s.errWrapStr("storing token, cannot persist rsv", err)
+	}
+	if err := tx.Commit(); err != nil {
+		failedResponse.Message = "storing token, cannot commit transaction: " + err.Error()
+		return failedResponse, s.errWrapStr("storing token, cannot commit transaction", err)
+	}
+	return &segment.SegmentSetupResponseSuccess{
+		MsgId: failedResponse.MsgId,
+		Token: *token,
+	}, nil
 }
 
 func sumAllBW(rsvs []*e2e.Reservation) uint64 {
