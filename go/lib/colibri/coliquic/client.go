@@ -24,12 +24,14 @@ import (
 
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/topology"
+	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
@@ -45,22 +47,21 @@ type GRPCClientDialer interface {
 // - Ensure we return a gRPC client using the correct path (the path is used at the server to
 //   measure the BW used by the services).
 type ServiceClientOperator struct {
-	connDialer     GRPCClientDialer
-	neighbors      map[uint16]*snet.UDPAddr // XXX(juagargi) this resolves to >1 UDPAddr per neighbor!
-	initialized    bool
-	mutex          sync.Mutex
-	deletemeRouter snet.Router
+	connDialer  GRPCClientDialer
+	neighbors   map[uint16]*snet.UDPAddr
+	initialized bool
+	mutex       sync.Mutex
 }
 
 func NewServiceClientOperator(topo topology.Topology, router snet.Router,
-	clientConn GRPCClientDialer) (*ServiceClientOperator, error) {
+	arw libgrpc.AddressRewriter, clientConn GRPCClientDialer) (*ServiceClientOperator, error) {
 
 	operator := &ServiceClientOperator{
 		connDialer:  clientConn,
 		neighbors:   make(map[uint16]*snet.UDPAddr, len(topo.InterfaceIDs())),
 		initialized: false,
 	}
-	operator.initialize(topo, router)
+	operator.initialize(topo, router, arw)
 
 	return operator, nil
 }
@@ -95,21 +96,16 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *segme
 	log.Info("DELETEME dialing", "addr", rAddr)
 	conn, err := o.connDialer.Dial(ctx, rAddr)
 	if err != nil {
-		log.Info("deleteme deleteme deleteme error dialing a quic connection")
+		log.Debug("error dialing a grpc connection", "addr", rAddr, "err", err)
 		return nil, err
 	}
 	return colpb.NewColibriClient(conn), nil
 }
 
 // initialize waits in the background until this operator can obtain paths to all the remaining IAs.
-func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.Router) {
+func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.Router,
+	arw libgrpc.AddressRewriter) {
 
-	o.deletemeRouter = router
-	udpaddr, err := net.ResolveUDPAddr("udp", "localhost:4321")
-	if err != nil {
-		log.Error("deleteme error initializing localhost", "err", err)
-		panic(err)
-	}
 	remainingIAs := make(map[uint16]addr.IA)
 	for _, name := range topo.BRNames() {
 		brInfo, _ := topo.BR(name)
@@ -119,29 +115,58 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.R
 	}
 	go func() {
 		defer log.HandlePanic()
-		log.Info("will initialize colibri client operator", "neighbor_len", len(remainingIAs))
+		log.Info("will initialize colibri client operator", "neighbor_count", len(remainingIAs))
 		o.mutex.Lock()
 		defer o.mutex.Unlock()
 
 		for len(remainingIAs) > 0 {
 			time.Sleep(2 * time.Second)
+			log.Debug("colibri client operator initializing", "remaining", len(remainingIAs))
 			for egress, ia := range remainingIAs {
-				path, err := router.Route(context.Background(), ia)
-				if err != nil || path == nil {
+				colAddr, err := resolveAddr(router, arw, &ia)
+				if err != nil {
+					log.Debug("error resolving address for colibri service", "err", err)
 					continue
 				}
-				o.neighbors[egress] = &snet.UDPAddr{ // TODO(juagargi) should be a SVCAddr instead
-					IA:      ia,
-					Path:    path.Path(),
-					NextHop: path.UnderlayNextHop(),
-					Host:    udpaddr, // SVC: addr.SvcCOL,
-
-				}
+				o.neighbors[egress] = colAddr
 				delete(remainingIAs, egress)
 			}
-			log.Debug("colibri client operator initializing", "remaining", len(remainingIAs))
 		}
 		log.Info("colibri client operator initialization complete")
 		o.initialized = true
 	}()
+}
+
+func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
+	*snet.UDPAddr, error) {
+
+	path, err := router.Route(context.Background(), *ia)
+	if err != nil || path == nil {
+		return nil, serrors.New("no route to IA", "ia", ia, "err", err, "path", path)
+	}
+
+	svcAddr := &snet.SVCAddr{
+		IA:      *ia,
+		Path:    path.Path(),
+		NextHop: path.UnderlayNextHop(),
+		SVC:     addr.SvcCS, // addr.SvcCOL
+	}
+	ctx, cancelCtx := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelCtx()
+	quicAddr, ok, err := arw.RedirectToQUIC(ctx, svcAddr)
+	if !ok || err != nil {
+		return nil, serrors.New("cannot resolve service", "svc", svcAddr.SVC, "err", err)
+	}
+	if _, ok := quicAddr.(*snet.UDPAddr); !ok {
+		return nil, serrors.New("resolved address is not snet.UDPAddr", "addr", quicAddr,
+			"type", common.TypeOf(quicAddr))
+	}
+	snetUDPAddr := &snet.UDPAddr{ // TODO(juagargi) should be a SVCAddr instead
+		IA:      *ia,
+		Path:    path.Path(),
+		NextHop: path.UnderlayNextHop(),
+		Host:    quicAddr.(*snet.UDPAddr).Host,
+	}
+	snetUDPAddr.Host.Port = 4321
+	return snetUDPAddr, nil
 }

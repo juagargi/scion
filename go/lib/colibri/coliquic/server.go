@@ -36,6 +36,7 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/snet/squic"
 	"github.com/scionproto/scion/go/lib/sock/reliable"
+	"github.com/scionproto/scion/go/lib/topology"
 )
 
 // GetColibriPath returns the (last) COLIBRI path used with this quic Session, or nil if none.
@@ -56,21 +57,25 @@ func GetColibriPath(session quic.Session) (*colibri.ColibriPath, error) {
 	return colPath, nil
 }
 
-func ColibriListener(localIA addr.IA) (net.Listener, error) {
+func ColibriListener(topo topology.Topology) (net.Listener, error) {
 	// as seen in NetworkConfig.initQUICSockets:
 	dispatcherService := reliable.NewDispatcher("")
 	serverNet := &snet.SCIONNetwork{
-		LocalIA: localIA,
+		LocalIA: topo.IA(),
 		Dispatcher: &snet.DefaultPacketDispatcherService{
 			Dispatcher:  dispatcherService,
 			SCMPHandler: ignoreSCMP{},
 		},
 	}
+	// topo.PublicAddress(addr.SvcCS, cfg.General.ID)
+	serverAddr, err := topo.Anycast(addr.SvcCS) // TODO(juagargi) should find the PublicAddress of SvcCOL
 	// TODO(juagargi) read it from topo file and pass it along
-	serverAddr, err := net.ResolveUDPAddr("udp", "localhost:4321")
+	// serverAddr, err := net.ResolveUDPAddr("udp", "localhost:4321")
 	if err != nil {
 		return nil, err
 	}
+	serverAddr.Port = 4321
+	log.Info("deleteme deleteme server address will be", "addr", serverAddr)
 	packetConn, err := serverNet.Listen(context.Background(), "udp", serverAddr, addr.SvcCOL)
 	if err != nil {
 		return nil, err

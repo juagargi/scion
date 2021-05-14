@@ -34,6 +34,7 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/topology"
+	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 )
 
 // Store is the reservation store.
@@ -47,7 +48,7 @@ type Store struct {
 var _ reservationstorage.Store = (*Store)(nil)
 
 // NewStore creates a new reservation store.
-func NewStore(topo topology.Topology, router snet.Router,
+func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRewriter,
 	dialer coliquic.GRPCClientDialer, db backend.DB, admitter admission.Admitter) (*Store, error) {
 
 	// check that the admitter is well configured
@@ -56,7 +57,7 @@ func NewStore(topo topology.Topology, router snet.Router,
 		log.Info("colibri admission capacity", "ifid", ifid,
 			"ingress", cap.CapacityIngress(uint16(ifid)), "egress", cap.CapacityEgress(uint16(ifid)))
 	}
-	operator, err := coliquic.NewServiceClientOperator(topo, router, dialer)
+	operator, err := coliquic.NewServiceClientOperator(topo, router, arw, dialer)
 	if err != nil {
 		return nil, err
 	}
