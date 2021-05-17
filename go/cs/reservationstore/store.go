@@ -16,6 +16,7 @@ package reservationstore
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"time"
@@ -28,9 +29,11 @@ import (
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/log"
+	"github.com/scionproto/scion/go/lib/scrypto"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/topology"
@@ -39,17 +42,20 @@ import (
 
 // Store is the reservation store.
 type Store struct {
-	localIA  addr.IA            // TODO(juagargi) bind the logger to use the localIA in messages
-	db       backend.DB         // aka reservation map
-	admitter admission.Admitter // the chosen admission entity
-	operator *coliquic.ServiceClientOperator
+	// TODO(juagargi) bind the logger to use the localIA in messages
+	localIA    addr.IA
+	db         backend.DB                      // aka reservation map
+	admitter   admission.Admitter              // the chosen admission entity
+	operator   *coliquic.ServiceClientOperator // dials next colibri service
+	colibriKey []byte                          // colibri secret key
 }
 
 var _ reservationstorage.Store = (*Store)(nil)
 
 // NewStore creates a new reservation store.
 func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRewriter,
-	dialer coliquic.GRPCClientDialer, db backend.DB, admitter admission.Admitter) (*Store, error) {
+	dialer coliquic.GRPCClientDialer, db backend.DB, admitter admission.Admitter,
+	masterKey []byte) (*Store, error) {
 
 	// check that the admitter is well configured
 	cap := admitter.Capacities()
@@ -61,11 +67,16 @@ func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRew
 	if err != nil {
 		return nil, err
 	}
+	colibriKey, err := scrypto.DeriveColibriMacKey(masterKey)
+	if err != nil {
+		return nil, err
+	}
 	return &Store{
-		localIA:  topo.IA(),
-		db:       db,
-		admitter: admitter,
-		operator: operator,
+		localIA:    topo.IA(),
+		db:         db,
+		admitter:   admitter,
+		operator:   operator,
+		colibriKey: colibriKey,
 	}, nil
 }
 
@@ -715,8 +726,14 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	token.HopFields = append(token.HopFields, reservation.HopField{
 		Ingress: currStep.Ingress,
 		Egress:  currStep.Egress,
-		// Mac: ,
 	})
+	mac, err := s.computeMAC(rsv.ID.Suffix[:], token, req.Path.SrcIA().A, req.Path.DstIA().A)
+	if err != nil {
+		failedResponse.Message = "cannot compute MAC: " + err.Error()
+		return failedResponse, s.errWrapStr("cannot compute MAC", err)
+	}
+	log.Info("deleteme MAC MAC MAC", "mac", hex.EncodeToString(mac))
+	copy(token.HopFields[len(token.HopFields)-1].Mac[:], mac)
 	log.Info("deleteme 220 rsv index token", "index.token", index.Token)
 	// store token
 	index.Token = token
@@ -739,6 +756,20 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		MsgId: failedResponse.MsgId,
 		Token: *token,
 	}, nil
+}
+
+// func (s *Store) computeMAC(id reservation.SegmentID, expTick uint32) ([]byte, error) {
+func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS addr.AS) (
+	[]byte, error) {
+
+	buff := make([]byte, colibri.LengthInputDataRound16)
+	hf := tok.HopFields[len(tok.HopFields)-1]
+	err := colibri.MACInput(buff, suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls, tok.RLC,
+		true, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
+	if err != nil {
+		return nil, err
+	}
+	return colibri.StaticMAC(s.colibriKey, buff)
 }
 
 func sumAllBW(rsvs []*e2e.Reservation) uint64 {

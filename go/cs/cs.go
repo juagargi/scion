@@ -449,6 +449,7 @@ func run(file string) error {
 	if err != nil {
 		return serrors.WrapStr("error initializing COLIBRI DB", err)
 	}
+
 	admitter := &admission.StatefulAdmission{
 		Caps:  cfg.Colibri.Capacities,
 		Delta: cfg.Colibri.Delta,
@@ -457,7 +458,12 @@ func run(file string) error {
 		Rewriter: nc.AddressRewriter(nil),
 		Dialer:   quicStack.Dialer,
 	}
-	colibriStore, err := reservationstore.NewStore(topo, router, nc.AddressRewriter(nil), colDialer, db, admitter)
+	masterKey, err := loadMasterSecret(cfg.General.ConfigDir)
+	if err != nil {
+		return serrors.WrapStr("loading master secret in COLIBRI", err)
+	}
+	colibriStore, err := reservationstore.NewStore(topo, router, nc.AddressRewriter(nil),
+		colDialer, db, admitter, masterKey.Key0)
 	if err != nil {
 		return serrors.WrapStr("initializing colibri store", err)
 	}

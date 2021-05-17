@@ -21,9 +21,13 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+	"encoding/hex"
 	"math"
 	"time"
 
+	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
@@ -34,10 +38,10 @@ const (
 	packetLifetimeMs uint16 = 2000
 	// clockSkewMs denotes the maximal clock skew in milliseconds
 	clockSkewMs uint16 = 1000
-	// lengthInputData denotes the length of InputData in bytes
-	lengthInputData = 30
-	// lengthInputDataRound16 denotes the lengthInputData rounded to the next multiple of 16
-	lengthInputDataRound16 = 32
+	// LengthInputData denotes the length of InputData in bytes
+	LengthInputData = 30
+	// LengthInputDataRound16 denotes the LengthInputData rounded to the next multiple of 16
+	LengthInputDataRound16 = ((LengthInputData-1)/16 + 1) * 16
 )
 
 // CreateColibriTimestamp creates the COLIBRI packetTimestamp from tsRel, coreID, and coreCounter.
@@ -178,6 +182,18 @@ func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField
 	return nil
 }
 
+func StaticMAC(key []byte, input []byte) ([]byte, error) {
+	// Initialize cryptographic MAC function
+	f, err := initColibriMac(key)
+	if err != nil {
+		return nil, err
+	}
+	// Calculate CBC-MAC = first 4 bytes of the last CBC block
+	mac := make([]byte, len(input))
+	f.CryptBlocks(mac, input)
+	return mac[len(mac)-16 : len(mac)-12], nil
+}
+
 // CalculateColibriMacStatic calculates the static colibri MAC.
 // The private key comes from calling scrypto.DeriveColibriKey.
 func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
@@ -262,7 +278,7 @@ func prepareMacInputStatic(s *slayers.SCION, inf *colibri.InfoField,
 	hop *colibri.HopField) ([]byte, error) {
 
 	// Create buffer large enough to store InputData, with length aligned to 16 bytes
-	buffer := make([]byte, lengthInputDataRound16)
+	buffer := make([]byte, LengthInputDataRound16)
 	err := prepareInputData(s, inf, hop, buffer)
 	if err != nil {
 		return nil, err
@@ -289,7 +305,7 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 
 	// The MAC input consists of the InputData plus the host addresses and the flags, rounded
 	// up to the next multiple of 16 bytes
-	bufLen := lengthInputData + 1 + srcLen + dstLen
+	bufLen := LengthInputData + 1 + srcLen + dstLen
 	nrBlocks := uint8(math.Ceil(float64(bufLen) / 16))
 	buffer := make([]byte, 16*nrBlocks)
 
@@ -297,9 +313,9 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 	if err != nil {
 		return nil, err
 	}
-	buffer[lengthInputData] = flags
-	copy(buffer[lengthInputData+1:], s.RawSrcAddr)
-	copy(buffer[lengthInputData+1+srcLen:], s.RawDstAddr)
+	buffer[LengthInputData] = flags
+	copy(buffer[LengthInputData+1:], s.RawSrcAddr)
+	copy(buffer[LengthInputData+1+srcLen:], s.RawDstAddr)
 
 	return buffer, nil
 }
@@ -336,7 +352,7 @@ func prepareInputData(s *slayers.SCION, inf *colibri.InfoField,
 	if s == nil || inf == nil || hop == nil {
 		return serrors.New("invalid input")
 	}
-	if len(buffer) < lengthInputData {
+	if len(buffer) < LengthInputData {
 		return serrors.New("provided buffer is too small")
 	}
 
@@ -358,6 +374,43 @@ func prepareInputData(s *slayers.SCION, inf *colibri.InfoField,
 	binary.BigEndian.PutUint16(buffer[20:22], hop.IngressId)
 	binary.BigEndian.PutUint16(buffer[22:24], hop.EgressId)
 
+	return nil
+}
+
+// MACInput prepares the buffer using the passed parameters to be used as input for the
+// MAC computation.
+// buffer is expected to be at least `LengthInputData` bytes long.
+// suffix is expected to be at most 12 byte long.
+func MACInput(buffer []byte, suffix []byte, expTick uint32,
+	bwCls reservation.BWCls, rlc reservation.RLC, controlFlag, reverseFlag bool,
+	idx reservation.IndexNumber, srcAS, dstAS addr.AS, ingress, egress uint16) error {
+
+	if len(buffer) < LengthInputData {
+		return serrors.New("buffer too small", "actual", len(buffer), "expected", LengthInputData)
+	}
+	if copy(buffer[:12], suffix) > 12 {
+		return serrors.New("wrong suffix length", "len", len(suffix))
+	}
+	binary.BigEndian.PutUint32(buffer[12:16], expTick)
+	buffer[16] = uint8(bwCls)
+	buffer[17] = uint8(rlc)
+	buffer[18] = 0 // TODO(juagargi) shouldn't it be HFCount?
+
+	// Version | C | 0
+	var flags uint8
+	if controlFlag {
+		flags = uint8(1) << 3
+	}
+	flags += uint8(idx) << 4
+	buffer[19] = flags
+	if reverseFlag {
+		binary.BigEndian.PutUint64(buffer[22:30], uint64(dstAS))
+	} else {
+		binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
+	}
+	binary.BigEndian.PutUint16(buffer[20:22], ingress)
+	binary.BigEndian.PutUint16(buffer[22:24], egress)
+	log.Info("deleteme deleteme MAC INPUT", "input", hex.EncodeToString(buffer))
 	return nil
 }
 
