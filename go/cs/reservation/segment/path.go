@@ -60,10 +60,13 @@ func OpaquePathFromInterfaces(ifaces []snet.PathInterface) (*OpaquePath, error) 
 	opaque := &OpaquePath{
 		Steps: make([]PathStep, len(ifaces)/2+1),
 	}
+
 	for i := 0; i < len(opaque.Steps)-1; i++ {
 		opaque.Steps[i].Egress = uint16(ifaces[i*2].ID)
+		opaque.Steps[i].IA = ifaces[i*2].IA
 		opaque.Steps[i+1].Ingress = uint16(ifaces[i*2+1].ID)
 	}
+	opaque.Steps[len(opaque.Steps)-1].IA = ifaces[len(ifaces)-1].IA
 	return opaque, nil
 }
 
@@ -89,7 +92,11 @@ func (p *OpaquePath) Copy() *OpaquePath {
 func (p *OpaquePath) String() string {
 	strs := make([]string, len(p.Steps))
 	for i, s := range p.Steps {
-		strs[i] = fmt.Sprintf("%d,%d", s.Ingress, s.Egress)
+		if s.IA.IsZero() {
+			strs[i] = fmt.Sprintf("%d,%d", s.Ingress, s.Egress)
+		} else {
+			strs[i] = fmt.Sprintf("%d,%s,%d", s.Ingress, s.IA, s.Egress)
+		}
 	}
 	str := strings.Join(strs, " > ")
 	if len(str) > 0 {

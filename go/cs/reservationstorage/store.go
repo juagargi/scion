@@ -30,6 +30,8 @@ type Store interface {
 		sgt.SegmentSetupResponse, error)
 	ConfirmSegmentReservation(ctx context.Context, req *sgt.Request) (
 		base.Response, error)
+	ActivateSegmentReservation(ctx context.Context, req *sgt.Request) (
+		base.Response, error)
 	CleanupSegmentReservation(ctx context.Context, req *sgt.Request) (
 		base.Response, error)
 	TearDownSegmentReservation(ctx context.Context, req *sgt.Request) (

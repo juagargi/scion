@@ -19,12 +19,14 @@ import (
 	"sync"
 	"time"
 
+	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/conf"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/periodic"
+	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 )
 
@@ -36,8 +38,10 @@ type Manager interface {
 	Store() reservationstorage.Store
 	// TODO(juagargi) move to sub interface, e.g. pather, comms manager,...
 	PathsTo(ctx context.Context, dst addr.IA) ([]snet.Path, error)
-	Request(ctx context.Context, req *segment.SetupReq) (*segment.Reservation, error)
-	RequestMany(ctx context.Context, reqs []*segment.SetupReq) ([]*segment.Reservation, []error)
+	SetupRequest(ctx context.Context, req *segment.SetupReq) error
+	SetupManyRequest(ctx context.Context, reqs []*segment.SetupReq) []error
+	ActivateRequest(ctx context.Context, req *segment.Request) error
+	ActivateManyRequest(ctx context.Context, reqs []*segment.Request) []error
 }
 
 // manager takes care of the health of the segment reservations.
@@ -140,38 +144,71 @@ func (m *manager) PathsTo(ctx context.Context, dst addr.IA) ([]snet.Path, error)
 	return paths, err
 }
 
-func (m *manager) Request(ctx context.Context, req *segment.SetupReq) (
-	*segment.Reservation, error) {
-
+func (m *manager) SetupRequest(ctx context.Context, req *segment.SetupReq) error {
 	err := m.store.InitSegmentReservation(ctx, req)
-	// TODO(juagargi) send request, wait for answer, etc
-	return req.Reservation, err
+	if err != nil {
+		return err
+	}
+	rsv := req.Reservation
+	// confirm new index
+	deletemeIndex := rsv.Index(req.Index)
+	log.Info("deleteme confirm", "id", req.ID, "index", req.Index, "index_index", deletemeIndex)
+	confirmReq := &segment.Request{
+		MsgId: base.MsgId{
+			ID:        rsv.ID,
+			Index:     req.Index,
+			Timestamp: m.now(),
+		},
+		Path: req.Path,
+	}
+	res, err := m.store.ConfirmSegmentReservation(ctx, confirmReq)
+	if err != nil || !res.Success() {
+		log.Info("failed to confirm the index", "id", req.ID, "idx", req.Index,
+			"err", err, "res", res)
+	}
+	return err
 }
 
-func (m *manager) RequestMany(ctx context.Context, reqs []*segment.SetupReq) (
-	[]*segment.Reservation, []error) {
-
+func (m *manager) SetupManyRequest(ctx context.Context, reqs []*segment.SetupReq) []error {
 	wg := sync.WaitGroup{}
+	wg.Add(len(reqs))
 	errs := make([]error, len(reqs))
-	rsvs := make([]*segment.Reservation, len(reqs))
 	for i, req := range reqs {
 		i, req := i, req
-		wg.Add(1)
-		go func(req *segment.SetupReq) {
+		go func() {
 			defer log.HandlePanic()
 			defer wg.Done()
-			rsvs[i], errs[i] = m.Request(ctx, req)
-		}(req)
+			errs[i] = m.SetupRequest(ctx, req)
+		}()
 	}
 	wg.Wait()
-	returningErrs := make([]error, 0)
-	returningRsvs := make([]*segment.Reservation, 0)
-	for i := 0; i < len(reqs); i++ {
-		if errs[i] != nil {
-			returningErrs = append(returningErrs, errs[i])
-		} else {
-			returningRsvs = append(returningRsvs, rsvs[i])
-		}
+	return errs
+}
+
+func (m *manager) ActivateRequest(ctx context.Context, req *segment.Request) error {
+	res, err := m.store.ActivateSegmentReservation(ctx, req)
+	if err != nil {
+		return err
 	}
-	return returningRsvs, returningErrs
+	if !res.Success() {
+		failure := res.(*base.ResponseFailure)
+		return serrors.New("error activating index", "msg", failure.Message)
+	}
+	return nil
+}
+
+func (m *manager) ActivateManyRequest(ctx context.Context, reqs []*segment.Request) []error {
+	wg := sync.WaitGroup{}
+	wg.Add(len(reqs))
+	errs := make([]error, len(reqs))
+	for i, req := range reqs {
+		i, req := i, req
+		go func() {
+			defer log.HandlePanic()
+			defer wg.Done()
+			errs[i] = m.ActivateRequest(ctx, req)
+		}()
+	}
+	wg.Wait()
+	return errs
 }

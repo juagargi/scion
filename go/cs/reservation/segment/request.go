@@ -58,6 +58,10 @@ func (r *Request) Validate() error {
 	return nil
 }
 
+func (r *Request) IsSourceAS() bool {
+	return r.Path.CurrentStep == 0
+}
+
 func (r *Request) IsLastAS() bool { // override the use of the RequestMetadata.path with PathToDst
 	return r.Path.CurrentStep == len(r.Path.Steps)-1
 }

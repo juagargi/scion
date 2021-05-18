@@ -109,6 +109,9 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	}
 	newSetup := true
 	log.Info("deleteme path current step", "curr.step", req.Path.CurrentStep)
+	log.Info("deleteme path", "type", req.Path.Spath.Type, "raw_len", len(req.Path.Spath.Raw))
+	log.Info("deleteme PATHATSOURCE", "path_at_source", req.PathAtSource)
+	log.Info("deleteme", "src", req.PathAtSource.SrcIA(), "dst", req.PathAtSource.DstIA())
 	if req.ID.IsEmpty() {
 		return serrors.New("bad empty ID")
 	}
@@ -130,7 +133,14 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	}
 
 	origPath := req.Request.Path.Copy()
-	rollbackChanges := func() {
+	rollbackChanges := func(setupRes segment.SegmentSetupResponse) {
+		path := origPath
+		if failure, ok := setupRes.(*segment.SegmentSetupResponseFailure); ok {
+			log.Info("deleteme setting the path for the cleanup/teardown",
+				"trail", failure.FailedRequest.AllocTrail, "opaque_steps before", path.Steps)
+			path.Steps = path.Steps[:len(failure.FailedRequest.AllocTrail)]
+			log.Info("deleteme after", "steps", path.Steps)
+		}
 		// uses the `req` that will have the new ID and index, but the original path
 		req := &segment.Request{
 			MsgId: req.MsgId,
@@ -156,16 +166,20 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	res, err := s.admitSegmentReservation(ctx, req)
 	if err != nil {
 		log.Info("deleteme admit segment returned error", "err", err)
-		rollbackChanges()
+		rollbackChanges(res)
 		return err
 	}
 	if _, ok := res.(*segment.SegmentSetupResponseSuccess); !ok {
-		log.Info("deleteme admit segment returned failure", "res", res)
-		rollbackChanges()
+		log.Info("deleteme admit segment returned failure",
+			"msg", res.(*segment.SegmentSetupResponseFailure).Message)
+		rollbackChanges(res)
 		return serrors.New("failure in setup", "response", res)
 	}
+	rsv = req.Reservation
 	suc := res.(*segment.SegmentSetupResponseSuccess)
 	log.Info("deleteme $$$$$$$$$ TOKEN $$$$$$$$$ TOKEN $$$$$$$$$", "token", suc.Token)
+	log.Info("deleteme $$$$$$$$$", "srcia", rsv.PathAtSource.SrcIA(), "dstia", rsv.PathAtSource.DstIA())
+	log.Info("deleteme $$$$$$$$$", "active", rsv.ActiveIndex())
 
 	return nil
 }
@@ -240,9 +254,73 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Requ
 	return translate.Response(pbRes), nil
 }
 
+// ActivateSegmentReservation activates a segment reservation index.
+func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Request) (
+	base.Response, error) {
+
+	log.Info("deleteme activate index", "id", req.ID, "idx", req.Index)
+	// TODO(juagargi) refactor these functions that share a lot of code
+	if err := s.validateAuthenticators(req); err != nil {
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+	}
+
+	failedResponse := s.prepareFailureResp("failed to confirm index")
+
+	if err := req.Validate(); err != nil {
+		failedResponse.Message = "request validation failed: " + err.Error()
+		return failedResponse, nil
+	}
+
+	tx, err := s.db.BeginTransaction(ctx, nil)
+	if err != nil {
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
+	}
+	defer tx.Rollback()
+
+	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
+	if err != nil {
+		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
+			"id", req.ID)
+	}
+	if rsv == nil {
+		failedResponse.Message = "no reservation found"
+		return failedResponse, nil
+	}
+	if err := rsv.SetIndexActive(req.Index); err != nil {
+		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
+			"id", req.ID)
+	}
+	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
+		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
+			"id", req.ID)
+	}
+	if err := tx.Commit(); err != nil {
+		return failedResponse, s.errWrapStr("cannot commit transaction", err,
+			"id", req.ID)
+	}
+
+	if req.IsLastAS() {
+		return &base.ResponseSuccess{}, nil
+	}
+	// forward to next colibri service
+	client, err := s.operator.ColibriClient(ctx, req.Path)
+	if err != nil {
+		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+	}
+
+	pbRes, err := client.ActivateSegmentIndex(ctx, translate.PBufRequest(req))
+	if err != nil {
+		return failedResponse, s.errWrapStr("forwarded request failed", err)
+	}
+	log.Info("deleteme ActivateIndex", "active", rsv.ActiveIndex())
+	return translate.Response(pbRes), nil
+}
+
 // CleanupSegmentReservation deletes an index from a segment reservation.
 func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Request) (
 	base.Response, error) {
+
+	log.Info("deleteme cleanup request", "path", req.Path.String())
 
 	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
@@ -272,8 +350,8 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Requ
 	}
 
 	if err := rsv.RemoveIndex(req.Index); err != nil {
-		return failedResponse, s.errWrapStr("cannot delete segment reservation index", err,
-			"id", req.ID, "index", req.Index)
+		// log error but continue
+		log.Info("error cleaning segment index, continuing anyway", "err", err)
 	}
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
@@ -605,7 +683,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 	log.Info("deleteme 2 admit segment reservation", "id", req.ID, "curr_step", req.Path.CurrentStep)
 
-	if req.ID.IsEmptySuffix() && req.Path.CurrentStep != 0 {
+	if req.ID.IsEmptySuffix() && !req.IsSourceAS() {
 		failedResponse.Message = "empty suffix not allowed if not at source AS"
 		return failedResponse, nil
 	}
@@ -642,6 +720,10 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		rsv.PathType = req.PathType
 		rsv.PathEndProps = req.PathProps
 		rsv.TrafficSplit = req.SplitCls
+		if req.IsSourceAS() {
+			rsv.PathAtSource = req.PathAtSource
+			log.Info("deleteme 5.9 source path is set", "path_at_source", rsv.PathAtSource)
+		}
 	}
 	req.Reservation = rsv
 	log.Info("deleteme 6 admit segment reservation")
@@ -673,7 +755,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	log.Info("deleteme token inside index", "token", index.Token)
 	log.Info("deleteme", "id", rsv.ID)
 
-	if req.ID.IsEmptySuffix() && req.Path.CurrentStep == 0 {
+	if req.ID.IsEmptySuffix() && req.IsSourceAS() {
 		log.Info("deleteme 14")
 		if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
 			failedResponse.Message = "error creating new reservation at source: " + err.Error()
@@ -708,7 +790,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
 		if err != nil {
 			failedResponse.Message = "error in forwarded request: " + err.Error()
-			return failedResponse, s.errWrapStr("forwarded request failed", err)
+			return failedResponse, serrors.WrapStr("forwarded request failed", err)
 		}
 		res, err := translate.SetupResponse(pbRes)
 		log.Info("deleteme response after translation", "res", res, "err", err)
@@ -735,9 +817,22 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	log.Info("deleteme MAC MAC MAC", "mac", hex.EncodeToString(mac))
 	copy(token.HopFields[len(token.HopFields)-1].Mac[:], mac)
 	log.Info("deleteme 220 rsv index token", "index.token", index.Token)
-	// store token
+	// store token and colibri path inside reservation
 	index.Token = token
 	log.Info("deleteme 221 rsv index token", "index.token", index.Token)
+
+	// if req.IsSourceAS() {
+	// 	colibriPath := rsv.DeriveColibriPathAtSource()
+	// 	rawColibriPath := make([]byte, colibriPath.Len())
+	// 	if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
+	// 		return nil, s.errWrapStr("error obtaining colibri path from reservation", err)
+	// 	}
+	// 	rsv.PathAtSource.Spath = spath.Path{
+	// 		Type: colpath.PathType,
+	// 		Raw:  rawColibriPath,
+	// 	}
+	// 	log.Info("deleteme stored colibri path inside reservation", "path", hex.EncodeToString(rawColibriPath))
+	// }
 	tx, err = s.db.BeginTransaction(ctx, nil)
 	if err != nil {
 		failedResponse.Message = "storing token, cannot create transaction: " + err.Error()

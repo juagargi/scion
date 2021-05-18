@@ -92,6 +92,48 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 	return pbRes, nil
 }
 
+func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Request) (
+	*colpb.Response, error) {
+
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.ConfirmSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
+}
+
+func (s *ColibriService) ActivateSegmentIndex(ctx context.Context, msg *colpb.Request) (
+	*colpb.Response, error) {
+
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.ActivateSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
+}
+
 func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
@@ -104,27 +146,6 @@ func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request
 	}
 	log.Info("deleteme path after translation", "path", req.Path)
 	res, err := s.Store.TearDownSegmentReservation(ctx, req)
-	if err != nil {
-		log.Error("colibri store returned an error", "err", err)
-		return nil, err
-	}
-	pbRes := translate.PBufResponse(res)
-	log.Info("deleteme", "pbres", pbRes)
-
-	return pbRes, nil
-}
-
-func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Request) (
-	*colpb.Response, error) {
-
-	msg.Opaque.CurrentStep++
-	req, err := translate.Request(msg)
-	if err != nil {
-		log.Error("error unmarshalling", "err", err)
-		return nil, err
-	}
-	log.Info("deleteme path after translation", "path", req.Path)
-	res, err := s.Store.ConfirmSegmentReservation(ctx, req)
 	if err != nil {
 		log.Error("colibri store returned an error", "err", err)
 		return nil, err

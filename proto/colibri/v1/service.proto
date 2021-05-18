@@ -23,8 +23,9 @@ import "google/protobuf/timestamp.proto";
 service Colibri {
     rpc TestPeer(TestingMessage) returns (TestingMessage) {}
     rpc SetupSegment(SegmentSetupRequest) returns (SegmentSetupResponse) {}
-    rpc TeardownSegment(Request) returns (Response) {}
     rpc ConfirmSegmentIndex(Request) returns (Response) {}
+    rpc ActivateSegmentIndex(Request) returns (Response) {}
+    rpc TeardownSegment(Request) returns (Response) {}
     rpc CleanupSegmentIndex(Request) returns (Response) {}
 
 }

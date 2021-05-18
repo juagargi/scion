@@ -28,11 +28,13 @@ type MsgId struct {
 
 type Response interface {
 	isResponse_SuccessFailure()
+	Success() bool
 }
 
 type ResponseSuccess struct{}
 
 func (r *ResponseSuccess) isResponse_SuccessFailure() {}
+func (r *ResponseSuccess) Success() bool              { return true }
 
 type ResponseFailure struct {
 	ErrorCode uint32
@@ -40,3 +42,4 @@ type ResponseFailure struct {
 }
 
 func (r *ResponseFailure) isResponse_SuccessFailure() {}
+func (r *ResponseFailure) Success() bool              { return false }

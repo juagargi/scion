@@ -15,12 +15,14 @@
 package segment
 
 import (
+	"fmt"
 	"time"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
+	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
 )
 
 // Reservation represents a segment reservation.
@@ -43,6 +45,33 @@ func NewReservation(asid addr.AS) *Reservation {
 		},
 		activeIndex: -1,
 	}
+}
+
+func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
+	index := r.ActiveIndex()
+	if index == nil {
+		return nil
+	}
+
+	// info field
+	p := &colpath.ColibriPath{
+		InfoField: &colpath.InfoField{
+			Ver:         uint8(index.Idx),
+			HFCount:     uint8(len(index.Token.HopFields)),
+			ResIdSuffix: make([]byte, 12),
+			ExpTick:     uint32(index.Token.ExpirationTick),
+			BwCls:       uint8(index.AllocBW),
+			Rlc:         uint8(index.Token.RLC),
+		},
+		HopFields: make([]*colpath.HopField, len(index.Token.HopFields)),
+	}
+	copy(p.InfoField.ResIdSuffix, r.ID.Suffix[:])
+	for i, hf := range index.Token.HopFields {
+		p.HopFields[i].IngressId = hf.Ingress
+		p.HopFields[i].EgressId = hf.Egress
+		p.HopFields[i].Mac = hf.Mac[:]
+	}
+	return p
 }
 
 // Validate will return an error for invalid values.
@@ -129,6 +158,28 @@ func (r *Reservation) Index(idx reservation.IndexNumber) *Index {
 	return &r.Indices[sliceIndex]
 }
 
+func (r *Reservation) NextIndexToRenew() reservation.IndexNumber {
+	last := reservation.IndexNumber(0).Sub(1)
+	if len(r.Indices) > 0 {
+		last = r.Indices[len(r.Indices)-1].Idx
+	}
+	return last.Add(1)
+}
+
+func (r *Reservation) NextIndexToActivate() *Index {
+	if len(r.Indices) == 0 {
+		return nil
+	}
+	i := 0
+	if r.activeIndex > 0 {
+		i = r.activeIndex
+	}
+	if i+1 < len(r.Indices) {
+		return &r.Indices[i+1]
+	}
+	return nil
+}
+
 // SetIndexConfirmed sets the index as IndexPending (confirmed but not active). If the requested
 // index has state active, it will emit an error.
 func (r *Reservation) SetIndexConfirmed(idx reservation.IndexNumber) error {
@@ -178,11 +229,17 @@ func (r *Reservation) RemoveIndex(idx reservation.IndexNumber) error {
 		return err
 	}
 	r.Indices = r.Indices[sliceIndex+1:]
-	r.activeIndex -= sliceIndex
-	if r.activeIndex < -1 {
+
+	if r.activeIndex > sliceIndex { // if active index was not removed, adjust it
+		r.activeIndex -= (sliceIndex + 1)
+	} else { // if active index was removed, no active index
 		r.activeIndex = -1
 	}
 	return nil
+}
+
+func (r *Reservation) String() string {
+	return fmt.Sprintf("%s, Idxs: [%s]", r.ID.String(), r.Indices)
 }
 
 // MaxBlockedBW returns the maximum bandwidth blocked by this reservation, which is
