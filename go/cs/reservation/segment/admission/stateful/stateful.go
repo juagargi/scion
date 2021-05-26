@@ -70,7 +70,7 @@ func (a *StatefulAdmission) AdmitRsv(ctx context.Context, x backend.ColibriStora
 	// and fail the admission if the minimum requested was higher
 	if maxAlloc < req.MinBW {
 		return serrors.New("admission denied", "maxalloc", maxAlloc, "minbw", req.MinBW,
-			"segment_id", req.ID)
+			"segment_id", req.ID.String())
 	}
 
 	// update stateful tables with the scratchpad

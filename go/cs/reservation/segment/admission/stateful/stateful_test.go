@@ -24,6 +24,7 @@ import (
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
 	"github.com/scionproto/scion/go/cs/reservation/sqlite"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend/mock_backend"
@@ -789,17 +790,18 @@ func newTestAdmitter(t *testing.T) *StatefulAdmission {
 }
 
 // newTestRequest creates a request ID ff00:1:1 beefcafe
-func newTestRequest(t *testing.T, ingress, egress uint16,
+func newTestRequest(t *testing.T, ingress, egress int,
 	minBW, maxBW reservation.BWCls) *segment.SetupReq {
 
-	// TODO(juagargi) unused args ingress,egress
 	ID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
 	require.NoError(t, err)
 	return &segment.SetupReq{
 		Request: segment.Request{
-			RequestMetadata: base.RequestMetadata{},
-			ID:              *ID,
-			Timestamp:       util.SecsToTime(1),
+			MsgId: base.MsgId{
+				ID:        *ID,
+				Timestamp: util.SecsToTime(1),
+			},
+			Path: segmenttest.NewPathFromComponents(ingress, "1-ff00:1:1", egress),
 		},
 		ExpirationTime: util.SecsToTime(10),
 		RLC:            1,
@@ -1077,7 +1079,7 @@ func persistRsvFromAdmittedRequest(t *testing.T, db *sqlite.Backend, req segment
 	rsv, err := db.GetSegmentRsvFromID(ctx, &req.ID)
 	require.NoError(t, err)
 	if rsv == nil {
-		rsv = segment.NewReservation()
+		rsv = segment.NewReservation(req.ID.ASID)
 		rsv.ID = req.ID
 		rsv.Ingress = req.Ingress()
 		rsv.Egress = req.Egress()

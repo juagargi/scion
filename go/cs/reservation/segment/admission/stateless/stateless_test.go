@@ -23,6 +23,7 @@ import (
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend/mock_backend"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -456,17 +457,18 @@ func newTestAdmitter(t *testing.T) *StatelessAdmission {
 }
 
 // newTestRequest creates a request ID ff00:1:1 beefcafe
-func newTestRequest(t *testing.T, ingress, egress uint16,
+func newTestRequest(t *testing.T, ingress, egress int,
 	minBW, maxBW reservation.BWCls) *segment.SetupReq {
 
-	// TODO(juagargi) unused args ingress,egress
 	ID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
 	require.NoError(t, err)
 	return &segment.SetupReq{
 		Request: segment.Request{
-			RequestMetadata: base.RequestMetadata{},
-			ID:              *ID,
-			Timestamp:       util.SecsToTime(1),
+			MsgId: base.MsgId{
+				ID:        *ID,
+				Timestamp: util.SecsToTime(1),
+			},
+			Path: segmenttest.NewPathFromComponents(ingress, "1-ff00:1:1", egress),
 		},
 		MinBW:     minBW,
 		MaxBW:     maxBW,

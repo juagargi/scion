@@ -60,7 +60,7 @@ func (a *StatelessAdmission) AdmitRsv(ctx context.Context, x backend.ColibriStor
 	req.AllocTrail = append(req.AllocTrail, bead)
 	if maxAlloc < req.MinBW {
 		return serrors.New("admission denied", "maxalloc", maxAlloc, "minbw", req.MinBW,
-			"segment_id", req.ID)
+			"segment_id", req.ID.String())
 	}
 	return nil
 }
