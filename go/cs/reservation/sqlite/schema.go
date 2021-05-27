@@ -26,6 +26,7 @@ const (
 		id_suffix	INTEGER NOT NULL,
 		ingress	INTEGER NOT NULL,
 		egress	INTEGER NOT NULL,
+		path_type	INTEGER NOT NULL,
 		path	BLOB,
 		end_props	INTEGER NOT NULL,
 		traffic_split	INTEGER NOT NULL,

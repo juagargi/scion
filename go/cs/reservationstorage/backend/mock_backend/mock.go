@@ -218,21 +218,6 @@ func (mr *MockDBMockRecorder) GetSegmentRsvFromID(arg0, arg1 interface{}) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSegmentRsvFromID", reflect.TypeOf((*MockDB)(nil).GetSegmentRsvFromID), arg0, arg1)
 }
 
-// GetSegmentRsvFromPath mocks base method
-func (m *MockDB) GetSegmentRsvFromPath(arg0 context.Context, arg1 segment.TransparentPath) (*segment.Reservation, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSegmentRsvFromPath", arg0, arg1)
-	ret0, _ := ret[0].(*segment.Reservation)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetSegmentRsvFromPath indicates an expected call of GetSegmentRsvFromPath
-func (mr *MockDBMockRecorder) GetSegmentRsvFromPath(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSegmentRsvFromPath", reflect.TypeOf((*MockDB)(nil).GetSegmentRsvFromPath), arg0, arg1)
-}
-
 // GetSegmentRsvsFromIFPair mocks base method
 func (m *MockDB) GetSegmentRsvsFromIFPair(arg0 context.Context, arg1, arg2 *uint16) ([]*segment.Reservation, error) {
 	m.ctrl.T.Helper()
@@ -321,6 +306,21 @@ func (m *MockDB) NewSegmentRsv(arg0 context.Context, arg1 *segment.Reservation) 
 func (mr *MockDBMockRecorder) NewSegmentRsv(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewSegmentRsv", reflect.TypeOf((*MockDB)(nil).NewSegmentRsv), arg0, arg1)
+}
+
+// NextExpirationTime mocks base method
+func (m *MockDB) NextExpirationTime(arg0 context.Context) (time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NextExpirationTime", arg0)
+	ret0, _ := ret[0].(time.Time)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NextExpirationTime indicates an expected call of NextExpirationTime
+func (mr *MockDBMockRecorder) NextExpirationTime(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NextExpirationTime", reflect.TypeOf((*MockDB)(nil).NextExpirationTime), arg0)
 }
 
 // PersistE2ERsv mocks base method

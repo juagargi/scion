@@ -25,24 +25,8 @@ import (
 func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
 
 	return &colpb.SegmentSetupRequest{
-		Base: PBufRequest(&req.Request),
-		Params: &colpb.SegmentSetupRequest_Params{
-			ExpirationTime: util.TimeToSecs(req.ExpirationTime),
-			Rlc:            uint32(req.RLC),
-			PathType:       uint32(req.PathType),
-			Minbw:          uint32(req.MinBW),
-			Maxbw:          uint32(req.MaxBW),
-			Splitcls:       uint32(req.SplitCls),
-			PropsAtStart: &colpb.PathEndProps{
-				Local:    req.PathProps.StartLocal(),
-				Transfer: req.PathProps.StartTransfer(),
-			},
-			PropsAtEnd: &colpb.PathEndProps{
-				Local:    req.PathProps.EndLocal(),
-				Transfer: req.PathProps.EndTransfer(),
-			},
-			Allocationtrail: PBufAllocTrail(req.AllocTrail),
-		},
+		Base:   PBufRequest(&req.Request),
+		Params: PBufSetupRequestParams(req),
 	}
 }
 
@@ -57,7 +41,7 @@ func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResp
 	case *segment.SegmentSetupResponseFailure:
 		pbRes.SuccessFailure = &colpb.SegmentSetupResponse_Failure_{
 			Failure: &colpb.SegmentSetupResponse_Failure{
-				Request: PBufSetupReq(r.FailedRequest).Params,
+				Request: PBufSetupRequestParams(r.FailedRequest),
 				Failure: &colpb.Response_Failure{
 					Message: r.Message,
 				},
@@ -73,6 +57,26 @@ func PBufRequest(req *segment.Request) *colpb.Request {
 		Index:     uint32(req.Index),
 		Timestamp: util.TimeToSecs(req.Timestamp),
 		Opaque:    PBufOpaque(req.Path),
+	}
+}
+
+func PBufSetupRequestParams(req *segment.SetupReq) *colpb.SegmentSetupRequest_Params {
+	return &colpb.SegmentSetupRequest_Params{
+		ExpirationTime: util.TimeToSecs(req.ExpirationTime),
+		Rlc:            uint32(req.RLC),
+		PathType:       uint32(req.PathType),
+		Minbw:          uint32(req.MinBW),
+		Maxbw:          uint32(req.MaxBW),
+		Splitcls:       uint32(req.SplitCls),
+		PropsAtStart: &colpb.PathEndProps{
+			Local:    req.PathProps.StartLocal(),
+			Transfer: req.PathProps.StartTransfer(),
+		},
+		PropsAtEnd: &colpb.PathEndProps{
+			Local:    req.PathProps.EndLocal(),
+			Transfer: req.PathProps.EndTransfer(),
+		},
+		Allocationtrail: PBufAllocTrail(req.AllocTrail),
 	}
 }
 
@@ -113,6 +117,11 @@ func PBufAllocTrail(trail reservation.AllocationBeads) []*colpb.AllocationBead {
 }
 
 func PBufOpaque(opaque *segment.OpaquePath) *colpb.OpaquePath {
+	if opaque == nil {
+		return &colpb.OpaquePath{
+			Steps: []*colpb.PathStep{},
+		}
+	}
 	steps := make([]*colpb.PathStep, len(opaque.Steps))
 	for i, step := range opaque.Steps {
 		steps[i] = &colpb.PathStep{

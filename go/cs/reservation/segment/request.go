@@ -124,5 +124,8 @@ func (r *SetupReq) ValidateForReservation(rsv *Reservation) error {
 
 // PrevBW returns the minimum of the maximum bandwidths already granted by previous ASes.
 func (r *SetupReq) PrevBW() uint64 {
+	if len(r.AllocTrail) == 0 {
+		return r.MaxBW.ToKbps()
+	}
 	return r.AllocTrail.MinMax().ToKbps()
 }

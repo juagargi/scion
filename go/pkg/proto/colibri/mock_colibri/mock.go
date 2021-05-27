@@ -35,6 +35,106 @@ func (m *MockColibriClient) EXPECT() *MockColibriClientMockRecorder {
 	return m.recorder
 }
 
+// ActivateSegmentIndex mocks base method
+func (m *MockColibriClient) ActivateSegmentIndex(arg0 context.Context, arg1 *colibri.Request, arg2 ...grpc.CallOption) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ActivateSegmentIndex", varargs...)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ActivateSegmentIndex indicates an expected call of ActivateSegmentIndex
+func (mr *MockColibriClientMockRecorder) ActivateSegmentIndex(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateSegmentIndex", reflect.TypeOf((*MockColibriClient)(nil).ActivateSegmentIndex), varargs...)
+}
+
+// CleanupSegmentIndex mocks base method
+func (m *MockColibriClient) CleanupSegmentIndex(arg0 context.Context, arg1 *colibri.Request, arg2 ...grpc.CallOption) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "CleanupSegmentIndex", varargs...)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupSegmentIndex indicates an expected call of CleanupSegmentIndex
+func (mr *MockColibriClientMockRecorder) CleanupSegmentIndex(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupSegmentIndex", reflect.TypeOf((*MockColibriClient)(nil).CleanupSegmentIndex), varargs...)
+}
+
+// ConfirmSegmentIndex mocks base method
+func (m *MockColibriClient) ConfirmSegmentIndex(arg0 context.Context, arg1 *colibri.Request, arg2 ...grpc.CallOption) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ConfirmSegmentIndex", varargs...)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ConfirmSegmentIndex indicates an expected call of ConfirmSegmentIndex
+func (mr *MockColibriClientMockRecorder) ConfirmSegmentIndex(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmSegmentIndex", reflect.TypeOf((*MockColibriClient)(nil).ConfirmSegmentIndex), varargs...)
+}
+
+// SetupSegment mocks base method
+func (m *MockColibriClient) SetupSegment(arg0 context.Context, arg1 *colibri.SegmentSetupRequest, arg2 ...grpc.CallOption) (*colibri.SegmentSetupResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "SetupSegment", varargs...)
+	ret0, _ := ret[0].(*colibri.SegmentSetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetupSegment indicates an expected call of SetupSegment
+func (mr *MockColibriClientMockRecorder) SetupSegment(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupSegment", reflect.TypeOf((*MockColibriClient)(nil).SetupSegment), varargs...)
+}
+
+// TeardownSegment mocks base method
+func (m *MockColibriClient) TeardownSegment(arg0 context.Context, arg1 *colibri.Request, arg2 ...grpc.CallOption) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "TeardownSegment", varargs...)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TeardownSegment indicates an expected call of TeardownSegment
+func (mr *MockColibriClientMockRecorder) TeardownSegment(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownSegment", reflect.TypeOf((*MockColibriClient)(nil).TeardownSegment), varargs...)
+}
+
 // TestPeer mocks base method
 func (m *MockColibriClient) TestPeer(arg0 context.Context, arg1 *colibri.TestingMessage, arg2 ...grpc.CallOption) (*colibri.TestingMessage, error) {
 	m.ctrl.T.Helper()
@@ -76,6 +176,81 @@ func NewMockColibriServer(ctrl *gomock.Controller) *MockColibriServer {
 // EXPECT returns an object that allows the caller to indicate expected use
 func (m *MockColibriServer) EXPECT() *MockColibriServerMockRecorder {
 	return m.recorder
+}
+
+// ActivateSegmentIndex mocks base method
+func (m *MockColibriServer) ActivateSegmentIndex(arg0 context.Context, arg1 *colibri.Request) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ActivateSegmentIndex", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ActivateSegmentIndex indicates an expected call of ActivateSegmentIndex
+func (mr *MockColibriServerMockRecorder) ActivateSegmentIndex(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateSegmentIndex", reflect.TypeOf((*MockColibriServer)(nil).ActivateSegmentIndex), arg0, arg1)
+}
+
+// CleanupSegmentIndex mocks base method
+func (m *MockColibriServer) CleanupSegmentIndex(arg0 context.Context, arg1 *colibri.Request) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupSegmentIndex", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupSegmentIndex indicates an expected call of CleanupSegmentIndex
+func (mr *MockColibriServerMockRecorder) CleanupSegmentIndex(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupSegmentIndex", reflect.TypeOf((*MockColibriServer)(nil).CleanupSegmentIndex), arg0, arg1)
+}
+
+// ConfirmSegmentIndex mocks base method
+func (m *MockColibriServer) ConfirmSegmentIndex(arg0 context.Context, arg1 *colibri.Request) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConfirmSegmentIndex", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ConfirmSegmentIndex indicates an expected call of ConfirmSegmentIndex
+func (mr *MockColibriServerMockRecorder) ConfirmSegmentIndex(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmSegmentIndex", reflect.TypeOf((*MockColibriServer)(nil).ConfirmSegmentIndex), arg0, arg1)
+}
+
+// SetupSegment mocks base method
+func (m *MockColibriServer) SetupSegment(arg0 context.Context, arg1 *colibri.SegmentSetupRequest) (*colibri.SegmentSetupResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetupSegment", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.SegmentSetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetupSegment indicates an expected call of SetupSegment
+func (mr *MockColibriServerMockRecorder) SetupSegment(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupSegment", reflect.TypeOf((*MockColibriServer)(nil).SetupSegment), arg0, arg1)
+}
+
+// TeardownSegment mocks base method
+func (m *MockColibriServer) TeardownSegment(arg0 context.Context, arg1 *colibri.Request) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TeardownSegment", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TeardownSegment indicates an expected call of TeardownSegment
+func (mr *MockColibriServerMockRecorder) TeardownSegment(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownSegment", reflect.TypeOf((*MockColibriServer)(nil).TeardownSegment), arg0, arg1)
 }
 
 // TestPeer mocks base method

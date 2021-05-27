@@ -116,6 +116,9 @@ func (m *manager) Run(ctx context.Context) {
 		if err != nil {
 			logger.Error("deleting expired indices", "count", n, "err", err)
 		}
+		if wakeupTime.IsZero() {
+			wakeupTime = now.Add(2 * time.Second)
+		}
 		m.wakeupExpirer = wakeupTime
 	}()
 	wg.Wait()

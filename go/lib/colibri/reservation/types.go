@@ -199,6 +199,9 @@ func (b BWCls) Validate() error {
 
 // ToKbps returns the kilobits per second this BWCls represents.
 func (b BWCls) ToKbps() uint64 {
+	if b == 0 {
+		return 0
+	}
 	return uint64(16 * math.Sqrt(math.Pow(2, float64(b)-1)))
 }
 

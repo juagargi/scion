@@ -63,7 +63,9 @@ const minDuration = 2 * sleepAtMost
 
 // min validity of new indices/reservations. The bigger the value, the longer a single index
 // can be used. Too big a value could produce errors in the admission for some ASes.
-const newIndexMinDuration = 10 * time.Minute
+
+// const newIndexMinDuration = 10 * time.Minute
+const newIndexMinDuration = 10 * time.Second // TODO(juagargi) remove after debugging is finished
 
 type keeper struct {
 	sleepUntil time.Time // nothing to do in the keeper until this time
@@ -218,7 +220,6 @@ func (k *keeper) activateIndices(ctx context.Context, rsvs []*segment.Reservatio
 		}
 	}
 	errs := filterEmptyErrors(k.manager.ActivateManyRequest(ctx, reqs))
-	log.Info("deleteme activated reservations", "errors_len", len(errs))
 	if len(errs) > 0 {
 		log.Info("errors while activating rsvs", "errs", errs)
 		return serrors.New("errors in activation")
@@ -436,6 +437,10 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 				// 	},
 				// },
 			},
+			ExpirationTime: expTime,
+			// RLC:            e.RLC,
+			// PathType: ,
+			PathType:     reservation.CorePath, // TODO(juagargi)
 			MinBW:        e.minBW,
 			MaxBW:        e.maxBW,
 			SplitCls:     rsv.TrafficSplit,
@@ -480,6 +485,7 @@ func (e requirements) Compliance(rsv *seg.Reservation, atLeastUntil time.Time) C
 		return NeedsActivation
 	}
 	return Compliant
+	// return NeedsActivation // TODO(juagargi) remove after debugging is done
 }
 
 // splitRequests takes a slice of requests and indices, and returns two slices:

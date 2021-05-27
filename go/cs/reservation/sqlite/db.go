@@ -34,6 +34,7 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/infra/modules/db"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/util"
 )
@@ -591,11 +592,11 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 		activeIndex = int(rsv.ActiveIndex().Idx)
 	}
 	p := rsv.PathAtSource
-	const query = `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress,
+	const query = `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress, path_type,
 		path, end_props, traffic_split, src_ia, dst_ia,active_index)
-		VALUES (?, ?,?,?,?,?,?,?,?,?)`
+		VALUES (?, ?,?,?,?,?,?,?,?,?,?)`
 	res, err := x.ExecContext(ctx, query, rsv.ID.ASID, suffix,
-		rsv.Ingress, rsv.Egress, p.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,
+		rsv.Ingress, rsv.Egress, rsv.PathType, p.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,
 		p.SrcIA().IAInt(), p.DstIA().IAInt(), activeIndex)
 	if err != nil {
 		return err
@@ -612,6 +613,10 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 			params = append(params, rsvRowID, index.Idx,
 				util.TimeToSecs(index.Expiration), index.State(), index.MinBW, index.MaxBW,
 				index.AllocBW, index.Token.ToRaw())
+			if _, err := reservation.TokenFromRaw(index.Token.ToRaw()); err != nil {
+				log.Error("inconsistent token being saved", "err", err, "id", rsv.ID.String(),
+					"idx", index.Idx)
+			}
 		}
 		q := queryIndexTmpl + strings.Repeat(",(?,?,?,?,?,?,?,?)", len(rsv.Indices)-1)
 		_, err = x.ExecContext(ctx, q, params...)
@@ -632,6 +637,7 @@ type rsvFields struct {
 	Suffix       uint32
 	Ingress      uint16
 	Egress       uint16
+	PathType     int
 	Path         []byte
 	EndProps     int
 	TrafficSplit int
@@ -641,7 +647,7 @@ type rsvFields struct {
 func getSegReservations(ctx context.Context, x db.Sqler, condition string, params []interface{}) (
 	[]*segment.Reservation, error) {
 
-	const queryTmpl = `SELECT ROWID,id_as,id_suffix,ingress,egress,path,
+	const queryTmpl = `SELECT ROWID,id_as,id_suffix,ingress,egress,path_type,path,
 		end_props,traffic_split,active_index
 		FROM seg_reservation %s`
 	query := fmt.Sprintf(queryTmpl, condition)
@@ -655,7 +661,7 @@ func getSegReservations(ctx context.Context, x db.Sqler, condition string, param
 	reservationFields := []*rsvFields{}
 	for rows.Next() {
 		var f rsvFields
-		err := rows.Scan(&f.RowID, &f.AsID, &f.Suffix, &f.Ingress, &f.Egress, &f.Path,
+		err := rows.Scan(&f.RowID, &f.AsID, &f.Suffix, &f.Ingress, &f.Egress, &f.PathType, &f.Path,
 			&f.EndProps, &f.TrafficSplit, &f.ActiveIndex)
 		if err != nil {
 			return nil, err
@@ -685,6 +691,7 @@ func buildSegRsvFromFields(ctx context.Context, x db.Sqler, fields *rsvFields) (
 	binary.BigEndian.PutUint32(rsv.ID.Suffix[:], fields.Suffix)
 	rsv.Ingress = fields.Ingress
 	rsv.Egress = fields.Egress
+	rsv.PathType = reservation.PathType(fields.PathType)
 
 	p, err := segment.OpaquePathFromRaw(fields.Path)
 	if err != nil {

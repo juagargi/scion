@@ -35,7 +35,9 @@ import (
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/scrypto"
 	"github.com/scionproto/scion/go/lib/serrors"
+	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 )
@@ -131,6 +133,8 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	} else if rsv == nil && !newSetup {
 		return s.errNew("reservation not found for a renewal", "id", req.ID)
 	}
+	log.Info("COLIBRI requesting setup/renewal", "new_setup", newSetup,
+		"id", req.ID.String(), "idx", req.Index)
 
 	origPath := req.Request.Path.Copy()
 	rollbackChanges := func(setupRes segment.SegmentSetupResponse) {
@@ -153,13 +157,13 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		} else {
 			res, err = s.CleanupSegmentReservation(ctx, req)
 		}
-		log.Debug("cleaning reservations down the path", "new_setup", newSetup,
+		log.Debug("deleteme cleaning reservations down the path", "new_setup", newSetup,
 			"res", res, "err", err)
 		if err != nil {
-			log.Error("while cleaning reservations down the path an error occurred",
+			log.Info("while cleaning reservations down the path an error occurred",
 				"new_setup", newSetup, "err", err, "res", res)
 		} else if _, ok := res.(*base.ResponseSuccess); !ok {
-			log.Error("while cleaning reservations down the path, received failure response",
+			log.Info("while cleaning reservations down the path, received failure response",
 				"new_setup", newSetup, "res", res)
 		}
 	}
@@ -206,7 +210,7 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Requ
 	failedResponse := s.prepareFailureResp("failed to confirm index")
 
 	if err := req.Validate(); err != nil {
-		failedResponse.Message = "request validation failed: " + err.Error()
+		failedResponse.Message = "request validation failed: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 
@@ -267,7 +271,7 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Req
 	failedResponse := s.prepareFailureResp("failed to confirm index")
 
 	if err := req.Validate(); err != nil {
-		failedResponse.Message = "request validation failed: " + err.Error()
+		failedResponse.Message = "request validation failed: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 
@@ -289,6 +293,18 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Req
 	if err := rsv.SetIndexActive(req.Index); err != nil {
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
 			"id", req.ID)
+	}
+	if req.IsSourceAS() {
+		colibriPath := rsv.DeriveColibriPathAtSource()
+		rawColibriPath := make([]byte, colibriPath.Len())
+		if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
+			return nil, s.errWrapStr("error obtaining colibri path from reservation", err)
+		}
+		rsv.PathAtSource.Spath = spath.Path{
+			Type: colpath.PathType,
+			Raw:  rawColibriPath,
+		}
+		log.Info("deleteme stored colibri path inside reservation", "path", hex.EncodeToString(rawColibriPath))
 	}
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
@@ -320,7 +336,8 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Req
 func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Request) (
 	base.Response, error) {
 
-	log.Info("deleteme cleanup request", "path", req.Path.String())
+	log.Info("deleteme cleanup request", "path", req.Path.String(), "id", req.ID.String(),
+		"idx", req.Index)
 
 	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
@@ -329,7 +346,7 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Requ
 	failedResponse := s.prepareFailureResp("failed to cleanup index")
 
 	if err := req.Validate(); err != nil {
-		failedResponse.Message = "request validation failed: " + err.Error()
+		failedResponse.Message = "request validation failed: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 
@@ -392,7 +409,7 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *segment.Req
 	failedResponse := s.prepareFailureResp("failed to teardown segment")
 
 	if err := req.Validate(); err != nil {
-		failedResponse.Message = "request validation failed: " + err.Error()
+		failedResponse.Message = "request validation failed: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 	log.Info("deleteme deleteme 3")
@@ -678,7 +695,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 
 	if err := req.Validate(); err != nil {
-		failedResponse.Message = "request failed validation: " + err.Error()
+		failedResponse.Message = "request failed validation: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 	log.Info("deleteme 2 admit segment reservation", "id", req.ID, "curr_step", req.Path.CurrentStep)
@@ -692,7 +709,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		failedResponse.Message = "cannot create transaction: " + err.Error()
+		failedResponse.Message = "cannot create transaction: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
 	}
 	defer tx.Rollback()
@@ -701,7 +718,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
-		failedResponse.Message = "looking for reservation: " + err.Error()
+		failedResponse.Message = "looking for reservation: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("looking for reservation", err, "id", req.ID)
 	}
 
@@ -729,7 +746,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	log.Info("deleteme 6 admit segment reservation")
 
 	if err := req.ValidateForReservation(rsv); err != nil {
-		failedResponse.Message = "error validating request with reservation: " + err.Error()
+		failedResponse.Message = "error validating request with reservation: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 
@@ -737,17 +754,21 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	// compute admission max BW
 	err = s.admitter.AdmitRsv(ctx, tx, req)
 	if err != nil {
-		failedResponse.Message = "segment not admitted: " + err.Error()
+		log.Debug("segment not admitted here", "err", err)
+		failedResponse.Message = "segment not admitted: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 	// admitted; the request contains already the value inside the "allocation beads" of the rsv
 	allocBW := req.AllocTrail[len(req.AllocTrail)-1].AllocBW
-	log.Info("deleteme 12", "req.Reservation.Pathtype", req.Reservation.PathType, "req.pathtype", req.PathType)
+	log.Info("COLIBRI admission successful", "id", req.ID.String(), "idx", req.Index,
+		"alloc", allocBW)
+	log.Info("deleteme 12", "req.Reservation.Pathtype", req.Reservation.PathType,
+		"req.pathtype", req.PathType)
 
 	idx, err := rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, allocBW,
 		req.RLC, req.Reservation.PathType)
 	if err != nil {
-		failedResponse.Message = "cannot create new index: " + err.Error()
+		failedResponse.Message = "cannot create new index: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 	index := rsv.Index(idx)
@@ -758,17 +779,17 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	if req.ID.IsEmptySuffix() && req.IsSourceAS() {
 		log.Info("deleteme 14")
 		if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
-			failedResponse.Message = "error creating new reservation at source: " + err.Error()
+			failedResponse.Message = "error creating new reservation at source: " + s.err(err).Error()
 			return failedResponse, s.err(err)
 		}
 		req.ID = rsv.ID
 	} else if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
-		failedResponse.Message = "cannot persist segment reservation: " + err.Error()
+		failedResponse.Message = "cannot persist segment reservation: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("persisting segment reservation", err)
 	}
 	if err := tx.Commit(); err != nil {
 		log.Info("deleteme 15")
-		failedResponse.Message = "cannot commit transaction: " + err.Error()
+		failedResponse.Message = "cannot commit transaction: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("cannot commit transaction", err)
 	}
 
@@ -781,7 +802,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		log.Info("deleteme dialing grpc")
 		client, err := s.operator.ColibriClient(ctx, req.Path)
 		if err != nil {
-			failedResponse.Message = "error forwarding request: " + err.Error()
+			failedResponse.Message = "error forwarding request: " + s.err(err).Error()
 			return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 		}
 
@@ -789,7 +810,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
 		log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
 		if err != nil {
-			failedResponse.Message = "error in forwarded request: " + err.Error()
+			failedResponse.Message = "error in forwarded request: " + s.err(err).Error()
 			return failedResponse, serrors.WrapStr("forwarded request failed", err)
 		}
 		res, err := translate.SetupResponse(pbRes)
@@ -797,7 +818,8 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		if suc, ok := res.(*segment.SegmentSetupResponseSuccess); ok {
 			token = &suc.Token
 		} else {
-			log.Debug("failure from downstream, returning it as well")
+			log.Debug("failure from downstream, returning it as well", "msg",
+				res.(*segment.SegmentSetupResponseFailure).Message)
 			return res, nil
 		}
 	}
@@ -811,7 +833,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	})
 	mac, err := s.computeMAC(rsv.ID.Suffix[:], token, req.Path.SrcIA().A, req.Path.DstIA().A)
 	if err != nil {
-		failedResponse.Message = "cannot compute MAC: " + err.Error()
+		failedResponse.Message = "cannot compute MAC: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("cannot compute MAC", err)
 	}
 	log.Info("deleteme MAC MAC MAC", "mac", hex.EncodeToString(mac))
@@ -819,32 +841,21 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	log.Info("deleteme 220 rsv index token", "index.token", index.Token)
 	// store token and colibri path inside reservation
 	index.Token = token
+	index.AllocBW = token.BWCls // could have been admited for less downstream
 	log.Info("deleteme 221 rsv index token", "index.token", index.Token)
 
-	// if req.IsSourceAS() {
-	// 	colibriPath := rsv.DeriveColibriPathAtSource()
-	// 	rawColibriPath := make([]byte, colibriPath.Len())
-	// 	if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
-	// 		return nil, s.errWrapStr("error obtaining colibri path from reservation", err)
-	// 	}
-	// 	rsv.PathAtSource.Spath = spath.Path{
-	// 		Type: colpath.PathType,
-	// 		Raw:  rawColibriPath,
-	// 	}
-	// 	log.Info("deleteme stored colibri path inside reservation", "path", hex.EncodeToString(rawColibriPath))
-	// }
 	tx, err = s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		failedResponse.Message = "storing token, cannot create transaction: " + err.Error()
+		failedResponse.Message = "storing token, cannot create transaction: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("storing token, cannot create transaction", err)
 	}
 	defer tx.Rollback()
 	if err := tx.PersistSegmentRsv(ctx, rsv); err != nil {
-		failedResponse.Message = "storing token, cannot persist rsv: " + err.Error()
+		failedResponse.Message = "storing token, cannot persist rsv: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("storing token, cannot persist rsv", err)
 	}
 	if err := tx.Commit(); err != nil {
-		failedResponse.Message = "storing token, cannot commit transaction: " + err.Error()
+		failedResponse.Message = "storing token, cannot commit transaction: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("storing token, cannot commit transaction", err)
 	}
 	return &segment.SegmentSetupResponseSuccess{

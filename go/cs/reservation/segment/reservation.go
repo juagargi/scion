@@ -67,9 +67,11 @@ func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
 	}
 	copy(p.InfoField.ResIdSuffix, r.ID.Suffix[:])
 	for i, hf := range index.Token.HopFields {
-		p.HopFields[i].IngressId = hf.Ingress
-		p.HopFields[i].EgressId = hf.Egress
-		p.HopFields[i].Mac = hf.Mac[:]
+		p.HopFields[i] = &colpath.HopField{
+			IngressId: hf.Ingress,
+			EgressId:  hf.Egress,
+			Mac:       hf.Mac[:],
+		}
 	}
 	return p
 }
@@ -171,7 +173,7 @@ func (r *Reservation) NextIndexToActivate() *Index {
 		return nil
 	}
 	i := 0
-	if r.activeIndex > 0 {
+	if r.activeIndex >= 0 {
 		i = r.activeIndex
 	}
 	if i+1 < len(r.Indices) {
