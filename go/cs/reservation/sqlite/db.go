@@ -389,33 +389,13 @@ func (x *executor) GetInterfaceUsageEgress(ctx context.Context, ifid uint16) (ui
 }
 
 func (x *executor) GetTransitDem(ctx context.Context, ingress, egress uint16) (uint64, error) {
-	query := `SELECT traffic_demand from state_transit_demand
-	WHERE ingress = ? AND egress = ?`
-	var transit uint64
-	if err := x.db.QueryRowContext(ctx, query, ingress, egress).Scan(&transit); err != nil {
-		if err == sql.ErrNoRows {
-			return 0, nil
-		}
-		return 0, serrors.WrapStr("get transit demand failed", err, "ingress", ingress, "egress", egress)
-	}
-	return transit, nil
+	return getTransitDem(ctx, x.db, ingress, egress)
 }
 
 func (x *executor) PersistTransitDem(ctx context.Context, ingress, egress uint16,
 	transit uint64) error {
 
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		query := `INSERT INTO state_transit_demand (ingress, egress, traffic_demand)
-		VALUES(?, ?, ?)
-		ON CONFLICT(ingress,egress) DO UPDATE
-		SET traffic_demand = ?`
-		_, err := tx.ExecContext(ctx, query, ingress, egress, transit, transit)
-		return err
-	})
-	if err != nil {
-		return db.NewTxError("error persisting transit demand", err)
-	}
-	return nil
+	return persistTransitDem(ctx, x.db, ingress, egress, transit)
 }
 
 func (x *executor) GetTransitAlloc(ctx context.Context, ingress, egress uint16) (uint64, error) {
@@ -742,7 +722,8 @@ func getSegIndices(ctx context.Context, x db.Sqler, rowID int) (segment.Indices,
 }
 
 func deleteSegmentRsv(ctx context.Context, x db.Sqler, rsvID *reservation.SegmentID) error {
-	// get blocked bandwidth to update the ingress/egress interfaces tables
+	// get blocked bandwidth to update the ingress/egress interfaces tables,
+	// and all the state ones in general
 	params := []interface{}{
 		rsvID.ASID,
 		binary.BigEndian.Uint32(rsvID.Suffix[:]),
@@ -759,6 +740,10 @@ func deleteSegmentRsv(ctx context.Context, x db.Sqler, rsvID *reservation.Segmen
 		if err != nil {
 			return err
 		}
+		// err = subtractTransitDem(ctx, x, rsvs[0].Ingress, rsvs[0].Egress, uint64(blocked))
+		// if err != nil {
+		// 	return err
+		// }
 	default:
 		return serrors.New("Got more than one reservation for one ID", "ID", rsvID.String())
 	}
@@ -790,7 +775,7 @@ func insertNewE2EReservation(ctx context.Context, x *sql.Tx, rsv *e2e.Reservatio
 		return err
 	}
 	if len(rsv.Indices) > 0 {
-		const queryTmpl = `INSERT INTO e2e_index (reservation, index_number, expiration, 
+		const queryTmpl = `INSERT INTO e2e_index (reservation, index_number, expiration,
 			alloc_bw, token) VALUES (?,?,?,?,?)`
 		params := make([]interface{}, 0, 5*len(rsv.Indices))
 		for _, index := range rsv.Indices {
@@ -805,7 +790,7 @@ func insertNewE2EReservation(ctx context.Context, x *sql.Tx, rsv *e2e.Reservatio
 	}
 	if len(rsv.SegmentReservations) > 0 {
 		const valuesPlaceholder = `(id_as = ? AND id_suffix = ?)`
-		const queryTmpl = `INSERT INTO e2e_to_seg (e2e, seg) 
+		const queryTmpl = `INSERT INTO e2e_to_seg (e2e, seg)
 		SELECT ?, ROWID FROM seg_reservation WHERE `
 		params := make([]interface{}, 1, 1+2*len(rsv.SegmentReservations))
 		params[0] = rowID
@@ -1082,4 +1067,58 @@ func interfacesStateUsedBWUpdate(ctx context.Context, x db.Sqler, ingress, egres
 		return err
 	}
 	return interfaceStateUsedBWUpdate(ctx, x, "state_egress_interface", egress, deltaBW)
+}
+
+func getTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16) (uint64, error) {
+
+	query := `SELECT traffic_demand from state_transit_demand
+	WHERE ingress = ? AND egress = ?`
+	var transit uint64
+	if err := x.QueryRowContext(ctx, query, ingress, egress).Scan(&transit); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, serrors.WrapStr("get transit demand failed", err,
+			"ingress", ingress, "egress", egress)
+	}
+	return transit, nil
+}
+
+func persistTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16,
+	transit uint64) error {
+
+	err := db.DoInTx(ctx, x, func(ctx context.Context, tx *sql.Tx) error {
+		query := `INSERT INTO state_transit_demand (ingress, egress, traffic_demand)
+		VALUES(?, ?, ?)
+		ON CONFLICT(ingress,egress) DO UPDATE
+		SET traffic_demand = ?`
+		_, err := tx.ExecContext(ctx, query, ingress, egress, transit, transit)
+		return err
+	})
+	if err != nil {
+		return db.NewTxError("error persisting transit demand", err)
+	}
+	return nil
+}
+
+func subtractTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16,
+	dem uint64) error {
+
+	balance, err := getTransitDem(ctx, x, ingress, egress)
+	if err != nil {
+		return err
+	}
+	if balance == 0 {
+		return nil
+	}
+	var newDem uint64
+	if balance > dem {
+		newDem = balance - dem
+	} else {
+		newDem = 0
+	}
+	query := `UPDATE state_transit_demand SET traffic_demand=?
+	WHERE ingress=? AND egress=?`
+	_, err = x.ExecContext(ctx, query, newDem, ingress, egress)
+	return err
 }

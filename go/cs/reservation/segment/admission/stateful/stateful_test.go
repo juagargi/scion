@@ -747,7 +747,6 @@ func TestLinkRatioAfterAdmission(t *testing.T) {
 			require.Equal(t, tc.linkRatioAfter, linkRatio, "failed after admission")
 		})
 	}
-
 }
 
 type testCapacities struct {

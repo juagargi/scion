@@ -931,31 +931,3 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	// the available BW for this e2e rsv is the effective minus the already used
 	return uint64(effectiveE2eTraffic) - total, nil
 }
-
-// type deadMansSwitch struct {
-// 	cancelled    bool
-// 	callWhenDead func()
-// }
-
-// // IfDead prepares a dead man's switch that takes a function to execute when dead.
-// // Since we don't have execution when out of scope (or function) we return a function to
-// // be called with defer to simulate the dead that triggers the switch.
-// // To cancel the execution of the function, unarm the switch.
-// // Returns the deferrable function and the switch object.
-// func IfDead(fcn func()) (func(), *deadMansSwitch) {
-// 	s := &deadMansSwitch{
-// 		callWhenDead: fcn,
-// 	}
-// 	return s.whenImDead, s
-// }
-
-// // Unarm sets the switch not to action when dead.
-// func (s *deadMansSwitch) Unarm() {
-// 	s.cancelled = true
-// }
-
-// func (s *deadMansSwitch) whenImDead() {
-// 	if !s.cancelled {
-// 		s.callWhenDead()
-// 	}
-// }

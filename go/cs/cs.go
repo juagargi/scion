@@ -37,7 +37,7 @@ import (
 	"github.com/scionproto/scion/go/cs/config"
 	"github.com/scionproto/scion/go/cs/ifstate"
 	"github.com/scionproto/scion/go/cs/onehop"
-	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateful"
+	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateless"
 	"github.com/scionproto/scion/go/cs/reservationstore"
 	segreggrpc "github.com/scionproto/scion/go/cs/segreg/grpc"
 	"github.com/scionproto/scion/go/cs/segreq"
@@ -450,7 +450,7 @@ func run(file string) error {
 		return serrors.WrapStr("error initializing COLIBRI DB", err)
 	}
 
-	admitter := &admission.StatefulAdmission{
+	admitter := &admission.StatelessAdmission{
 		Caps:  cfg.Colibri.Capacities,
 		Delta: cfg.Colibri.Delta,
 	}

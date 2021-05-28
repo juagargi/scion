@@ -16,7 +16,7 @@ go_library(
         "//go/cs/config:go_default_library",
         "//go/cs/ifstate:go_default_library",
         "//go/cs/onehop:go_default_library",
-        "//go/cs/reservation/segment/admission/stateful:go_default_library",
+        "//go/cs/reservation/segment/admission/stateless:go_default_library",
         "//go/cs/reservationstore:go_default_library",
         "//go/cs/segreg/grpc:go_default_library",
         "//go/cs/segreq:go_default_library",

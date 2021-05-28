@@ -28,6 +28,7 @@ import (
 )
 
 // StatefulAdmission can admit a segment reservation without any state other than the DB.
+// TODO(juagargi) the stateful functions need to be called from the delete functions in the DB.
 type StatefulAdmission struct {
 	Caps  base.Capacities // aka capacity matrix
 	Delta float64         // fraction of free BW that can be reserved in one request
