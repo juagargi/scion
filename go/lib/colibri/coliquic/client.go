@@ -106,13 +106,7 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *segme
 func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.Router,
 	arw libgrpc.AddressRewriter) {
 
-	remainingIAs := make(map[uint16]addr.IA)
-	for _, name := range topo.BRNames() {
-		brInfo, _ := topo.BR(name)
-		for ifid, info := range brInfo.IFs {
-			remainingIAs[uint16(ifid)] = info.IA
-		}
-	}
+	remainingIAs := neighbors(topo)
 	go func() {
 		defer log.HandlePanic()
 		log.Info("will initialize colibri client operator", "neighbor_count", len(remainingIAs))
@@ -122,19 +116,63 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.R
 		for len(remainingIAs) > 0 {
 			time.Sleep(2 * time.Second)
 			log.Debug("colibri client operator initializing", "remaining", len(remainingIAs))
-			for egress, ia := range remainingIAs {
-				colAddr, err := resolveAddr(router, arw, &ia)
-				if err != nil {
-					log.Debug("error resolving address for colibri service", "err", err)
-					continue
-				}
-				o.neighbors[egress] = colAddr
-				delete(remainingIAs, egress)
-			}
+			remainingIAs = findNeighbors(o.neighbors, remainingIAs, router, arw)
 		}
 		log.Info("colibri client operator initialization complete")
 		o.initialized = true
+		go func() {
+			defer log.HandlePanic()
+			o.periodicResolveNeighbors(topo, router, arw)
+		}()
 	}()
+}
+
+// periodicResolveNeighbors scans the topology and gets new paths for the neighbors.
+func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology, router snet.Router,
+	arw libgrpc.AddressRewriter) {
+
+	neighbors := neighbors(topo)
+	for {
+		time.Sleep(15 * time.Minute)
+		log.Debug("colibri client operator periodically findind neighbors",
+			"count", len(neighbors))
+		newAddrBook := make(map[uint16]*snet.UDPAddr)
+		findNeighbors(newAddrBook, neighbors, router, arw)
+		log.Info("deleteme PERIODIC neighbor find", "found_count", len(newAddrBook))
+		o.mutex.Lock()
+		o.neighbors = newAddrBook
+		o.mutex.Unlock()
+	}
+}
+
+// neighbors returns the neighboring IAs by egress interface ID.
+func neighbors(topo topology.Topology) map[uint16]addr.IA {
+	neighbors := make(map[uint16]addr.IA)
+	for _, name := range topo.BRNames() {
+		brInfo, _ := topo.BR(name)
+		for ifid, info := range brInfo.IFs {
+			neighbors[uint16(ifid)] = info.IA
+		}
+	}
+	return neighbors
+}
+
+// findNeighbors sets the address of the neighbors in the addrBook parameter.
+// Returns the neighbors for which it could not find an address.
+func findNeighbors(addrBook map[uint16]*snet.UDPAddr, neighbors map[uint16]addr.IA,
+	router snet.Router, arw libgrpc.AddressRewriter) map[uint16]addr.IA {
+
+	missingNeighbors := make(map[uint16]addr.IA)
+	for egress, ia := range neighbors {
+		colAddr, err := resolveAddr(router, arw, &ia)
+		if err != nil {
+			log.Debug("error resolving address for colibri service", "err", err)
+			missingNeighbors[egress] = ia
+			continue
+		}
+		addrBook[egress] = colAddr
+	}
+	return missingNeighbors
 }
 
 func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
