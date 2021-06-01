@@ -178,6 +178,9 @@ func (s *SCION) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeO
 	offset := CmnHdrLen + s.AddrHdrLen()
 
 	// Serialize path header.
+	if c, ok := s.Path.(*colibri.ColibriPathMinimal); ok {
+		c.InfoField.OrigPayLen = s.PayloadLen
+	}
 	return s.Path.SerializeTo(buf[offset:])
 }
 

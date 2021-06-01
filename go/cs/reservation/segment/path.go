@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
 	slayerspath "github.com/scionproto/scion/go/lib/slayers/path"
 	"github.com/scionproto/scion/go/lib/snet"
@@ -74,11 +75,14 @@ func (p *OpaquePath) Interfaces() []snet.PathInterface {
 	if p == nil {
 		return []snet.PathInterface{}
 	}
-	ifaces := make([]snet.PathInterface, len(p.Steps)/2)
-	for i := 0; i < len(ifaces); i++ {
-
+	ifaces := make([]snet.PathInterface, len(p.Steps)*2) // it has two too many
+	for i := 0; i < len(p.Steps); i++ {
+		ifaces[i*2].ID = common.IFIDType(p.Steps[i].Ingress)
+		ifaces[i*2].IA = p.Steps[i].IA
+		ifaces[i*2+1].ID = common.IFIDType(p.Steps[i].Egress)
+		ifaces[i*2+1].IA = p.Steps[i].IA
 	}
-	return nil
+	return ifaces[1 : len(ifaces)-1]
 }
 
 func (p *OpaquePath) Copy() *OpaquePath {
@@ -90,6 +94,9 @@ func (p *OpaquePath) Copy() *OpaquePath {
 }
 
 func (p *OpaquePath) String() string {
+	if p == nil {
+		return "<nil>"
+	}
 	strs := make([]string, len(p.Steps))
 	for i, s := range p.Steps {
 		if s.IA.IsZero() {
@@ -124,7 +131,7 @@ func (p *OpaquePath) ToRaw() []byte {
 		binary.BigEndian.PutUint64(buff[4:], uint64(step.IA.IAInt()))
 		buff = buff[12:]
 	}
-	p.Spath.Type = slayerspath.Type(buff[0])
+	buff[0] = byte(p.Spath.Type)
 	n := copy(buff[1:], p.Spath.Raw)
 	if n != len(p.Spath.Raw) {
 		panic("internal logic error")

@@ -55,7 +55,7 @@ const sleepAtLeast = 4 * time.Second
 // const sleepAtMost = 5 * time.Minute
 const sleepAtMost = 10 * time.Second // deleteme
 
-// min validity in the future for the reservations when checking their compliance
+// min validity in the future for the reservations when checking their compliance,
 // the bigger the value, the more probable it is not to break continuity.
 // Typically this value would be twice the max. sleep period, to ensure no index would
 // expire while the keeper is sleeping.
@@ -63,9 +63,10 @@ const minDuration = 2 * sleepAtMost
 
 // min validity of new indices/reservations. The bigger the value, the longer a single index
 // can be used. Too big a value could produce errors in the admission for some ASes.
-
+// This value would typically be equal to twice minDuration.
 // const newIndexMinDuration = 10 * time.Minute
-const newIndexMinDuration = 10 * time.Second // TODO(juagargi) remove after debugging is finished
+const newIndexMinDuration = 40 * time.Second // TODO(juagargi) remove after debugging is finished
+// const newIndexMinDuration = 2 * minDuration
 
 type keeper struct {
 	sleepUntil time.Time // nothing to do in the keeper until this time
@@ -184,6 +185,9 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		// totally new reservations:
 		requestCount := entry.minActiveRsvs -
 			len(compliantRsvs) - len(needActivation) - len(needIndices)
+		if requestCount < 0 {
+			requestCount = 0
+		}
 		if _, err := k.askNewReservations(ctx, requestCount, dstIA, entry, paths, expirationNewIndices); err != nil {
 			return time.Time{}, err
 		}
@@ -283,15 +287,17 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 		indices := entry.SelectRequests(requests, pendingCount)
 		setups, requests = splitRequests(requests, indices)
 		errs := k.manager.SetupManyRequest(ctx, setups)
+		for i, req := range setups {
+			if errs[i] == nil {
+				needActivation = append(needActivation, &segment.Request{
+					MsgId: req.MsgId,
+					Path:  req.Path,
+				})
+			}
+		}
 		errs = filterEmptyErrors(errs)
 		if len(errs) > 0 {
 			log.Info("errors while requesting reservations", "errs", errs)
-		}
-		for _, req := range setups {
-			needActivation = append(needActivation, &segment.Request{
-				MsgId: req.MsgId,
-				Path:  req.Path,
-			})
 		}
 		pendingCount = pendingCount - len(setups) + len(errs)
 	}

@@ -38,7 +38,7 @@ func AddSegmentReservation(t testing.TB, db backend.DB, ASID string, count int) 
 
 	r := newTestSegmentReservation(t, ASID) // the suffix will be overwritten
 	for i := 0; i < count; i++ {
-		r.Path = segmenttest.NewPathFromComponents(0, "1-"+ASID, i, 1, "1-ff00:0:2", 0)
+		r.PathAtSource = segmenttest.NewPathFromComponents(0, "1-"+ASID, i, 1, "1-ff00:0:2", 0)
 		err := db.NewSegmentRsv(ctx, r)
 		require.NoError(t, err, "iteration i = %d", i)
 	}
@@ -79,9 +79,8 @@ func (c *testCapacities) CapacityEgress(egress uint16) uint64   { return c.Cap }
 // newTestSegmentReservation creates a segment reservation
 func newTestSegmentReservation(t testing.TB, ASID string) *segment.Reservation {
 	t.Helper()
-	r := segment.NewReservation()
-	r.Path = &segment.TransparentPath{}
-	r.ID.ASID = xtest.MustParseAS(ASID)
+	r := segment.NewReservation(xtest.MustParseAS(ASID))
+	r.PathAtSource = &segment.OpaquePath{}
 	r.Ingress = 0
 	r.Egress = 1
 	r.TrafficSplit = 3

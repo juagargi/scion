@@ -16,6 +16,7 @@ package reservationstore
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -42,7 +43,7 @@ func TestKeepOneShot(t *testing.T) {
 	endProps1 := reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer
 	cases := map[string]struct {
 		destinations          map[addr.IA][]requirements
-		paths                 map[addr.IA][]snet.PathInterfacesHaver
+		paths                 map[addr.IA][]snet.Path
 		reservations          map[addr.IA][]*segment.Reservation
 		expectedRequestsCalls int
 		expectedWakeupTime    time.Time
@@ -80,16 +81,16 @@ func TestKeepOneShot(t *testing.T) {
 					minActiveRsvs: 1,
 				}},
 			},
-			paths: map[addr.IA][]snet.PathInterfacesHaver{
+			paths: map[addr.IA][]snet.Path{
 				xtest.MustParseIA("1-ff00:0:2"): {
-					st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0), // direct
-					st.NewPathFromComponents(0, "1-ff00:0:1", 2, 3, "1-ff00:0:2", 0), // direct
-					st.NewPathFromComponents(0, "1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:2", 0),
+					st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
+					st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
+					st.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:2"),
 				},
 				xtest.MustParseIA("1-ff00:0:3"): {
-					st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:3", 0), // direct
-					st.NewPathFromComponents(0, "1-ff00:0:1", 2, 3, "1-ff00:0:3", 0), // direct
-					st.NewPathFromComponents(0, "1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:3", 0),
+					st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:3"), // direct
+					st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:3"), // direct
+					st.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:3"),
 				},
 			},
 			reservations: map[addr.IA][]*segment.Reservation{
@@ -113,7 +114,7 @@ func TestKeepOneShot(t *testing.T) {
 					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0 to could be compliant
 			},
 			expectedRequestsCalls: 2,
-			expectedWakeupTime:    now.Add(sleepAtLeast),
+			expectedWakeupTime:    now.Add(sleepAtMost),
 		},
 		"all compliant expiring tomorrow": {
 			destinations: map[addr.IA][]requirements{
@@ -126,9 +127,9 @@ func TestKeepOneShot(t *testing.T) {
 					minActiveRsvs: 1,
 				}},
 			},
-			paths: map[addr.IA][]snet.PathInterfacesHaver{
+			paths: map[addr.IA][]snet.Path{
 				xtest.MustParseIA("1-ff00:0:2"): {
-					st.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0), // direct
+					st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
 				},
 			},
 			reservations: map[addr.IA][]*segment.Reservation{
@@ -170,13 +171,18 @@ func TestKeepOneShot(t *testing.T) {
 				})
 			manager.EXPECT().Store().AnyTimes().Return(store)
 			manager.EXPECT().PathsTo(gomock.Any(), gomock.Any()).Times(len(tc.destinations)).DoAndReturn(
-				func(_ context.Context, dstIA addr.IA) ([]snet.PathInterfacesHaver, error) {
+				func(_ context.Context, dstIA addr.IA) ([]snet.Path, error) {
 					return tc.paths[dstIA], nil
 				})
-			manager.EXPECT().RequestMany(gomock.Any(), gomock.Any()).
+			manager.EXPECT().SetupManyRequest(gomock.Any(), gomock.Any()).
 				Times(tc.expectedRequestsCalls).DoAndReturn(
-				func(_ context.Context, reqs []*segment.SetupReq) ([]*segment.Reservation, error) {
-					return make([]*segment.Reservation, len(reqs)), nil
+				func(_ context.Context, reqs []*segment.SetupReq) []error {
+					return make([]error, len(reqs))
+				})
+			manager.EXPECT().ActivateManyRequest(gomock.Any(), gomock.Any()).
+				AnyTimes().DoAndReturn(
+				func(_ context.Context, reqs []*segment.Request) []error {
+					return make([]error, len(reqs))
 				})
 
 			wakeupTime, err := keeper.OneShot(ctx)
@@ -234,10 +240,11 @@ func TestSetupsPerDestination(t *testing.T) {
 			keeper := keeper{
 				manager: manager,
 			}
-			manager.EXPECT().RequestMany(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
-				func(_ context.Context, reqs []*segment.SetupReq) ([]*segment.Reservation, error) {
-					return make([]*segment.Reservation, len(reqs)), nil
+			manager.EXPECT().SetupManyRequest(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
+				func(_ context.Context, reqs []*segment.SetupReq) []error {
+					return make([]error, len(reqs))
 				})
+			manager.EXPECT().ActivateManyRequest(gomock.Any(), gomock.Any()).AnyTimes()
 
 			_, err := keeper.setupsPerDestination(ctx, dstIA, tc.requirements, tc.paths, noRsvs)
 			require.NoError(t, err)
@@ -252,7 +259,7 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 		requiredCount     int // amount of rsvs we want
 		successfulPerCall int // manager will only obtain these per call
 		expectError       bool
-		expectedReqs      []int // setup requests expected at the manager, per call. nil == error
+		expectedReqs      []int // setup request # expected at the manager, per call. nil == error
 	}{
 		"empty": {
 			requirements: requirements{
@@ -348,8 +355,8 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 			managerMutex := new(sync.Mutex)
 			requestsCount := make([]int, len(tc.expectedReqs))
 			var callCount int
-			manager.EXPECT().RequestMany(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
-				func(_ context.Context, reqs []*segment.SetupReq) ([]*segment.Reservation, error) {
+			manager.EXPECT().SetupManyRequest(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
+				func(_ context.Context, reqs []*segment.SetupReq) []error {
 					managerMutex.Lock()
 					defer managerMutex.Unlock()
 
@@ -358,15 +365,16 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 					}
 					requestsCount[callCount] = len(reqs)
 					callCount++
-					n := tc.successfulPerCall
-					if len(reqs) < n {
-						n = len(reqs)
+					errs := make([]error, len(reqs))
+					for i := 0; i < len(reqs)-tc.successfulPerCall; i++ {
+						errs[i] = fmt.Errorf("fake error")
 					}
-
-					return make([]*segment.Reservation, n), nil
+					return errs
 				})
+			manager.EXPECT().ActivateManyRequest(gomock.Any(), gomock.Any()).AnyTimes()
 			// build requests from paths (tested elsewhere)
-			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, now, now.Add(time.Hour))
+			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, localIA.A,
+				now, now.Add(time.Hour))
 			require.NoError(t, err)
 			// call and check
 			err = keeper.requestNSuccessfulRsvs(ctx, dstIA,
@@ -398,11 +406,12 @@ func TestRequirementsFilter(t *testing.T) {
 	}
 
 	cases := map[string]struct {
-		requirements      requirements
-		atLeastUntil      time.Time
-		expectedCompliant int
-		expectedMayBe     int
-		rsvs              []*segment.Reservation
+		requirements           requirements
+		atLeastUntil           time.Time
+		expectedCompliant      int
+		expectedNeedActivation int
+		expectedNeedIndices    int
+		rsvs                   []*segment.Reservation
 	}{
 		"empty": {
 			requirements: reqs,
@@ -448,10 +457,10 @@ func TestRequirementsFilter(t *testing.T) {
 				0, st.ModIndex(0, st.WithBW(3, 0, 0))), // index 0 of rsv 0
 		},
 		"first rsv with two indices, both uncompliant": {
-			requirements:      reqs,
-			atLeastUntil:      now,
-			expectedCompliant: 2,
-			expectedMayBe:     1,
+			requirements:        reqs,
+			atLeastUntil:        now,
+			expectedCompliant:   2,
+			expectedNeedIndices: 1,
 			rsvs: modOneRsv(st.NewRsvs(3, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow.Add(24*time.Hour))),
@@ -468,11 +477,13 @@ func TestRequirementsFilter(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			compliant, couldBeCompliant, neverCompliant :=
+			compliant, needsActivation, needsIndices, neverCompliant :=
 				tc.requirements.SplitByCompliance(tc.rsvs, tc.atLeastUntil)
 			require.Len(t, compliant, tc.expectedCompliant)
-			require.Len(t, couldBeCompliant, tc.expectedMayBe)
-			require.Len(t, neverCompliant, len(tc.rsvs)-tc.expectedCompliant-tc.expectedMayBe)
+			require.Len(t, needsActivation, tc.expectedNeedActivation)
+			require.Len(t, needsIndices, tc.expectedNeedIndices)
+			require.Len(t, neverCompliant, len(tc.rsvs)-tc.expectedCompliant-
+				tc.expectedNeedActivation-tc.expectedNeedIndices)
 		})
 	}
 }
@@ -542,7 +553,7 @@ func TestRequirementsCompliance(t *testing.T) {
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
-			expectedCompliance: CouldBeCompliant,
+			expectedCompliance: NeedsIndices,
 		},
 		"one non compliant index, maxbw": {
 			requirements: reqs,
@@ -552,7 +563,7 @@ func TestRequirementsCompliance(t *testing.T) {
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
-			expectedCompliance: CouldBeCompliant,
+			expectedCompliance: NeedsIndices,
 		},
 		"one non compliant index, expired": {
 			requirements: reqs,
@@ -562,7 +573,7 @@ func TestRequirementsCompliance(t *testing.T) {
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
-			expectedCompliance: CouldBeCompliant,
+			expectedCompliance: NeedsIndices,
 		},
 		"no active indices": {
 			requirements: reqs,
@@ -571,7 +582,7 @@ func TestRequirementsCompliance(t *testing.T) {
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
-			expectedCompliance: CouldBeCompliant,
+			expectedCompliance: NeedsActivation,
 		},
 		"no indices": {
 			requirements: reqs,
@@ -579,7 +590,7 @@ func TestRequirementsCompliance(t *testing.T) {
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
-			expectedCompliance: CouldBeCompliant,
+			expectedCompliance: NeedsIndices,
 		},
 		"compliant in the past, not now": {
 			requirements: reqs,
@@ -590,7 +601,7 @@ func TestRequirementsCompliance(t *testing.T) {
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
-			expectedCompliance: CouldBeCompliant,
+			expectedCompliance: NeedsIndices,
 		},
 	}
 	for name, tc := range cases {
@@ -667,7 +678,9 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			now := util.SecsToTime(10)
-			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, now, now.Add(time.Hour))
+			localIA := xtest.MustParseIA("1-ff00:0:1")
+			requests, err := tc.requirements.PrepareSetupRequests(tc.paths, localIA.A,
+				now, now.Add(time.Hour))
 			require.NoError(t, err)
 			require.Len(t, requests, tc.expected)
 			filtered := tc.requirements.predicate.Eval(tc.paths)
@@ -683,9 +696,9 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 			}
 			for _, req := range requests {
 				// check req.PathToDst is in filtered paths
-				_, ok := bagOfPaths[req.PathToDst.String()]
+				_, ok := bagOfPaths[req.PathAtSource.String()]
 				require.True(t, ok, "len(bag)=%d, bag:%s", len(bagOfPaths), bagOfPaths)
-				delete(bagOfPaths, req.PathToDst.String())
+				delete(bagOfPaths, req.PathAtSource.String())
 				// check the rest of the request
 				require.Equal(t, tc.requirements.minBW, req.MinBW)
 				require.Equal(t, tc.requirements.maxBW, req.MaxBW)

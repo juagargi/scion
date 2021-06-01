@@ -56,6 +56,8 @@ func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
 	// info field
 	p := &colpath.ColibriPath{
 		InfoField: &colpath.InfoField{
+			C:           true,
+			S:           true,
 			Ver:         uint8(index.Idx),
 			HFCount:     uint8(len(index.Token.HopFields)),
 			ResIdSuffix: make([]byte, 12),
@@ -99,8 +101,9 @@ func (r *Reservation) Validate() error {
 			activeIndex = i
 		}
 	}
-	if r.Ingress == 0 {
-		return serrors.New("reservation does not start in this AS but ingress interface is zero")
+	if (r.Ingress == 0) != (r.PathAtSource != nil && r.PathAtSource.CurrentStep == 0) {
+		return serrors.New("reservation path and ingress ID non consistent", "ingress", r.Ingress,
+			"path", r.PathAtSource.String())
 	}
 	err := r.PathEndProps.Validate()
 	if err != nil {

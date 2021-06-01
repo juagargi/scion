@@ -39,6 +39,7 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
+	"github.com/scionproto/scion/go/lib/util"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 )
 
@@ -112,6 +113,13 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	newSetup := true
 	log.Info("deleteme path current step", "curr.step", req.Path.CurrentStep)
 	log.Info("deleteme path", "type", req.Path.Spath.Type, "raw_len", len(req.Path.Spath.Raw))
+	if req.Path.Spath.Type == colpath.PathType {
+		log.Info("deleteme deleteme deleteme !!!! COLIBRI path type in renewal")
+		colp := colpath.ColibriPath{}
+		err := colp.DecodeFromBytes(req.Path.Spath.Raw)
+		log.Info("deleteme decoding colibri path", "err", err, "tick*4", colp.InfoField.ExpTick*4,
+			"exptime", util.SecsToTime(colp.InfoField.ExpTick*4), "infofield", colp.InfoField)
+	}
 	log.Info("deleteme PATHATSOURCE", "path_at_source", req.PathAtSource)
 	log.Info("deleteme", "src", req.PathAtSource.SrcIA(), "dst", req.PathAtSource.DstIA())
 	if req.ID.IsEmpty() {
@@ -314,6 +322,31 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Req
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID)
 	}
+
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	if req.IsSourceAS() {
+		allRsvs, err := s.db.GetAllSegmentRsvs(ctx)
+		if err != nil {
+			log.Error("deleteme ERROR querying all RSVS", "err", err)
+			return failedResponse, err
+		}
+		for _, r := range allRsvs {
+			log.Info("deleteme FOUND reservation", "id", r.ID.String(), "path_type", rsv.PathAtSource.Spath.Type)
+		}
+	}
+	//
+	//
+	//
+	//
+	//
+	//
 
 	if req.IsLastAS() {
 		return &base.ResponseSuccess{}, nil
@@ -827,10 +860,14 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	currStep := req.Path.Steps[req.Path.CurrentStep]
 	log.Info("deleteme $$$$$$$$$ TOKEN updated", "curr_step", req.Path.CurrentStep)
 	// TODO(juagargi) compute MAC for token
-	token.HopFields = append(token.HopFields, reservation.HopField{
+	token.HopFields = append([]reservation.HopField{{
 		Ingress: currStep.Ingress,
 		Egress:  currStep.Egress,
-	})
+	}}, token.HopFields...)
+	// token.HopFields = append(token.HopFields, reservation.HopField{
+	// 	Ingress: currStep.Ingress,
+	// 	Egress:  currStep.Egress,
+	// })
 	mac, err := s.computeMAC(rsv.ID.Suffix[:], token, req.Path.SrcIA().A, req.Path.DstIA().A)
 	if err != nil {
 		failedResponse.Message = "cannot compute MAC: " + s.err(err).Error()
@@ -875,6 +912,8 @@ func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS a
 	if err != nil {
 		return nil, err
 	}
+	log.Info("deleteme MAC MAC MAC MAC MAC", "privatekey", hex.EncodeToString(s.colibriKey),
+		"input", hex.EncodeToString(buff))
 	return colibri.StaticMAC(s.colibriKey, buff)
 }
 
