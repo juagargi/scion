@@ -427,6 +427,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 		// if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
 		// 	return nil, serrors.WrapStr("error obtaining colibri path from reservation", err)
 		// }
+		// TODO(juagargi) if rsv.PathAtSource is colibri and expired, use a regular path
 		req := &seg.SetupReq{
 			Request: seg.Request{ // without path in metadata (it will be set in the store)
 				MsgId: base.MsgId{

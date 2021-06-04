@@ -204,6 +204,7 @@ func OpaquePath(msg *colpb.OpaquePath) *segment.OpaquePath {
 		},
 	}
 	for i, step := range msg.Steps {
+		opaque.Steps[i].IA = addr.IAInt(step.Ia).IA()
 		opaque.Steps[i].Ingress = uint16(step.Ingress)
 		opaque.Steps[i].Egress = uint16(step.Egress)
 	}

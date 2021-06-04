@@ -27,7 +27,6 @@ import (
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
-	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
@@ -159,7 +158,7 @@ func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField
 
 	switch inf.C {
 	case true:
-		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s)
+		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s.SrcIA.A)
 		if err != nil {
 			return err
 		}
@@ -175,8 +174,9 @@ func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField
 	}
 
 	if !bytes.Equal(mac[:4], currHop.Mac[:4]) {
-		return serrors.New("colibri mac verification failed", "calculated", mac[:4],
-			"packet", currHop.Mac[:4])
+		return serrors.New("colibri mac verification failed",
+			"calculated", hex.EncodeToString(mac[:4]),
+			"packet", hex.EncodeToString(currHop.Mac[:4]))
 	}
 
 	return nil
@@ -197,7 +197,7 @@ func StaticMAC(key []byte, input []byte) ([]byte, error) {
 // CalculateColibriMacStatic calculates the static colibri MAC.
 // The private key comes from calling scrypto.DeriveColibriKey.
 func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
-	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
+	currHop *colibri.HopField, srcAS addr.AS) ([]byte, error) {
 
 	// Initialize cryptographic MAC function
 	f, err := initColibriMac(privateKey)
@@ -205,7 +205,7 @@ func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
 		return nil, err
 	}
 	// Prepare the input for the MAC function
-	input, err := prepareMacInputStatic(s, inf, currHop)
+	input, err := prepareMacInputStatic(srcAS, inf, currHop)
 	if err != nil {
 		return nil, err
 	}
@@ -274,12 +274,12 @@ func initColibriMac(key []byte) (cipher.BlockMode, error) {
 	return mode, nil
 }
 
-func prepareMacInputStatic(s *slayers.SCION, inf *colibri.InfoField,
+func prepareMacInputStatic(srcAS addr.AS, inf *colibri.InfoField,
 	hop *colibri.HopField) ([]byte, error) {
 
 	// Create buffer large enough to store InputData, with length aligned to 16 bytes
 	buffer := make([]byte, LengthInputDataRound16)
-	err := prepareInputData(s, inf, hop, buffer)
+	err := prepareInputData(srcAS, inf, hop, buffer)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +309,7 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 	nrBlocks := uint8(math.Ceil(float64(bufLen) / 16))
 	buffer := make([]byte, 16*nrBlocks)
 
-	err := prepareInputData(s, inf, hop, buffer)
+	err := prepareInputData(s.SrcIA.A, inf, hop, buffer)
 	if err != nil {
 		return nil, err
 	}
@@ -346,10 +346,10 @@ func prepareMacInputPacket(packetTimestamp uint64, inf *colibri.InfoField,
 }
 
 // prepareInputData writes InputData to the given buffer.
-func prepareInputData(s *slayers.SCION, inf *colibri.InfoField,
+func prepareInputData(srcAS addr.AS, inf *colibri.InfoField,
 	hop *colibri.HopField, buffer []byte) error {
 
-	if s == nil || inf == nil || hop == nil {
+	if inf == nil || hop == nil {
 		return serrors.New("invalid input")
 	}
 	if len(buffer) < LengthInputData {
@@ -369,8 +369,8 @@ func prepareInputData(s *slayers.SCION, inf *colibri.InfoField,
 	}
 	flags += inf.Ver << 4
 	buffer[19] = flags
-	srcAs := uint64(s.SrcIA.A)
-	binary.BigEndian.PutUint64(buffer[22:30], srcAs)
+
+	binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
 	binary.BigEndian.PutUint16(buffer[20:22], hop.IngressId)
 	binary.BigEndian.PutUint16(buffer[22:24], hop.EgressId)
 
@@ -410,7 +410,6 @@ func MACInput(buffer []byte, suffix []byte, expTick uint32,
 	}
 	binary.BigEndian.PutUint16(buffer[20:22], ingress)
 	binary.BigEndian.PutUint16(buffer[22:24], egress)
-	log.Info("deleteme deleteme MAC INPUT", "input", hex.EncodeToString(buffer))
 	return nil
 }
 

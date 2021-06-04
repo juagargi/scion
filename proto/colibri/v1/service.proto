@@ -62,8 +62,9 @@ message AllocationBead {
 }
 
 message PathStep { // without IA
-    uint32 ingress = 1;
-    uint32 egress =2;
+    uint64 ia = 1;
+    uint32 ingress = 2;
+    uint32 egress =3;
 }
 
 message OpaquePath {

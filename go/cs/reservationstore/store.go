@@ -119,6 +119,10 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		err := colp.DecodeFromBytes(req.Path.Spath.Raw)
 		log.Info("deleteme decoding colibri path", "err", err, "tick*4", colp.InfoField.ExpTick*4,
 			"exptime", util.SecsToTime(colp.InfoField.ExpTick*4), "infofield", colp.InfoField)
+		for i, hf := range colp.HopFields {
+			s := fmt.Sprintf("%d>%d [%x]", hf.IngressId, hf.EgressId, hf.Mac)
+			log.Info("deleteme HopField", "i", i, "hf", s)
+		}
 	}
 	log.Info("deleteme PATHATSOURCE", "path_at_source", req.PathAtSource)
 	log.Info("deleteme", "src", req.PathAtSource.SrcIA(), "dst", req.PathAtSource.DstIA())
@@ -192,6 +196,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	log.Info("deleteme $$$$$$$$$ TOKEN $$$$$$$$$ TOKEN $$$$$$$$$", "token", suc.Token)
 	log.Info("deleteme $$$$$$$$$", "srcia", rsv.PathAtSource.SrcIA(), "dstia", rsv.PathAtSource.DstIA())
 	log.Info("deleteme $$$$$$$$$", "active", rsv.ActiveIndex())
+	log.Info("deleteme $$$$$$$$$", "req.path", req.Path)
 
 	return nil
 }
@@ -276,48 +281,56 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Req
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
 	}
 
+	log.Info("deleteme activating 2", "req.path", req.Path)
 	failedResponse := s.prepareFailureResp("failed to confirm index")
-
+	log.Info("deleteme activating 3")
 	if err := req.Validate(); err != nil {
 		failedResponse.Message = "request validation failed: " + s.err(err).Error()
 		return failedResponse, nil
 	}
-
+	log.Info("deleteme activating 4")
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
 		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
 	}
 	defer tx.Rollback()
-
+	log.Info("deleteme activating 5")
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
 		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
 			"id", req.ID)
 	}
+	log.Info("deleteme activating 6")
 	if rsv == nil {
 		failedResponse.Message = "no reservation found"
 		return failedResponse, nil
 	}
+	log.Info("deleteme activating 7")
 	if err := rsv.SetIndexActive(req.Index); err != nil {
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
 			"id", req.ID)
 	}
+	log.Info("deleteme activating 8")
 	if req.IsSourceAS() {
+		log.Info("deleteme activating 9")
 		colibriPath := rsv.DeriveColibriPathAtSource()
 		rawColibriPath := make([]byte, colibriPath.Len())
 		if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
 			return nil, s.errWrapStr("error obtaining colibri path from reservation", err)
 		}
+		log.Info("deleteme activating 10")
 		rsv.PathAtSource.Spath = spath.Path{
 			Type: colpath.PathType,
 			Raw:  rawColibriPath,
 		}
 		log.Info("deleteme stored colibri path inside reservation", "path", hex.EncodeToString(rawColibriPath))
 	}
+	log.Info("deleteme activating 11")
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID)
 	}
+	log.Info("deleteme activating 12")
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID)
@@ -331,7 +344,9 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Req
 	//
 	//
 	//
+	log.Info("deleteme activating 13")
 	if req.IsSourceAS() {
+		log.Info("deleteme activating 14")
 		allRsvs, err := s.db.GetAllSegmentRsvs(ctx)
 		if err != nil {
 			log.Error("deleteme ERROR querying all RSVS", "err", err)
@@ -349,14 +364,17 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Req
 	//
 
 	if req.IsLastAS() {
+		log.Info("deleteme activating 15")
 		return &base.ResponseSuccess{}, nil
 	}
+	log.Info("deleteme activating 16")
 	// forward to next colibri service
 	client, err := s.operator.ColibriClient(ctx, req.Path)
 	if err != nil {
 		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 	}
 
+	log.Info("deleteme activating 17")
 	pbRes, err := client.ActivateSegmentIndex(ctx, translate.PBufRequest(req))
 	if err != nil {
 		return failedResponse, s.errWrapStr("forwarded request failed", err)
@@ -858,24 +876,23 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 	// update token
 	currStep := req.Path.Steps[req.Path.CurrentStep]
-	log.Info("deleteme $$$$$$$$$ TOKEN updated", "curr_step", req.Path.CurrentStep)
+	log.Info("deleteme $$$$$$$$$ received TOKEN", "curr_step", req.Path.CurrentStep, "token", token.String())
 	// TODO(juagargi) compute MAC for token
 	token.HopFields = append([]reservation.HopField{{
 		Ingress: currStep.Ingress,
 		Egress:  currStep.Egress,
 	}}, token.HopFields...)
-	// token.HopFields = append(token.HopFields, reservation.HopField{
-	// 	Ingress: currStep.Ingress,
-	// 	Egress:  currStep.Egress,
-	// })
-	mac, err := s.computeMAC(rsv.ID.Suffix[:], token, req.Path.SrcIA().A, req.Path.DstIA().A)
+
+	log.Info("deleteme MAC MAC MAC", "suffix", hex.EncodeToString(rsv.ID.Suffix[:]),
+		"src_as", req.ID.ASID.String(), "dst_as", req.ID.ASID.String())
+	mac, err := s.computeMAC(rsv.ID.Suffix[:], token, req.ID.ASID, req.ID.ASID)
 	if err != nil {
 		failedResponse.Message = "cannot compute MAC: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("cannot compute MAC", err)
 	}
 	log.Info("deleteme MAC MAC MAC", "mac", hex.EncodeToString(mac))
-	copy(token.HopFields[len(token.HopFields)-1].Mac[:], mac)
-	log.Info("deleteme 220 rsv index token", "index.token", index.Token)
+	copy(token.HopFields[0].Mac[:], mac)
+	log.Info("deleteme 220 rsv index token", "index.token", index.Token, "token", token.String())
 	// store token and colibri path inside reservation
 	index.Token = token
 	index.AllocBW = token.BWCls // could have been admited for less downstream
@@ -906,7 +923,7 @@ func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS a
 	[]byte, error) {
 
 	buff := make([]byte, colibri.LengthInputDataRound16)
-	hf := tok.HopFields[len(tok.HopFields)-1]
+	hf := tok.HopFields[0]
 	err := colibri.MACInput(buff, suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls, tok.RLC,
 		true, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
 	if err != nil {

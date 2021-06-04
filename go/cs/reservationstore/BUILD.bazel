@@ -4,6 +4,7 @@ go_test(
     name = "go_default_test",
     srcs = [
         "db_manip_test.go",
+        "export_test.go",
         "keeper_test.go",
         "store_test.go",
     ],
@@ -20,8 +21,10 @@ go_test(
         "//go/cs/reservationstorage/mock_reservationstorage:go_default_library",
         "//go/cs/reservationstore/mock_reservationstore:go_default_library",
         "//go/lib/addr:go_default_library",
+        "//go/lib/colibri:go_default_library",
         "//go/lib/colibri/reservation:go_default_library",
         "//go/lib/pathpol:go_default_library",
+        "//go/lib/slayers/path/colibri:go_default_library",
         "//go/lib/snet:go_default_library",
         "//go/lib/util:go_default_library",
         "//go/lib/xtest:go_default_library",

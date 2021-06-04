@@ -29,6 +29,11 @@ import (
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/cs/reservationstore"
+	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	collayer "github.com/scionproto/scion/go/lib/slayers/path/colibri"
+	"github.com/scionproto/scion/go/lib/xtest"
 )
 
 const REPS = 100
@@ -49,6 +54,36 @@ func TestDebugAdmitSegmentReservation(t *testing.T) {
 func TestDebugAdmitE2EReservation(t *testing.T) {
 	// timeAdmitE2EReservationManyEndhosts(t, 1)
 	// timeAdmitE2EReservationManySegments(t, 1)
+}
+
+func TestComputeMAC(t *testing.T) {
+	privateKey := xtest.MustParseHexString("5b56986be02a37d30110c854b5f25959")
+	rawInfoField := xtest.MustParseHexString("a0000003000000010000000000000000182d91b60d0004b8")
+	rawCurrHopField := xtest.MustParseHexString("00000029bb05ea35")
+	srcAS := xtest.MustParseAS("ff00:0:111")
+	infF := &collayer.InfoField{}
+	err := infF.DecodeFromBytes(rawInfoField)
+	require.NoError(t, err)
+	currHF := &collayer.HopField{}
+	err = currHF.DecodeFromBytes(rawCurrHopField)
+	require.NoError(t, err)
+	mac, err := colibri.CalculateColibriMacStatic(privateKey, infF, currHF, srcAS)
+	require.NoError(t, err)
+
+	store := &reservationstore.Store{}
+	store.SetColibriKey(privateKey)
+	tok := &reservation.Token{
+		InfoField: reservation.InfoField{
+			Idx:            reservation.IndexNumber(infF.Ver),
+			ExpirationTick: reservation.Tick(infF.ExpTick),
+			BWCls:          reservation.BWCls(infF.BwCls),
+			RLC:            reservation.RLC(infF.Rlc),
+		},
+		HopFields: []reservation.HopField{{Egress: 41}},
+	}
+	storeMAC, err := store.ComputeMAC(infF.ResIdSuffix, tok, srcAS, addr.AS(0))
+	require.NoError(t, err)
+	require.Equal(t, mac, storeMAC)
 }
 
 type performanceTestCase struct {

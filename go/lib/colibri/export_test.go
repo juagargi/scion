@@ -15,14 +15,15 @@
 package colibri
 
 import (
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/slayers"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 )
 
-func PrepareMacInputStatic(s *slayers.SCION, inf *colibri.InfoField,
+func PrepareMacInputStatic(srcAS addr.AS, inf *colibri.InfoField,
 	hop *colibri.HopField) ([]byte, error) {
 
-	return prepareMacInputStatic(s, inf, hop)
+	return prepareMacInputStatic(srcAS, inf, hop)
 }
 
 func PrepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,

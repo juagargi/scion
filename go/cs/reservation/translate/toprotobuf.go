@@ -125,6 +125,7 @@ func PBufOpaque(opaque *segment.OpaquePath) *colpb.OpaquePath {
 	steps := make([]*colpb.PathStep, len(opaque.Steps))
 	for i, step := range opaque.Steps {
 		steps[i] = &colpb.PathStep{
+			Ia:      uint64(step.IA.IAInt()),
 			Ingress: uint32(step.Ingress),
 			Egress:  uint32(step.Egress),
 		}

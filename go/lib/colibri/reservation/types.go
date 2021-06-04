@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
@@ -298,10 +299,10 @@ func (pt PathType) Validate() error {
 // Type indicates which path type of the reservation.
 type InfoField struct {
 	ExpirationTick Tick
-	BWCls          BWCls
-	RLC            RLC
 	Idx            IndexNumber
+	BWCls          BWCls
 	PathType       PathType
+	RLC            RLC
 }
 
 // InfoFieldLen is the length in bytes of the InfoField.
@@ -325,6 +326,11 @@ func (f *InfoField) Validate() error {
 	}
 
 	return nil
+}
+
+func (f *InfoField) String() string {
+	return fmt.Sprintf("exp.tick: %v, idx: %d, bwcls: %d, pathtype: %v, rlc: %d",
+		f.ExpirationTick, f.Idx, f.BWCls, f.PathType, f.RLC)
 }
 
 // InfoFieldFromRaw builds an InfoField from the InfoFieldLen bytes buffer.
@@ -513,6 +519,10 @@ func HopFieldFromRaw(raw []byte) (*HopField, error) {
 	return &hf, nil
 }
 
+func (hf *HopField) String() string {
+	return fmt.Sprintf("%d>%d [%x]", hf.Ingress, hf.Egress, hf.Mac)
+}
+
 // Read serializes this HopField into the buffer.
 func (hf *HopField) Read(b []byte) (int, error) {
 	if len(b) < HopFieldLen {
@@ -546,6 +556,14 @@ func (t *Token) Validate() error {
 		return serrors.New("token without hop fields")
 	}
 	return t.InfoField.Validate()
+}
+
+func (t *Token) String() string {
+	hfs := make([]string, len(t.HopFields))
+	for i, hf := range t.HopFields {
+		hfs[i] = hf.String()
+	}
+	return t.InfoField.String() + ", Hops: " + strings.Join(hfs, " , ")
 }
 
 // TokenFromRaw builds a Token from the passed bytes buffer.

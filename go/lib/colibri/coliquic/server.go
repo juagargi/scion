@@ -77,6 +77,7 @@ func ColibriListener(topo topology.Topology) (net.Listener, error) {
 	serverAddr.Port = 4321
 	log.Info("deleteme deleteme server address will be", "addr", serverAddr)
 	packetConn, err := serverNet.Listen(context.Background(), "udp", serverAddr, addr.SvcCOL)
+	// packetConn, err := serverNet.Listen(context.Background(), "udp", serverAddr, addr.SvcNone)
 	if err != nil {
 		return nil, err
 	}

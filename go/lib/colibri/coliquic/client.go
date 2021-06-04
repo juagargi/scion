@@ -89,8 +89,12 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *segme
 	// prepare remote address with the new path
 	switch spath.Type {
 	case scion.PathType: // don't touch the service path
-	case colibri.PathType: // replace the service path with this one
-		rAddr.Path = spath.Copy()
+	case colibri.PathType:
+		// TODO(juagargi): reactivate use of reservations for control traffic
+		// // replace the service path with the colibri one. The source must also be the original one
+		// rAddr.Path = spath.Copy()
+		// rAddr.IA = opaque.SrcIA()
+		// TODO(juagargi) check if the colibri path is expired, and don't use it in that case
 	}
 
 	log.Info("DELETEME dialing", "addr", rAddr)

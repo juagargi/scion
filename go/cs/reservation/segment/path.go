@@ -29,6 +29,7 @@ import (
 
 // OpaquePath is used in e.g. setup requests, where the IAs should not be visible.
 type OpaquePath struct {
+	// TODO(juagargi) change name to TransparentPath
 	CurrentStep int
 	Steps       []PathStep // could contain IAs
 	Spath       spath.Path // from slayers

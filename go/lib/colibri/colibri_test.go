@@ -41,7 +41,7 @@ func TestStaticMacInputGeneration(t *testing.T) {
 	c.InfoField.Rlc = 0x34
 	c.InfoField.Ver = 0x6
 
-	got, err := libcolibri.PrepareMacInputStatic(s, c.InfoField, c.HopFields[0])
+	got, err := libcolibri.PrepareMacInputStatic(s.SrcIA.A, c.InfoField, c.HopFields[0])
 	assert.NoError(t, err)
 	assert.Equal(t, want, got)
 }
@@ -148,7 +148,7 @@ func TestStaticHVFVerification(t *testing.T) {
 	// Generate MAC
 	privateKey := []byte("a_random_key_123")
 	mac, err := libcolibri.CalculateColibriMacStatic(privateKey, c.InfoField,
-		c.HopFields[c.InfoField.CurrHF], s)
+		c.HopFields[c.InfoField.CurrHF], s.SrcIA.A)
 	assert.NoError(t, err)
 	c.HopFields[c.InfoField.CurrHF].Mac = mac
 

@@ -72,7 +72,7 @@ func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
 		p.HopFields[i] = &colpath.HopField{
 			IngressId: hf.Ingress,
 			EgressId:  hf.Egress,
-			Mac:       hf.Mac[:],
+			Mac:       append([]byte{}, hf.Mac[:]...),
 		}
 	}
 	return p
