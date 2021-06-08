@@ -79,6 +79,10 @@ type connUDPIPv4 struct {
 	pconn *ipv4.PacketConn
 }
 
+func DeletemeGetInternalConn(conn interface{}) *net.UDPConn {
+	return conn.(*connUDPIPv4).conn
+}
+
 func newConnUDPIPv4(listen, remote *net.UDPAddr, cfg *Config) (*connUDPIPv4, error) {
 	cc := &connUDPIPv4{}
 	if err := cc.initConnUDP("udp4", listen, remote, cfg); err != nil {

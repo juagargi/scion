@@ -55,8 +55,10 @@ func (c *Connector) AddInternalInterface(ia addr.IA, local net.UDPAddr) error {
 	if !c.ia.Equal(ia) {
 		return serrors.WithCtx(errMultiIA, "current", c.ia, "new", ia)
 	}
+	const receiveBufferSize2 = 16384 // deleteme
+	// const receiveBufferSize2 = receiveBufferSize // deleteme
 	connection, err := conn.New(&local, nil,
-		&conn.Config{ReceiveBufferSize: receiveBufferSize})
+		&conn.Config{ReceiveBufferSize: receiveBufferSize2})
 	if err != nil {
 		return err
 	}

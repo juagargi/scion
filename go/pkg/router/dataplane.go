@@ -36,6 +36,7 @@ import (
 	libepic "github.com/scionproto/scion/go/lib/epic"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/metrics"
+	"github.com/scionproto/scion/go/lib/prom"
 	"github.com/scionproto/scion/go/lib/scrypto"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers"
@@ -46,7 +47,6 @@ import (
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/topology"
 	"github.com/scionproto/scion/go/lib/underlay/conn"
-	underlayconn "github.com/scionproto/scion/go/lib/underlay/conn"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/pkg/router/bfd"
 	"github.com/scionproto/scion/go/pkg/router/control"
@@ -75,7 +75,7 @@ type bfdSession interface {
 
 // BatchConn is a connection that supports batch reads and writes.
 type BatchConn interface {
-	ReadBatch(underlayconn.Messages) (int, error)
+	ReadBatch(conn.Messages) (int, error)
 	WriteTo([]byte, *net.UDPAddr) (int, error)
 	Close() error
 }
@@ -88,20 +88,22 @@ type BatchConn interface {
 // Currently, only the following features are supported:
 //  - initializing connections; MUST be done prior to calling Run
 type DataPlane struct {
-	external          map[uint16]BatchConn
-	linkTypes         map[uint16]topology.LinkType
-	neighborIAs       map[uint16]addr.IA
-	internal          BatchConn
-	internalIP        net.IP
-	internalNextHops  map[uint16]*net.UDPAddr
-	svc               *services
-	macFactory        func() hash.Hash
-	bfdSessions       map[uint16]bfdSession
-	localIA           addr.IA
-	mtx               sync.Mutex
-	running           bool
-	Metrics           *Metrics
-	forwardingMetrics map[uint16]forwardingMetrics
+	external                            map[uint16]BatchConn
+	linkTypes                           map[uint16]topology.LinkType
+	neighborIAs                         map[uint16]addr.IA
+	internal                            BatchConn
+	internalIP                          net.IP
+	internalNextHops                    map[uint16]*net.UDPAddr
+	svc                                 *services
+	macFactory                          func() hash.Hash
+	bfdSessions                         map[uint16]bfdSession
+	localIA                             addr.IA
+	mtx                                 sync.Mutex
+	running                             bool
+	Metrics                             *Metrics
+	forwardingMetrics                   map[uint16]forwardingMetrics
+	deletemeTimeTakenInInputLoopMetrics prometheus.Gauge
+	deletemeNumPkts                     prometheus.Counter
 }
 
 var (
@@ -439,9 +441,129 @@ func (d *DataPlane) Run() error {
 
 	d.initMetrics()
 
-	read := func(ingressID uint16, rd BatchConn) {
+	readNew := func(ingressID uint16, rd BatchConn) {
+		// TODO(juagargi) since this is just a patch to start minimizing the time
+		// needed per packet, there are many things not quite right here:
+		// - readPkt should be using just one ring buffer, not pipelineLen (pass the offset via chan)
+		// - there are very few reads of >10 pkts (< 1 per second). Just read 1 packet as fast as possible instead.
+		// - for big chunks (>10 packets), it seems processing needs 3.6microsecs per packet. That's around 280,000pps
+		// - split processPkts into more segmented pipeline: process, send and metrics
+		// - sendPkts should have its own independ. goroutine per egress ID
+		// - SCMP packets can be sent out of order. Same for their preparation.
 
-		msgs := conn.NewReadMessages(inputBatchCnt)
+		// const pipelineLen = 1024 // # of blocks in the pipeline
+		const pipelineLen = 64 // # of blocks in the pipeline
+		// msgsPipeline is a pipeline of messages
+		msgsPipeline := make([]conn.Messages, pipelineLen)
+		// msgsMutexes has a blocking mutex per read routine. Read acquires it, process releases it.
+		msgsMutexes := make([]sync.Mutex, pipelineLen)
+		// packetCountPipeline is a channel that `readPkts` uses to tell how many packets it has read.
+		packetCountPipeline := make([]chan int, pipelineLen)
+
+		for i := range msgsPipeline {
+			msgs := conn.NewReadMessages(inputBatchCnt)
+			for _, msg := range msgs {
+				msg.Buffers[0] = make([]byte, bufSize)
+			}
+			msgsPipeline[i] = msgs
+			packetCountPipeline[i] = make(chan int, 1) // buffer 1 entry
+		}
+
+		readPkts := func() {
+			for i := 0; d.running; i = (i + 1) % pipelineLen {
+				msgsMutexes[i].Lock() // will be unlocked by `processPkt`
+				// log.Info("deleteme read starts", "i", i)
+				t0 := time.Now()
+				c, err := rd.ReadBatch(msgsPipeline[i])
+				if err != nil {
+					log.Debug("Failed to read batch", "err", err)
+					// error metric
+				}
+				if c > 10 {
+					log.Info("deleteme deleteme BIG READ", "count", c, "time", time.Since(t0).String())
+				}
+				packetCountPipeline[i] <- c
+				// log.Info("deleteme read stops", "i", i, "duration", time.Since(t0))
+			}
+		}
+
+		processPkts := func() {
+			processor := newPacketProcessor(d, ingressID)
+			var scmpErr scmpError
+			for i := 0; d.running; i = (i + 1) % pipelineLen {
+				pkts := <-packetCountPipeline[i] // blocks until `read` finishes
+				// log.Info("deleteme process starts", "i", i)
+				t0 := time.Now()
+				msgs := msgsPipeline[i]
+				for _, p := range msgs[:pkts] {
+					// input metric
+					inputCounters := d.forwardingMetrics[ingressID]
+					inputCounters.InputPacketsTotal.Inc()
+					inputCounters.InputBytesTotal.Add(float64(p.N))
+
+					srcAddr := p.Addr.(*net.UDPAddr)
+					result, err := processor.processPkt(p.Buffers[0][:p.N], srcAddr)
+
+					switch {
+					case err == nil:
+					case errors.As(err, &scmpErr):
+						if !scmpErr.TypeCode.InfoMsg() {
+							log.Debug("SCMP", "err", scmpErr, "dst_addr", p.Addr)
+						}
+						// SCMP go back the way they came.
+						result.OutAddr = srcAddr
+						result.OutConn = rd
+					default:
+						log.Debug("Error processing packet", "err", err)
+						inputCounters.DroppedPacketsTotal.Inc()
+						continue
+					}
+					if result.OutConn == nil { // e.g. BFD case no message is forwarded
+						continue
+					}
+					_, err = result.OutConn.WriteTo(result.OutPkt, result.OutAddr)
+					if err != nil {
+						log.Debug("Error writing packet", "err", err)
+						// error metric
+						continue
+					}
+					// ok metric
+					outputCounters := d.forwardingMetrics[result.EgressID]
+					outputCounters.OutputPacketsTotal.Inc()
+					outputCounters.OutputBytesTotal.Add(float64(len(result.OutPkt)))
+				}
+				// unlock the block so read can claim the buffers to use them
+				// log.Info("deleteme process stops", "i", i, "duration", time.Since(t0))
+				if pkts > 10 {
+					log.Info("deleteme deleteme BIG _ process", "count", pkts, "time", time.Since(t0).String())
+				}
+				msgsMutexes[i].Unlock()
+			}
+		}
+
+		wg := sync.WaitGroup{}
+		wg.Add(2)
+		go func() {
+			defer log.HandlePanic()
+			readPkts()
+			wg.Done()
+		}()
+		go func() {
+			defer log.HandlePanic()
+			processPkts()
+			wg.Done()
+		}()
+		wg.Wait()
+	}
+	_ = readNew
+
+	read := func(ingressID uint16, rd BatchConn) {
+		batchSize := inputBatchCnt
+		if ingressID == 0 {
+			batchSize = 2
+		}
+		msgs := conn.NewReadMessages(batchSize)
+		// msgs := conn.NewReadMessages(2)
 		for _, msg := range msgs {
 			msg.Buffers[0] = make([]byte, bufSize)
 		}
@@ -455,9 +577,13 @@ func (d *DataPlane) Run() error {
 				// error metric
 				continue
 			}
+			if ingressID == 0 {
+				log.Info("deleteme READ INPUT PACKETS", "count", pkts)
+			}
 			if pkts == 0 {
 				continue
 			}
+			t0 := time.Now()
 			for _, p := range msgs[:pkts] {
 				// input metric
 				inputCounters := d.forwardingMetrics[ingressID]
@@ -495,8 +621,21 @@ func (d *DataPlane) Run() error {
 				outputCounters.OutputPacketsTotal.Inc()
 				outputCounters.OutputBytesTotal.Add(float64(len(result.OutPkt)))
 			}
+			if ingressID == 0 {
+				d.deletemeTimeTakenInInputLoopMetrics.Set(float64(time.Since(t0).Microseconds()))
+				d.deletemeNumPkts.Add(float64(pkts))
+
+				// udp := conn.DeletemeGetInternalConn(rd)
+				// f, err := udp.File()
+				// if err != nil {
+				// 	panic("err1: " + err.Error())
+				// }
+				// unix.IoctlGetInt(syscall.SYS_IOCTL
+				// f.Fd()
+			}
 		}
 	}
+	_ = read
 
 	for k, v := range d.bfdSessions {
 		go func(ifID uint16, c bfdSession) {
@@ -510,11 +649,13 @@ func (d *DataPlane) Run() error {
 		go func(i uint16, c BatchConn) {
 			defer log.HandlePanic()
 			read(i, c)
+			// readNew(i, c)
 		}(ifID, v)
 	}
 	go func(c BatchConn) {
 		defer log.HandlePanic()
-		read(0, c)
+		// read(0, c)
+		readNew(0, c)
 	}(d.internal)
 
 	d.mtx.Unlock()
@@ -536,6 +677,11 @@ func (d *DataPlane) initMetrics() {
 		labels = interfaceToMetricLabels(id, d.localIA, d.neighborIAs)
 		d.forwardingMetrics[id] = initForwardingMetrics(d.Metrics, labels)
 	}
+	d.deletemeTimeTakenInInputLoopMetrics = prom.NewGauge("br", "deleteme", "deletemeTimeTakenInInput",
+		"Microseconds to process the packets in the input loop. Look for the deleteme in the code")
+	d.deletemeNumPkts = prom.NewCounter("br", "deleteme", "deletemeNumPkts",
+		"Number of packets read for the internal interface")
+
 }
 
 type processResult struct {
@@ -1040,6 +1186,7 @@ func (p *scionPacketProcessor) validateEgressUp() (processResult, error) {
 	egressID := p.egressInterface()
 	if v, ok := p.d.bfdSessions[egressID]; ok {
 		if !v.IsUp() {
+			log.Info("deleteme validateEgressUp, found BRD session but egress is not up. Will send SCMP", "egress", egressID, "isup", v.IsUp())
 			scmpH := &slayers.SCMP{
 				TypeCode: slayers.CreateSCMPTypeCode(slayers.SCMPTypeExternalInterfaceDown, 0),
 			}
