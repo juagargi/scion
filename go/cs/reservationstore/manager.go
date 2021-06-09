@@ -40,8 +40,8 @@ type Manager interface {
 	PathsTo(ctx context.Context, dst addr.IA) ([]snet.Path, error)
 	SetupRequest(ctx context.Context, req *segment.SetupReq) error
 	SetupManyRequest(ctx context.Context, reqs []*segment.SetupReq) []error
-	ActivateRequest(ctx context.Context, req *segment.Request) error
-	ActivateManyRequest(ctx context.Context, reqs []*segment.Request) []error
+	ActivateRequest(ctx context.Context, req *base.Request) error
+	ActivateManyRequest(ctx context.Context, reqs []*base.Request) []error
 }
 
 // manager takes care of the health of the segment reservations.
@@ -156,7 +156,7 @@ func (m *manager) SetupRequest(ctx context.Context, req *segment.SetupReq) error
 	// confirm new index
 	deletemeIndex := rsv.Index(req.Index)
 	log.Info("deleteme confirm", "id", req.ID, "index", req.Index, "index_index", deletemeIndex)
-	confirmReq := &segment.Request{
+	confirmReq := &base.Request{
 		MsgId: base.MsgId{
 			ID:        rsv.ID,
 			Index:     req.Index,
@@ -188,7 +188,7 @@ func (m *manager) SetupManyRequest(ctx context.Context, reqs []*segment.SetupReq
 	return errs
 }
 
-func (m *manager) ActivateRequest(ctx context.Context, req *segment.Request) error {
+func (m *manager) ActivateRequest(ctx context.Context, req *base.Request) error {
 	res, err := m.store.ActivateSegmentReservation(ctx, req)
 	if err != nil {
 		return err
@@ -200,7 +200,7 @@ func (m *manager) ActivateRequest(ctx context.Context, req *segment.Request) err
 	return nil
 }
 
-func (m *manager) ActivateManyRequest(ctx context.Context, reqs []*segment.Request) []error {
+func (m *manager) ActivateManyRequest(ctx context.Context, reqs []*base.Request) []error {
 	wg := sync.WaitGroup{}
 	wg.Add(len(reqs))
 	errs := make([]error, len(reqs))

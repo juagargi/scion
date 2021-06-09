@@ -39,7 +39,7 @@ func (m *MockStore) EXPECT() *MockStoreMockRecorder {
 }
 
 // ActivateSegmentReservation mocks base method
-func (m *MockStore) ActivateSegmentReservation(arg0 context.Context, arg1 *segment.Request) (reservation.Response, error) {
+func (m *MockStore) ActivateSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ActivateSegmentReservation", arg0, arg1)
 	ret0, _ := ret[0].(reservation.Response)
@@ -99,7 +99,7 @@ func (mr *MockStoreMockRecorder) CleanupE2EReservation(arg0, arg1 interface{}) *
 }
 
 // CleanupSegmentReservation mocks base method
-func (m *MockStore) CleanupSegmentReservation(arg0 context.Context, arg1 *segment.Request) (reservation.Response, error) {
+func (m *MockStore) CleanupSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CleanupSegmentReservation", arg0, arg1)
 	ret0, _ := ret[0].(reservation.Response)
@@ -114,7 +114,7 @@ func (mr *MockStoreMockRecorder) CleanupSegmentReservation(arg0, arg1 interface{
 }
 
 // ConfirmSegmentReservation mocks base method
-func (m *MockStore) ConfirmSegmentReservation(arg0 context.Context, arg1 *segment.Request) (reservation.Response, error) {
+func (m *MockStore) ConfirmSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ConfirmSegmentReservation", arg0, arg1)
 	ret0, _ := ret[0].(reservation.Response)
@@ -174,7 +174,7 @@ func (mr *MockStoreMockRecorder) InitSegmentReservation(arg0, arg1 interface{}) 
 }
 
 // TearDownSegmentReservation mocks base method
-func (m *MockStore) TearDownSegmentReservation(arg0 context.Context, arg1 *segment.Request) (reservation.Response, error) {
+func (m *MockStore) TearDownSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TearDownSegmentReservation", arg0, arg1)
 	ret0, _ := ret[0].(reservation.Response)

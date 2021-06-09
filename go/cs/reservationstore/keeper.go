@@ -208,13 +208,13 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 // activateIndices expects reservations that have a confirmed index that can be activated.
 func (k *keeper) activateIndices(ctx context.Context, rsvs []*segment.Reservation) error {
-	reqs := make([]*segment.Request, len(rsvs))
+	reqs := make([]*base.Request, len(rsvs))
 	for i, rsv := range rsvs {
 		index := rsv.NextIndexToActivate()
 		if index == nil {
 			return serrors.New("request to activate, but no index suitable", "id", rsv.ID)
 		}
-		reqs[i] = &segment.Request{
+		reqs[i] = &base.Request{
 			MsgId: base.MsgId{
 				ID:        rsv.ID,
 				Index:     index.Idx,
@@ -281,7 +281,7 @@ func (k *keeper) askNewReservations(ctx context.Context, requiredSuccesful int, 
 func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entry requirements,
 	requests []*seg.SetupReq, pendingCount int) error {
 
-	needActivation := make([]*segment.Request, 0)
+	needActivation := make([]*base.Request, 0)
 	var setups []*seg.SetupReq
 	for pendingCount > 0 && len(requests) > 0 {
 		indices := entry.SelectRequests(requests, pendingCount)
@@ -289,7 +289,7 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 		errs := k.manager.SetupManyRequest(ctx, setups)
 		for i, req := range setups {
 			if errs[i] == nil {
-				needActivation = append(needActivation, &segment.Request{
+				needActivation = append(needActivation, &base.Request{
 					MsgId: req.MsgId,
 					Path:  req.Path,
 				})
@@ -384,12 +384,12 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path, localAS addr.AS, 
 	requests := make([]*seg.SetupReq, len(filtered))
 	// create setup requests
 	for i, p := range filtered {
-		opaque, err := seg.OpaquePathFromSnet(p)
+		opaque, err := base.OpaquePathFromSnet(p)
 		if err != nil {
 			return nil, err
 		}
 		req := &seg.SetupReq{
-			Request: seg.Request{
+			Request: base.Request{
 				MsgId: base.MsgId{
 					ID: reservation.ID{
 						ASID:   localAS,
@@ -430,14 +430,14 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 		// }
 		// TODO(juagargi) if rsv.PathAtSource is colibri and expired, use a regular path
 		req := &seg.SetupReq{
-			Request: seg.Request{ // without path in metadata (it will be set in the store)
+			Request: base.Request{ // without path in metadata (it will be set in the store)
 				MsgId: base.MsgId{
 					ID:        rsv.ID, // new source setup in store
 					Index:     rsv.NextIndexToRenew(),
 					Timestamp: now,
 				},
 				Path: rsv.PathAtSource,
-				// Path: &seg.OpaquePath{
+				// Path: &base.OpaquePath{
 				// 	Steps: rsv.PathAtSource.Steps,
 				// 	Spath: spath.Path{
 				// 		Type: colibri.PathType,

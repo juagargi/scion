@@ -158,7 +158,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 			log.Info("deleteme after", "steps", path.Steps)
 		}
 		// uses the `req` that will have the new ID and index, but the original path
-		req := &segment.Request{
+		req := &base.Request{
 			MsgId: req.MsgId,
 			Path:  origPath,
 		}
@@ -213,7 +213,7 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 }
 
 // ConfirmSegmentReservation changes the state of an index from temporary to confirmed.
-func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Request) (
+func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
 	if err := s.validateAuthenticators(req); err != nil {
@@ -272,7 +272,7 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *segment.Requ
 }
 
 // ActivateSegmentReservation activates a segment reservation index.
-func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Request) (
+func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
 	log.Info("deleteme activate index", "id", req.ID, "idx", req.Index)
@@ -384,7 +384,7 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *segment.Req
 }
 
 // CleanupSegmentReservation deletes an index from a segment reservation.
-func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Request) (
+func (s *Store) CleanupSegmentReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
 	log.Info("deleteme cleanup request", "path", req.Path.String(), "id", req.ID.String(),
@@ -447,7 +447,7 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *segment.Requ
 }
 
 // TearDownSegmentReservation removes a whole segment reservation.
-func (s *Store) TearDownSegmentReservation(ctx context.Context, req *segment.Request) (
+func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
 	log.Info("deleteme deleteme 1")
@@ -718,7 +718,7 @@ func (s *Store) DeleteExpiredIndices(ctx context.Context) (int, time.Time, error
 }
 
 // validateAuthenticators checks that the authenticators are correct.
-func (s *Store) validateAuthenticators(req *segment.Request) error {
+func (s *Store) validateAuthenticators(req *base.Request) error {
 	// TODO(juagargi) validate request
 	// DRKey authentication of request (will be left undone for later)
 	return nil

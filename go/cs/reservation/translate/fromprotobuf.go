@@ -91,7 +91,7 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 	return res, nil
 }
 
-func Request(msg *colpb.Request) (*segment.Request, error) {
+func Request(msg *colpb.Request) (*base.Request, error) {
 	ID, err := ID(msg.Id)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func Request(msg *colpb.Request) (*segment.Request, error) {
 		return nil, err
 	}
 	timestamp := util.SecsToTime(msg.Timestamp)
-	return &segment.Request{
+	return &base.Request{
 		MsgId: base.MsgId{
 			ID:        *ID,
 			Index:     idx,
@@ -188,13 +188,13 @@ func AllocTrail(msg []*colpb.AllocationBead) col.AllocationBeads {
 	return trail
 }
 
-func OpaquePath(msg *colpb.OpaquePath) *segment.OpaquePath {
+func OpaquePath(msg *colpb.OpaquePath) *base.OpaquePath {
 	if msg == nil {
 		return nil
 	}
-	opaque := &segment.OpaquePath{
+	opaque := &base.OpaquePath{
 		CurrentStep: int(msg.CurrentStep),
-		Steps:       make([]segment.PathStep, len(msg.Steps)),
+		Steps:       make([]base.PathStep, len(msg.Steps)),
 		Spath: spath.Path{
 			Type: path.Type(msg.SpathType),
 			Raw:  msg.SpathRaw,

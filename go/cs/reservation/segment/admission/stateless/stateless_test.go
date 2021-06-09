@@ -23,7 +23,7 @@ import (
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
-	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend/mock_backend"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -462,12 +462,12 @@ func newTestRequest(t *testing.T, ingress, egress int,
 	ID, err := reservation.IDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
 	require.NoError(t, err)
 	return &segment.SetupReq{
-		Request: segment.Request{
+		Request: base.Request{
 			MsgId: base.MsgId{
 				ID:        *ID,
 				Timestamp: util.SecsToTime(1),
 			},
-			Path: segmenttest.NewPathFromComponents(ingress, "1-ff00:1:1", egress),
+			Path: test.NewPathFromComponents(ingress, "1-ff00:1:1", egress),
 		},
 		MinBW:     minBW,
 		MaxBW:     maxBW,

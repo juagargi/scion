@@ -24,7 +24,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
-	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
@@ -38,7 +38,7 @@ func AddSegmentReservation(t testing.TB, db backend.DB, ASID string, count int) 
 
 	r := newTestSegmentReservation(t, ASID) // the suffix will be overwritten
 	for i := 0; i < count; i++ {
-		r.PathAtSource = segmenttest.NewPathFromComponents(0, "1-"+ASID, i, 1, "1-ff00:0:2", 0)
+		r.PathAtSource = test.NewPathFromComponents(0, "1-"+ASID, i, 1, "1-ff00:0:2", 0)
 		err := db.NewSegmentRsv(ctx, r)
 		require.NoError(t, err, "iteration i = %d", i)
 	}
@@ -80,7 +80,7 @@ func (c *testCapacities) CapacityEgress(egress uint16) uint64   { return c.Cap }
 func newTestSegmentReservation(t testing.TB, ASID string) *segment.Reservation {
 	t.Helper()
 	r := segment.NewReservation(xtest.MustParseAS(ASID))
-	r.PathAtSource = &segment.OpaquePath{}
+	r.PathAtSource = &base.OpaquePath{}
 	r.Ingress = 0
 	r.Egress = 1
 	r.TrafficSplit = 3

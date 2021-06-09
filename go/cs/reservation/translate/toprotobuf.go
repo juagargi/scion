@@ -51,7 +51,7 @@ func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResp
 	return pbRes
 }
 
-func PBufRequest(req *segment.Request) *colpb.Request {
+func PBufRequest(req *base.Request) *colpb.Request {
 	return &colpb.Request{
 		Id:        PBufID(&req.ID),
 		Index:     uint32(req.Index),
@@ -116,7 +116,7 @@ func PBufAllocTrail(trail reservation.AllocationBeads) []*colpb.AllocationBead {
 	return beads
 }
 
-func PBufOpaque(opaque *segment.OpaquePath) *colpb.OpaquePath {
+func PBufOpaque(opaque *base.OpaquePath) *colpb.OpaquePath {
 	if opaque == nil {
 		return &colpb.OpaquePath{
 			Steps: []*colpb.PathStep{},

@@ -22,7 +22,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/scionproto/scion/go/cs/reservation/segment"
+	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/log"
@@ -67,7 +67,7 @@ func NewServiceClientOperator(topo topology.Topology, router snet.Router,
 }
 
 // ColibriClient finds or creates a ColibriClient to be used for the path argument.
-func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *segment.OpaquePath) (
+func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.OpaquePath) (
 	colpb.ColibriClient, error) {
 
 	o.mutex.Lock()

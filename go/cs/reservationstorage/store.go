@@ -28,13 +28,13 @@ import (
 type Store interface {
 	AdmitSegmentReservation(ctx context.Context, req *sgt.SetupReq) (
 		sgt.SegmentSetupResponse, error)
-	ConfirmSegmentReservation(ctx context.Context, req *sgt.Request) (
+	ConfirmSegmentReservation(ctx context.Context, req *base.Request) (
 		base.Response, error)
-	ActivateSegmentReservation(ctx context.Context, req *sgt.Request) (
+	ActivateSegmentReservation(ctx context.Context, req *base.Request) (
 		base.Response, error)
-	CleanupSegmentReservation(ctx context.Context, req *sgt.Request) (
+	CleanupSegmentReservation(ctx context.Context, req *base.Request) (
 		base.Response, error)
-	TearDownSegmentReservation(ctx context.Context, req *sgt.Request) (
+	TearDownSegmentReservation(ctx context.Context, req *base.Request) (
 		base.Response, error)
 	AdmitE2EReservation(ctx context.Context, req e2e.SetupRequest) (
 		base.Response, error)

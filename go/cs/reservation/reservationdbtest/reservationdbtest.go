@@ -25,7 +25,7 @@ import (
 
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
-	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -65,7 +65,7 @@ func TestDB(t *testing.T, db TestableDB) {
 
 func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	r := newTestReservation(t)
-	r.PathAtSource = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
 	r.Indices = segment.Indices{}
 	// no indices
 	err := db.NewSegmentRsv(ctx, r)
@@ -77,7 +77,7 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	// at least one index, and change path
 	_, err = r.NewIndex(util.SecsToTime(10), 2, 3, 2, 2, reservation.CorePath)
 	require.NoError(t, err)
-	r.PathAtSource = segmenttest.NewPathFromComponents(1, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPathFromComponents(1, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0)
 	err = db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, xtest.MustParseHexString("00000002"), r.ID.Suffix)
@@ -126,7 +126,7 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	// change attributes
 	r.Ingress = 3
 	r.Egress = 4
-	r.PathAtSource = segmenttest.NewPathFromComponents(3, "1-ff00:0:1", 11, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPathFromComponents(3, "1-ff00:0:1", 11, 1, "1-ff00:0:2", 0)
 	err = db.PersistSegmentRsv(ctx, r)
 	require.NoError(t, err)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
@@ -189,7 +189,7 @@ func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 
 func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, db backend.DB) {
 	r := newTestReservation(t)
-	r.PathAtSource = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
 	err := db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
 	rsvs, err := db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
@@ -198,7 +198,7 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, db backen
 	require.Equal(t, r, rsvs[0])
 	// another reservation with same source and destination
 	r2 := newTestReservation(t)
-	r2.PathAtSource = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0)
+	r2.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0)
 	err = db.NewSegmentRsv(ctx, r2)
 	require.NoError(t, err)
 	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
@@ -208,7 +208,7 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, db backen
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
 	// one more with same source different destination
 	r3 := newTestReservation(t)
-	r3.PathAtSource = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)
+	r3.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)
 	err = db.NewSegmentRsv(ctx, r3)
 	require.NoError(t, err)
 	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
@@ -221,7 +221,7 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, db backen
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2, r3})
 	// another reservation with unique source but same destination as r3
 	r4 := newTestReservation(t)
-	r4.PathAtSource = segmenttest.NewPathFromComponents(0, "1-ff00:0:4", 1, 1, "1-ff00:0:3", 0)
+	r4.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:4", 1, 1, "1-ff00:0:3", 0)
 	err = db.NewSegmentRsv(ctx, r4)
 	require.NoError(t, err)
 	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())

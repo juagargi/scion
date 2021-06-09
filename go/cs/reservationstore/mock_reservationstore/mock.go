@@ -7,6 +7,7 @@ package mock_reservationstore
 import (
 	context "context"
 	gomock "github.com/golang/mock/gomock"
+	reservation "github.com/scionproto/scion/go/cs/reservation"
 	segment "github.com/scionproto/scion/go/cs/reservation/segment"
 	reservationstorage "github.com/scionproto/scion/go/cs/reservationstorage"
 	addr "github.com/scionproto/scion/go/lib/addr"
@@ -39,7 +40,7 @@ func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 }
 
 // ActivateManyRequest mocks base method
-func (m *MockManager) ActivateManyRequest(arg0 context.Context, arg1 []*segment.Request) []error {
+func (m *MockManager) ActivateManyRequest(arg0 context.Context, arg1 []*reservation.Request) []error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ActivateManyRequest", arg0, arg1)
 	ret0, _ := ret[0].([]error)
@@ -53,7 +54,7 @@ func (mr *MockManagerMockRecorder) ActivateManyRequest(arg0, arg1 interface{}) *
 }
 
 // ActivateRequest mocks base method
-func (m *MockManager) ActivateRequest(arg0 context.Context, arg1 *segment.Request) error {
+func (m *MockManager) ActivateRequest(arg0 context.Context, arg1 *reservation.Request) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ActivateRequest", arg0, arg1)
 	ret0, _ := ret[0].(error)

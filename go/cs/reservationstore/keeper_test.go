@@ -24,9 +24,11 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
+	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/conf"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	st "github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	te "github.com/scionproto/scion/go/cs/reservation/test"
 	mockstore "github.com/scionproto/scion/go/cs/reservationstorage/mock_reservationstorage"
 	mockmanager "github.com/scionproto/scion/go/cs/reservationstore/mock_reservationstore"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -83,14 +85,14 @@ func TestKeepOneShot(t *testing.T) {
 			},
 			paths: map[addr.IA][]snet.Path{
 				xtest.MustParseIA("1-ff00:0:2"): {
-					st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
-					st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
-					st.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:2"),
+					te.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
+					te.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
+					te.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:2"),
 				},
 				xtest.MustParseIA("1-ff00:0:3"): {
-					st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:3"), // direct
-					st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:3"), // direct
-					st.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:3"),
+					te.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:3"), // direct
+					te.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:3"), // direct
+					te.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:3"),
 				},
 			},
 			reservations: map[addr.IA][]*segment.Reservation{
@@ -129,7 +131,7 @@ func TestKeepOneShot(t *testing.T) {
 			},
 			paths: map[addr.IA][]snet.Path{
 				xtest.MustParseIA("1-ff00:0:2"): {
-					st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
+					te.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
 				},
 			},
 			reservations: map[addr.IA][]*segment.Reservation{
@@ -181,7 +183,7 @@ func TestKeepOneShot(t *testing.T) {
 				})
 			manager.EXPECT().ActivateManyRequest(gomock.Any(), gomock.Any()).
 				AnyTimes().DoAndReturn(
-				func(_ context.Context, reqs []*segment.Request) []error {
+				func(_ context.Context, reqs []*base.Request) []error {
 					return make([]error, len(reqs))
 				})
 
@@ -218,9 +220,9 @@ func TestSetupsPerDestination(t *testing.T) {
 				},
 			},
 			paths: []snet.Path{
-				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
-				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
-				st.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
+				te.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
+				te.NewSnetPath("1-ff00:0:1", 3, 88, "1-ff00:0:88", 99, 4, "1-ff00:0:2"),
 			},
 		},
 	}
@@ -285,10 +287,10 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
-				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			requiredCount:     2,
 			successfulPerCall: 2,
@@ -304,10 +306,10 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
-				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
-				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
-				st.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"), // direct
+				te.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"), // direct
+				te.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			requiredCount:     4,
 			successfulPerCall: 4,
@@ -324,10 +326,10 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
-				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			requiredCount:     3,
 			successfulPerCall: 2,
@@ -648,10 +650,10 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
-				st.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 2, 3, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:1", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			expected: 4,
 		},
@@ -665,10 +667,10 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
-				st.NewSnetPath("1-ff00:0:81", 1, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:81", 2, 3, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:81", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
-				st.NewSnetPath("1-ff00:0:81", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:81", 1, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:81", 2, 3, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:81", 1, 111, "1-ff00:0:666", 222, 2, "1-ff00:0:2"),
+				te.NewSnetPath("1-ff00:0:81", 1, 222, "1-ff00:0:666", 333, 2, "1-ff00:0:2"),
 			},
 			expected: 0,
 		},
@@ -687,7 +689,7 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 			require.Len(t, filtered, tc.expected) // this is internal, but forces 1 req per path
 			bagOfPaths := make(map[string]struct{}, len(filtered))
 			for _, p := range filtered {
-				opaque, err := segment.OpaquePathFromInterfaces(p.Metadata().Interfaces)
+				opaque, err := base.OpaquePathFromInterfaces(p.Metadata().Interfaces)
 				require.NoError(t, err)
 				k := opaque.String()
 				_, ok := bagOfPaths[k]

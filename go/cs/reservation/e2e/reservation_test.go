@@ -19,8 +19,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"
@@ -46,7 +48,7 @@ func TestValidate(t *testing.T) {
 
 	// invalid segment reservation
 	r = newReservation()
-	r.SegmentReservations[0].PathAtSource = &segment.OpaquePath{}
+	r.SegmentReservations[0].PathAtSource = &base.OpaquePath{}
 	err = r.Validate()
 	require.Error(t, err)
 
@@ -113,7 +115,7 @@ func newSegmentReservation(asidPath ...string) *segment.Reservation {
 		pathComponents[i*3+2] = i*2 + 1
 	}
 	pathComponents[len(pathComponents)-1] = 0
-	r.PathAtSource = segmenttest.NewPathFromComponents(pathComponents...)
+	r.PathAtSource = test.NewPathFromComponents(pathComponents...)
 	return r
 }
 

@@ -16,6 +16,7 @@ go_test(
         "//go/cs/reservation/segment:go_default_library",
         "//go/cs/reservation/segmenttest:go_default_library",
         "//go/cs/reservation/sqlite:go_default_library",
+        "//go/cs/reservation/test:go_default_library",
         "//go/cs/reservationstorage:go_default_library",
         "//go/cs/reservationstorage/backend:go_default_library",
         "//go/cs/reservationstorage/mock_reservationstorage:go_default_library",

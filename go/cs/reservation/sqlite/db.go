@@ -682,7 +682,7 @@ func buildSegRsvFromFields(ctx context.Context, x db.Sqler, fields *rsvFields) (
 	rsv.Egress = fields.Egress
 	rsv.PathType = reservation.PathType(fields.PathType)
 
-	p, err := segment.OpaquePathFromRaw(fields.Path)
+	p, err := base.OpaquePathFromRaw(fields.Path)
 	if err != nil {
 		return nil, err
 	}
