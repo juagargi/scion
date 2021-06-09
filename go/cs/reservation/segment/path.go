@@ -163,12 +163,16 @@ func OpaquePathFromRaw(raw []byte) (*OpaquePath, error) {
 		steps[i].IA = addr.IAInt(binary.BigEndian.Uint64(raw[4:])).IA()
 		raw = raw[12:]
 	}
+	rawSpath := append([]byte{}, raw[1:]...)
+	if len(rawSpath) == 0 {
+		rawSpath = nil
+	}
 	return &OpaquePath{
 		CurrentStep: currStep,
 		Steps:       steps,
 		Spath: spath.Path{
 			Type: slayerspath.Type(raw[0]),
-			Raw:  append([]byte{}, raw[1:]...),
+			Raw:  rawSpath,
 		},
 	}, nil
 }

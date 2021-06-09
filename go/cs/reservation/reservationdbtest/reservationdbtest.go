@@ -84,9 +84,6 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
-	// same path should fail
-	err = db.NewSegmentRsv(ctx, r)
-	require.Error(t, err)
 	// different ASID should start with the lowest suffix
 	r = newTestReservation(t)
 	r.ID.ASID = xtest.MustParseAS("ff00:1234:1")
@@ -759,7 +756,6 @@ func newToken() *reservation.Token {
 func newTestReservation(t *testing.T) *segment.Reservation {
 	t.Helper()
 	r := segment.NewReservation(xtest.MustParseAS("ff00:0:1"))
-	r.PathAtSource = &segment.OpaquePath{Steps: []segment.PathStep{}}
 	r.Ingress = 0
 	r.Egress = 1
 	r.TrafficSplit = 3

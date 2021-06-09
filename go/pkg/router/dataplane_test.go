@@ -1777,7 +1777,7 @@ func computeColibriMac(t *testing.T, c bool, key []byte, cpath *colibri.ColibriP
 	switch c {
 	case true:
 		mac, err = libcolibri.CalculateColibriMacStatic(key, cpath.InfoField,
-			cpath.HopFields[hopIndex], spkt)
+			cpath.HopFields[hopIndex], spkt.SrcIA.A)
 		require.NoError(t, err)
 	case false:
 		auth, err := libcolibri.CalculateColibriMacSigma(key, cpath.InfoField,

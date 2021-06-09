@@ -35,9 +35,6 @@ func TestOpaqueToRawFromRaw(t *testing.T) {
 			opaque: &OpaquePath{
 				CurrentStep: 0,
 				Steps:       []PathStep{},
-				Spath: spath.Path{
-					Raw: []byte{},
-				},
 			},
 		},
 		"no spath": {
@@ -54,9 +51,6 @@ func TestOpaqueToRawFromRaw(t *testing.T) {
 						Egress:  0,
 						IA:      xtest.MustParseIA("1-ff00:0:110"),
 					},
-				},
-				Spath: spath.Path{
-					Raw: []byte{},
 				},
 			},
 		},

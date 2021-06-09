@@ -145,11 +145,12 @@ func newDB(t testing.TB) *Backend {
 func addSegRsvRows(t testing.TB, b *Backend, asid addr.AS, firstSuffix, lastSuffix uint32) {
 	t.Helper()
 	ctx := context.Background()
-	query := `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress, path,
+	query := `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress, path_type, path,
 		end_props, traffic_split, src_ia, dst_ia, active_index)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, -1)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, -1)`
 	for suffix := firstSuffix; suffix <= lastSuffix; suffix++ {
-		_, err := b.db.ExecContext(ctx, query, asid, suffix, 0, 0, nil, 0, 0, nil, nil)
+		_, err := b.db.ExecContext(ctx, query, asid, suffix, 0, 0, reservation.CorePath, nil,
+			0, 0, nil, nil)
 		require.NoError(t, err)
 	}
 }

@@ -24,29 +24,6 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-func TestA(t *testing.T) {
-	hf := &HopField{
-		Ingress: 1,
-		Egress:  2,
-	}
-	copy(hf.Mac[:], xtest.MustParseHexString("beefcafe"))
-	// require.Fail(t, hf.String())
-	tok := &Token{
-		InfoField: InfoField{
-			ExpirationTick: 123542,
-			Idx:            1,
-			BWCls:          7,
-			PathType:       CorePath,
-			RLC:            5,
-		},
-		HopFields: []HopField{
-			*hf,
-			*hf,
-		},
-	}
-	require.Fail(t, tok.String())
-}
-
 func TestSegmentIDFromRaw(t *testing.T) {
 	id, err := SegmentIDFromRaw(xtest.MustParseHexString("ffaa00001101facecafe"))
 	require.NoError(t, err)
@@ -131,7 +108,7 @@ func TestValidateBWCls(t *testing.T) {
 
 func TestBWClsToKbps(t *testing.T) {
 	cases := map[BWCls]uint64{
-		0:  11,
+		0:  0,
 		1:  16,
 		2:  22,
 		3:  32,
