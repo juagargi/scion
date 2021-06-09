@@ -109,10 +109,10 @@ func TestRaceForSuffix(t *testing.T) {
 	}
 
 	rsv1 := segment.Reservation{
-		ID:      reservation.SegmentID{ASID: asid, Suffix: [4]byte{1, 1, 1, 1}},
+		ID:      reservation.ID{ASID: asid, Suffix: []byte{1, 1, 1, 1}},
 		Indices: segment.Indices{segment.Index{}}}
 	rsv2 := segment.Reservation{
-		ID:      reservation.SegmentID{ASID: asid, Suffix: [4]byte{2, 2, 2, 2}},
+		ID:      reservation.ID{ASID: asid, Suffix: []byte{2, 2, 2, 2}},
 		Indices: segment.Indices{segment.Index{}}}
 	lockAllMutexes()
 

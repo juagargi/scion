@@ -23,14 +23,14 @@ import (
 
 // Response is the base struct for any type of COLIBRI e2e response.
 type Response struct {
-	ID        reservation.E2EID       // the ID this request refers to
+	ID        reservation.ID          // the ID this request refers to
 	Index     reservation.IndexNumber // the index this request refers to
 	Accepted  bool                    // success or failure type of response
 	FailedHop uint8                   // if accepted is false, the AS that failed it
 }
 
 // NewResponse contructs the segment Response type.
-func NewResponse(ts time.Time, id *reservation.E2EID, idx reservation.IndexNumber,
+func NewResponse(ts time.Time, id *reservation.ID, idx reservation.IndexNumber,
 	accepted bool, failedHop uint8) (*Response, error) {
 
 	if id == nil {

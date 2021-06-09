@@ -26,7 +26,6 @@ import (
 	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend/mock_backend"
-	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"
@@ -100,7 +99,7 @@ func TestSumMaxBlockedBW(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			excludedID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString(tc.excludeID))
+			excludedID, err := reservation.IDFromRaw(xtest.MustParseHexString(tc.excludeID))
 			require.NoError(t, err)
 			sum := sumMaxBlockedBW(tc.rsvsFcn(), *excludedID)
 			require.Equal(t, tc.blockedBW, sum)
@@ -460,7 +459,7 @@ func newTestAdmitter(t *testing.T) *StatelessAdmission {
 func newTestRequest(t *testing.T, ingress, egress int,
 	minBW, maxBW reservation.BWCls) *segment.SetupReq {
 
-	ID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
+	ID, err := reservation.IDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
 	require.NoError(t, err)
 	return &segment.SetupReq{
 		Request: segment.Request{
@@ -480,7 +479,7 @@ func newTestRequest(t *testing.T, ingress, egress int,
 func testNewRsv(t *testing.T, srcAS string, suffix string, ingress, egress uint16,
 	minBW, maxBW, allocBW reservation.BWCls) *segment.Reservation {
 
-	ID, err := reservation.NewSegmentID(xtest.MustParseAS(srcAS),
+	ID, err := reservation.NewID(xtest.MustParseAS(srcAS),
 		xtest.MustParseHexString(suffix))
 	require.NoError(t, err)
 	rsv := &segment.Reservation{
@@ -521,19 +520,4 @@ func testAddAllocTrail(req *segment.SetupReq, beads ...reservation.BWCls) *segme
 		req.AllocTrail = append(req.AllocTrail, beads)
 	}
 	return req
-}
-
-func getMaxBWPerSource(t *testing.T, rsvs []*segment.Reservation, skipASID, skipSuffix string) (
-	map[addr.AS]uint64, error) {
-
-	skipRsv, err := reservation.NewSegmentID(xtest.MustParseAS(skipASID),
-		xtest.MustParseHexString(skipSuffix))
-	require.NoError(t, err)
-	maxBWPerSrc := make(map[addr.AS]uint64)
-	for _, r := range rsvs {
-		if r.ID != *skipRsv {
-			maxBWPerSrc[r.ID.ASID] += r.MaxBlockedBW()
-		}
-	}
-	return maxBWPerSrc, nil
 }

@@ -237,7 +237,7 @@ func (a *StatelessAdmission) srcDem(rsvs []*segment.Reservation, ingress, egress
 	capEg := a.Caps.CapacityEgress(req.Egress())
 	var srcDem uint64
 	for _, r := range rsvs {
-		if r.Ingress == ingress && r.Egress == egress && r.ID != req.ID {
+		if r.Ingress == ingress && r.Egress == egress && !r.ID.Equal(&req.ID) {
 			capReqDem := minBW(capIn, capEg, a.reqDem(*r, req))
 			srcDem += capReqDem
 		}
@@ -254,7 +254,7 @@ func (a *StatelessAdmission) srcDem(rsvs []*segment.Reservation, ingress, egress
 
 func (a *StatelessAdmission) reqDem(r segment.Reservation, req segment.SetupReq) uint64 {
 	var bw uint64
-	if r.ID == req.ID {
+	if r.ID.Equal(&req.ID) {
 		bw = req.MaxBW.ToKbps()
 	} else {
 		bw = r.MaxRequestedBW()
@@ -270,7 +270,7 @@ func (a *StatelessAdmission) srcAlloc(rsvs []*segment.Reservation, source addr.A
 	var sum uint64
 	for _, r := range rsvs {
 		if r.Ingress == ingress && r.Egress == egress {
-			if r.ID != req.ID {
+			if !r.ID.Equal(&req.ID) {
 				sum += r.MaxBlockedBW()
 			}
 		}
@@ -284,10 +284,10 @@ func (a *StatelessAdmission) srcAlloc(rsvs []*segment.Reservation, source addr.A
 
 // sumMaxBlockedBW adds up all the max blocked bandwidth by the reservation, for all reservations,
 // iff they don't have the same ID as "excludeThisRsv".
-func sumMaxBlockedBW(rsvs []*segment.Reservation, excludeThisRsv reservation.SegmentID) uint64 {
+func sumMaxBlockedBW(rsvs []*segment.Reservation, excludeThisRsv reservation.ID) uint64 {
 	var total uint64
 	for _, r := range rsvs {
-		if r.ID != excludeThisRsv {
+		if !r.ID.Equal(&excludeThisRsv) {
 			total += r.MaxBlockedBW()
 		}
 	}

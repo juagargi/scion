@@ -391,8 +391,9 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path, localAS addr.AS, 
 		req := &seg.SetupReq{
 			Request: seg.Request{
 				MsgId: base.MsgId{
-					ID: reservation.SegmentID{
-						ASID: localAS,
+					ID: reservation.ID{
+						ASID:   localAS,
+						Suffix: make([]byte, 4),
 					},
 					Timestamp: now,
 				},

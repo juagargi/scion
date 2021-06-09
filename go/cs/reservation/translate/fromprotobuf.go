@@ -92,7 +92,7 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 }
 
 func Request(msg *colpb.Request) (*segment.Request, error) {
-	ID, err := SegmentID(msg.Id)
+	ID, err := ID(msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -165,15 +165,12 @@ func SplitCls(msg uint32) (col.SplitCls, error) {
 	return sc, nil
 }
 
-func SegmentID(msg *colpb.ReservationID) (*col.SegmentID, error) {
-	if len(msg.Suffix) != 4 {
-		return nil, serrors.New("bad suffix; must be 4 bytes", "len", len(msg.Suffix))
-	}
-	a, b, c, d := msg.Suffix[0], msg.Suffix[1], msg.Suffix[2], msg.Suffix[3]
-	return &col.SegmentID{
+func ID(msg *colpb.ReservationID) (*col.ID, error) {
+	id := &col.ID{
 		ASID:   addr.AS(msg.Asid),
-		Suffix: [4]byte{a, b, c, d},
-	}, nil
+		Suffix: append([]byte{}, msg.Suffix...),
+	}
+	return id, id.Validate()
 }
 
 func Token(msg *colpb.SegmentSetupResponse_Token) (*col.Token, error) {

@@ -27,7 +27,7 @@ import (
 
 // Reservation represents a segment reservation.
 type Reservation struct {
-	ID           reservation.SegmentID
+	ID           reservation.ID
 	Indices      Indices                  // existing indices in this reservation
 	activeIndex  int                      // -1 <= activeIndex < len(Indices)
 	Ingress      uint16                   // ingress interface ID: reservation packets enter
@@ -40,8 +40,9 @@ type Reservation struct {
 
 func NewReservation(asid addr.AS) *Reservation {
 	return &Reservation{
-		ID: reservation.SegmentID{
-			ASID: asid,
+		ID: reservation.ID{
+			ASID:   asid,
+			Suffix: make([]byte, 4),
 		},
 		activeIndex: -1,
 	}
@@ -67,7 +68,7 @@ func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
 		},
 		HopFields: make([]*colpath.HopField, len(index.Token.HopFields)),
 	}
-	copy(p.InfoField.ResIdSuffix, r.ID.Suffix[:])
+	copy(p.InfoField.ResIdSuffix, r.ID.Suffix)
 	for i, hf := range index.Token.HopFields {
 		p.HopFields[i] = &colpath.HopField{
 			IngressId: hf.Ingress,

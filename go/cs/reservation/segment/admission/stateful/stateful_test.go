@@ -102,7 +102,7 @@ func TestSumMaxBlockedBW(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			excludedID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString(tc.excludeID))
+			excludedID, err := reservation.IDFromRaw(xtest.MustParseHexString(tc.excludeID))
 			require.NoError(t, err)
 			sum := sumMaxBlockedBW(tc.rsvsFcn(), *excludedID)
 			require.Equal(t, tc.blockedBW, sum)
@@ -792,7 +792,7 @@ func newTestAdmitter(t *testing.T) *StatefulAdmission {
 func newTestRequest(t *testing.T, ingress, egress int,
 	minBW, maxBW reservation.BWCls) *segment.SetupReq {
 
-	ID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
+	ID, err := reservation.IDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
 	require.NoError(t, err)
 	return &segment.SetupReq{
 		Request: segment.Request{
@@ -815,7 +815,7 @@ func newTestRequest(t *testing.T, ingress, egress int,
 func testNewRsv(t *testing.T, srcAS string, suffix string, ingress, egress uint16,
 	minBW, maxBW, allocBW reservation.BWCls) *segment.Reservation {
 
-	ID, err := reservation.NewSegmentID(xtest.MustParseAS(srcAS),
+	ID, err := reservation.NewID(xtest.MustParseAS(srcAS),
 		xtest.MustParseHexString(suffix))
 	require.NoError(t, err)
 	rsv := &segment.Reservation{
@@ -861,12 +861,12 @@ func testAddAllocTrail(req *segment.SetupReq, beads ...reservation.BWCls) *segme
 func getMaxBWPerSource(t *testing.T, rsvs []*segment.Reservation, skipASID, skipSuffix string) (
 	map[addr.AS]uint64, error) {
 
-	skipRsv, err := reservation.NewSegmentID(xtest.MustParseAS(skipASID),
+	skipRsv, err := reservation.NewID(xtest.MustParseAS(skipASID),
 		xtest.MustParseHexString(skipSuffix))
 	require.NoError(t, err)
 	maxBWPerSrc := make(map[addr.AS]uint64)
 	for _, r := range rsvs {
-		if r.ID != *skipRsv {
+		if !r.ID.Equal(skipRsv) {
 			maxBWPerSrc[r.ID.ASID] += r.MaxBlockedBW()
 		}
 	}
@@ -903,7 +903,7 @@ func prepareForMock(rsvs []*segment.Reservation, req *segment.SetupReq, globalCa
 	// transitAlloc goes from req.Ingress to req.Egress
 
 	for _, r := range rsvs {
-		if r.ID == req.ID {
+		if r.ID.Equal(&req.ID) {
 			sameIDAsRequest = r
 		}
 
@@ -1031,7 +1031,7 @@ func prepareDBForAdmission(ctx context.Context, t *testing.T, db *sqlite.Backend
 	rsvs []*segment.Reservation, req *segment.SetupReq, globalCapacity uint64) {
 
 	for _, r := range rsvs {
-		if r.ID == req.ID {
+		if r.ID.Equal(&req.ID) {
 			// its last index must be compatible with the request, so that the admission succeeds
 			lastIdx := req.Index
 			for i := len(r.Indices) - 1; i >= 0; i-- {
@@ -1095,4 +1095,16 @@ func persistRsvFromAdmittedRequest(t *testing.T, db *sqlite.Backend, req segment
 	index.AllocBW = req.AllocTrail[len(req.AllocTrail)-1].AllocBW
 	err = db.PersistSegmentRsv(ctx, rsv)
 	require.NoError(t, err)
+}
+
+// sumMaxBlockedBW adds up all the max blocked bandwidth by the reservation, for all reservations,
+// iff they don't have the same ID as "excludeThisRsv".
+func sumMaxBlockedBW(rsvs []*segment.Reservation, excludeThisRsv reservation.ID) uint64 {
+	var total uint64
+	for _, r := range rsvs {
+		if !r.ID.Equal(&excludeThisRsv) {
+			total += r.MaxBlockedBW()
+		}
+	}
+	return total
 }

@@ -98,10 +98,10 @@ func PBufResponse(res base.Response) *colpb.Response {
 	}
 }
 
-func PBufID(id *reservation.SegmentID) *colpb.ReservationID {
+func PBufID(id *reservation.ID) *colpb.ReservationID {
 	return &colpb.ReservationID{
 		Asid:   uint64(id.ASID),
-		Suffix: append(id.Suffix[:0:0], id.Suffix[:]...),
+		Suffix: append(id.Suffix[:0:0], id.Suffix...),
 	}
 }
 

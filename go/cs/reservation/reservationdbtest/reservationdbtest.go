@@ -70,7 +70,7 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	// no indices
 	err := db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
-	require.Equal(t, xtest.MustParseHexString("00000001"), r.ID.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("00000001"), r.ID.Suffix)
 	rsv, err := db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
@@ -80,7 +80,7 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	r.PathAtSource = segmenttest.NewPathFromComponents(1, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0)
 	err = db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
-	require.Equal(t, xtest.MustParseHexString("00000002"), r.ID.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("00000002"), r.ID.Suffix)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
@@ -89,7 +89,7 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	r.ID.ASID = xtest.MustParseAS("ff00:1234:1")
 	err = db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
-	require.Equal(t, xtest.MustParseHexString("00000001"), r.ID.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("00000001"), r.ID.Suffix)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
@@ -117,7 +117,7 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	require.Equal(t, r, rsv)
 	// change ID
 	r.ID.ASID = xtest.MustParseAS("ff00:1:12")
-	copy(r.ID.Suffix[:], xtest.MustParseHexString("beefcafe"))
+	copy(r.ID.Suffix, xtest.MustParseHexString("beefcafe"))
 	err = db.PersistSegmentRsv(ctx, r)
 	require.NoError(t, err)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
@@ -344,7 +344,7 @@ func testDeleteExpiredIndices(ctx context.Context, t *testing.T, db backend.DB) 
 	// Each eX is linked to a rX, being X the same for both. But e5 is linked to r4.
 
 	// r1, e1
-	segIds := make([]reservation.SegmentID, 0)
+	segIds := make([]reservation.ID, 0)
 	r := newTestReservation(t)
 	r.Indices[0].Expiration = util.SecsToTime(2)
 	err := db.NewSegmentRsv(ctx, r) // save r1
@@ -521,7 +521,8 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	checkThisRsvs := map[int]*e2e.Reservation{1: nil, 16: nil, 50: nil, 100: nil}
 	for i := 1; i <= 100; i++ {
 		r := newTestE2EReservation(t)
-		binary.BigEndian.PutUint32(r.ID.Suffix[:], uint32(i))
+		r.ID.Suffix = make([]byte, 4)
+		binary.BigEndian.PutUint32(r.ID.Suffix, uint32(i))
 		_, found := checkThisRsvs[i]
 		if found {
 			checkThisRsvs[i] = r
@@ -545,8 +546,11 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	}
 	// now check
 	for i, r := range checkThisRsvs {
-		ID := reservation.E2EID{ASID: xtest.MustParseAS("ff00:0:1")}
-		binary.BigEndian.PutUint32(ID.Suffix[:], uint32(i))
+		ID := reservation.ID{
+			ASID:   xtest.MustParseAS("ff00:0:1"),
+			Suffix: make([]byte, 4),
+		}
+		binary.BigEndian.PutUint32(ID.Suffix, uint32(i))
 		rsv, err := db.GetE2ERsvFromID(ctx, &ID)
 		require.NoError(t, err)
 		require.Equal(t, r, rsv)
@@ -581,7 +585,7 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
 	// not present in DB
-	ID, err := reservation.NewE2EID(xtest.MustParseAS("ff00:2222:3333"),
+	ID, err := reservation.NewID(xtest.MustParseAS("ff00:2222:3333"),
 		xtest.MustParseHexString("0123456789abcdef0123"))
 	require.NoError(t, err)
 	rsv, err = db.GetE2ERsvFromID(ctx, ID)
@@ -770,8 +774,9 @@ func newTestReservation(t *testing.T) *segment.Reservation {
 
 func newTestE2EReservation(t *testing.T) *e2e.Reservation {
 	rsv := &e2e.Reservation{
-		ID: reservation.E2EID{
-			ASID: xtest.MustParseAS("ff00:0:1"),
+		ID: reservation.ID{
+			ASID:   xtest.MustParseAS("ff00:0:1"),
+			Suffix: make([]byte, 10),
 		},
 		SegmentReservations: []*segment.Reservation{
 			newTestReservation(t),
@@ -784,7 +789,7 @@ func newTestE2EReservation(t *testing.T) *e2e.Reservation {
 }
 
 func getAllE2ERsvsOnSegmentRsvs(ctx context.Context, t *testing.T, db backend.DB,
-	ids []reservation.SegmentID) []*e2e.Reservation {
+	ids []reservation.ID) []*e2e.Reservation {
 
 	set := make(map[string]struct{})
 	rsvs := make([]*e2e.Reservation, 0)

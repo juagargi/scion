@@ -85,7 +85,7 @@ func (mr *MockDBMockRecorder) DeleteExpiredIndices(arg0, arg1 interface{}) *gomo
 }
 
 // DeleteSegmentRsv mocks base method
-func (m *MockDB) DeleteSegmentRsv(arg0 context.Context, arg1 *reservation.SegmentID) error {
+func (m *MockDB) DeleteSegmentRsv(arg0 context.Context, arg1 *reservation.ID) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteSegmentRsv", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -114,7 +114,7 @@ func (mr *MockDBMockRecorder) GetAllSegmentRsvs(arg0 interface{}) *gomock.Call {
 }
 
 // GetE2ERsvFromID mocks base method
-func (m *MockDB) GetE2ERsvFromID(arg0 context.Context, arg1 *reservation.E2EID) (*e2e.Reservation, error) {
+func (m *MockDB) GetE2ERsvFromID(arg0 context.Context, arg1 *reservation.ID) (*e2e.Reservation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetE2ERsvFromID", arg0, arg1)
 	ret0, _ := ret[0].(*e2e.Reservation)
@@ -129,7 +129,7 @@ func (mr *MockDBMockRecorder) GetE2ERsvFromID(arg0, arg1 interface{}) *gomock.Ca
 }
 
 // GetE2ERsvsOnSegRsv mocks base method
-func (m *MockDB) GetE2ERsvsOnSegRsv(arg0 context.Context, arg1 *reservation.SegmentID) ([]*e2e.Reservation, error) {
+func (m *MockDB) GetE2ERsvsOnSegRsv(arg0 context.Context, arg1 *reservation.ID) ([]*e2e.Reservation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetE2ERsvsOnSegRsv", arg0, arg1)
 	ret0, _ := ret[0].([]*e2e.Reservation)
@@ -204,7 +204,7 @@ func (mr *MockDBMockRecorder) GetInterfaceUsageIngress(arg0, arg1 interface{}) *
 }
 
 // GetSegmentRsvFromID mocks base method
-func (m *MockDB) GetSegmentRsvFromID(arg0 context.Context, arg1 *reservation.SegmentID) (*segment.Reservation, error) {
+func (m *MockDB) GetSegmentRsvFromID(arg0 context.Context, arg1 *reservation.ID) (*segment.Reservation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetSegmentRsvFromID", arg0, arg1)
 	ret0, _ := ret[0].(*segment.Reservation)

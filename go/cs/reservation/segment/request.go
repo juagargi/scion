@@ -30,7 +30,7 @@ type Request struct {
 }
 
 // NewRequest constructs the segment Request type.
-func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
+func NewRequest(ts time.Time, id *reservation.ID, idx reservation.IndexNumber,
 	path *OpaquePath) (*Request, error) {
 
 	if id == nil {

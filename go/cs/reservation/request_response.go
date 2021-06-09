@@ -21,7 +21,7 @@ import (
 )
 
 type MsgId struct {
-	ID        col.SegmentID
+	ID        col.ID
 	Index     col.IndexNumber
 	Timestamp time.Time
 }

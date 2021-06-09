@@ -112,9 +112,9 @@ func newTestE2EReservation(t testing.TB, ASID string) *e2e.Reservation {
 	return rsv
 }
 
-func e2eIDFromRaw(t testing.TB, ASID, suffix string) *reservation.E2EID {
+func e2eIDFromRaw(t testing.TB, ASID, suffix string) *reservation.ID {
 	t.Helper()
-	ID, err := reservation.NewE2EID(xtest.MustParseAS(ASID), xtest.MustParseHexString(suffix))
+	ID, err := reservation.NewID(xtest.MustParseAS(ASID), xtest.MustParseHexString(suffix))
 	require.NoError(t, err)
 	return ID
 }

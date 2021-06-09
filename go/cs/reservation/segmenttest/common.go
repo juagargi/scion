@@ -183,7 +183,7 @@ func ModRsvs(rsvs []*segment.Reservation, mods ...ReservationMod) {
 // WithID sets the ID specified with as and suffix to the reservation.
 func WithID(as, suffix string) ReservationMod {
 	as_ := xtest.MustParseAS(as)
-	id, err := reservation.NewSegmentID(as_, xtest.MustParseHexString(suffix))
+	id, err := reservation.NewID(as_, xtest.MustParseHexString(suffix))
 	if err != nil {
 		panic(err)
 	}

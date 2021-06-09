@@ -118,7 +118,7 @@ func newSegmentReservation(asidPath ...string) *segment.Reservation {
 }
 
 func newReservation() *Reservation {
-	id, err := reservation.NewE2EID(xtest.MustParseAS("ff00:0:111"),
+	id, err := reservation.NewID(xtest.MustParseAS("ff00:0:111"),
 		xtest.MustParseHexString("beefcafebeefcafebeef"))
 	if err != nil {
 		panic(err)

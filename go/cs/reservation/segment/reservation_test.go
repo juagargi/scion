@@ -86,7 +86,7 @@ func TestReservationValidate(t *testing.T) {
 	require.Error(t, err)
 	// ID not set
 	r = segmenttest.NewReservation()
-	r.ID = reservation.SegmentID{}
+	r.ID = reservation.ID{}
 	err = r.Validate()
 	require.Error(t, err)
 	// starts in this AS but ingress nonzero

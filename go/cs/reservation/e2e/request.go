@@ -24,13 +24,13 @@ import (
 
 // Request is the base struct for any type of COLIBRI e2e request.
 type Request struct {
-	ID        reservation.E2EID       // the ID this request refers to
+	ID        reservation.ID          // the ID this request refers to
 	Index     reservation.IndexNumber // the index this request refers to
 	Timestamp time.Time               // the mandatory timestamp
 }
 
 // NewRequest constructs the e2e Request type.
-func NewRequest(ts time.Time, id *reservation.E2EID, idx reservation.IndexNumber,
+func NewRequest(ts time.Time, id *reservation.ID, idx reservation.IndexNumber,
 	path base.PacketPath) (*Request, error) {
 
 	if id == nil {
@@ -53,7 +53,7 @@ type SetupRequest interface {
 // SetupReq is an e2e setup/renewal request, that has been so far accepted.
 type SetupReq struct {
 	Request
-	SegmentRsvs              []reservation.SegmentID
+	SegmentRsvs              []reservation.ID
 	SegmentRsvASCount        []uint8 // how many ASes per segment reservation
 	RequestedBW              reservation.BWCls
 	AllocationTrail          []reservation.BWCls
@@ -63,7 +63,7 @@ type SetupReq struct {
 }
 
 // NewSetupRequest creates and initializes an e2e setup request common for both success and failure.
-func NewSetupRequest(r *Request, segRsvs []reservation.SegmentID, segRsvCount []uint8,
+func NewSetupRequest(r *Request, segRsvs []reservation.ID, segRsvCount []uint8,
 	requestedBW reservation.BWCls, allocTrail []reservation.BWCls) (*SetupReq, error) {
 
 	if len(segRsvs) != len(segRsvCount) || len(segRsvs) == 0 {
@@ -146,8 +146,8 @@ func (r *SetupReq) Location() PathLocation {
 // SegmentRsvIDsForThisAS returns the segment reservation ID this AS belongs to. Iff this
 // AS is a transfer AS (stitching point), there will be two reservation IDs returned, in the
 // order of traversal.
-func (r *SetupReq) SegmentRsvIDsForThisAS() []reservation.SegmentID {
-	indices := make([]reservation.SegmentID, 1, 2)
+func (r *SetupReq) SegmentRsvIDsForThisAS() []reservation.ID {
+	indices := make([]reservation.ID, 1, 2)
 	indices[0] = r.SegmentRsvs[r.currentASSegmentRsvIndex]
 	if r.isTransfer {
 		indices = append(indices, r.SegmentRsvs[r.currentASSegmentRsvIndex+1])

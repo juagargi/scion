@@ -883,9 +883,9 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		Egress:  currStep.Egress,
 	}}, token.HopFields...)
 
-	log.Info("deleteme MAC MAC MAC", "suffix", hex.EncodeToString(rsv.ID.Suffix[:]),
+	log.Info("deleteme MAC MAC MAC", "suffix", hex.EncodeToString(rsv.ID.Suffix),
 		"src_as", req.ID.ASID.String(), "dst_as", req.ID.ASID.String())
-	mac, err := s.computeMAC(rsv.ID.Suffix[:], token, req.ID.ASID, req.ID.ASID)
+	mac, err := s.computeMAC(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
 	if err != nil {
 		failedResponse.Message = "cannot compute MAC: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("cannot compute MAC", err)

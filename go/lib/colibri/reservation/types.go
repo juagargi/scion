@@ -29,139 +29,108 @@ import (
 	"github.com/scionproto/scion/go/lib/util"
 )
 
-// SegmentID identifies a COLIBRI segment reservation. The suffix differentiates
+// ID identifies a COLIBRI segment or E2E reservation. The suffix differentiates
 // reservations for the same AS.
-type SegmentID struct {
+// A segment ID has a 4 byte long suffix. The suffix is 10 byte long for an E2E reservation.
+type ID struct {
 	ASID   addr.AS
-	Suffix [4]byte
+	Suffix []byte
 }
 
-var _ io.Reader = (*SegmentID)(nil)
+var _ io.Reader = (*ID)(nil)
 
-const SegmentIDLen = 10
-
-// NewSegmentID returns a new SegmentID
-func NewSegmentID(AS addr.AS, suffix []byte) (*SegmentID, error) {
-	if len(suffix) != 4 {
-		return nil, serrors.New("wrong suffix length, should be 4", "actual_len", len(suffix))
+// NewID returns a new ID
+func NewID(AS addr.AS, suffix []byte) (*ID, error) {
+	if len(suffix) != 4 && len(suffix) != 10 {
+		return nil, serrors.New("wrong suffix length, should be 4 or 10", "actual_len", len(suffix))
 	}
-	id := SegmentID{ASID: AS}
-	copy(id.Suffix[:], suffix)
+	id := ID{
+		ASID:   AS,
+		Suffix: append([]byte{}, suffix...),
+	}
 	return &id, nil
 }
 
-// SegmentIDFromRawBuffers constructs a SegmentID from two separate buffers.
-func SegmentIDFromRawBuffers(ASID, suffix []byte) (*SegmentID, error) {
-	if len(ASID) < 6 || len(suffix) < 4 {
+// IDFromRawBuffers constructs an ID from two separate buffers.
+func IDFromRawBuffers(ASID, suffix []byte) (*ID, error) {
+	if len(ASID) < 6 {
 		return nil, serrors.New("buffers too small", "length_ASID", len(ASID),
 			"length_suffix", len(suffix))
 	}
-	return NewSegmentID(addr.AS(binary.BigEndian.Uint64(append([]byte{0, 0}, ASID[:6]...))),
-		suffix[:4])
+	return NewID(addr.AS(binary.BigEndian.Uint64(append([]byte{0, 0}, ASID[:6]...))), suffix)
 }
 
-// SegmentIDFromRaw constructs a SegmentID parsing a raw buffer.
-func SegmentIDFromRaw(raw []byte) (
-	*SegmentID, error) {
-
-	if len(raw) < SegmentIDLen {
-		return nil, serrors.New("buffer too small", "actual", len(raw),
-			"min", SegmentIDLen)
+// IDFromRaw constructs a ID parsing a raw buffer.
+func IDFromRaw(raw []byte) (*ID, error) {
+	if len(raw) < 6 {
+		return nil, serrors.New("buffer too small", "actual", len(raw))
 	}
-	return SegmentIDFromRawBuffers(raw[:6], raw[6:])
+	return IDFromRawBuffers(raw[:6], raw[6:])
 }
 
-// Read serializes this SegmentID into the buffer.
-func (id *SegmentID) Read(raw []byte) (int, error) {
-	if len(raw) < SegmentIDLen {
-		return 0, serrors.New("buffer too small", "actual", len(raw), "min", SegmentIDLen)
+// Len returns the length of this ID in bytes.
+func (id *ID) Len() int {
+	return 6 + len(id.Suffix)
+}
+
+func (id *ID) Equal(other *ID) bool {
+	return id.ASID == other.ASID && bytes.Equal(id.Suffix, other.Suffix)
+}
+
+func (id *ID) Validate() error {
+	if len(id.Suffix) != 4 && len(id.Suffix) != 10 {
+		return serrors.New("bad suffix", "suffix", hex.EncodeToString(id.Suffix))
+	}
+	return nil
+}
+
+func (id *ID) Clone() *ID {
+	if id == nil {
+		return nil
+	}
+	return &ID{
+		ASID:   id.ASID,
+		Suffix: append([]byte{}, id.Suffix...),
+	}
+}
+
+func (id *ID) IsSegmentID() bool {
+	return len(id.Suffix) == 4
+}
+
+func (id *ID) IsE2EID() bool {
+	return len(id.Suffix) == 10
+}
+
+// Read serializes this ID into the buffer.
+func (id *ID) Read(raw []byte) (int, error) {
+	if len(raw) < id.Len() {
+		return 0, serrors.New("buffer too small", "actual", len(raw), "min", id.Len())
 	}
 	auxBuff := make([]byte, 8)
 	binary.BigEndian.PutUint64(auxBuff, uint64(id.ASID))
 	copy(raw, auxBuff[2:8])
-	copy(raw[6:], id.Suffix[:])
-	return SegmentIDLen, nil
+	copy(raw[6:], id.Suffix)
+	return id.Len(), nil
 }
 
 // ToRaw calls Read and returns a new allocated buffer with the ID serialized.
-func (id *SegmentID) ToRaw() []byte {
-	buf := make([]byte, SegmentIDLen)
+func (id *ID) ToRaw() []byte {
+	buf := make([]byte, id.Len())
 	id.Read(buf) // safely ignore errors as they can only come from buffer size
 	return buf
 }
 
-func (id *SegmentID) String() string {
+func (id *ID) String() string {
 	return fmt.Sprintf("%s-%x", id.ASID, id.Suffix)
 }
 
-func (id *SegmentID) IsEmptySuffix() bool {
-	return bytes.Equal(id.Suffix[:], []byte{0, 0, 0, 0})
+func (id *ID) IsEmptySuffix() bool {
+	return bytes.Equal(id.Suffix, []byte{0, 0, 0, 0})
 }
 
-func (id *SegmentID) IsEmpty() bool {
+func (id *ID) IsEmpty() bool {
 	return id.ASID == 0 && id.IsEmptySuffix()
-}
-
-// E2EID identifies a COLIBRI E2E reservation. The suffix is different for each
-// reservation for any given AS.
-type E2EID struct {
-	ASID   addr.AS
-	Suffix [10]byte
-}
-
-const E2EIDLen = 16
-
-var _ io.Reader = (*E2EID)(nil)
-
-// NewE2EID returns a new E2EID
-func NewE2EID(AS addr.AS, suffix []byte) (*E2EID, error) {
-	if len(suffix) != 10 {
-		return nil, serrors.New("wrong suffix length, should be 10", "actual_len", len(suffix))
-	}
-	id := E2EID{ASID: AS}
-	copy(id.Suffix[:], suffix)
-	return &id, nil
-}
-
-// E2EIDFromRawBuffers constructs a E2DID from two separate buffers.
-func E2EIDFromRawBuffers(ASID, suffix []byte) (*E2EID, error) {
-	if len(ASID) < 6 || len(suffix) < 10 {
-		return nil, serrors.New("buffers too small", "length_ASID", len(ASID),
-			"length_suffix", len(suffix))
-	}
-	return NewE2EID(addr.AS(binary.BigEndian.Uint64(append([]byte{0, 0}, ASID[:6]...))),
-		suffix[:10])
-}
-
-// E2EIDFromRaw constructs an E2EID parsing a buffer.
-func E2EIDFromRaw(raw []byte) (*E2EID, error) {
-	if len(raw) < E2EIDLen {
-		return nil, serrors.New("buffer too small", "actual", len(raw), "min", E2EIDLen)
-	}
-	return E2EIDFromRawBuffers(raw[:6], raw[6:])
-}
-
-// Read serializes this E2EID into the buffer.
-func (id *E2EID) Read(raw []byte) (int, error) {
-	if len(raw) < E2EIDLen {
-		return 0, serrors.New("buffer too small", "actual", len(raw), "min", E2EIDLen)
-	}
-	auxBuff := make([]byte, 8)
-	binary.BigEndian.PutUint64(auxBuff, uint64(id.ASID))
-	copy(raw, auxBuff[2:8])
-	copy(raw[6:], id.Suffix[:])
-	return E2EIDLen, nil
-}
-
-// ToRaw calls Read and returns a new allocated buffer with the ID serialized.
-func (id *E2EID) ToRaw() []byte {
-	buf := make([]byte, E2EIDLen)
-	id.Read(buf) // safely ignore errors as they can only come from buffer size
-	return buf
-}
-
-func (id *E2EID) String() string {
-	return fmt.Sprintf("%s-%x", id.ASID, id.Suffix)
 }
 
 // Tick represents a slice of time of 4 seconds.

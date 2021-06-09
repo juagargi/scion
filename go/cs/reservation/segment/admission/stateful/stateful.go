@@ -421,18 +421,6 @@ func (a *StatefulAdmission) updateSrcAllocWithAdmittedRequest(ctx context.Contex
 	return srcAlloc, nil
 }
 
-// sumMaxBlockedBW adds up all the max blocked bandwidth by the reservation, for all reservations,
-// iff they don't have the same ID as "excludeThisRsv".
-func sumMaxBlockedBW(rsvs []*segment.Reservation, excludeThisRsv reservation.SegmentID) uint64 {
-	var total uint64
-	for _, r := range rsvs {
-		if r.ID != excludeThisRsv {
-			total += r.MaxBlockedBW()
-		}
-	}
-	return total
-}
-
 func minBW(a uint64, bws ...uint64) uint64 {
 	min := a
 	for _, bw := range bws {
