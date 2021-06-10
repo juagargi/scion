@@ -55,6 +55,26 @@ func (mr *MockColibriClientMockRecorder) ActivateSegmentIndex(arg0, arg1 interfa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateSegmentIndex", reflect.TypeOf((*MockColibriClient)(nil).ActivateSegmentIndex), varargs...)
 }
 
+// CleanupE2EIndex mocks base method
+func (m *MockColibriClient) CleanupE2EIndex(arg0 context.Context, arg1 *colibri.Request, arg2 ...grpc.CallOption) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "CleanupE2EIndex", varargs...)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupE2EIndex indicates an expected call of CleanupE2EIndex
+func (mr *MockColibriClientMockRecorder) CleanupE2EIndex(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupE2EIndex", reflect.TypeOf((*MockColibriClient)(nil).CleanupE2EIndex), varargs...)
+}
+
 // CleanupSegmentIndex mocks base method
 func (m *MockColibriClient) CleanupSegmentIndex(arg0 context.Context, arg1 *colibri.Request, arg2 ...grpc.CallOption) (*colibri.Response, error) {
 	m.ctrl.T.Helper()
@@ -93,6 +113,46 @@ func (mr *MockColibriClientMockRecorder) ConfirmSegmentIndex(arg0, arg1 interfac
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmSegmentIndex", reflect.TypeOf((*MockColibriClient)(nil).ConfirmSegmentIndex), varargs...)
+}
+
+// ListReservations mocks base method
+func (m *MockColibriClient) ListReservations(arg0 context.Context, arg1 *colibri.ListRequest, arg2 ...grpc.CallOption) (*colibri.ListResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ListReservations", varargs...)
+	ret0, _ := ret[0].(*colibri.ListResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListReservations indicates an expected call of ListReservations
+func (mr *MockColibriClientMockRecorder) ListReservations(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockColibriClient)(nil).ListReservations), varargs...)
+}
+
+// SetupE2E mocks base method
+func (m *MockColibriClient) SetupE2E(arg0 context.Context, arg1 *colibri.E2ESetupRequest, arg2 ...grpc.CallOption) (*colibri.E2ESetupResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "SetupE2E", varargs...)
+	ret0, _ := ret[0].(*colibri.E2ESetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetupE2E indicates an expected call of SetupE2E
+func (mr *MockColibriClientMockRecorder) SetupE2E(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupE2E", reflect.TypeOf((*MockColibriClient)(nil).SetupE2E), varargs...)
 }
 
 // SetupSegment mocks base method
@@ -193,6 +253,21 @@ func (mr *MockColibriServerMockRecorder) ActivateSegmentIndex(arg0, arg1 interfa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateSegmentIndex", reflect.TypeOf((*MockColibriServer)(nil).ActivateSegmentIndex), arg0, arg1)
 }
 
+// CleanupE2EIndex mocks base method
+func (m *MockColibriServer) CleanupE2EIndex(arg0 context.Context, arg1 *colibri.Request) (*colibri.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupE2EIndex", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupE2EIndex indicates an expected call of CleanupE2EIndex
+func (mr *MockColibriServerMockRecorder) CleanupE2EIndex(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupE2EIndex", reflect.TypeOf((*MockColibriServer)(nil).CleanupE2EIndex), arg0, arg1)
+}
+
 // CleanupSegmentIndex mocks base method
 func (m *MockColibriServer) CleanupSegmentIndex(arg0 context.Context, arg1 *colibri.Request) (*colibri.Response, error) {
 	m.ctrl.T.Helper()
@@ -221,6 +296,36 @@ func (m *MockColibriServer) ConfirmSegmentIndex(arg0 context.Context, arg1 *coli
 func (mr *MockColibriServerMockRecorder) ConfirmSegmentIndex(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmSegmentIndex", reflect.TypeOf((*MockColibriServer)(nil).ConfirmSegmentIndex), arg0, arg1)
+}
+
+// ListReservations mocks base method
+func (m *MockColibriServer) ListReservations(arg0 context.Context, arg1 *colibri.ListRequest) (*colibri.ListResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListReservations", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.ListResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListReservations indicates an expected call of ListReservations
+func (mr *MockColibriServerMockRecorder) ListReservations(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockColibriServer)(nil).ListReservations), arg0, arg1)
+}
+
+// SetupE2E mocks base method
+func (m *MockColibriServer) SetupE2E(arg0 context.Context, arg1 *colibri.E2ESetupRequest) (*colibri.E2ESetupResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetupE2E", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.E2ESetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetupE2E indicates an expected call of SetupE2E
+func (mr *MockColibriServerMockRecorder) SetupE2E(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupE2E", reflect.TypeOf((*MockColibriServer)(nil).SetupE2E), arg0, arg1)
 }
 
 // SetupSegment mocks base method
