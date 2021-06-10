@@ -28,6 +28,9 @@ service Colibri {
     rpc TeardownSegment(Request) returns (Response) {}
     rpc CleanupSegmentIndex(Request) returns (Response) {}
 
+    rpc ListReservations(ListRequest) returns (ListResponse) {}
+    rpc SetupE2e(E2eSetupRequest) returns (E2eSetupResponse) {}
+
 }
 
 message TestingMessage{
@@ -61,7 +64,7 @@ message AllocationBead {
     uint32 maxbw = 2;
 }
 
-message PathStep { // without IA
+message PathStep {
     uint64 ia = 1;
     uint32 ingress = 2;
     uint32 egress =3;
@@ -83,9 +86,21 @@ message Request {
     OpaquePath opaque = 4;
 }
 
+message Response {
+    message Success {}
+    message Failure {
+        uint32 error_code = 1;
+        string message = 2;
+        uint32 failing_hop = 3;
+    }
+
+    oneof success_failure {
+        Success success = 1;
+        Failure failure = 2;
+    }
+}
 
 message SegmentSetupRequest {
-    Request base = 1;
     message Params {
         uint32 expiration_time = 1;
         uint32 rlc = 2;
@@ -97,6 +112,8 @@ message SegmentSetupRequest {
         PathEndProps props_at_end = 8;
         repeated AllocationBead allocationtrail = 9;
     }
+
+    Request base = 1;
     Params params = 2;
 }
 
@@ -105,21 +122,56 @@ message SegmentSetupResponse {
         Response.Failure failure = 1;
         SegmentSetupRequest.Params request = 2;
     }
+
     oneof success_failure {
         bytes token = 1;
         Failure failure = 2;
     }
 }
 
-message Response {
-    message Success {}
-    message Failure {
-        uint32 error_code = 1;
-        string message = 2;
-        uint32 failing_hop = 3;
+message E2eSetupRequest {
+    message PathParams {
+        ReservationID up = 1;
+        ReservationID core = 2;
+        ReservationID down = 3;
+        uint32 current_segment = 4; // index of the current segment.
+                                    // If the node is transfer, the first segment it belongs to.
     }
+    message E2eSetupBead {
+        uint32 maxbw = 1;
+        bytes hopfield = 2;
+    }
+    message Failure {
+        uint32 failed_step = 1;
+        string Message = 2;
+    }
+
+    Request base = 1; // the path here is from src to dst
+    uint32 requestedBw = 2;
+    PathParams params = 3;
+    repeated E2eSetupBead allocationtrail = 4; // even failed nodes will write an entry
+    Failure failure = 5; // if present: info about the failure
+}
+
+message E2eSetupResponse {
+}
+
+message ListRequest {
+    uint64 dst_ia = 1;
+}
+
+message ListResponse {
+    message Reservations {
+        message Reservation {
+            ReservationID ID = 1;
+            uint64 dst_ia = 2;
+            // other properties?
+        }
+        repeated Reservation reservations = 1;
+    }
+
     oneof success_failure {
-        Success success = 1;
-        Failure failure = 2;
+        Reservations reservations = 1;
+        string failure_message = 2;
     }
 }

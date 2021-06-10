@@ -177,11 +177,23 @@ func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Req
 	return pbRes, nil
 }
 
+func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRequest) (
+	*colpb.ListResponse, error) {
+
+	return nil, nil
+}
+
+func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
+	*colpb.E2ESetupResponse, error) {
+
+	return nil, nil
+}
+
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
 func extractPath(ctx context.Context) (base.PacketPath, error) {
 	// TODO(juagargi) move from PacketPath to OpaquePath
 	// TODO(juagargi) call this function to check that the transport path matches that
-	// of base.Request.Path if the trasport path is of colibri type.
+	// of base.Request.Path if the transport path is of colibri type.
 	p, ok := peer.FromContext(ctx)
 	if !ok || p == nil {
 		log.Error("deleteme no peer found")

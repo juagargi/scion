@@ -509,22 +509,10 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 }
 
 // AdmitE2EReservation will attempt to admit an e2e reservation.
-func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupRequest) (
+func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	base.Response, error) {
 
-	req := request.GetCommonSetupReq()
 	failedResponse := s.prepareFailureResp("cannot admit e2e reservation")
-
-	// sanity check: all successful requests are SetupReqSuccess. Failed ones are SetupReqFailure.
-	if request.IsSuccessful() {
-		if _, ok := request.(*e2e.SetupReqSuccess); !ok {
-			return failedResponse, s.errNew("logic error, successful request can be casted")
-		}
-	} else {
-		if _, ok := request.(*e2e.SetupReqFailure); !ok {
-			return failedResponse, s.errNew("logic error, failed request can be casted")
-		}
-	}
 
 	if len(req.SegmentRsvs) == 0 || len(req.SegmentRsvs) > 3 {
 		return failedResponse, s.errNew("invalid number of segment reservations for an e2e one",
@@ -589,8 +577,8 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 	}
 	index := rsv.Index(idx)
 	index.AllocBW = req.RequestedBW
-	if request.IsSuccessful() {
-		index.Token = &request.(*e2e.SetupReqSuccess).Token
+	if req.Success() {
+		// index.Token = &req.(*e2e.SetupReqSuccess).Token
 	}
 
 	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
@@ -666,7 +654,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, request e2e.SetupReques
 }
 
 // CleanupE2EReservation will remove an index from an e2e reservation.
-func (s *Store) CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) (
+func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
 	// if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {

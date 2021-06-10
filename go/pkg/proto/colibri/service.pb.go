@@ -556,141 +556,6 @@ func (x *Request) GetOpaque() *OpaquePath {
 	return nil
 }
 
-type SegmentSetupRequest struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Base   *Request                    `protobuf:"bytes,1,opt,name=base,proto3" json:"base,omitempty"`
-	Params *SegmentSetupRequest_Params `protobuf:"bytes,2,opt,name=params,proto3" json:"params,omitempty"`
-}
-
-func (x *SegmentSetupRequest) Reset() {
-	*x = SegmentSetupRequest{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[8]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *SegmentSetupRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SegmentSetupRequest) ProtoMessage() {}
-
-func (x *SegmentSetupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[8]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SegmentSetupRequest.ProtoReflect.Descriptor instead.
-func (*SegmentSetupRequest) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *SegmentSetupRequest) GetBase() *Request {
-	if x != nil {
-		return x.Base
-	}
-	return nil
-}
-
-func (x *SegmentSetupRequest) GetParams() *SegmentSetupRequest_Params {
-	if x != nil {
-		return x.Params
-	}
-	return nil
-}
-
-type SegmentSetupResponse struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	// Types that are assignable to SuccessFailure:
-	//	*SegmentSetupResponse_Token
-	//	*SegmentSetupResponse_Failure_
-	SuccessFailure isSegmentSetupResponse_SuccessFailure `protobuf_oneof:"success_failure"`
-}
-
-func (x *SegmentSetupResponse) Reset() {
-	*x = SegmentSetupResponse{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[9]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *SegmentSetupResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SegmentSetupResponse) ProtoMessage() {}
-
-func (x *SegmentSetupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[9]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SegmentSetupResponse.ProtoReflect.Descriptor instead.
-func (*SegmentSetupResponse) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{9}
-}
-
-func (m *SegmentSetupResponse) GetSuccessFailure() isSegmentSetupResponse_SuccessFailure {
-	if m != nil {
-		return m.SuccessFailure
-	}
-	return nil
-}
-
-func (x *SegmentSetupResponse) GetToken() []byte {
-	if x, ok := x.GetSuccessFailure().(*SegmentSetupResponse_Token); ok {
-		return x.Token
-	}
-	return nil
-}
-
-func (x *SegmentSetupResponse) GetFailure() *SegmentSetupResponse_Failure {
-	if x, ok := x.GetSuccessFailure().(*SegmentSetupResponse_Failure_); ok {
-		return x.Failure
-	}
-	return nil
-}
-
-type isSegmentSetupResponse_SuccessFailure interface {
-	isSegmentSetupResponse_SuccessFailure()
-}
-
-type SegmentSetupResponse_Token struct {
-	Token []byte `protobuf:"bytes,1,opt,name=token,proto3,oneof"`
-}
-
-type SegmentSetupResponse_Failure_ struct {
-	Failure *SegmentSetupResponse_Failure `protobuf:"bytes,2,opt,name=failure,proto3,oneof"`
-}
-
-func (*SegmentSetupResponse_Token) isSegmentSetupResponse_SuccessFailure() {}
-
-func (*SegmentSetupResponse_Failure_) isSegmentSetupResponse_SuccessFailure() {}
-
 type Response struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -705,7 +570,7 @@ type Response struct {
 func (x *Response) Reset() {
 	*x = Response{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -718,7 +583,7 @@ func (x *Response) String() string {
 func (*Response) ProtoMessage() {}
 
 func (x *Response) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -731,7 +596,7 @@ func (x *Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response.ProtoReflect.Descriptor instead.
 func (*Response) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10}
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{8}
 }
 
 func (m *Response) GetSuccessFailure() isResponse_SuccessFailure {
@@ -771,6 +636,478 @@ func (*Response_Success_) isResponse_SuccessFailure() {}
 
 func (*Response_Failure_) isResponse_SuccessFailure() {}
 
+type SegmentSetupRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Base   *Request                    `protobuf:"bytes,1,opt,name=base,proto3" json:"base,omitempty"`
+	Params *SegmentSetupRequest_Params `protobuf:"bytes,2,opt,name=params,proto3" json:"params,omitempty"`
+}
+
+func (x *SegmentSetupRequest) Reset() {
+	*x = SegmentSetupRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[9]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SegmentSetupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SegmentSetupRequest) ProtoMessage() {}
+
+func (x *SegmentSetupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[9]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SegmentSetupRequest.ProtoReflect.Descriptor instead.
+func (*SegmentSetupRequest) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SegmentSetupRequest) GetBase() *Request {
+	if x != nil {
+		return x.Base
+	}
+	return nil
+}
+
+func (x *SegmentSetupRequest) GetParams() *SegmentSetupRequest_Params {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+type SegmentSetupResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to SuccessFailure:
+	//	*SegmentSetupResponse_Token
+	//	*SegmentSetupResponse_Failure_
+	SuccessFailure isSegmentSetupResponse_SuccessFailure `protobuf_oneof:"success_failure"`
+}
+
+func (x *SegmentSetupResponse) Reset() {
+	*x = SegmentSetupResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SegmentSetupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SegmentSetupResponse) ProtoMessage() {}
+
+func (x *SegmentSetupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SegmentSetupResponse.ProtoReflect.Descriptor instead.
+func (*SegmentSetupResponse) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10}
+}
+
+func (m *SegmentSetupResponse) GetSuccessFailure() isSegmentSetupResponse_SuccessFailure {
+	if m != nil {
+		return m.SuccessFailure
+	}
+	return nil
+}
+
+func (x *SegmentSetupResponse) GetToken() []byte {
+	if x, ok := x.GetSuccessFailure().(*SegmentSetupResponse_Token); ok {
+		return x.Token
+	}
+	return nil
+}
+
+func (x *SegmentSetupResponse) GetFailure() *SegmentSetupResponse_Failure {
+	if x, ok := x.GetSuccessFailure().(*SegmentSetupResponse_Failure_); ok {
+		return x.Failure
+	}
+	return nil
+}
+
+type isSegmentSetupResponse_SuccessFailure interface {
+	isSegmentSetupResponse_SuccessFailure()
+}
+
+type SegmentSetupResponse_Token struct {
+	Token []byte `protobuf:"bytes,1,opt,name=token,proto3,oneof"`
+}
+
+type SegmentSetupResponse_Failure_ struct {
+	Failure *SegmentSetupResponse_Failure `protobuf:"bytes,2,opt,name=failure,proto3,oneof"`
+}
+
+func (*SegmentSetupResponse_Token) isSegmentSetupResponse_SuccessFailure() {}
+
+func (*SegmentSetupResponse_Failure_) isSegmentSetupResponse_SuccessFailure() {}
+
+type E2ESetupRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Base            *Request                        `protobuf:"bytes,1,opt,name=base,proto3" json:"base,omitempty"`
+	RequestedBw     uint32                          `protobuf:"varint,2,opt,name=requestedBw,proto3" json:"requestedBw,omitempty"`
+	Params          *E2ESetupRequest_PathParams     `protobuf:"bytes,3,opt,name=params,proto3" json:"params,omitempty"`
+	Allocationtrail []*E2ESetupRequest_E2ESetupBead `protobuf:"bytes,4,rep,name=allocationtrail,proto3" json:"allocationtrail,omitempty"`
+}
+
+func (x *E2ESetupRequest) Reset() {
+	*x = E2ESetupRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *E2ESetupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*E2ESetupRequest) ProtoMessage() {}
+
+func (x *E2ESetupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use E2ESetupRequest.ProtoReflect.Descriptor instead.
+func (*E2ESetupRequest) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *E2ESetupRequest) GetBase() *Request {
+	if x != nil {
+		return x.Base
+	}
+	return nil
+}
+
+func (x *E2ESetupRequest) GetRequestedBw() uint32 {
+	if x != nil {
+		return x.RequestedBw
+	}
+	return 0
+}
+
+func (x *E2ESetupRequest) GetParams() *E2ESetupRequest_PathParams {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+func (x *E2ESetupRequest) GetAllocationtrail() []*E2ESetupRequest_E2ESetupBead {
+	if x != nil {
+		return x.Allocationtrail
+	}
+	return nil
+}
+
+type E2ESetupResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *E2ESetupResponse) Reset() {
+	*x = E2ESetupResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *E2ESetupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*E2ESetupResponse) ProtoMessage() {}
+
+func (x *E2ESetupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use E2ESetupResponse.ProtoReflect.Descriptor instead.
+func (*E2ESetupResponse) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{12}
+}
+
+type ListRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	DstIa uint64 `protobuf:"varint,1,opt,name=dst_ia,json=dstIa,proto3" json:"dst_ia,omitempty"`
+}
+
+func (x *ListRequest) Reset() {
+	*x = ListRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRequest) ProtoMessage() {}
+
+func (x *ListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
+func (*ListRequest) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListRequest) GetDstIa() uint64 {
+	if x != nil {
+		return x.DstIa
+	}
+	return 0
+}
+
+type ListResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to SuccessFailure:
+	//	*ListResponse_Reservations_
+	//	*ListResponse_FailureMessage
+	SuccessFailure isListResponse_SuccessFailure `protobuf_oneof:"success_failure"`
+}
+
+func (x *ListResponse) Reset() {
+	*x = ListResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[14]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListResponse) ProtoMessage() {}
+
+func (x *ListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[14]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
+func (*ListResponse) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{14}
+}
+
+func (m *ListResponse) GetSuccessFailure() isListResponse_SuccessFailure {
+	if m != nil {
+		return m.SuccessFailure
+	}
+	return nil
+}
+
+func (x *ListResponse) GetReservations() *ListResponse_Reservations {
+	if x, ok := x.GetSuccessFailure().(*ListResponse_Reservations_); ok {
+		return x.Reservations
+	}
+	return nil
+}
+
+func (x *ListResponse) GetFailureMessage() string {
+	if x, ok := x.GetSuccessFailure().(*ListResponse_FailureMessage); ok {
+		return x.FailureMessage
+	}
+	return ""
+}
+
+type isListResponse_SuccessFailure interface {
+	isListResponse_SuccessFailure()
+}
+
+type ListResponse_Reservations_ struct {
+	Reservations *ListResponse_Reservations `protobuf:"bytes,1,opt,name=reservations,proto3,oneof"`
+}
+
+type ListResponse_FailureMessage struct {
+	FailureMessage string `protobuf:"bytes,2,opt,name=failure_message,json=failureMessage,proto3,oneof"`
+}
+
+func (*ListResponse_Reservations_) isListResponse_SuccessFailure() {}
+
+func (*ListResponse_FailureMessage) isListResponse_SuccessFailure() {}
+
+type Response_Success struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *Response_Success) Reset() {
+	*x = Response_Success{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[15]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Response_Success) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Response_Success) ProtoMessage() {}
+
+func (x *Response_Success) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[15]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Response_Success.ProtoReflect.Descriptor instead.
+func (*Response_Success) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{8, 0}
+}
+
+type Response_Failure struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ErrorCode  uint32 `protobuf:"varint,1,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	Message    string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	FailingHop uint32 `protobuf:"varint,3,opt,name=failing_hop,json=failingHop,proto3" json:"failing_hop,omitempty"`
+}
+
+func (x *Response_Failure) Reset() {
+	*x = Response_Failure{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[16]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Response_Failure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Response_Failure) ProtoMessage() {}
+
+func (x *Response_Failure) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[16]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Response_Failure.ProtoReflect.Descriptor instead.
+func (*Response_Failure) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{8, 1}
+}
+
+func (x *Response_Failure) GetErrorCode() uint32 {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return 0
+}
+
+func (x *Response_Failure) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *Response_Failure) GetFailingHop() uint32 {
+	if x != nil {
+		return x.FailingHop
+	}
+	return 0
+}
+
 type SegmentSetupRequest_Params struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -790,7 +1127,7 @@ type SegmentSetupRequest_Params struct {
 func (x *SegmentSetupRequest_Params) Reset() {
 	*x = SegmentSetupRequest_Params{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[11]
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[17]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -803,7 +1140,7 @@ func (x *SegmentSetupRequest_Params) String() string {
 func (*SegmentSetupRequest_Params) ProtoMessage() {}
 
 func (x *SegmentSetupRequest_Params) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[11]
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[17]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -816,7 +1153,7 @@ func (x *SegmentSetupRequest_Params) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentSetupRequest_Params.ProtoReflect.Descriptor instead.
 func (*SegmentSetupRequest_Params) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{8, 0}
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{9, 0}
 }
 
 func (x *SegmentSetupRequest_Params) GetExpirationTime() uint32 {
@@ -894,7 +1231,7 @@ type SegmentSetupResponse_Failure struct {
 func (x *SegmentSetupResponse_Failure) Reset() {
 	*x = SegmentSetupResponse_Failure{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[12]
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[18]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -907,7 +1244,7 @@ func (x *SegmentSetupResponse_Failure) String() string {
 func (*SegmentSetupResponse_Failure) ProtoMessage() {}
 
 func (x *SegmentSetupResponse_Failure) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[12]
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[18]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -920,7 +1257,7 @@ func (x *SegmentSetupResponse_Failure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentSetupResponse_Failure.ProtoReflect.Descriptor instead.
 func (*SegmentSetupResponse_Failure) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{9, 0}
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10, 0}
 }
 
 func (x *SegmentSetupResponse_Failure) GetFailure() *Response_Failure {
@@ -937,29 +1274,33 @@ func (x *SegmentSetupResponse_Failure) GetRequest() *SegmentSetupRequest_Params 
 	return nil
 }
 
-type Response_Success struct {
+type E2ESetupRequest_PathParams struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
+
+	Up   *ReservationID `protobuf:"bytes,1,opt,name=up,proto3" json:"up,omitempty"`
+	Core *ReservationID `protobuf:"bytes,2,opt,name=core,proto3" json:"core,omitempty"`
+	Down *ReservationID `protobuf:"bytes,3,opt,name=down,proto3" json:"down,omitempty"`
 }
 
-func (x *Response_Success) Reset() {
-	*x = Response_Success{}
+func (x *E2ESetupRequest_PathParams) Reset() {
+	*x = E2ESetupRequest_PathParams{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[13]
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[19]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *Response_Success) String() string {
+func (x *E2ESetupRequest_PathParams) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Response_Success) ProtoMessage() {}
+func (*E2ESetupRequest_PathParams) ProtoMessage() {}
 
-func (x *Response_Success) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[13]
+func (x *E2ESetupRequest_PathParams) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[19]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -970,70 +1311,185 @@ func (x *Response_Success) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Response_Success.ProtoReflect.Descriptor instead.
-func (*Response_Success) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10, 0}
+// Deprecated: Use E2ESetupRequest_PathParams.ProtoReflect.Descriptor instead.
+func (*E2ESetupRequest_PathParams) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{11, 0}
 }
 
-type Response_Failure struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	ErrorCode  uint32 `protobuf:"varint,1,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
-	Message    string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	FailingHop uint32 `protobuf:"varint,3,opt,name=failing_hop,json=failingHop,proto3" json:"failing_hop,omitempty"`
-}
-
-func (x *Response_Failure) Reset() {
-	*x = Response_Failure{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[14]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *Response_Failure) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Response_Failure) ProtoMessage() {}
-
-func (x *Response_Failure) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[14]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Response_Failure.ProtoReflect.Descriptor instead.
-func (*Response_Failure) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10, 1}
-}
-
-func (x *Response_Failure) GetErrorCode() uint32 {
+func (x *E2ESetupRequest_PathParams) GetUp() *ReservationID {
 	if x != nil {
-		return x.ErrorCode
+		return x.Up
+	}
+	return nil
+}
+
+func (x *E2ESetupRequest_PathParams) GetCore() *ReservationID {
+	if x != nil {
+		return x.Core
+	}
+	return nil
+}
+
+func (x *E2ESetupRequest_PathParams) GetDown() *ReservationID {
+	if x != nil {
+		return x.Down
+	}
+	return nil
+}
+
+type E2ESetupRequest_E2ESetupBead struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Maxbw    uint32 `protobuf:"varint,1,opt,name=maxbw,proto3" json:"maxbw,omitempty"`
+	Hopfield []byte `protobuf:"bytes,2,opt,name=hopfield,proto3" json:"hopfield,omitempty"`
+}
+
+func (x *E2ESetupRequest_E2ESetupBead) Reset() {
+	*x = E2ESetupRequest_E2ESetupBead{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[20]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *E2ESetupRequest_E2ESetupBead) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*E2ESetupRequest_E2ESetupBead) ProtoMessage() {}
+
+func (x *E2ESetupRequest_E2ESetupBead) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[20]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use E2ESetupRequest_E2ESetupBead.ProtoReflect.Descriptor instead.
+func (*E2ESetupRequest_E2ESetupBead) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{11, 1}
+}
+
+func (x *E2ESetupRequest_E2ESetupBead) GetMaxbw() uint32 {
+	if x != nil {
+		return x.Maxbw
 	}
 	return 0
 }
 
-func (x *Response_Failure) GetMessage() string {
+func (x *E2ESetupRequest_E2ESetupBead) GetHopfield() []byte {
 	if x != nil {
-		return x.Message
+		return x.Hopfield
 	}
-	return ""
+	return nil
 }
 
-func (x *Response_Failure) GetFailingHop() uint32 {
+type ListResponse_Reservations struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Reservations []*ListResponse_Reservations_Reservation `protobuf:"bytes,1,rep,name=reservations,proto3" json:"reservations,omitempty"`
+}
+
+func (x *ListResponse_Reservations) Reset() {
+	*x = ListResponse_Reservations{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[21]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ListResponse_Reservations) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListResponse_Reservations) ProtoMessage() {}
+
+func (x *ListResponse_Reservations) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[21]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListResponse_Reservations.ProtoReflect.Descriptor instead.
+func (*ListResponse_Reservations) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{14, 0}
+}
+
+func (x *ListResponse_Reservations) GetReservations() []*ListResponse_Reservations_Reservation {
 	if x != nil {
-		return x.FailingHop
+		return x.Reservations
+	}
+	return nil
+}
+
+type ListResponse_Reservations_Reservation struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ID    *ReservationID `protobuf:"bytes,1,opt,name=ID,proto3" json:"ID,omitempty"`
+	DstIa uint64         `protobuf:"varint,2,opt,name=dst_ia,json=dstIa,proto3" json:"dst_ia,omitempty"`
+}
+
+func (x *ListResponse_Reservations_Reservation) Reset() {
+	*x = ListResponse_Reservations_Reservation{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_colibri_v1_service_proto_msgTypes[22]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ListResponse_Reservations_Reservation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListResponse_Reservations_Reservation) ProtoMessage() {}
+
+func (x *ListResponse_Reservations_Reservation) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_colibri_v1_service_proto_msgTypes[22]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListResponse_Reservations_Reservation.ProtoReflect.Descriptor instead.
+func (*ListResponse_Reservations_Reservation) Descriptor() ([]byte, []int) {
+	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{14, 0, 0}
+}
+
+func (x *ListResponse_Reservations_Reservation) GetID() *ReservationID {
+	if x != nil {
+		return x.ID
+	}
+	return nil
+}
+
+func (x *ListResponse_Reservations_Reservation) GetDstIa() uint64 {
+	if x != nil {
+		return x.DstIa
 	}
 	return 0
 }
@@ -1097,7 +1553,24 @@ var file_proto_colibri_v1_service_proto_rawDesc = []byte{
 	0x73, 0x74, 0x61, 0x6d, 0x70, 0x12, 0x34, 0x0a, 0x06, 0x6f, 0x70, 0x61, 0x71, 0x75, 0x65, 0x18,
 	0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f,
 	0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x4f, 0x70, 0x61, 0x71, 0x75, 0x65, 0x50,
-	0x61, 0x74, 0x68, 0x52, 0x06, 0x6f, 0x70, 0x61, 0x71, 0x75, 0x65, 0x22, 0x89, 0x04, 0x0a, 0x13,
+	0x61, 0x74, 0x68, 0x52, 0x06, 0x6f, 0x70, 0x61, 0x71, 0x75, 0x65, 0x22, 0x8d, 0x02, 0x0a, 0x08,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3e, 0x0a, 0x07, 0x73, 0x75, 0x63, 0x63,
+	0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2e, 0x53, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x48, 0x00, 0x52,
+	0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x3e, 0x0a, 0x07, 0x66, 0x61, 0x69, 0x6c,
+	0x75, 0x72, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2e, 0x46, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x48, 0x00, 0x52,
+	0x07, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x1a, 0x09, 0x0a, 0x07, 0x53, 0x75, 0x63, 0x63,
+	0x65, 0x73, 0x73, 0x1a, 0x63, 0x0a, 0x07, 0x46, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x12, 0x1d,
+	0x0a, 0x0a, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x5f, 0x63, 0x6f, 0x64, 0x65, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x0d, 0x52, 0x09, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x43, 0x6f, 0x64, 0x65, 0x12, 0x18, 0x0a,
+	0x07, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07,
+	0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x1f, 0x0a, 0x0b, 0x66, 0x61, 0x69, 0x6c, 0x69,
+	0x6e, 0x67, 0x5f, 0x68, 0x6f, 0x70, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x0a, 0x66, 0x61,
+	0x69, 0x6c, 0x69, 0x6e, 0x67, 0x48, 0x6f, 0x70, 0x42, 0x11, 0x0a, 0x0f, 0x73, 0x75, 0x63, 0x63,
+	0x65, 0x73, 0x73, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x22, 0x89, 0x04, 0x0a, 0x13,
 	0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75,
 	0x65, 0x73, 0x74, 0x12, 0x2d, 0x0a, 0x04, 0x62, 0x61, 0x73, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28,
 	0x0b, 0x32, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72,
@@ -1148,60 +1621,110 @@ var file_proto_colibri_v1_service_proto_rawDesc = []byte{
 	0x76, 0x31, 0x2e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52,
 	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x2e, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x07, 0x72,
 	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x42, 0x11, 0x0a, 0x0f, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73,
-	0x73, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x22, 0x8d, 0x02, 0x0a, 0x08, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3e, 0x0a, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73,
-	0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f,
-	0x6e, 0x73, 0x65, 0x2e, 0x53, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x48, 0x00, 0x52, 0x07, 0x73,
-	0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x3e, 0x0a, 0x07, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72,
-	0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f,
-	0x6e, 0x73, 0x65, 0x2e, 0x46, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x48, 0x00, 0x52, 0x07, 0x66,
-	0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x1a, 0x09, 0x0a, 0x07, 0x53, 0x75, 0x63, 0x63, 0x65, 0x73,
-	0x73, 0x1a, 0x63, 0x0a, 0x07, 0x46, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x12, 0x1d, 0x0a, 0x0a,
-	0x65, 0x72, 0x72, 0x6f, 0x72, 0x5f, 0x63, 0x6f, 0x64, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d,
-	0x52, 0x09, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x43, 0x6f, 0x64, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x6d,
-	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d, 0x65,
-	0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x1f, 0x0a, 0x0b, 0x66, 0x61, 0x69, 0x6c, 0x69, 0x6e, 0x67,
-	0x5f, 0x68, 0x6f, 0x70, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x0a, 0x66, 0x61, 0x69, 0x6c,
-	0x69, 0x6e, 0x67, 0x48, 0x6f, 0x70, 0x42, 0x11, 0x0a, 0x0f, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73,
-	0x73, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x32, 0xf9, 0x03, 0x0a, 0x07, 0x43, 0x6f,
-	0x6c, 0x69, 0x62, 0x72, 0x69, 0x12, 0x50, 0x0a, 0x08, 0x54, 0x65, 0x73, 0x74, 0x50, 0x65, 0x65,
-	0x72, 0x12, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72,
-	0x69, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67, 0x4d, 0x65, 0x73, 0x73,
-	0x61, 0x67, 0x65, 0x1a, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69,
-	0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67, 0x4d, 0x65,
-	0x73, 0x73, 0x61, 0x67, 0x65, 0x22, 0x00, 0x12, 0x5f, 0x0a, 0x0c, 0x53, 0x65, 0x74, 0x75, 0x70,
-	0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x12, 0x25, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x65, 0x67, 0x6d, 0x65,
-	0x6e, 0x74, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x26,
-	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76,
-	0x31, 0x2e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4e, 0x0a, 0x13, 0x43, 0x6f, 0x6e, 0x66,
-	0x69, 0x72, 0x6d, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x12,
-	0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e,
-	0x76, 0x31, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4f, 0x0a, 0x14, 0x41, 0x63, 0x74, 0x69,
-	0x76, 0x61, 0x74, 0x65, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x64, 0x65, 0x78,
-	0x12, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69,
-	0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x70, 0x72,
+	0x73, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x22, 0xee, 0x03, 0x0a, 0x0f, 0x45, 0x32,
+	0x65, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x2d, 0x0a,
+	0x04, 0x62, 0x61, 0x73, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4a, 0x0a, 0x0f, 0x54, 0x65, 0x61,
-	0x72, 0x64, 0x6f, 0x77, 0x6e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x12, 0x19, 0x2e, 0x70,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x52, 0x04, 0x62, 0x61, 0x73, 0x65, 0x12, 0x20, 0x0a, 0x0b,
+	0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x65, 0x64, 0x42, 0x77, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x0d, 0x52, 0x0b, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x65, 0x64, 0x42, 0x77, 0x12, 0x44,
+	0x0a, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2c,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76,
+	0x31, 0x2e, 0x45, 0x32, 0x65, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x2e, 0x50, 0x61, 0x74, 0x68, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x06, 0x70, 0x61,
+	0x72, 0x61, 0x6d, 0x73, 0x12, 0x58, 0x0a, 0x0f, 0x61, 0x6c, 0x6c, 0x6f, 0x63, 0x61, 0x74, 0x69,
+	0x6f, 0x6e, 0x74, 0x72, 0x61, 0x69, 0x6c, 0x18, 0x04, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x2e, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31,
+	0x2e, 0x45, 0x32, 0x65, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x2e, 0x45, 0x32, 0x65, 0x53, 0x65, 0x74, 0x75, 0x70, 0x42, 0x65, 0x61, 0x64, 0x52, 0x0f, 0x61,
+	0x6c, 0x6c, 0x6f, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x69, 0x6c, 0x1a, 0xa7,
+	0x01, 0x0a, 0x0a, 0x50, 0x61, 0x74, 0x68, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x2f, 0x0a,
+	0x02, 0x75, 0x70, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73,
+	0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x44, 0x52, 0x02, 0x75, 0x70, 0x12, 0x33,
+	0x0a, 0x04, 0x63, 0x6f, 0x72, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x70,
 	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e,
-	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f,
-	0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4e, 0x0a, 0x13, 0x43, 0x6c, 0x65, 0x61, 0x6e, 0x75, 0x70,
-	0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x19, 0x2e, 0x70,
+	0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x44, 0x52, 0x04, 0x63,
+	0x6f, 0x72, 0x65, 0x12, 0x33, 0x0a, 0x04, 0x64, 0x6f, 0x77, 0x6e, 0x18, 0x03, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72,
+	0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x49, 0x44, 0x52, 0x04, 0x64, 0x6f, 0x77, 0x6e, 0x1a, 0x40, 0x0a, 0x0c, 0x45, 0x32, 0x65, 0x53,
+	0x65, 0x74, 0x75, 0x70, 0x42, 0x65, 0x61, 0x64, 0x12, 0x14, 0x0a, 0x05, 0x6d, 0x61, 0x78, 0x62,
+	0x77, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x05, 0x6d, 0x61, 0x78, 0x62, 0x77, 0x12, 0x1a,
+	0x0a, 0x08, 0x68, 0x6f, 0x70, 0x66, 0x69, 0x65, 0x6c, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c,
+	0x52, 0x08, 0x68, 0x6f, 0x70, 0x66, 0x69, 0x65, 0x6c, 0x64, 0x22, 0x12, 0x0a, 0x10, 0x45, 0x32,
+	0x65, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x24,
+	0x0a, 0x0b, 0x4c, 0x69, 0x73, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x15, 0x0a,
+	0x06, 0x64, 0x73, 0x74, 0x5f, 0x69, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x64,
+	0x73, 0x74, 0x49, 0x61, 0x22, 0xe4, 0x02, 0x0a, 0x0c, 0x4c, 0x69, 0x73, 0x74, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x51, 0x0a, 0x0c, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61,
+	0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2b, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x4c,
+	0x69, 0x73, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x73, 0x65,
+	0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x48, 0x00, 0x52, 0x0c, 0x72, 0x65, 0x73, 0x65,
+	0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x12, 0x29, 0x0a, 0x0f, 0x66, 0x61, 0x69, 0x6c,
+	0x75, 0x72, 0x65, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x48, 0x00, 0x52, 0x0e, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x4d, 0x65, 0x73, 0x73,
+	0x61, 0x67, 0x65, 0x1a, 0xc2, 0x01, 0x0a, 0x0c, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x73, 0x12, 0x5b, 0x0a, 0x0c, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x37, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x4c, 0x69,
+	0x73, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2e, 0x52, 0x65, 0x73, 0x65, 0x72,
+	0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x2e, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x52, 0x0c, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x73, 0x1a, 0x55, 0x0a, 0x0b, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x12, 0x2f, 0x0a, 0x02, 0x49, 0x44, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x70,
 	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e,
-	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f,
-	0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x32, 0x5a, 0x30, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
-	0x63, 0x6f, 0x6d, 0x2f, 0x73, 0x63, 0x69, 0x6f, 0x6e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x73,
-	0x63, 0x69, 0x6f, 0x6e, 0x2f, 0x67, 0x6f, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2f, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x33,
+	0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x44, 0x52, 0x02, 0x49,
+	0x44, 0x12, 0x15, 0x0a, 0x06, 0x64, 0x73, 0x74, 0x5f, 0x69, 0x61, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x04, 0x52, 0x05, 0x64, 0x73, 0x74, 0x49, 0x61, 0x42, 0x11, 0x0a, 0x0f, 0x73, 0x75, 0x63, 0x63,
+	0x65, 0x73, 0x73, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x75, 0x72, 0x65, 0x32, 0xa3, 0x05, 0x0a, 0x07,
+	0x43, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x12, 0x50, 0x0a, 0x08, 0x54, 0x65, 0x73, 0x74, 0x50,
+	0x65, 0x65, 0x72, 0x12, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69,
+	0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67, 0x4d, 0x65,
+	0x73, 0x73, 0x61, 0x67, 0x65, 0x1a, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f,
+	0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67,
+	0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x22, 0x00, 0x12, 0x5f, 0x0a, 0x0c, 0x53, 0x65, 0x74,
+	0x75, 0x70, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x12, 0x25, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x65, 0x67,
+	0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x1a, 0x26, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69,
+	0x2e, 0x76, 0x31, 0x2e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x74, 0x75, 0x70,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4e, 0x0a, 0x13, 0x43, 0x6f,
+	0x6e, 0x66, 0x69, 0x72, 0x6d, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x64, 0x65,
+	0x78, 0x12, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72,
+	0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4f, 0x0a, 0x14, 0x41, 0x63,
+	0x74, 0x69, 0x76, 0x61, 0x74, 0x65, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x64,
+	0x65, 0x78, 0x12, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62,
+	0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31,
+	0x2e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4a, 0x0a, 0x0f, 0x54,
+	0x65, 0x61, 0x72, 0x64, 0x6f, 0x77, 0x6e, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x12, 0x19,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76,
+	0x31, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4e, 0x0a, 0x13, 0x43, 0x6c, 0x65, 0x61, 0x6e,
+	0x75, 0x70, 0x53, 0x65, 0x67, 0x6d, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x19,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76,
+	0x31, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x53, 0x0a, 0x10, 0x4c, 0x69, 0x73, 0x74, 0x52,
+	0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x12, 0x1d, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x4c,
+	0x69, 0x73, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x4c, 0x69,
+	0x73, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x53, 0x0a, 0x08,
+	0x53, 0x65, 0x74, 0x75, 0x70, 0x45, 0x32, 0x65, 0x12, 0x21, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x45, 0x32, 0x65, 0x53,
+	0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x22, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e, 0x45,
+	0x32, 0x65, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
+	0x00, 0x42, 0x32, 0x5a, 0x30, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
+	0x73, 0x63, 0x69, 0x6f, 0x6e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x73, 0x63, 0x69, 0x6f, 0x6e,
+	0x2f, 0x67, 0x6f, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x63, 0x6f,
+	0x6c, 0x69, 0x62, 0x72, 0x69, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1217,59 +1740,80 @@ func file_proto_colibri_v1_service_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_colibri_v1_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_colibri_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_proto_colibri_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_proto_colibri_v1_service_proto_goTypes = []interface{}{
-	(IndexState_State)(0),                // 0: proto.colibri.v1.IndexState.State
-	(*TestingMessage)(nil),               // 1: proto.colibri.v1.TestingMessage
-	(*ReservationID)(nil),                // 2: proto.colibri.v1.ReservationID
-	(*IndexState)(nil),                   // 3: proto.colibri.v1.IndexState
-	(*PathEndProps)(nil),                 // 4: proto.colibri.v1.PathEndProps
-	(*AllocationBead)(nil),               // 5: proto.colibri.v1.AllocationBead
-	(*PathStep)(nil),                     // 6: proto.colibri.v1.PathStep
-	(*OpaquePath)(nil),                   // 7: proto.colibri.v1.OpaquePath
-	(*Request)(nil),                      // 8: proto.colibri.v1.Request
-	(*SegmentSetupRequest)(nil),          // 9: proto.colibri.v1.SegmentSetupRequest
-	(*SegmentSetupResponse)(nil),         // 10: proto.colibri.v1.SegmentSetupResponse
-	(*Response)(nil),                     // 11: proto.colibri.v1.Response
-	(*SegmentSetupRequest_Params)(nil),   // 12: proto.colibri.v1.SegmentSetupRequest.Params
-	(*SegmentSetupResponse_Failure)(nil), // 13: proto.colibri.v1.SegmentSetupResponse.Failure
-	(*Response_Success)(nil),             // 14: proto.colibri.v1.Response.Success
-	(*Response_Failure)(nil),             // 15: proto.colibri.v1.Response.Failure
-	(*timestamp.Timestamp)(nil),          // 16: google.protobuf.Timestamp
+	(IndexState_State)(0),                         // 0: proto.colibri.v1.IndexState.State
+	(*TestingMessage)(nil),                        // 1: proto.colibri.v1.TestingMessage
+	(*ReservationID)(nil),                         // 2: proto.colibri.v1.ReservationID
+	(*IndexState)(nil),                            // 3: proto.colibri.v1.IndexState
+	(*PathEndProps)(nil),                          // 4: proto.colibri.v1.PathEndProps
+	(*AllocationBead)(nil),                        // 5: proto.colibri.v1.AllocationBead
+	(*PathStep)(nil),                              // 6: proto.colibri.v1.PathStep
+	(*OpaquePath)(nil),                            // 7: proto.colibri.v1.OpaquePath
+	(*Request)(nil),                               // 8: proto.colibri.v1.Request
+	(*Response)(nil),                              // 9: proto.colibri.v1.Response
+	(*SegmentSetupRequest)(nil),                   // 10: proto.colibri.v1.SegmentSetupRequest
+	(*SegmentSetupResponse)(nil),                  // 11: proto.colibri.v1.SegmentSetupResponse
+	(*E2ESetupRequest)(nil),                       // 12: proto.colibri.v1.E2eSetupRequest
+	(*E2ESetupResponse)(nil),                      // 13: proto.colibri.v1.E2eSetupResponse
+	(*ListRequest)(nil),                           // 14: proto.colibri.v1.ListRequest
+	(*ListResponse)(nil),                          // 15: proto.colibri.v1.ListResponse
+	(*Response_Success)(nil),                      // 16: proto.colibri.v1.Response.Success
+	(*Response_Failure)(nil),                      // 17: proto.colibri.v1.Response.Failure
+	(*SegmentSetupRequest_Params)(nil),            // 18: proto.colibri.v1.SegmentSetupRequest.Params
+	(*SegmentSetupResponse_Failure)(nil),          // 19: proto.colibri.v1.SegmentSetupResponse.Failure
+	(*E2ESetupRequest_PathParams)(nil),            // 20: proto.colibri.v1.E2eSetupRequest.PathParams
+	(*E2ESetupRequest_E2ESetupBead)(nil),          // 21: proto.colibri.v1.E2eSetupRequest.E2eSetupBead
+	(*ListResponse_Reservations)(nil),             // 22: proto.colibri.v1.ListResponse.Reservations
+	(*ListResponse_Reservations_Reservation)(nil), // 23: proto.colibri.v1.ListResponse.Reservations.Reservation
+	(*timestamp.Timestamp)(nil),                   // 24: google.protobuf.Timestamp
 }
 var file_proto_colibri_v1_service_proto_depIdxs = []int32{
-	16, // 0: proto.colibri.v1.TestingMessage.timestamp:type_name -> google.protobuf.Timestamp
+	24, // 0: proto.colibri.v1.TestingMessage.timestamp:type_name -> google.protobuf.Timestamp
 	0,  // 1: proto.colibri.v1.IndexState.state:type_name -> proto.colibri.v1.IndexState.State
 	6,  // 2: proto.colibri.v1.OpaquePath.steps:type_name -> proto.colibri.v1.PathStep
 	2,  // 3: proto.colibri.v1.Request.id:type_name -> proto.colibri.v1.ReservationID
 	7,  // 4: proto.colibri.v1.Request.opaque:type_name -> proto.colibri.v1.OpaquePath
-	8,  // 5: proto.colibri.v1.SegmentSetupRequest.base:type_name -> proto.colibri.v1.Request
-	12, // 6: proto.colibri.v1.SegmentSetupRequest.params:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
-	13, // 7: proto.colibri.v1.SegmentSetupResponse.failure:type_name -> proto.colibri.v1.SegmentSetupResponse.Failure
-	14, // 8: proto.colibri.v1.Response.success:type_name -> proto.colibri.v1.Response.Success
-	15, // 9: proto.colibri.v1.Response.failure:type_name -> proto.colibri.v1.Response.Failure
-	4,  // 10: proto.colibri.v1.SegmentSetupRequest.Params.props_at_start:type_name -> proto.colibri.v1.PathEndProps
-	4,  // 11: proto.colibri.v1.SegmentSetupRequest.Params.props_at_end:type_name -> proto.colibri.v1.PathEndProps
-	5,  // 12: proto.colibri.v1.SegmentSetupRequest.Params.allocationtrail:type_name -> proto.colibri.v1.AllocationBead
-	15, // 13: proto.colibri.v1.SegmentSetupResponse.Failure.failure:type_name -> proto.colibri.v1.Response.Failure
-	12, // 14: proto.colibri.v1.SegmentSetupResponse.Failure.request:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
-	1,  // 15: proto.colibri.v1.Colibri.TestPeer:input_type -> proto.colibri.v1.TestingMessage
-	9,  // 16: proto.colibri.v1.Colibri.SetupSegment:input_type -> proto.colibri.v1.SegmentSetupRequest
-	8,  // 17: proto.colibri.v1.Colibri.ConfirmSegmentIndex:input_type -> proto.colibri.v1.Request
-	8,  // 18: proto.colibri.v1.Colibri.ActivateSegmentIndex:input_type -> proto.colibri.v1.Request
-	8,  // 19: proto.colibri.v1.Colibri.TeardownSegment:input_type -> proto.colibri.v1.Request
-	8,  // 20: proto.colibri.v1.Colibri.CleanupSegmentIndex:input_type -> proto.colibri.v1.Request
-	1,  // 21: proto.colibri.v1.Colibri.TestPeer:output_type -> proto.colibri.v1.TestingMessage
-	10, // 22: proto.colibri.v1.Colibri.SetupSegment:output_type -> proto.colibri.v1.SegmentSetupResponse
-	11, // 23: proto.colibri.v1.Colibri.ConfirmSegmentIndex:output_type -> proto.colibri.v1.Response
-	11, // 24: proto.colibri.v1.Colibri.ActivateSegmentIndex:output_type -> proto.colibri.v1.Response
-	11, // 25: proto.colibri.v1.Colibri.TeardownSegment:output_type -> proto.colibri.v1.Response
-	11, // 26: proto.colibri.v1.Colibri.CleanupSegmentIndex:output_type -> proto.colibri.v1.Response
-	21, // [21:27] is the sub-list for method output_type
-	15, // [15:21] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	16, // 5: proto.colibri.v1.Response.success:type_name -> proto.colibri.v1.Response.Success
+	17, // 6: proto.colibri.v1.Response.failure:type_name -> proto.colibri.v1.Response.Failure
+	8,  // 7: proto.colibri.v1.SegmentSetupRequest.base:type_name -> proto.colibri.v1.Request
+	18, // 8: proto.colibri.v1.SegmentSetupRequest.params:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
+	19, // 9: proto.colibri.v1.SegmentSetupResponse.failure:type_name -> proto.colibri.v1.SegmentSetupResponse.Failure
+	8,  // 10: proto.colibri.v1.E2eSetupRequest.base:type_name -> proto.colibri.v1.Request
+	20, // 11: proto.colibri.v1.E2eSetupRequest.params:type_name -> proto.colibri.v1.E2eSetupRequest.PathParams
+	21, // 12: proto.colibri.v1.E2eSetupRequest.allocationtrail:type_name -> proto.colibri.v1.E2eSetupRequest.E2eSetupBead
+	22, // 13: proto.colibri.v1.ListResponse.reservations:type_name -> proto.colibri.v1.ListResponse.Reservations
+	4,  // 14: proto.colibri.v1.SegmentSetupRequest.Params.props_at_start:type_name -> proto.colibri.v1.PathEndProps
+	4,  // 15: proto.colibri.v1.SegmentSetupRequest.Params.props_at_end:type_name -> proto.colibri.v1.PathEndProps
+	5,  // 16: proto.colibri.v1.SegmentSetupRequest.Params.allocationtrail:type_name -> proto.colibri.v1.AllocationBead
+	17, // 17: proto.colibri.v1.SegmentSetupResponse.Failure.failure:type_name -> proto.colibri.v1.Response.Failure
+	18, // 18: proto.colibri.v1.SegmentSetupResponse.Failure.request:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
+	2,  // 19: proto.colibri.v1.E2eSetupRequest.PathParams.up:type_name -> proto.colibri.v1.ReservationID
+	2,  // 20: proto.colibri.v1.E2eSetupRequest.PathParams.core:type_name -> proto.colibri.v1.ReservationID
+	2,  // 21: proto.colibri.v1.E2eSetupRequest.PathParams.down:type_name -> proto.colibri.v1.ReservationID
+	23, // 22: proto.colibri.v1.ListResponse.Reservations.reservations:type_name -> proto.colibri.v1.ListResponse.Reservations.Reservation
+	2,  // 23: proto.colibri.v1.ListResponse.Reservations.Reservation.ID:type_name -> proto.colibri.v1.ReservationID
+	1,  // 24: proto.colibri.v1.Colibri.TestPeer:input_type -> proto.colibri.v1.TestingMessage
+	10, // 25: proto.colibri.v1.Colibri.SetupSegment:input_type -> proto.colibri.v1.SegmentSetupRequest
+	8,  // 26: proto.colibri.v1.Colibri.ConfirmSegmentIndex:input_type -> proto.colibri.v1.Request
+	8,  // 27: proto.colibri.v1.Colibri.ActivateSegmentIndex:input_type -> proto.colibri.v1.Request
+	8,  // 28: proto.colibri.v1.Colibri.TeardownSegment:input_type -> proto.colibri.v1.Request
+	8,  // 29: proto.colibri.v1.Colibri.CleanupSegmentIndex:input_type -> proto.colibri.v1.Request
+	14, // 30: proto.colibri.v1.Colibri.ListReservations:input_type -> proto.colibri.v1.ListRequest
+	12, // 31: proto.colibri.v1.Colibri.SetupE2e:input_type -> proto.colibri.v1.E2eSetupRequest
+	1,  // 32: proto.colibri.v1.Colibri.TestPeer:output_type -> proto.colibri.v1.TestingMessage
+	11, // 33: proto.colibri.v1.Colibri.SetupSegment:output_type -> proto.colibri.v1.SegmentSetupResponse
+	9,  // 34: proto.colibri.v1.Colibri.ConfirmSegmentIndex:output_type -> proto.colibri.v1.Response
+	9,  // 35: proto.colibri.v1.Colibri.ActivateSegmentIndex:output_type -> proto.colibri.v1.Response
+	9,  // 36: proto.colibri.v1.Colibri.TeardownSegment:output_type -> proto.colibri.v1.Response
+	9,  // 37: proto.colibri.v1.Colibri.CleanupSegmentIndex:output_type -> proto.colibri.v1.Response
+	15, // 38: proto.colibri.v1.Colibri.ListReservations:output_type -> proto.colibri.v1.ListResponse
+	13, // 39: proto.colibri.v1.Colibri.SetupE2e:output_type -> proto.colibri.v1.E2eSetupResponse
+	32, // [32:40] is the sub-list for method output_type
+	24, // [24:32] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_proto_colibri_v1_service_proto_init() }
@@ -1375,30 +1919,6 @@ func file_proto_colibri_v1_service_proto_init() {
 			}
 		}
 		file_proto_colibri_v1_service_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SegmentSetupRequest); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_proto_colibri_v1_service_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SegmentSetupResponse); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_proto_colibri_v1_service_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Response); i {
 			case 0:
 				return &v.state
@@ -1410,8 +1930,32 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
+		file_proto_colibri_v1_service_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SegmentSetupRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SegmentSetupResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 		file_proto_colibri_v1_service_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SegmentSetupRequest_Params); i {
+			switch v := v.(*E2ESetupRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1423,7 +1967,7 @@ func file_proto_colibri_v1_service_proto_init() {
 			}
 		}
 		file_proto_colibri_v1_service_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SegmentSetupResponse_Failure); i {
+			switch v := v.(*E2ESetupResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1435,7 +1979,7 @@ func file_proto_colibri_v1_service_proto_init() {
 			}
 		}
 		file_proto_colibri_v1_service_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Response_Success); i {
+			switch v := v.(*ListRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1447,6 +1991,30 @@ func file_proto_colibri_v1_service_proto_init() {
 			}
 		}
 		file_proto_colibri_v1_service_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ListResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Response_Success); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Response_Failure); i {
 			case 0:
 				return &v.state
@@ -1458,14 +2026,90 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
+		file_proto_colibri_v1_service_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SegmentSetupRequest_Params); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SegmentSetupResponse_Failure); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*E2ESetupRequest_PathParams); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*E2ESetupRequest_E2ESetupBead); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ListResponse_Reservations); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_colibri_v1_service_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ListResponse_Reservations_Reservation); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
-	file_proto_colibri_v1_service_proto_msgTypes[9].OneofWrappers = []interface{}{
+	file_proto_colibri_v1_service_proto_msgTypes[8].OneofWrappers = []interface{}{
+		(*Response_Success_)(nil),
+		(*Response_Failure_)(nil),
+	}
+	file_proto_colibri_v1_service_proto_msgTypes[10].OneofWrappers = []interface{}{
 		(*SegmentSetupResponse_Token)(nil),
 		(*SegmentSetupResponse_Failure_)(nil),
 	}
-	file_proto_colibri_v1_service_proto_msgTypes[10].OneofWrappers = []interface{}{
-		(*Response_Success_)(nil),
-		(*Response_Failure_)(nil),
+	file_proto_colibri_v1_service_proto_msgTypes[14].OneofWrappers = []interface{}{
+		(*ListResponse_Reservations_)(nil),
+		(*ListResponse_FailureMessage)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1473,7 +2117,7 @@ func file_proto_colibri_v1_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_colibri_v1_service_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
@@ -1506,6 +2150,8 @@ type ColibriClient interface {
 	ActivateSegmentIndex(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error)
 	TeardownSegment(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error)
 	CleanupSegmentIndex(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error)
+	ListReservations(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
+	SetupE2E(ctx context.Context, in *E2ESetupRequest, opts ...grpc.CallOption) (*E2ESetupResponse, error)
 }
 
 type colibriClient struct {
@@ -1570,6 +2216,24 @@ func (c *colibriClient) CleanupSegmentIndex(ctx context.Context, in *Request, op
 	return out, nil
 }
 
+func (c *colibriClient) ListReservations(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error) {
+	out := new(ListResponse)
+	err := c.cc.Invoke(ctx, "/proto.colibri.v1.Colibri/ListReservations", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *colibriClient) SetupE2E(ctx context.Context, in *E2ESetupRequest, opts ...grpc.CallOption) (*E2ESetupResponse, error) {
+	out := new(E2ESetupResponse)
+	err := c.cc.Invoke(ctx, "/proto.colibri.v1.Colibri/SetupE2e", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ColibriServer is the server API for Colibri service.
 type ColibriServer interface {
 	TestPeer(context.Context, *TestingMessage) (*TestingMessage, error)
@@ -1578,6 +2242,8 @@ type ColibriServer interface {
 	ActivateSegmentIndex(context.Context, *Request) (*Response, error)
 	TeardownSegment(context.Context, *Request) (*Response, error)
 	CleanupSegmentIndex(context.Context, *Request) (*Response, error)
+	ListReservations(context.Context, *ListRequest) (*ListResponse, error)
+	SetupE2E(context.Context, *E2ESetupRequest) (*E2ESetupResponse, error)
 }
 
 // UnimplementedColibriServer can be embedded to have forward compatible implementations.
@@ -1601,6 +2267,12 @@ func (*UnimplementedColibriServer) TeardownSegment(context.Context, *Request) (*
 }
 func (*UnimplementedColibriServer) CleanupSegmentIndex(context.Context, *Request) (*Response, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CleanupSegmentIndex not implemented")
+}
+func (*UnimplementedColibriServer) ListReservations(context.Context, *ListRequest) (*ListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReservations not implemented")
+}
+func (*UnimplementedColibriServer) SetupE2E(context.Context, *E2ESetupRequest) (*E2ESetupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetupE2E not implemented")
 }
 
 func RegisterColibriServer(s *grpc.Server, srv ColibriServer) {
@@ -1715,6 +2387,42 @@ func _Colibri_CleanupSegmentIndex_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Colibri_ListReservations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ColibriServer).ListReservations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.colibri.v1.Colibri/ListReservations",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ColibriServer).ListReservations(ctx, req.(*ListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Colibri_SetupE2E_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(E2ESetupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ColibriServer).SetupE2E(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.colibri.v1.Colibri/SetupE2E",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ColibriServer).SetupE2E(ctx, req.(*E2ESetupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Colibri_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.colibri.v1.Colibri",
 	HandlerType: (*ColibriServer)(nil),
@@ -1742,6 +2450,14 @@ var _Colibri_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CleanupSegmentIndex",
 			Handler:    _Colibri_CleanupSegmentIndex_Handler,
+		},
+		{
+			MethodName: "ListReservations",
+			Handler:    _Colibri_ListReservations_Handler,
+		},
+		{
+			MethodName: "SetupE2e",
+			Handler:    _Colibri_SetupE2E_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
