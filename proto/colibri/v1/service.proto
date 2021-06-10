@@ -30,7 +30,7 @@ service Colibri {
 
     rpc ListReservations(ListRequest) returns (ListResponse) {}
     rpc SetupE2e(E2eSetupRequest) returns (E2eSetupResponse) {}
-
+    rpc CleanupE2eIndex(Request) returns (Response) {}
 }
 
 message TestingMessage{

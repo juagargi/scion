@@ -189,6 +189,12 @@ func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupReques
 	return nil, nil
 }
 
+func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request) (
+	*colpb.Response, error) {
+
+	return nil, nil
+}
+
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
 func extractPath(ctx context.Context) (base.PacketPath, error) {
 	// TODO(juagargi) move from PacketPath to OpaquePath
