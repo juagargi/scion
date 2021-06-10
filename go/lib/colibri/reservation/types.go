@@ -84,7 +84,7 @@ func (id *ID) Validate() error {
 	return nil
 }
 
-func (id *ID) Clone() *ID {
+func (id *ID) Copy() *ID {
 	if id == nil {
 		return nil
 	}

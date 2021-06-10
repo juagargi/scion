@@ -857,7 +857,7 @@ func getE2ERsvFromID(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
 		return nil, err
 	}
 	rsv := &e2e.Reservation{
-		ID:                  *ID.Clone(),
+		ID:                  *ID.Copy(),
 		Indices:             indices,
 		SegmentReservations: segRsvs,
 	}
@@ -907,7 +907,7 @@ func getE2ERsvsFromSegment(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
 			return nil, err
 		}
 		rsv := &e2e.Reservation{
-			ID:                  *e2eID.Clone(),
+			ID:                  *e2eID.Copy(),
 			Indices:             indices,
 			SegmentReservations: segRsvs,
 		}
