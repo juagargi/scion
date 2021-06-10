@@ -67,7 +67,7 @@ func NewServiceClientOperator(topo topology.Topology, router snet.Router,
 }
 
 // ColibriClient finds or creates a ColibriClient to be used for the path argument.
-func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.OpaquePath) (
+func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.TransparentPath) (
 	colpb.ColibriClient, error) {
 
 	o.mutex.Lock()

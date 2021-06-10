@@ -27,19 +27,19 @@ import (
 
 func TestOpaqueToRawFromRaw(t *testing.T) {
 	cases := map[string]struct {
-		opaque *OpaquePath
+		opaque *TransparentPath
 	}{
 		"nil": {
 			opaque: nil,
 		},
 		"empty": {
-			opaque: &OpaquePath{
+			opaque: &TransparentPath{
 				CurrentStep: 0,
 				Steps:       []PathStep{},
 			},
 		},
 		"no spath": {
-			opaque: &OpaquePath{
+			opaque: &TransparentPath{
 				CurrentStep: 1,
 				Steps: []PathStep{
 					{
@@ -56,7 +56,7 @@ func TestOpaqueToRawFromRaw(t *testing.T) {
 			},
 		},
 		"some spath": {
-			opaque: &OpaquePath{
+			opaque: &TransparentPath{
 				CurrentStep: 1,
 				Steps: []PathStep{
 					{
@@ -77,7 +77,7 @@ func TestOpaqueToRawFromRaw(t *testing.T) {
 			},
 		},
 		"only spath": {
-			opaque: &OpaquePath{
+			opaque: &TransparentPath{
 				CurrentStep: 111,
 				Steps:       []PathStep{},
 				Spath: spath.Path{
@@ -92,7 +92,7 @@ func TestOpaqueToRawFromRaw(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			raw := tc.opaque.ToRaw()
-			opaque, err := OpaquePathFromRaw(raw)
+			opaque, err := TransparentPathFromRaw(raw)
 			require.NoError(t, err, "buffer=%s", hex.EncodeToString(raw))
 			require.Equal(t, tc.opaque, opaque, "buffer=%s", hex.EncodeToString(raw))
 		})

@@ -35,7 +35,7 @@ type Reservation struct {
 	PathType     reservation.PathType     // the type of path (up,core,down)
 	PathEndProps reservation.PathEndProps // the properties for stitching and start/end
 	TrafficSplit reservation.SplitCls     // the traffic split between control and data planes
-	PathAtSource *base.OpaquePath         // when this reservation object is at its source
+	PathAtSource *base.TransparentPath    // when this reservation object is at its source
 }
 
 func NewReservation(asid addr.AS) *Reservation {

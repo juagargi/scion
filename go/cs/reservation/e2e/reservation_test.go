@@ -48,7 +48,7 @@ func TestValidate(t *testing.T) {
 
 	// invalid segment reservation
 	r = newReservation()
-	r.SegmentReservations[0].PathAtSource = &base.OpaquePath{}
+	r.SegmentReservations[0].PathAtSource = &base.TransparentPath{}
 	err = r.Validate()
 	require.Error(t, err)
 

@@ -107,7 +107,7 @@ func Request(msg *colpb.Request) (*base.Request, error) {
 			Index:     idx,
 			Timestamp: timestamp,
 		},
-		Path: OpaquePath(msg.Opaque),
+		Path: TransparentPath(msg.Opaque),
 	}, nil
 }
 
@@ -188,11 +188,11 @@ func AllocTrail(msg []*colpb.AllocationBead) col.AllocationBeads {
 	return trail
 }
 
-func OpaquePath(msg *colpb.OpaquePath) *base.OpaquePath {
+func TransparentPath(msg *colpb.TransparentPath) *base.TransparentPath {
 	if msg == nil {
 		return nil
 	}
-	opaque := &base.OpaquePath{
+	opaque := &base.TransparentPath{
 		CurrentStep: int(msg.CurrentStep),
 		Steps:       make([]base.PathStep, len(msg.Steps)),
 		Spath: spath.Path{

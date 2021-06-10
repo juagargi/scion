@@ -699,7 +699,7 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 			require.Len(t, filtered, tc.expected) // this is internal, but forces 1 req per path
 			bagOfPaths := make(map[string]struct{}, len(filtered))
 			for _, p := range filtered {
-				opaque, err := base.OpaquePathFromInterfaces(p.Metadata().Interfaces)
+				opaque, err := base.TransparentPathFromInterfaces(p.Metadata().Interfaces)
 				require.NoError(t, err)
 				k := opaque.String()
 				_, ok := bagOfPaths[k]

@@ -387,7 +387,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 	requests := make([]*seg.SetupReq, len(filtered))
 	// create setup requests
 	for i, p := range filtered {
-		opaque, err := base.OpaquePathFromSnet(p)
+		opaque, err := base.TransparentPathFromSnet(p)
 		if err != nil {
 			return nil, err
 		}
@@ -440,7 +440,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 					Timestamp: now,
 				},
 				Path: rsv.PathAtSource,
-				// Path: &base.OpaquePath{
+				// Path: &base.TransparentPath{
 				// 	Steps: rsv.PathAtSource.Steps,
 				// 	Spath: spath.Path{
 				// 		Type: colibri.PathType,

@@ -116,9 +116,9 @@ func PBufAllocTrail(trail reservation.AllocationBeads) []*colpb.AllocationBead {
 	return beads
 }
 
-func PBufOpaque(opaque *base.OpaquePath) *colpb.OpaquePath {
+func PBufOpaque(opaque *base.TransparentPath) *colpb.TransparentPath {
 	if opaque == nil {
-		return &colpb.OpaquePath{
+		return &colpb.TransparentPath{
 			Steps: []*colpb.PathStep{},
 		}
 	}
@@ -130,7 +130,7 @@ func PBufOpaque(opaque *base.OpaquePath) *colpb.OpaquePath {
 			Egress:  uint32(step.Egress),
 		}
 	}
-	return &colpb.OpaquePath{
+	return &colpb.TransparentPath{
 		CurrentStep: uint32(opaque.CurrentStep),
 		Steps:       steps,
 		SpathType:   uint32(opaque.Spath.Type),

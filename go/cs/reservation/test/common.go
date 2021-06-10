@@ -25,11 +25,11 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-func NewPathFromComponents(chain ...interface{}) *base.OpaquePath {
+func NewPathFromComponents(chain ...interface{}) *base.TransparentPath {
 	if len(chain)%3 != 0 {
 		panic("wrong number of arguments")
 	}
-	p := &base.OpaquePath{}
+	p := &base.TransparentPath{}
 	for i := 0; i < len(chain); i += 3 {
 		p.Steps = append(p.Steps, base.PathStep{
 			Ingress: uint16(chain[i].(int)),
@@ -40,11 +40,11 @@ func NewPathFromComponents(chain ...interface{}) *base.OpaquePath {
 	return p
 }
 
-func NewOpaquePathFromComponents(ids ...uint16) *base.OpaquePath {
+func NewTransparentPathFromComponents(ids ...uint16) *base.TransparentPath {
 	if len(ids)%2 != 0 {
 		panic("wrong number of arguments")
 	}
-	p := &base.OpaquePath{
+	p := &base.TransparentPath{
 		Steps: make([]base.PathStep, len(ids)/2),
 	}
 	for i := 0; i < len(ids); i += 2 {
@@ -85,7 +85,7 @@ func NewIfaces(args ...interface{}) []snet.PathInterface {
 // NewSnetPath("1-ff00:0:1", 1,  2, "1-ff00:1:2", 3,     4, "1-ff00:0:3"))
 func NewSnetPath(args ...interface{}) snet.Path {
 	ifaces := NewIfaces(args...)
-	opaque, err := base.OpaquePathFromInterfaces(ifaces)
+	opaque, err := base.TransparentPathFromInterfaces(ifaces)
 	if err != nil {
 		panic(err)
 	}

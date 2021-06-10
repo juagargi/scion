@@ -70,7 +70,7 @@ message PathStep {
     uint32 egress =3;
 }
 
-message OpaquePath {
+message TransparentPath {
     uint32 current_step = 1;
     repeated PathStep steps = 2;
     uint32 spathType = 3;
@@ -83,7 +83,7 @@ message Request {
     ReservationID id = 1;
     uint32 index = 2;
     uint32 timestamp = 3;
-    OpaquePath opaque = 4;
+    TransparentPath opaque = 4;
 }
 
 message Response {
