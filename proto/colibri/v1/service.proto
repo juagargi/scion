@@ -129,6 +129,26 @@ message SegmentSetupResponse {
     }
 }
 
+message ListRequest {
+    uint64 dst_ia = 1;
+}
+
+message ListResponse {
+    message Reservations {
+        message Reservation {
+            ReservationID ID = 1;
+            uint64 dst_ia = 2;
+            // other properties?
+        }
+        repeated Reservation reservations = 1;
+    }
+
+    oneof success_failure {
+        Reservations reservations = 1;
+        string failure_message = 2;
+    }
+}
+
 message E2eSetupRequest {
     message PathParams {
         ReservationID up = 1;
@@ -154,24 +174,4 @@ message E2eSetupRequest {
 }
 
 message E2eSetupResponse {
-}
-
-message ListRequest {
-    uint64 dst_ia = 1;
-}
-
-message ListResponse {
-    message Reservations {
-        message Reservation {
-            ReservationID ID = 1;
-            uint64 dst_ia = 2;
-            // other properties?
-        }
-        repeated Reservation reservations = 1;
-    }
-
-    oneof success_failure {
-        Reservations reservations = 1;
-        string failure_message = 2;
-    }
 }

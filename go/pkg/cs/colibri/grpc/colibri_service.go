@@ -24,6 +24,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -181,6 +182,13 @@ func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Req
 func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRequest) (
 	*colpb.ListResponse, error) {
 
+	dstIA := addr.IAInt(msg.DstIa).IA()
+	rsvs, err := s.Store.ListReservations(ctx, dstIA)
+	if err != nil {
+		log.Error("colibri store while listing rsvs", "err", err)
+		return nil, err
+	}
+	_ = rsvs
 	return nil, nil
 }
 

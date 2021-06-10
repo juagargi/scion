@@ -84,10 +84,10 @@ func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRew
 	}, nil
 }
 
-func (s *Store) GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) (
+func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA) (
 	[]*segment.Reservation, error) {
 
-	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, src, dst)
+	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
 }
 
 func (s *Store) err(err error) error {

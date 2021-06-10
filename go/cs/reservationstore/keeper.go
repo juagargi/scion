@@ -130,7 +130,7 @@ func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []r
 	paths []snet.Path) (time.Time, error) {
 
 	// get reservations once and pass them along.
-	rsvs, err := k.manager.Store().GetSegmentRsvsFromSrcDstIA(ctx, k.manager.LocalIA(), dstIA)
+	rsvs, err := k.manager.Store().ListReservations(ctx, dstIA)
 	if err != nil {
 		return time.Time{}, err
 	}

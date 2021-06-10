@@ -47,7 +47,7 @@ type Store interface {
 
 	// as the source of reservations:
 
+	ListReservations(ctx context.Context, dstIA addr.IA) ([]*sgt.Reservation, error)
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
-	GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) ([]*sgt.Reservation, error)
 }

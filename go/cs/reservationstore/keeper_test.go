@@ -164,9 +164,9 @@ func TestKeepOneShot(t *testing.T) {
 				entries: tc.destinations,
 			}
 			store := mockStore(ctrl)
-			store.EXPECT().GetSegmentRsvsFromSrcDstIA(gomock.Any(), gomock.Any(), gomock.Any()).
+			store.EXPECT().ListReservations(gomock.Any(), gomock.Any()).
 				Times(len(tc.destinations)).DoAndReturn(
-				func(_ context.Context, _ addr.IA, dstIA addr.IA) (
+				func(_ context.Context, dstIA addr.IA) (
 					[]*segment.Reservation, error) {
 
 					return tc.reservations[dstIA], nil
