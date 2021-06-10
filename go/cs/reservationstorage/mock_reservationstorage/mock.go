@@ -12,6 +12,7 @@ import (
 	segment "github.com/scionproto/scion/go/cs/reservation/segment"
 	addr "github.com/scionproto/scion/go/lib/addr"
 	reflect "reflect"
+	time "time"
 )
 
 // MockStore is a mock of Store interface
@@ -37,11 +38,26 @@ func (m *MockStore) EXPECT() *MockStoreMockRecorder {
 	return m.recorder
 }
 
+// ActivateSegmentReservation mocks base method
+func (m *MockStore) ActivateSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ActivateSegmentReservation", arg0, arg1)
+	ret0, _ := ret[0].(reservation.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ActivateSegmentReservation indicates an expected call of ActivateSegmentReservation
+func (mr *MockStoreMockRecorder) ActivateSegmentReservation(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateSegmentReservation", reflect.TypeOf((*MockStore)(nil).ActivateSegmentReservation), arg0, arg1)
+}
+
 // AdmitE2EReservation mocks base method
-func (m *MockStore) AdmitE2EReservation(arg0 context.Context, arg1 e2e.SetupRequest) (reservation.MessageWithPath, error) {
+func (m *MockStore) AdmitE2EReservation(arg0 context.Context, arg1 *e2e.SetupReq) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AdmitE2EReservation", arg0, arg1)
-	ret0, _ := ret[0].(reservation.MessageWithPath)
+	ret0, _ := ret[0].(reservation.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -53,10 +69,10 @@ func (mr *MockStoreMockRecorder) AdmitE2EReservation(arg0, arg1 interface{}) *go
 }
 
 // AdmitSegmentReservation mocks base method
-func (m *MockStore) AdmitSegmentReservation(arg0 context.Context, arg1 *segment.SetupReq) (reservation.MessageWithPath, error) {
+func (m *MockStore) AdmitSegmentReservation(arg0 context.Context, arg1 *segment.SetupReq) (segment.SegmentSetupResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AdmitSegmentReservation", arg0, arg1)
-	ret0, _ := ret[0].(reservation.MessageWithPath)
+	ret0, _ := ret[0].(segment.SegmentSetupResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -68,10 +84,10 @@ func (mr *MockStoreMockRecorder) AdmitSegmentReservation(arg0, arg1 interface{})
 }
 
 // CleanupE2EReservation mocks base method
-func (m *MockStore) CleanupE2EReservation(arg0 context.Context, arg1 *e2e.CleanupReq) (reservation.MessageWithPath, error) {
+func (m *MockStore) CleanupE2EReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CleanupE2EReservation", arg0, arg1)
-	ret0, _ := ret[0].(reservation.MessageWithPath)
+	ret0, _ := ret[0].(reservation.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -83,10 +99,10 @@ func (mr *MockStoreMockRecorder) CleanupE2EReservation(arg0, arg1 interface{}) *
 }
 
 // CleanupSegmentReservation mocks base method
-func (m *MockStore) CleanupSegmentReservation(arg0 context.Context, arg1 *segment.CleanupReq) (reservation.MessageWithPath, error) {
+func (m *MockStore) CleanupSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CleanupSegmentReservation", arg0, arg1)
-	ret0, _ := ret[0].(reservation.MessageWithPath)
+	ret0, _ := ret[0].(reservation.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -98,10 +114,10 @@ func (mr *MockStoreMockRecorder) CleanupSegmentReservation(arg0, arg1 interface{
 }
 
 // ConfirmSegmentReservation mocks base method
-func (m *MockStore) ConfirmSegmentReservation(arg0 context.Context, arg1 *segment.IndexConfirmationReq) (reservation.MessageWithPath, error) {
+func (m *MockStore) ConfirmSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ConfirmSegmentReservation", arg0, arg1)
-	ret0, _ := ret[0].(reservation.MessageWithPath)
+	ret0, _ := ret[0].(reservation.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -113,12 +129,13 @@ func (mr *MockStoreMockRecorder) ConfirmSegmentReservation(arg0, arg1 interface{
 }
 
 // DeleteExpiredIndices mocks base method
-func (m *MockStore) DeleteExpiredIndices(arg0 context.Context) (int, error) {
+func (m *MockStore) DeleteExpiredIndices(arg0 context.Context) (int, time.Time, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteExpiredIndices", arg0)
 	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(time.Time)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // DeleteExpiredIndices indicates an expected call of DeleteExpiredIndices
@@ -157,10 +174,10 @@ func (mr *MockStoreMockRecorder) InitSegmentReservation(arg0, arg1 interface{}) 
 }
 
 // TearDownSegmentReservation mocks base method
-func (m *MockStore) TearDownSegmentReservation(arg0 context.Context, arg1 *segment.TeardownReq) (reservation.MessageWithPath, error) {
+func (m *MockStore) TearDownSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TearDownSegmentReservation", arg0, arg1)
-	ret0, _ := ret[0].(reservation.MessageWithPath)
+	ret0, _ := ret[0].(reservation.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

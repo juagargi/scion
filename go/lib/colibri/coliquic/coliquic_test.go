@@ -43,8 +43,8 @@ import (
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/xtest"
 	sgrpc "github.com/scionproto/scion/go/pkg/grpc"
-	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
-	mock_cp "github.com/scionproto/scion/go/pkg/proto/control_plane/mock_control_plane"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
+	mock_col "github.com/scionproto/scion/go/pkg/proto/colibri/mock_colibri"
 )
 
 // TestColibriQuic creates a server and a client, both with SCION-COLIBRI addresses and paths,
@@ -161,12 +161,12 @@ func TestColibriGRPC(t *testing.T) {
 	listener := NewConnListener(quicLis)
 	require.NoError(t, err)
 
-	// mock a method (the same as in net_test) and check we recover the colibri path correctly
+	// mock a method (see net_test) and check we recover the colibri path correctly
 	mctrl := gomock.NewController(t)
 	defer mctrl.Finish()
-	handler := mock_cp.NewMockTrustMaterialServiceServer(mctrl)
-	handler.EXPECT().TRC(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-		func(ctx context.Context, _ *cppb.TRCRequest) (*cppb.TRCResponse, error) {
+	handler := mock_col.NewMockColibriServer(mctrl)
+	handler.EXPECT().TestPeer(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+		func(ctx context.Context, _ *colpb.TestingMessage) (*colpb.TestingMessage, error) {
 			p, ok := peer.FromContext(ctx)
 			require.True(t, ok)
 			require.NotNil(t, p)
@@ -176,7 +176,7 @@ func TestColibriGRPC(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, ok)
 			require.Greater(t, usage, uint64(0))
-			return &cppb.TRCResponse{Trc: p.Addr.(*snet.UDPAddr).Path.Raw}, nil
+			return &colpb.TestingMessage{Data: p.Addr.(*snet.UDPAddr).Path.Raw}, nil
 		})
 
 	var testInterceptorCalled bool
@@ -189,7 +189,7 @@ func TestColibriGRPC(t *testing.T) {
 
 	gRPCServer := NewGrpcServer(grpc.UnaryInterceptor(testInterceptor),
 		sgrpc.UnaryServerInterceptor())
-	cppb.RegisterTrustMaterialServiceServer(gRPCServer, handler)
+	colpb.RegisterColibriServer(gRPCServer, handler)
 
 	done := make(chan struct{})
 	go func() {
@@ -222,10 +222,10 @@ func TestColibriGRPC(t *testing.T) {
 	}
 	conn, err := grpc.DialContext(ctx, serverAddr.String(), grpc.WithInsecure(), grpc.WithContextDialer(dialer))
 	require.NoError(t, err)
-	gRPCClient := cppb.NewTrustMaterialServiceClient(conn)
-	res, err := gRPCClient.TRC(ctx, &cppb.TRCRequest{})
+	gRPCClient := colpb.NewColibriClient(conn)
+	res, err := gRPCClient.TestPeer(ctx, &colpb.TestingMessage{})
 	require.NoError(t, err)
-	require.Equal(t, clientAddr.(*snet.UDPAddr).Path.Raw, res.Trc)
+	require.Equal(t, clientAddr.(*snet.UDPAddr).Path.Raw, res.Data)
 	require.True(t, testInterceptorCalled)
 
 	gRPCServer.GracefulStop()

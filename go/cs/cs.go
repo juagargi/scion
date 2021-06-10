@@ -39,14 +39,13 @@ import (
 	"github.com/scionproto/scion/go/cs/config"
 	"github.com/scionproto/scion/go/cs/ifstate"
 	"github.com/scionproto/scion/go/cs/onehop"
-	reservation_conf "github.com/scionproto/scion/go/cs/reservation/conf"
-	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateful"
-	"github.com/scionproto/scion/go/cs/reservationstorage"
+	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateless"
 	"github.com/scionproto/scion/go/cs/reservationstore"
 	segreggrpc "github.com/scionproto/scion/go/cs/segreg/grpc"
 	"github.com/scionproto/scion/go/cs/segreq"
 	segreqgrpc "github.com/scionproto/scion/go/cs/segreq/grpc"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/drkeystorage"
 	"github.com/scionproto/scion/go/lib/fatal"
 	"github.com/scionproto/scion/go/lib/infra/infraenv"
@@ -75,12 +74,14 @@ import (
 	"github.com/scionproto/scion/go/pkg/command"
 	"github.com/scionproto/scion/go/pkg/cs"
 	"github.com/scionproto/scion/go/pkg/cs/api"
+	colgrpc "github.com/scionproto/scion/go/pkg/cs/colibri/grpc"
 	"github.com/scionproto/scion/go/pkg/cs/drkey"
 	drkeygrpc "github.com/scionproto/scion/go/pkg/cs/drkey/grpc"
 	cstrustgrpc "github.com/scionproto/scion/go/pkg/cs/trust/grpc"
 	cstrustmetrics "github.com/scionproto/scion/go/pkg/cs/trust/metrics"
 	"github.com/scionproto/scion/go/pkg/discovery"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
 	dpb "github.com/scionproto/scion/go/pkg/proto/discovery"
 	"github.com/scionproto/scion/go/pkg/service"
@@ -213,10 +214,11 @@ func realMain() error {
 		TopoProvider: itopo.Provider(),
 		Verifier:     verifier,
 	}
+	router := segreq.NewRouter(fetcherCfg)
 	provider.Router = trust.AuthRouter{
 		ISD:    topo.IA().I,
 		DB:     trustDB,
-		Router: segreq.NewRouter(fetcherCfg),
+		Router: router,
 	}
 
 	quicServer := grpc.NewServer(libgrpc.UnaryServerInterceptor())
@@ -461,7 +463,7 @@ func realMain() error {
 					Dialer:      quicStack.TLSDialer,
 					Credentials: trust.GetTansportCredentials(tlsMgr),
 				},
-				Router: segreq.NewRouter(fetcherCfg),
+				Router: router,
 			},
 		}
 		drkeyServStore = &drkey.ServiceStore{
@@ -514,27 +516,50 @@ func realMain() error {
 		return err
 	}
 
-	var colibriStore reservationstorage.Store
-	var colibriInitialRsvs reservation_conf.Reservations
-	if globalCfg.Colibri.Enabled() {
-		db, err := storage.NewColibriStorage(globalCfg.Colibri.DB)
-		if err != nil {
-			return serrors.WrapStr("error initializing COLIBRI DB", err)
-		}
-		cap, err := reservation_conf.CapacitiesFromFile(globalCfg.Colibri.CapacitiesFile)
-		if err != nil {
-			return err
-		}
-		admitter := &admission.StatefulAdmission{
-			Capacities: cap,
-			Delta:      globalCfg.Colibri.Delta,
-		}
-		colibriStore = reservationstore.NewStore(topo.IA(), db, admitter)
-		colibriInitialRsvs, err = reservation_conf.ReservationsFromFile(globalCfg.Colibri.ReservationsFile)
-		if err != nil {
-			return serrors.WrapStr("error loading colibri initial reservation list", err)
-		}
+	//////////////////////////////////////////////////////////////////////////////////////////////
+
+	db, err := storage.NewColibriStorage(globalCfg.Colibri.DB)
+	if err != nil {
+		return serrors.WrapStr("error initializing COLIBRI DB", err)
 	}
+
+	admitter := &admission.StatelessAdmission{
+		Caps:  globalCfg.Colibri.Capacities,
+		Delta: globalCfg.Colibri.Delta,
+	}
+	colDialer := &libgrpc.QUICDialer{
+		Rewriter: nc.AddressRewriter(nil),
+		Dialer:   quicStack.Dialer,
+	}
+	masterKey, err := loadMasterSecret(globalCfg.General.ConfigDir)
+	if err != nil {
+		return serrors.WrapStr("loading master secret in COLIBRI", err)
+	}
+	colibriStore, err := reservationstore.NewStore(topo, router, nc.AddressRewriter(nil),
+		colDialer, db, admitter, masterKey.Key0)
+	if err != nil {
+		return serrors.WrapStr("initializing colibri store", err)
+	}
+
+	colibriService := &colgrpc.ColibriService{
+		Store: colibriStore,
+	}
+	// colpb.RegisterColibriServer(quicServer, colibriService)
+	colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
+	colpb.RegisterColibriServer(colServer, colibriService)
+	go func() {
+		defer log.HandlePanic()
+		lis, err := coliquic.ColibriListener(topo)
+		if err != nil {
+			fatal.Fatal(err)
+		}
+		log.Info("DELETEME %%%%%%%%% colibri grpc server listening", "addr", lis.Addr())
+		if err := colServer.Serve(lis); err != nil {
+			fatal.Fatal(err)
+		}
+	}()
+
+	//////////////////////////////////////////////////////////////////////////////////////////////
 
 	promgrpc.Register(quicServer)
 	promgrpc.Register(tcpServer)
@@ -613,6 +638,7 @@ func realMain() error {
 	tasks, err := cs.StartTasks(cs.TasksConfig{
 		Public:   nc.Public,
 		Intfs:    intfs,
+		Router:   router,
 		TrustDB:  trustDB,
 		PathDB:   pathDB,
 		RevCache: revCache,
@@ -645,11 +671,11 @@ func realMain() error {
 		RegistrationInterval:      globalCfg.BS.RegistrationInterval.Duration,
 		DRKeyEpochInterval:        globalCfg.DRKey.EpochDuration.Duration,
 		HiddenPathRegistrationCfg: hpWriterCfg,
-		ColibriInitialRsvs:        colibriInitialRsvs,
+		ColibriInitialRsvs:        globalCfg.Colibri.Reservations,
 		AllowIsdLoop:              isdLoopAllowed,
 	})
 	if err != nil {
-		serrors.WrapStr("starting periodic tasks", err)
+		return serrors.WrapStr("starting periodic tasks", err)
 	}
 	defer tasks.Kill()
 	log.Info("Started periodic tasks")

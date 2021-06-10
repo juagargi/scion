@@ -25,31 +25,44 @@ import (
 )
 
 func TestSegmentIDFromRaw(t *testing.T) {
-	id, err := SegmentIDFromRaw(xtest.MustParseHexString("ffaa00001101facecafe"))
+	id, err := IDFromRaw(xtest.MustParseHexString("ffaa00001101facecafe"))
 	require.NoError(t, err)
 	require.Equal(t, xtest.MustParseAS("ffaa:0:1101"), id.ASID)
-	require.Equal(t, xtest.MustParseHexString("facecafe"), id.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("facecafe"), id.Suffix)
+	require.True(t, id.IsSegmentID())
 }
 
-func TestSegmentIDRead(t *testing.T) {
-	reference := SegmentID{
+func TestIDRead(t *testing.T) {
+	reference := ID{
 		ASID: xtest.MustParseAS("ffaa:0:1101"),
 	}
-	copy(reference.Suffix[:], xtest.MustParseHexString("facecafe"))
-	raw := make([]byte, SegmentIDLen)
+	reference.Suffix = xtest.MustParseHexString("facecafe")
+	raw := make([]byte, 6+4)
 	n, err := reference.Read(raw)
 	require.NoError(t, err)
-	require.Equal(t, SegmentIDLen, n)
+	require.Equal(t, 6+4, n)
 	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafe"), raw)
+	require.True(t, reference.IsSegmentID())
+	require.Equal(t, n, reference.Len())
+
+	// E2E
+	reference.Suffix = xtest.MustParseHexString("facecafedeadbeeff00d")
+	raw = make([]byte, 6+10)
+	n, err = reference.Read(raw)
+	require.NoError(t, err)
+	require.Equal(t, 6+10, n)
+	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00d"), raw)
+	require.True(t, reference.IsE2EID())
+	require.Equal(t, n, reference.Len())
 }
 
-func TestSegmentIDString(t *testing.T) {
+func TestIDString(t *testing.T) {
 	cases := []struct {
-		ID  SegmentID
+		ID  ID
 		Str string
 	}{
-		{ID: mustParseSegmentID("ff0000001101facecafe"), Str: "ff00:0:1101-facecafe"},
-		{ID: mustParseSegmentID("ff000000110100000000"), Str: "ff00:0:1101-00000000"},
+		{ID: mustParseID("ff0000001101facecafe"), Str: "ff00:0:1101-facecafe"},
+		{ID: mustParseID("ff000000110100000000"), Str: "ff00:0:1101-00000000"},
 	}
 	for i, c := range cases {
 		name := fmt.Sprintf("case %d", i)
@@ -63,22 +76,11 @@ func TestSegmentIDString(t *testing.T) {
 
 func TestE2EIDFromRaw(t *testing.T) {
 	raw := xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00d")
-	id, err := E2EIDFromRaw(raw)
+	id, err := IDFromRaw(raw)
 	require.NoError(t, err)
 	require.Equal(t, xtest.MustParseAS("ffaa:0:1101"), id.ASID)
-	require.Equal(t, xtest.MustParseHexString("facecafedeadbeeff00d"), id.Suffix[:])
-}
-
-func TestE2EIDRead(t *testing.T) {
-	reference := E2EID{
-		ASID: xtest.MustParseAS("ffaa:0:1101"),
-	}
-	copy(reference.Suffix[:], xtest.MustParseHexString("facecafedeadbeeff00d"))
-	raw := make([]byte, E2EIDLen)
-	n, err := reference.Read(raw)
-	require.NoError(t, err)
-	require.Equal(t, E2EIDLen, n)
-	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00d"), raw)
+	require.Equal(t, xtest.MustParseHexString("facecafedeadbeeff00d"), id.Suffix)
+	require.True(t, id.IsE2EID())
 }
 
 func TestTickFromTime(t *testing.T) {
@@ -108,7 +110,7 @@ func TestValidateBWCls(t *testing.T) {
 
 func TestBWClsToKbps(t *testing.T) {
 	cases := map[BWCls]uint64{
-		0:  11,
+		0:  0,
 		1:  16,
 		2:  22,
 		3:  32,
@@ -500,8 +502,8 @@ func newTokenRaw() []byte {
 	return xtest.MustParseHexString("16ebdb4f0d04250000010002badcffee00010002baadf00d")
 }
 
-func mustParseSegmentID(s string) SegmentID {
-	id, err := SegmentIDFromRaw(xtest.MustParseHexString(s))
+func mustParseID(s string) ID {
+	id, err := IDFromRaw(xtest.MustParseHexString(s))
 	if err != nil {
 		panic(err)
 	}

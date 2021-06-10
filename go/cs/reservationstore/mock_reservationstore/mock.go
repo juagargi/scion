@@ -7,6 +7,7 @@ package mock_reservationstore
 import (
 	context "context"
 	gomock "github.com/golang/mock/gomock"
+	reservation "github.com/scionproto/scion/go/cs/reservation"
 	segment "github.com/scionproto/scion/go/cs/reservation/segment"
 	reservationstorage "github.com/scionproto/scion/go/cs/reservationstorage"
 	addr "github.com/scionproto/scion/go/lib/addr"
@@ -36,6 +37,34 @@ func NewMockManager(ctrl *gomock.Controller) *MockManager {
 // EXPECT returns an object that allows the caller to indicate expected use
 func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 	return m.recorder
+}
+
+// ActivateManyRequest mocks base method
+func (m *MockManager) ActivateManyRequest(arg0 context.Context, arg1 []*reservation.Request) []error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ActivateManyRequest", arg0, arg1)
+	ret0, _ := ret[0].([]error)
+	return ret0
+}
+
+// ActivateManyRequest indicates an expected call of ActivateManyRequest
+func (mr *MockManagerMockRecorder) ActivateManyRequest(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateManyRequest", reflect.TypeOf((*MockManager)(nil).ActivateManyRequest), arg0, arg1)
+}
+
+// ActivateRequest mocks base method
+func (m *MockManager) ActivateRequest(arg0 context.Context, arg1 *reservation.Request) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ActivateRequest", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ActivateRequest indicates an expected call of ActivateRequest
+func (mr *MockManagerMockRecorder) ActivateRequest(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateRequest", reflect.TypeOf((*MockManager)(nil).ActivateRequest), arg0, arg1)
 }
 
 // LocalIA mocks base method
@@ -81,48 +110,18 @@ func (mr *MockManagerMockRecorder) Now() *gomock.Call {
 }
 
 // PathsTo mocks base method
-func (m *MockManager) PathsTo(arg0 addr.IA) ([]snet.PathInterfacesHaver, error) {
+func (m *MockManager) PathsTo(arg0 context.Context, arg1 addr.IA) ([]snet.Path, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PathsTo", arg0)
-	ret0, _ := ret[0].([]snet.PathInterfacesHaver)
+	ret := m.ctrl.Call(m, "PathsTo", arg0, arg1)
+	ret0, _ := ret[0].([]snet.Path)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PathsTo indicates an expected call of PathsTo
-func (mr *MockManagerMockRecorder) PathsTo(arg0 interface{}) *gomock.Call {
+func (mr *MockManagerMockRecorder) PathsTo(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PathsTo", reflect.TypeOf((*MockManager)(nil).PathsTo), arg0)
-}
-
-// Request mocks base method
-func (m *MockManager) Request(arg0 context.Context, arg1 *segment.SetupReq) (*segment.Reservation, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Request", arg0, arg1)
-	ret0, _ := ret[0].(*segment.Reservation)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Request indicates an expected call of Request
-func (mr *MockManagerMockRecorder) Request(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockManager)(nil).Request), arg0, arg1)
-}
-
-// RequestMany mocks base method
-func (m *MockManager) RequestMany(arg0 context.Context, arg1 []*segment.SetupReq) ([]*segment.Reservation, []error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RequestMany", arg0, arg1)
-	ret0, _ := ret[0].([]*segment.Reservation)
-	ret1, _ := ret[1].([]error)
-	return ret0, ret1
-}
-
-// RequestMany indicates an expected call of RequestMany
-func (mr *MockManagerMockRecorder) RequestMany(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestMany", reflect.TypeOf((*MockManager)(nil).RequestMany), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PathsTo", reflect.TypeOf((*MockManager)(nil).PathsTo), arg0, arg1)
 }
 
 // Run mocks base method
@@ -135,6 +134,34 @@ func (m *MockManager) Run(arg0 context.Context) {
 func (mr *MockManagerMockRecorder) Run(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockManager)(nil).Run), arg0)
+}
+
+// SetupManyRequest mocks base method
+func (m *MockManager) SetupManyRequest(arg0 context.Context, arg1 []*segment.SetupReq) []error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetupManyRequest", arg0, arg1)
+	ret0, _ := ret[0].([]error)
+	return ret0
+}
+
+// SetupManyRequest indicates an expected call of SetupManyRequest
+func (mr *MockManagerMockRecorder) SetupManyRequest(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupManyRequest", reflect.TypeOf((*MockManager)(nil).SetupManyRequest), arg0, arg1)
+}
+
+// SetupRequest mocks base method
+func (m *MockManager) SetupRequest(arg0 context.Context, arg1 *segment.SetupReq) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetupRequest", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetupRequest indicates an expected call of SetupRequest
+func (mr *MockManagerMockRecorder) SetupRequest(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupRequest", reflect.TypeOf((*MockManager)(nil).SetupRequest), arg0, arg1)
 }
 
 // Store mocks base method

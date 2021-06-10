@@ -32,9 +32,6 @@ type ReserverOnly interface {
 	// GetSegmentRsvsFromSrcDstIA returns all reservations that start at src AS and end in dst AS.
 	GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA) (
 		[]*segment.Reservation, error)
-	// GetSegmentRsvFromPath searches for a segment reservation with the specified path.
-	GetSegmentRsvFromPath(ctx context.Context, path segment.ReservationTransparentPath) (
-		*segment.Reservation, error)
 
 	// NewSegmentRsv creates a new segment reservation in the DB, with an unused reservation ID.
 	// The created ID is set in the reservation pointer argument. Used by setup req.
@@ -55,12 +52,12 @@ type TransitOnly interface {
 type ReserverAndTransit interface {
 	// GetSegmentRsvFromID will return the reservation with that ID.
 	// Used by setup/renew req/resp. and any request.
-	GetSegmentRsvFromID(ctx context.Context, ID *reservation.SegmentID) (
+	GetSegmentRsvFromID(ctx context.Context, ID *reservation.ID) (
 		*segment.Reservation, error)
 	// PersistSegmentRsv ensures the DB contains the reservation as represented in rsv.
 	PersistSegmentRsv(ctx context.Context, rsv *segment.Reservation) error
 	// DeleteSegmentRsv removes the segment reservation. Used in teardown.
-	DeleteSegmentRsv(ctx context.Context, ID *reservation.SegmentID) error
+	DeleteSegmentRsv(ctx context.Context, ID *reservation.ID) error
 
 	// DeleteExpiredIndices will remove expired indices from the DB. If a reservation is left
 	// without any index after removing the expired ones, it will also be removed. This applies to
@@ -68,10 +65,13 @@ type ReserverAndTransit interface {
 	// Used on schedule.
 	DeleteExpiredIndices(ctx context.Context, now time.Time) (int, error)
 
+	// NextExpirationTime returns the nearest moment in time when an index will expire.
+	NextExpirationTime(ctx context.Context) (time.Time, error)
+
 	// GetE2ERsvFromID finds the end to end resevation given its ID.
-	GetE2ERsvFromID(ctx context.Context, ID *reservation.E2EID) (*e2e.Reservation, error)
+	GetE2ERsvFromID(ctx context.Context, ID *reservation.ID) (*e2e.Reservation, error)
 	// GetE2ERsvsOnSegRsv returns the e2e reservations running on top of a given segment one.
-	GetE2ERsvsOnSegRsv(ctx context.Context, ID *reservation.SegmentID) ([]*e2e.Reservation, error)
+	GetE2ERsvsOnSegRsv(ctx context.Context, ID *reservation.ID) ([]*e2e.Reservation, error)
 	// PersistE2ERsv makes the DB reflect the same contents as the rsv parameter.
 	PersistE2ERsv(ctx context.Context, rsv *e2e.Reservation) error
 }

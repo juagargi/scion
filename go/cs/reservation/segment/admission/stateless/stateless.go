@@ -29,11 +29,15 @@ import (
 
 // StatelessAdmission can admit a segment reservation without any state other than the DB.
 type StatelessAdmission struct {
-	Capacities base.Capacities // aka capacity matrix
-	Delta      float64         // fraction of free BW that can be reserved in one request
+	Caps  base.Capacities // aka capacity matrix
+	Delta float64         // fraction of free BW that can be reserved in one request
 }
 
 var _ admission.Admitter = (*StatelessAdmission)(nil)
+
+func (a *StatelessAdmission) Capacities() base.Capacities {
+	return a.Caps
+}
 
 // AdmitRsv admits a segment reservation. The request will be modified with the allowed and
 // maximum bandwidths if they were computed. It can also return an error that must be checked.
@@ -56,7 +60,7 @@ func (a *StatelessAdmission) AdmitRsv(ctx context.Context, x backend.ColibriStor
 	req.AllocTrail = append(req.AllocTrail, bead)
 	if maxAlloc < req.MinBW {
 		return serrors.New("admission denied", "maxalloc", maxAlloc, "minbw", req.MinBW,
-			"segment_id", req.ID)
+			"segment_id", req.ID.String())
 	}
 	return nil
 }
@@ -64,20 +68,22 @@ func (a *StatelessAdmission) AdmitRsv(ctx context.Context, x backend.ColibriStor
 func (a *StatelessAdmission) availableBW(ctx context.Context, x backend.ColibriStorage,
 	req segment.SetupReq) (uint64, error) {
 
-	sameIngress, err := x.GetSegmentRsvsFromIFPair(ctx, &req.Ingress, nil)
+	ingress := req.Ingress()
+	sameIngress, err := x.GetSegmentRsvsFromIFPair(ctx, &ingress, nil)
 	if err != nil {
 		return 0, serrors.WrapStr("cannot get reservations using ingress", err,
-			"ingress", req.Ingress)
+			"ingress", ingress)
 	}
-	sameEgress, err := x.GetSegmentRsvsFromIFPair(ctx, nil, &req.Egress)
+	egress := req.Egress()
+	sameEgress, err := x.GetSegmentRsvsFromIFPair(ctx, nil, &egress)
 	if err != nil {
 		return 0, serrors.WrapStr("cannot get reservations using egress", err,
-			"egress", req.Egress)
+			"egress", egress)
 	}
 	bwIngress := sumMaxBlockedBW(sameIngress, req.ID)
-	freeIngress := a.Capacities.CapacityIngress(req.Ingress) - bwIngress
+	freeIngress := a.Caps.CapacityIngress(ingress) - bwIngress
 	bwEgress := sumMaxBlockedBW(sameEgress, req.ID)
-	freeEgress := a.Capacities.CapacityEgress(req.Egress) - bwEgress
+	freeEgress := a.Caps.CapacityEgress(egress) - bwEgress
 	// `free` excludes the BW from an existing reservation if its ID equals the request's ID
 	free := float64(minBW(freeIngress, freeEgress))
 	return uint64(free * a.Delta), nil
@@ -94,27 +100,27 @@ func (a *StatelessAdmission) idealBW(ctx context.Context, x backend.ColibriStora
 	if err != nil {
 		return 0, serrors.WrapStr("cannot compute link ratio", err)
 	}
-	cap := float64(a.Capacities.CapacityEgress(req.Egress))
+	cap := float64(a.Caps.CapacityEgress(req.Egress()))
 	return uint64(cap * tubeRatio * linkRatio), nil
 }
 
 func (a *StatelessAdmission) tubeRatio(ctx context.Context, x backend.ColibriStorage,
 	req segment.SetupReq) (float64, error) {
 
-	transitDemand, err := a.transitDemand(ctx, x, req.Ingress, req)
+	transitDemand, err := a.transitDemand(ctx, x, req.Ingress(), req)
 	if err != nil {
 		return 0, serrors.WrapStr("cannot compute tube ratio", err)
 	}
-	capIn := a.Capacities.CapacityIngress(req.Ingress)
+	capIn := a.Caps.CapacityIngress(req.Ingress())
 	numerator := minBW(capIn, transitDemand)
 
 	var sum uint64
-	for _, in := range a.Capacities.IngressInterfaces() {
+	for _, in := range a.Caps.IngressInterfaces() {
 		dem, err := a.transitDemand(ctx, x, in, req)
 		if err != nil {
 			return 0, serrors.WrapStr("cannot compute tube ratio", err)
 		}
-		sum += minBW(a.Capacities.CapacityIngress(in), dem)
+		sum += minBW(a.Caps.CapacityIngress(in), dem)
 	}
 	if sum == 0 {
 		return 1, nil
@@ -136,13 +142,13 @@ func (a *StatelessAdmission) linkRatio(ctx context.Context, x backend.ColibriSto
 		grouped[req.ID.ASID] = make([]*segment.Reservation, 0)
 	}
 
-	egScalFctr := a.egScalFctr(grouped[req.ID.ASID], req.Egress, req)
+	egScalFctr := a.egScalFctr(grouped[req.ID.ASID], req.Egress(), req)
 	numerator := egScalFctr * float64(req.PrevBW())
 
 	var denom float64
 	for src, rsvs := range grouped {
-		egScalFctr = a.egScalFctr(rsvs, req.Egress, req)
-		srcAlloc := a.srcAlloc(rsvs, src, req.Ingress, req.Egress, req)
+		egScalFctr = a.egScalFctr(rsvs, req.Egress(), req)
+		srcAlloc := a.srcAlloc(rsvs, src, req.Ingress(), req.Egress(), req)
 		denom += egScalFctr * float64(srcAlloc)
 	}
 	if denom == 0 {
@@ -162,7 +168,7 @@ func (a *StatelessAdmission) transitDemand(ctx context.Context, x backend.Colibr
 	grouped := groupRsvsBySource(rsvs)
 	var sum uint64
 	for _, rsvs := range grouped {
-		dem := a.adjSrcDem(rsvs, ingress, req.Egress, req)
+		dem := a.adjSrcDem(rsvs, ingress, req.Egress(), req)
 		sum += dem
 	}
 	return sum, nil
@@ -183,7 +189,7 @@ func (a *StatelessAdmission) adjSrcDem(rsvs []*segment.Reservation, ingress, egr
 func (a *StatelessAdmission) inScalFctr(rsvs []*segment.Reservation, ingress uint16,
 	req segment.SetupReq) float64 {
 
-	capIn := a.Capacities.CapacityIngress(ingress)
+	capIn := a.Caps.CapacityIngress(ingress)
 	inDem := a.inDem(rsvs, ingress, req)
 	if inDem == 0 {
 		return 1
@@ -195,7 +201,7 @@ func (a *StatelessAdmission) inScalFctr(rsvs []*segment.Reservation, ingress uin
 func (a *StatelessAdmission) egScalFctr(rsvs []*segment.Reservation, egress uint16,
 	req segment.SetupReq) float64 {
 
-	capEg := a.Capacities.CapacityEgress(egress)
+	capEg := a.Caps.CapacityEgress(egress)
 	egDem := a.egDem(rsvs, egress, req)
 	if egDem == 0 {
 		return 1
@@ -207,7 +213,7 @@ func (a *StatelessAdmission) inDem(rsvs []*segment.Reservation, ingress uint16,
 	req segment.SetupReq) uint64 {
 
 	var inDem uint64
-	for _, eg := range a.Capacities.EgressInterfaces() {
+	for _, eg := range a.Caps.EgressInterfaces() {
 		inDem += a.srcDem(rsvs, ingress, eg, req)
 	}
 	return inDem
@@ -217,7 +223,7 @@ func (a *StatelessAdmission) egDem(rsvs []*segment.Reservation, egress uint16,
 	req segment.SetupReq) uint64 {
 
 	var egDem uint64
-	for _, in := range a.Capacities.IngressInterfaces() {
+	for _, in := range a.Caps.IngressInterfaces() {
 		egDem += a.srcDem(rsvs, in, egress, req)
 	}
 	return egDem
@@ -227,18 +233,18 @@ func (a *StatelessAdmission) egDem(rsvs []*segment.Reservation, egress uint16,
 func (a *StatelessAdmission) srcDem(rsvs []*segment.Reservation, ingress, egress uint16,
 	req segment.SetupReq) uint64 {
 
-	capIn := a.Capacities.CapacityIngress(ingress)
-	capEg := a.Capacities.CapacityEgress(req.Egress)
+	capIn := a.Caps.CapacityIngress(ingress)
+	capEg := a.Caps.CapacityEgress(req.Egress())
 	var srcDem uint64
 	for _, r := range rsvs {
-		if r.Ingress == ingress && r.Egress == egress && r.ID != req.ID {
+		if r.Ingress == ingress && r.Egress == egress && !r.ID.Equal(&req.ID) {
 			capReqDem := minBW(capIn, capEg, a.reqDem(*r, req))
 			srcDem += capReqDem
 		}
 	}
 	// lastly, add the request demand from the request itself
 	if len(rsvs) > 0 && req.ID.ASID == rsvs[0].ID.ASID &&
-		req.Ingress == ingress && req.Egress == egress {
+		req.Ingress() == ingress && req.Egress() == egress {
 
 		capReqDem := minBW(capIn, capEg, req.MaxBW.ToKbps())
 		srcDem += capReqDem
@@ -248,7 +254,7 @@ func (a *StatelessAdmission) srcDem(rsvs []*segment.Reservation, ingress, egress
 
 func (a *StatelessAdmission) reqDem(r segment.Reservation, req segment.SetupReq) uint64 {
 	var bw uint64
-	if r.ID == req.ID {
+	if r.ID.Equal(&req.ID) {
 		bw = req.MaxBW.ToKbps()
 	} else {
 		bw = r.MaxRequestedBW()
@@ -264,7 +270,7 @@ func (a *StatelessAdmission) srcAlloc(rsvs []*segment.Reservation, source addr.A
 	var sum uint64
 	for _, r := range rsvs {
 		if r.Ingress == ingress && r.Egress == egress {
-			if r.ID != req.ID {
+			if !r.ID.Equal(&req.ID) {
 				sum += r.MaxBlockedBW()
 			}
 		}
@@ -278,10 +284,10 @@ func (a *StatelessAdmission) srcAlloc(rsvs []*segment.Reservation, source addr.A
 
 // sumMaxBlockedBW adds up all the max blocked bandwidth by the reservation, for all reservations,
 // iff they don't have the same ID as "excludeThisRsv".
-func sumMaxBlockedBW(rsvs []*segment.Reservation, excludeThisRsv reservation.SegmentID) uint64 {
+func sumMaxBlockedBW(rsvs []*segment.Reservation, excludeThisRsv reservation.ID) uint64 {
 	var total uint64
 	for _, r := range rsvs {
-		if r.ID != excludeThisRsv {
+		if !r.ID.Equal(&excludeThisRsv) {
 			total += r.MaxBlockedBW()
 		}
 	}

@@ -15,30 +15,68 @@
 package segment
 
 import (
+	"fmt"
 	"time"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
+	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
 )
 
 // Reservation represents a segment reservation.
 type Reservation struct {
-	ID           reservation.SegmentID
-	Indices      Indices                    // existing indices in this reservation
-	activeIndex  int                        // -1 <= activeIndex < len(Indices)
-	Ingress      uint16                     // ingress interface ID: reservation packets enter
-	Egress       uint16                     // egress interface ID: reservation packets leave
-	Path         ReservationTransparentPath // empty if not at the source of the reservation
-	PathType     reservation.PathType       // the type of path (up,core,down)
-	PathEndProps reservation.PathEndProps   // the properties for stitching and start/end
-	TrafficSplit reservation.SplitCls       // the traffic split between control and data planes
+	ID           reservation.ID
+	Indices      Indices                  // existing indices in this reservation
+	activeIndex  int                      // -1 <= activeIndex < len(Indices)
+	Ingress      uint16                   // ingress interface ID: reservation packets enter
+	Egress       uint16                   // egress interface ID: reservation packets leave
+	PathType     reservation.PathType     // the type of path (up,core,down)
+	PathEndProps reservation.PathEndProps // the properties for stitching and start/end
+	TrafficSplit reservation.SplitCls     // the traffic split between control and data planes
+	PathAtSource *base.OpaquePath         // when this reservation object is at its source
 }
 
-func NewReservation() *Reservation {
+func NewReservation(asid addr.AS) *Reservation {
 	return &Reservation{
+		ID: reservation.ID{
+			ASID:   asid,
+			Suffix: make([]byte, 4),
+		},
 		activeIndex: -1,
 	}
+}
+
+func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
+	index := r.ActiveIndex()
+	if index == nil {
+		return nil
+	}
+
+	// info field
+	p := &colpath.ColibriPath{
+		InfoField: &colpath.InfoField{
+			C:           true,
+			S:           true,
+			Ver:         uint8(index.Idx),
+			HFCount:     uint8(len(index.Token.HopFields)),
+			ResIdSuffix: make([]byte, 12),
+			ExpTick:     uint32(index.Token.ExpirationTick),
+			BwCls:       uint8(index.AllocBW),
+			Rlc:         uint8(index.Token.RLC),
+		},
+		HopFields: make([]*colpath.HopField, len(index.Token.HopFields)),
+	}
+	copy(p.InfoField.ResIdSuffix, r.ID.Suffix)
+	for i, hf := range index.Token.HopFields {
+		p.HopFields[i] = &colpath.HopField{
+			IngressId: hf.Ingress,
+			EgressId:  hf.Egress,
+			Mac:       append([]byte{}, hf.Mac[:]...),
+		}
+	}
+	return p
 }
 
 // Validate will return an error for invalid values.
@@ -64,24 +102,15 @@ func (r *Reservation) Validate() error {
 			activeIndex = i
 		}
 	}
-	var err error
-	if r.Path != nil {
-		if r.Ingress != 0 {
-			return serrors.New("reservation starts in this AS but ingress interface is not zero",
-				"ingress_if", r.Ingress)
-		}
-		err = r.Path.Validate()
-	} else if r.Ingress == 0 {
-		return serrors.New("reservation does not start in this AS but ingress interface is zero")
+	if (r.Ingress == 0) != (r.PathAtSource != nil && r.PathAtSource.CurrentStep == 0) {
+		return serrors.New("reservation path and ingress ID non consistent", "ingress", r.Ingress,
+			"path", r.PathAtSource.String())
 	}
-	if err != nil {
-		return serrors.WrapStr("validating reservation, path failed", err)
-	}
-	err = r.PathEndProps.Validate()
+	err := r.PathEndProps.Validate()
 	if err != nil {
 		return serrors.WrapStr("validating reservation, end properties failed", err)
 	}
-	return nil
+	return r.PathAtSource.Validate()
 }
 
 // ActiveIndex returns the currently active Index for this reservation, or nil if none.
@@ -92,11 +121,10 @@ func (r *Reservation) ActiveIndex() *Index {
 	return &r.Indices[r.activeIndex]
 }
 
-// NewIndexAtSource creates a new index. The associated token is created from the arguments, and
-// automatically linked to the index. This function should be called only from the
-// AS originating the reservation.
+// NewIndex creates a new index. The associated token is created from the arguments, and
+// automatically linked to the index.
 // The expiration times must always be greater or equal than those in previous indices.
-func (r *Reservation) NewIndexAtSource(expTime time.Time, minBW, maxBW, allocBW reservation.BWCls,
+func (r *Reservation) NewIndex(expTime time.Time, minBW, maxBW, allocBW reservation.BWCls,
 	rlc reservation.RLC, pathType reservation.PathType) (reservation.IndexNumber, error) {
 
 	idx := reservation.IndexNumber(0)
@@ -113,21 +141,6 @@ func (r *Reservation) NewIndexAtSource(expTime time.Time, minBW, maxBW, allocBW 
 		},
 	}
 	index := NewIndex(idx, expTime, IndexTemporary, minBW, maxBW, allocBW, tok)
-	return r.addIndex(index)
-}
-
-// NewIndexFromToken creates a new index. The token argument is used to populate several
-// fields of the index. The token is not stored (on-path ASes don't need the token).
-// This function should be called from an AS that is on the reservation path
-// but not the originating one.
-func (r *Reservation) NewIndexFromToken(tok *reservation.Token, minBW, maxBW reservation.BWCls) (
-	reservation.IndexNumber, error) {
-
-	if tok == nil {
-		return 0, serrors.New("token is nil")
-	}
-	index := NewIndex(tok.Idx, tok.ExpirationTick.ToTime(), IndexTemporary, minBW, maxBW,
-		tok.BWCls, nil)
 	return r.addIndex(index)
 }
 
@@ -149,6 +162,28 @@ func (r *Reservation) Index(idx reservation.IndexNumber) *Index {
 		return nil
 	}
 	return &r.Indices[sliceIndex]
+}
+
+func (r *Reservation) NextIndexToRenew() reservation.IndexNumber {
+	last := reservation.IndexNumber(0).Sub(1)
+	if len(r.Indices) > 0 {
+		last = r.Indices[len(r.Indices)-1].Idx
+	}
+	return last.Add(1)
+}
+
+func (r *Reservation) NextIndexToActivate() *Index {
+	if len(r.Indices) == 0 {
+		return nil
+	}
+	i := 0
+	if r.activeIndex >= 0 {
+		i = r.activeIndex
+	}
+	if i+1 < len(r.Indices) {
+		return &r.Indices[i+1]
+	}
+	return nil
 }
 
 // SetIndexConfirmed sets the index as IndexPending (confirmed but not active). If the requested
@@ -200,11 +235,17 @@ func (r *Reservation) RemoveIndex(idx reservation.IndexNumber) error {
 		return err
 	}
 	r.Indices = r.Indices[sliceIndex+1:]
-	r.activeIndex -= sliceIndex
-	if r.activeIndex < -1 {
+
+	if r.activeIndex > sliceIndex { // if active index was not removed, adjust it
+		r.activeIndex -= (sliceIndex + 1)
+	} else { // if active index was removed, no active index
 		r.activeIndex = -1
 	}
 	return nil
+}
+
+func (r *Reservation) String() string {
+	return fmt.Sprintf("%s, Idxs: [%s]", r.ID.String(), r.Indices)
 }
 
 // MaxBlockedBW returns the maximum bandwidth blocked by this reservation, which is

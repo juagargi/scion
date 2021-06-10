@@ -22,77 +22,52 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 
-// Request is the base struct for any type of COLIBRI segment request.
-// It contains a reference to the reservation it requests, or nil if not yet created.
-type Request struct {
-	base.RequestMetadata                         // information about the request (forwarding path)
-	ID                   reservation.SegmentID   // the ID this request refers to
-	Index                reservation.IndexNumber // the index this request refers to
-	Timestamp            time.Time               // the mandatory timestamp
-	Ingress              uint16                  // the interface the traffic uses to enter the AS
-	Egress               uint16                  // the interface the traffic uses to leave the AS
-	Reservation          *Reservation            // nil if no reservation yet
-}
-
-// NewRequest constructs the segment Request type.
-func NewRequest(ts time.Time, id *reservation.SegmentID, idx reservation.IndexNumber,
-	path base.ColibriPath) (*Request, error) {
-
-	metadata, err := base.NewRequestMetadata(path)
-	if err != nil {
-		return nil, serrors.WrapStr("new segment request", err)
-	}
-	ingressIFID, egressIFID := path.IngressEgressIFIDs()
-	if id == nil {
-		return nil, serrors.New("new segment request with nil ID")
-	}
-	return &Request{
-		RequestMetadata: *metadata,
-		Timestamp:       ts,
-		ID:              *id,
-		Index:           idx,
-		Ingress:         ingressIFID,
-		Egress:          egressIFID,
-	}, nil
-}
-
 // SetupReq is a segment reservation setup request.
 // This same type is used for renewal of the segment reservation.
 type SetupReq struct {
-	Request
-	InfoField  reservation.InfoField
-	MinBW      reservation.BWCls
-	MaxBW      reservation.BWCls
-	SplitCls   reservation.SplitCls
-	PathProps  reservation.PathEndProps
-	AllocTrail reservation.AllocationBeads
-	PathToDst  OpaquePath // requested path for the reservation
+	base.Request
+
+	ExpirationTime time.Time
+	RLC            reservation.RLC
+	PathType       reservation.PathType
+	MinBW          reservation.BWCls
+	MaxBW          reservation.BWCls
+	SplitCls       reservation.SplitCls
+	PathProps      reservation.PathEndProps
+	AllocTrail     reservation.AllocationBeads
+	PathAtSource   *base.OpaquePath // requested path (maybe different than transport)
+	Reservation    *Reservation     // nil if no reservation yet
+}
+
+func (r *SetupReq) Validate() error {
+	if err := r.Request.Validate(); err != nil {
+		return err
+	}
+	if len(r.AllocTrail) > len(r.Path.Steps) {
+		return serrors.New("inconsistent trail and setup path", "trail", r.AllocTrail,
+			"path", r.Path)
+	}
+	if err := r.PathProps.ValidateWithPathType(r.PathType); err != nil {
+		return serrors.New("incompatible path type and props", "path_type", r.PathType,
+			"props", r.PathProps)
+	}
+	return nil
+}
+
+func (r *SetupReq) ValidateForReservation(rsv *Reservation) error {
+	if r.PathType != rsv.PathType {
+		return serrors.New("different path type", "req", r.PathType, "rsv", rsv.PathType)
+	}
+	if r.PathProps != rsv.PathEndProps {
+		return serrors.New("different path end props.", "req", r.PathProps, "rsv", rsv.PathEndProps)
+	}
+	return nil
 }
 
 // PrevBW returns the minimum of the maximum bandwidths already granted by previous ASes.
-func (r SetupReq) PrevBW() uint64 {
+func (r *SetupReq) PrevBW() uint64 {
+	if len(r.AllocTrail) == 0 {
+		return r.MaxBW.ToKbps()
+	}
 	return r.AllocTrail.MinMax().ToKbps()
-}
-
-// SetupTelesReq represents a telescopic segment setup.
-type SetupTelesReq struct {
-	SetupReq
-	BaseID reservation.SegmentID
-}
-
-// TeardownReq requests the AS to remove a given index from the DB. If this is the last index
-// in the reservation, the reservation will be completely removed.
-type TeardownReq struct {
-	Request
-}
-
-// IndexConfirmationReq is used to change the state on an index (e.g. from temporary to pending).
-type IndexConfirmationReq struct {
-	Request
-	State IndexState
-}
-
-// CleanupReq is used to clean an index.
-type CleanupReq struct {
-	Request
 }

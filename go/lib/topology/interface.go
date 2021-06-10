@@ -386,6 +386,8 @@ func toServiceType(svc addr.HostSVC) (ServiceType, error) {
 		return Discovery, nil
 	case addr.SvcCS:
 		return Control, nil
+	case addr.SvcCOL:
+		return Control, nil
 	case addr.SvcSIG:
 		return Gateway, nil
 	default:

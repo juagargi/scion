@@ -25,7 +25,7 @@ import (
 
 // Reservation represents an E2E reservation.
 type Reservation struct {
-	ID                  reservation.E2EID
+	ID                  reservation.ID
 	SegmentReservations []*segment.Reservation // stitched segment reservations
 	Indices             Indices
 }

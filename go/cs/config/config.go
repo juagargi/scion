@@ -87,6 +87,7 @@ func (cfg *Config) InitDefaults() {
 		&cfg.CA,
 		&cfg.TrustEngine,
 		&cfg.DRKey,
+		&cfg.Colibri,
 	)
 }
 
@@ -107,6 +108,7 @@ func (cfg *Config) Validate() error {
 		&cfg.CA,
 		&cfg.TrustEngine,
 		&cfg.DRKey,
+		&cfg.Colibri,
 	)
 }
 

@@ -14,44 +14,49 @@
 
 package test
 
-import (
-	base "github.com/scionproto/scion/go/cs/reservation"
-)
+// import (
+// 	base "github.com/scionproto/scion/go/cs/reservation"
+// 	"github.com/scionproto/scion/go/lib/slayers/path"
+// )
 
-type TestColibriPath struct {
-	HopCount   int
-	CurrentHop int
-	Ingress    uint16
-	Egress     uint16
-}
+// type TestColibriPath struct {
+// 	HopCount   int
+// 	CurrentHop int
+// 	Ingress    uint16
+// 	Egress     uint16
+// }
 
-var _ base.ColibriPath = (*TestColibriPath)(nil)
+// var _ base.PacketPath = (*TestColibriPath)(nil)
 
-func (p *TestColibriPath) Copy() base.ColibriPath {
-	return p
-}
+// func (p *TestColibriPath) Copy() base.PacketPath {
+// 	return p
+// }
 
-func (p *TestColibriPath) Reverse() error {
-	return nil
-}
+// func (p *TestColibriPath) Reverse() error {
+// 	return nil
+// }
 
-func (p *TestColibriPath) NumberOfHops() int {
-	return p.HopCount
-}
+// func (p *TestColibriPath) NumberOfHops() int {
+// 	return p.HopCount
+// }
 
-func (p *TestColibriPath) IndexOfCurrentHop() int {
-	return p.CurrentHop
-}
+// func (p *TestColibriPath) IndexOfCurrentHop() int {
+// 	return p.CurrentHop
+// }
 
-func (p *TestColibriPath) IngressEgressIFIDs() (uint16, uint16) {
-	return p.Ingress, p.Egress
-}
+// func (p *TestColibriPath) IngressEgressIFIDs() (uint16, uint16, error) {
+// 	return p.Ingress, p.Egress, nil
+// }
 
-// NewTestPath returns a new path with one segment consisting on 3 hopfields: (0,2)->(1,2)->(1,0).
-func NewTestPath() base.ColibriPath {
-	path := TestColibriPath{
-		Ingress: 1,
-		Egress:  2,
-	}
-	return &path
-}
+// func (p *TestColibriPath) Path() path.Path {
+// 	return nil
+// }
+
+// // NewTestPath returns a new path with one segment consisting on 3 hopfields: (0,2)->(1,2)->(1,0).
+// func NewTestPath() base.PacketPath {
+// 	path := TestColibriPath{
+// 		Ingress: 1,
+// 		Egress:  2,
+// 	}
+// 	return &path
+// }

@@ -52,6 +52,7 @@ type TasksConfig struct {
 	Public          *net.UDPAddr
 	Intfs           *ifstate.Interfaces
 	OneHopConn      snet.PacketConn
+	Router          snet.Router
 	TrustDB         trust.DB
 	PathDB          pathdb.PathDB
 	RevCache        revcache.RevCache
@@ -76,7 +77,7 @@ type TasksConfig struct {
 	// hidden paths down segment registration. If it is nil, normal path
 	// registration is used instead.
 	HiddenPathRegistrationCfg *HiddenPathRegistrationCfg
-	ColibriInitialRsvs   coli_conf.Reservations
+	ColibriInitialRsvs   *coli_conf.Reservations
 
 	AllowIsdLoop bool
 }
@@ -257,11 +258,23 @@ func (t *TasksConfig) ColibriManager() (*periodic.Runner, error) {
 		return nil, nil
 	}
 	topo := t.TopoProvider.Get()
-	mgr, err := reservationstore.NewColibriManager(topo.IA(), t.ColibriStore, t.ColibriInitialRsvs)
+	mgr, err := reservationstore.NewColibriManager(topo.IA(), t.Router,
+		t.ColibriStore, t.ColibriInitialRsvs)
 	if err != nil {
-		return nil, err
+		return nil, serrors.WrapStr("could not start colibri manager", err)
 	}
-	return periodic.Start(mgr, 100*time.Millisecond, 100*time.Millisecond), nil
+	return periodic.Start(mgr, 100*time.Millisecond, 5*time.Second), nil
+	//
+	//
+	//
+	//
+	//
+	// dont
+	// forget
+	// to
+	// remote
+	// deleteme
+	// return periodic.Start(mgr, 100*time.Millisecond, 5*time.Hour), nil // TODO(juagargi)
 }
 
 // Tasks keeps track of the running tasks.
@@ -285,7 +298,7 @@ func StartTasks(cfg TasksConfig) (*Tasks, error) {
 	segRevCleaner := revcache.NewCleaner(cfg.RevCache, "control_pathstorage_revocation")
 	colibriManager, err := cfg.ColibriManager()
 	if err != nil {
-		return nil, serrors.WrapStr("colibri manager failed while starting tasks", err)
+		return nil, err
 	}
 	return &Tasks{
 		Originator:      cfg.Originator(),

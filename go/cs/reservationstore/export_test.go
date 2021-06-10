@@ -1,4 +1,4 @@
-// Copyright 2021 ETH Zurich
+// Copyright 2021 ETH Zurich, Anapaya Systems
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-syntax = "proto3";
+package reservationstore
 
-option go_package = "github.com/scionproto/scion/go/pkg/proto/colibri";
+import (
+	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
+)
 
-package proto.colibri.v1;
+func (s *Store) ComputeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS addr.AS) (
+	[]byte, error) {
 
-import "google/protobuf/timestamp.proto";
-
-service Colibri {
-    rpc TestPeer(TestingMessage) returns (TestingMessage) {}
+	return s.computeMAC(suffix, tok, srcAS, dstAS)
 }
 
-message TestingMessage{
-    string message = 1;
-    google.protobuf.Timestamp timestamp = 2;
+func (s *Store) SetColibriKey(key []byte) {
+	s.colibriKey = key
 }

@@ -25,6 +25,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/cs/reservation/sqlite"
+	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend/mock_backend"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -50,9 +51,9 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: reservation.BWCls(5).ToKbps(),
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "01234567", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndexAtSource(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
 				return []*segment.Reservation{rsv}
 			},
@@ -62,9 +63,9 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: 0,
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndexAtSource(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
 				return []*segment.Reservation{rsv}
 			},
@@ -74,20 +75,20 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: 309, // 181 + 128
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndexAtSource(util.SecsToTime(3), 1, 17, 7, 1,
+				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 17, 7, 1,
 					reservation.CorePath)
 				require.NoError(t, err)
 				rsvs := []*segment.Reservation{rsv}
 
 				rsv = testNewRsv(t, "ff00:1:1", "01234567", 1, 2, 5, 5, 5)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(3), 1, 8, 8, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 8, 8, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(3), 1, 7, 7, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 7, 7, 1, reservation.CorePath)
 				require.NoError(t, err)
 				rsvs = append(rsvs, rsv)
 
 				rsv = testNewRsv(t, "ff00:1:2", "01234567", 1, 2, 5, 5, 5)
-				_, err = rsv.NewIndexAtSource(util.SecsToTime(2), 1, 7, 7, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(util.SecsToTime(2), 1, 7, 7, 1, reservation.CorePath)
 				require.NoError(t, err)
 				rsvs = append(rsvs, rsv)
 
@@ -101,7 +102,7 @@ func TestSumMaxBlockedBW(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			excludedID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString(tc.excludeID))
+			excludedID, err := reservation.IDFromRaw(xtest.MustParseHexString(tc.excludeID))
 			require.NoError(t, err)
 			sum := sumMaxBlockedBW(tc.rsvsFcn(), *excludedID)
 			require.Equal(t, tc.blockedBW, sum)
@@ -320,7 +321,7 @@ func TestTubeRatio(t *testing.T) {
 			adm := newTestAdmitter(t)
 			defer finish()
 
-			adm.Capacities = &testCapacities{
+			adm.Caps = &testCapacities{
 				Cap:    tc.globalCapacity,
 				Ifaces: tc.interfaces,
 			}
@@ -428,7 +429,7 @@ func TestLinkRatio(t *testing.T) {
 			adm := newTestAdmitter(t)
 			defer finish()
 
-			adm.Capacities = &testCapacities{
+			adm.Caps = &testCapacities{
 				Cap:    1024 * 1024,
 				Ifaces: []uint16{1, 2, 3},
 			}
@@ -620,7 +621,7 @@ func TestTubeRatioAfterAdmission(t *testing.T) {
 			t.Parallel()
 			db := newTestDB(t)
 			adm := newTestAdmitter(t)
-			adm.Capacities = &testCapacities{
+			adm.Caps = &testCapacities{
 				Cap:    tc.globalCapacity,
 				Ifaces: tc.interfaces,
 			}
@@ -723,7 +724,7 @@ func TestLinkRatioAfterAdmission(t *testing.T) {
 			t.Parallel()
 			db := newTestDB(t)
 			adm := newTestAdmitter(t)
-			adm.Capacities = &testCapacities{
+			adm.Caps = &testCapacities{
 				Cap:    1024 * 1024,
 				Ifaces: []uint16{1, 2, 3},
 			}
@@ -746,7 +747,6 @@ func TestLinkRatioAfterAdmission(t *testing.T) {
 			require.Equal(t, tc.linkRatioAfter, linkRatio, "failed after admission")
 		})
 	}
-
 }
 
 type testCapacities struct {
@@ -758,7 +758,6 @@ var _ base.Capacities = (*testCapacities)(nil)
 
 func (c *testCapacities) IngressInterfaces() []uint16           { return c.Ifaces }
 func (c *testCapacities) EgressInterfaces() []uint16            { return c.Ifaces }
-func (c *testCapacities) Capacity(from, to uint16) uint64       { return c.Cap }
 func (c *testCapacities) CapacityIngress(ingress uint16) uint64 { return c.Cap }
 func (c *testCapacities) CapacityEgress(egress uint16) uint64   { return c.Cap }
 
@@ -781,7 +780,7 @@ func newTestDB(t *testing.T) *sqlite.Backend {
 
 func newTestAdmitter(t *testing.T) *StatefulAdmission {
 	return &StatefulAdmission{
-		Capacities: &testCapacities{
+		Caps: &testCapacities{
 			Cap:    1024, // 1MBps
 			Ifaces: []uint16{1, 2},
 		},
@@ -790,30 +789,33 @@ func newTestAdmitter(t *testing.T) *StatefulAdmission {
 }
 
 // newTestRequest creates a request ID ff00:1:1 beefcafe
-func newTestRequest(t *testing.T, ingress, egress uint16,
+func newTestRequest(t *testing.T, ingress, egress int,
 	minBW, maxBW reservation.BWCls) *segment.SetupReq {
 
-	ID, err := reservation.SegmentIDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
+	ID, err := reservation.IDFromRaw(xtest.MustParseHexString("ff0000010001beefcafe"))
 	require.NoError(t, err)
 	return &segment.SetupReq{
-		Request: segment.Request{
-			RequestMetadata: base.RequestMetadata{},
-			ID:              *ID,
-			Timestamp:       util.SecsToTime(1),
-			Ingress:         ingress,
-			Egress:          egress,
+		Request: base.Request{
+			MsgId: base.MsgId{
+				ID:        *ID,
+				Timestamp: util.SecsToTime(1),
+			},
+			Path: test.NewPathFromComponents(ingress, "1-ff00:1:1", egress),
 		},
-		MinBW:     minBW,
-		MaxBW:     maxBW,
-		SplitCls:  2,
-		PathProps: reservation.StartLocal | reservation.EndLocal,
+		ExpirationTime: util.SecsToTime(10),
+		RLC:            1,
+		PathType:       reservation.CorePath,
+		MinBW:          minBW,
+		MaxBW:          maxBW,
+		SplitCls:       2,
+		PathProps:      reservation.StartLocal | reservation.EndLocal,
 	}
 }
 
 func testNewRsv(t *testing.T, srcAS string, suffix string, ingress, egress uint16,
 	minBW, maxBW, allocBW reservation.BWCls) *segment.Reservation {
 
-	ID, err := reservation.NewSegmentID(xtest.MustParseAS(srcAS),
+	ID, err := reservation.NewID(xtest.MustParseAS(srcAS),
 		xtest.MustParseHexString(suffix))
 	require.NoError(t, err)
 	rsv := &segment.Reservation{
@@ -859,12 +861,12 @@ func testAddAllocTrail(req *segment.SetupReq, beads ...reservation.BWCls) *segme
 func getMaxBWPerSource(t *testing.T, rsvs []*segment.Reservation, skipASID, skipSuffix string) (
 	map[addr.AS]uint64, error) {
 
-	skipRsv, err := reservation.NewSegmentID(xtest.MustParseAS(skipASID),
+	skipRsv, err := reservation.NewID(xtest.MustParseAS(skipASID),
 		xtest.MustParseHexString(skipSuffix))
 	require.NoError(t, err)
 	maxBWPerSrc := make(map[addr.AS]uint64)
 	for _, r := range rsvs {
-		if r.ID != *skipRsv {
+		if !r.ID.Equal(skipRsv) {
 			maxBWPerSrc[r.ID.ASID] += r.MaxBlockedBW()
 		}
 	}
@@ -901,7 +903,7 @@ func prepareForMock(rsvs []*segment.Reservation, req *segment.SetupReq, globalCa
 	// transitAlloc goes from req.Ingress to req.Egress
 
 	for _, r := range rsvs {
-		if r.ID == req.ID {
+		if r.ID.Equal(&req.ID) {
 			sameIDAsRequest = r
 		}
 
@@ -937,10 +939,10 @@ func prepareForMock(rsvs []*segment.Reservation, req *segment.SetupReq, globalCa
 		}
 		state := sourceStateMap[key]
 
-		if r.Egress == req.Egress {
+		if r.Egress == req.Egress() {
 			transitDem[r.Ingress] += uint64(float64(state.SrcDem) *
 				math.Min(inScalFctr, egScalFctr))
-			if r.Ingress == req.Ingress {
+			if r.Ingress == req.Ingress() {
 				transitAlloc += r.MaxBlockedBW()
 			}
 		}
@@ -957,7 +959,7 @@ func prepareMockForTubeRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 
 	db.EXPECT().GetSegmentRsvFromID(gomock.Any(), &req.ID).AnyTimes().Return(sameIDAsRequest, nil)
 
-	db.EXPECT().GetTransitDem(gomock.Any(), gomock.Any(), req.Egress).AnyTimes().
+	db.EXPECT().GetTransitDem(gomock.Any(), gomock.Any(), req.Egress()).AnyTimes().
 		DoAndReturn(
 			func(_ context.Context, ingress, _ uint16) (uint64, error) {
 				return transitDem[ingress], nil
@@ -997,7 +999,7 @@ func prepareMockForLinkRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 
 	db.EXPECT().GetSegmentRsvFromID(gomock.Any(), &req.ID).AnyTimes().Return(sameIDAsRequest, nil)
 
-	db.EXPECT().GetTransitAlloc(gomock.Any(), req.Ingress, req.Egress).AnyTimes().
+	db.EXPECT().GetTransitAlloc(gomock.Any(), req.Ingress(), req.Egress()).AnyTimes().
 		Return(transitAlloc, nil)
 
 	db.EXPECT().GetSourceState(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().
@@ -1029,11 +1031,11 @@ func prepareDBForAdmission(ctx context.Context, t *testing.T, db *sqlite.Backend
 	rsvs []*segment.Reservation, req *segment.SetupReq, globalCapacity uint64) {
 
 	for _, r := range rsvs {
-		if r.ID == req.ID {
+		if r.ID.Equal(&req.ID) {
 			// its last index must be compatible with the request, so that the admission succeeds
-			lastIdx := req.InfoField.Idx
+			lastIdx := req.Index
 			for i := len(r.Indices) - 1; i >= 0; i-- {
-				r.Indices[i].Expiration = req.InfoField.ExpirationTick.ToTime()
+				r.Indices[i].Expiration = req.ExpirationTime
 				lastIdx = lastIdx.Sub(1)
 				r.Indices[i].Idx = lastIdx
 			}
@@ -1063,10 +1065,10 @@ func prepareDBForAdmission(ctx context.Context, t *testing.T, db *sqlite.Backend
 	}
 	// transitDem and transitAlloc represent transits between all ingress and req.Egress
 	for ingress, demand := range transitDem {
-		err := db.PersistTransitDem(ctx, ingress, req.Egress, demand)
+		err := db.PersistTransitDem(ctx, ingress, req.Egress(), demand)
 		require.NoError(t, err)
 	}
-	err := db.PersistTransitAlloc(ctx, req.Ingress, req.Egress, transitAlloc)
+	err := db.PersistTransitAlloc(ctx, req.Ingress(), req.Egress(), transitAlloc)
 	require.NoError(t, err)
 }
 
@@ -1076,23 +1078,33 @@ func persistRsvFromAdmittedRequest(t *testing.T, db *sqlite.Backend, req segment
 	rsv, err := db.GetSegmentRsvFromID(ctx, &req.ID)
 	require.NoError(t, err)
 	if rsv == nil {
-		rsv = segment.NewReservation()
+		rsv = segment.NewReservation(req.ID.ASID)
 		rsv.ID = req.ID
-		rsv.Ingress = req.Ingress
-		rsv.Egress = req.Egress
-		// err = db.NewSegmentRsv(ctx, rsv)
+		rsv.Ingress = req.Ingress()
+		rsv.Egress = req.Egress()
 		require.NoError(t, err)
 	} else {
-		index := rsv.Index(req.InfoField.Idx)
+		index := rsv.Index(req.Index)
 		require.Nil(t, index, "same index not allowed")
 	}
 	req.Reservation = rsv
-	tok := &reservation.Token{InfoField: req.InfoField}
-	idx, err := rsv.NewIndexFromToken(tok, req.MinBW, req.MaxBW)
+	idx, err := rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, 0, req.RLC, req.PathType)
 	require.NoError(t, err)
 	index := rsv.Index(idx)
 	// admitted; the request contains already the value inside the "allocation beads" of the rsv
 	index.AllocBW = req.AllocTrail[len(req.AllocTrail)-1].AllocBW
 	err = db.PersistSegmentRsv(ctx, rsv)
 	require.NoError(t, err)
+}
+
+// sumMaxBlockedBW adds up all the max blocked bandwidth by the reservation, for all reservations,
+// iff they don't have the same ID as "excludeThisRsv".
+func sumMaxBlockedBW(rsvs []*segment.Reservation, excludeThisRsv reservation.ID) uint64 {
+	var total uint64
+	for _, r := range rsvs {
+		if !r.ID.Equal(&excludeThisRsv) {
+			total += r.MaxBlockedBW()
+		}
+	}
+	return total
 }

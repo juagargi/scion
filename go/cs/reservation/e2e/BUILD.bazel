@@ -26,6 +26,7 @@ go_test(
     ],
     embed = [":go_default_library"],
     deps = [
+        "//go/cs/reservation:go_default_library",
         "//go/cs/reservation/segment:go_default_library",
         "//go/cs/reservation/segmenttest:go_default_library",
         "//go/cs/reservation/test:go_default_library",

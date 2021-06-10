@@ -27,17 +27,16 @@ type Reservations struct {
 	Rsvs []ReservationEntry `json:"reservation_list"`
 }
 
-func ReservationsFromFile(filename string) (Reservations, error) {
+func ReservationsFromFile(filename string) (*Reservations, error) {
 	b, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return Reservations{}, serrors.WrapStr(
+		return nil, serrors.WrapStr(
 			"error loading reservation list", err, "filename", filename)
 	}
-	rsvs := Reservations{}
-	// err = cap.UnmarshalJSON(b)
-	err = json.Unmarshal(b, &rsvs)
+	rsvs := &Reservations{}
+	err = json.Unmarshal(b, rsvs)
 	if err != nil {
-		return Reservations{}, serrors.WrapStr(
+		return nil, serrors.WrapStr(
 			"error parsing reservation list", err, "filename", filename)
 	}
 	return rsvs, nil

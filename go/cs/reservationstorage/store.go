@@ -16,43 +16,38 @@ package reservationstorage
 
 import (
 	"context"
+	"time"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	sgt "github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/infra/modules/cleaner"
 )
 
 // Store is the interface to interact with the reservation store.
 type Store interface {
 	AdmitSegmentReservation(ctx context.Context, req *sgt.SetupReq) (
-		base.MessageWithPath, error)
-	ConfirmSegmentReservation(ctx context.Context, req *sgt.IndexConfirmationReq) (
-		base.MessageWithPath, error)
-	CleanupSegmentReservation(ctx context.Context, req *sgt.CleanupReq) (
-		base.MessageWithPath, error)
-	TearDownSegmentReservation(ctx context.Context, req *sgt.TeardownReq) (
-		base.MessageWithPath, error)
-	AdmitE2EReservation(ctx context.Context, req e2e.SetupRequest) (
-		base.MessageWithPath, error)
-	CleanupE2EReservation(ctx context.Context, req *e2e.CleanupReq) (
-		base.MessageWithPath, error)
+		sgt.SegmentSetupResponse, error)
+	ConfirmSegmentReservation(ctx context.Context, req *base.Request) (
+		base.Response, error)
+	ActivateSegmentReservation(ctx context.Context, req *base.Request) (
+		base.Response, error)
+	CleanupSegmentReservation(ctx context.Context, req *base.Request) (
+		base.Response, error)
+	TearDownSegmentReservation(ctx context.Context, req *base.Request) (
+		base.Response, error)
+	AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
+		base.Response, error)
+	CleanupE2EReservation(ctx context.Context, req *base.Request) (
+		base.Response, error)
 
-	DeleteExpiredIndices(ctx context.Context) (int, error)
+	// DeleteExpiredIndices returns the number of indices deleted, and the time for the
+	// next expiration
+	DeleteExpiredIndices(ctx context.Context) (int, time.Time, error)
 
 	// as the source of reservations:
 
-	GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) ([]*sgt.Reservation, error)
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
-}
-
-// TODO(juagargi) there is a number of functions missing: all regarding responses.
-
-// NewIndexCleaner creates a cleaner removing expired indices and reservations.
-func NewIndexCleaner(s Store) *cleaner.Cleaner {
-	return cleaner.New(func(ctx context.Context) (int, error) {
-		return s.DeleteExpiredIndices(ctx)
-	}, "colibri")
+	GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) ([]*sgt.Reservation, error)
 }

@@ -1,0 +1,221 @@
+// Copyright 2021 ETH Zurich
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package grpc
+
+import (
+	"context"
+	"fmt"
+
+	"google.golang.org/grpc/peer"
+	"google.golang.org/protobuf/proto"
+
+	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/cs/reservation/translate"
+	"github.com/scionproto/scion/go/cs/reservationstorage"
+	"github.com/scionproto/scion/go/lib/colibri/coliquic"
+	"github.com/scionproto/scion/go/lib/log"
+	"github.com/scionproto/scion/go/lib/serrors"
+	"github.com/scionproto/scion/go/lib/snet"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
+)
+
+type ColibriService struct {
+	Store reservationstorage.Store
+}
+
+var _ colpb.ColibriServer = (*ColibriService)(nil)
+
+func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
+	*colpb.TestingMessage, error) {
+
+	log.Info("DELETEME received call on TestPeer()")
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		log.Info("DELETEME weird, no peer", "peer", p)
+		return nil, serrors.New("no peer found")
+	}
+	raddr, ok := p.Addr.(*snet.UDPAddr)
+	if !ok || raddr == nil {
+		log.Info("DELETEME weird error, raddr is what?", "raddr", raddr, "ok", ok)
+		return nil, serrors.New("no valid raddr found")
+	}
+	// require.IsType(t, &snet.UDPAddr{}, p.Addr)
+	// require.Equal(t, colibri.PathType, p.Addr.(*snet.UDPAddr).Path.Type)
+	log.Info("DELETEME so far so good", "path_type", raddr.Path.Type)
+	usage, ok, err := coliquic.UsageFromContext(ctx)
+	_, _, _ = usage, ok, err
+	return &colpb.TestingMessage{
+		Message: fmt.Sprintf("answering your message: %s", msg.Message),
+		Data:    p.Addr.(*snet.UDPAddr).Path.Raw,
+	}, nil
+}
+
+func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
+	*colpb.SegmentSetupResponse, error) {
+
+	msg.Base.Opaque.CurrentStep++
+	sizeeeeeeeeeeee := proto.Size(msg)
+	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Base.Opaque)
+	// path, err := extractPath(ctx)
+	// if err != nil {
+	// 	log.Error("setup segment", "err", err)
+	// 	return nil, err
+	// }
+	req, err := translate.SetupReq(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		// should send a message?
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.AdmitSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		// should send a message?
+		return nil, err
+	}
+	log.Info("deleteme after store", "res", res)
+	pbRes := translate.PBufSetupResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+	return pbRes, nil
+}
+
+func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Request) (
+	*colpb.Response, error) {
+
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.ConfirmSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
+}
+
+func (s *ColibriService) ActivateSegmentIndex(ctx context.Context, msg *colpb.Request) (
+	*colpb.Response, error) {
+
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.ActivateSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
+}
+
+func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request) (
+	*colpb.Response, error) {
+
+	log.Info("DELETEME received call on TeardownSegment()")
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.TearDownSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
+}
+
+func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Request) (
+	*colpb.Response, error) {
+
+	msg.Opaque.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.CleanupSegmentReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
+}
+
+func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRequest) (
+	*colpb.ListResponse, error) {
+
+	return nil, nil
+}
+
+func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
+	*colpb.E2ESetupResponse, error) {
+
+	return nil, nil
+}
+
+func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request) (
+	*colpb.Response, error) {
+
+	return nil, nil
+}
+
+// extractPath returns the PacketPath, ingress and egress used with this RPC.
+func extractPath(ctx context.Context) (base.PacketPath, error) {
+	// TODO(juagargi) move from PacketPath to OpaquePath
+	// TODO(juagargi) call this function to check that the transport path matches that
+	// of base.Request.Path if the transport path is of colibri type.
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		log.Error("deleteme no peer found")
+		return nil, serrors.New("no peer found")
+	}
+	raddr, ok := p.Addr.(*snet.UDPAddr)
+	if !ok || raddr == nil {
+		log.Error("deleteme no scion address found")
+		return nil, serrors.New("no valid scion address found", "addr", p.Addr)
+	}
+	log.Info("deleteme scion address", "addr", raddr)
+	path, err := base.NewPacketPath(raddr.Path)
+	if err != nil {
+		return path, err
+	}
+	log.Info("deleteme path and interfaces", "path_type", raddr.Path.Type,
+		"packet_path", path)
+	return path, err
+}

@@ -34,6 +34,7 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/infra/modules/db"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/util"
 )
@@ -118,12 +119,15 @@ type executor struct {
 	db db.Sqler
 }
 
-func (x *executor) GetSegmentRsvFromID(ctx context.Context, ID *reservation.SegmentID) (
+func (x *executor) GetSegmentRsvFromID(ctx context.Context, ID *reservation.ID) (
 	*segment.Reservation, error) {
 
+	if len(ID.Suffix) < 4 {
+		return nil, serrors.New("wrong suffix", "suffix", hex.EncodeToString(ID.Suffix))
+	}
 	params := []interface{}{
 		ID.ASID,
-		binary.BigEndian.Uint32(ID.Suffix[:]),
+		binary.BigEndian.Uint32(ID.Suffix),
 	}
 	rsvs, err := getSegReservations(ctx, x.db, "WHERE id_as = ? AND id_suffix = ?", params)
 	if err != nil {
@@ -136,7 +140,7 @@ func (x *executor) GetSegmentRsvFromID(ctx context.Context, ID *reservation.Segm
 		return rsvs[0], nil
 	default:
 		return nil, db.NewDataError("more than 1 segment reservation found for an ID", nil,
-			"count", len(rsvs), "id.asid", ID.ASID, "id.suffix", hex.EncodeToString(ID.Suffix[:]))
+			"count", len(rsvs), "id.asid", ID.ASID, "id.suffix", hex.EncodeToString(ID.Suffix))
 	}
 }
 
@@ -159,25 +163,6 @@ func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA 
 	}
 	condition := fmt.Sprintf("WHERE %s", strings.Join(conditions, " AND "))
 	return getSegReservations(ctx, x.db, condition, params)
-}
-
-// GetSegmentRsvFromPath searches for a segment reservation with the specified path.
-func (x *executor) GetSegmentRsvFromPath(ctx context.Context,
-	path segment.ReservationTransparentPath) (*segment.Reservation, error) {
-
-	rsvs, err := getSegReservations(ctx, x.db, "WHERE path = ?", []interface{}{path.ToRaw()})
-	if err != nil {
-		return nil, err
-	}
-	switch len(rsvs) {
-	case 0:
-		return nil, nil
-	case 1:
-		return rsvs[0], nil
-	default:
-		return nil, db.NewDataError("more than 1 segment reservation found for a path", nil,
-			"path", path.String())
-	}
 }
 
 // GetAllSegmentRsvs returns all segment reservations.
@@ -221,7 +206,8 @@ func (x *executor) NewSegmentRsv(ctx context.Context, rsv *segment.Reservation) 
 			if err := insertNewSegReservation(ctx, tx, rsv, suffix); err != nil {
 				return err
 			}
-			binary.BigEndian.PutUint32(rsv.ID.Suffix[:], suffix)
+			rsv.ID.Suffix = make([]byte, 4)
+			binary.BigEndian.PutUint32(rsv.ID.Suffix, suffix)
 			return nil
 		})
 		if err == nil {
@@ -236,12 +222,16 @@ func (x *executor) NewSegmentRsv(ctx context.Context, rsv *segment.Reservation) 
 }
 
 func (x *executor) PersistSegmentRsv(ctx context.Context, rsv *segment.Reservation) error {
+	if len(rsv.ID.Suffix) < 4 {
+		return serrors.New("wrong suffix", "suffix", hex.EncodeToString(rsv.ID.Suffix))
+	}
+
 	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
 		err := deleteSegmentRsv(ctx, tx, &rsv.ID)
 		if err != nil {
 			return err
 		}
-		suffix := binary.BigEndian.Uint32(rsv.ID.Suffix[:])
+		suffix := binary.BigEndian.Uint32(rsv.ID.Suffix)
 		return insertNewSegReservation(ctx, tx, rsv, suffix)
 	})
 	if err != nil {
@@ -286,9 +276,9 @@ func (x *executor) DeleteExpiredIndices(ctx context.Context, now time.Time) (int
 			if err != nil {
 				return err
 			}
-			previous := make(map[reservation.SegmentID]uint64, len(affectedSegRsvs))
+			previous := make(map[string]uint64, len(affectedSegRsvs))
 			for _, seg := range affectedSegRsvs {
-				previous[seg.ID] = seg.MaxBlockedBW()
+				previous[seg.ID.String()] = seg.MaxBlockedBW()
 			}
 			// delete the segment indices pointed by rowIDs
 			n, err := deleteSegIndicesFromRowIDs(ctx, tx, rowIDs)
@@ -309,7 +299,7 @@ func (x *executor) DeleteExpiredIndices(ctx context.Context, now time.Time) (int
 			egressIFs := make(map[uint16]int64)
 			for _, seg := range affectedSegRsvs {
 				curr := seg.MaxBlockedBW()
-				prev := previous[seg.ID]
+				prev := previous[seg.ID.String()]
 				if curr != prev {
 					diff := int64(prev - curr)
 					ingressIFs[seg.Ingress] += diff
@@ -336,13 +326,30 @@ func (x *executor) DeleteExpiredIndices(ctx context.Context, now time.Time) (int
 	return deletedIndices, err
 }
 
+func (x *executor) NextExpirationTime(ctx context.Context) (time.Time, error) {
+	var expSeg, expE2E uint32
+	row := x.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(expiration),0xFFFFFFFF) FROM e2e_index`)
+	if err := row.Scan(&expE2E); err != nil {
+		return time.Time{}, err
+	}
+	row = x.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(expiration),0xFFFFFFFF) FROM seg_index`)
+	if err := row.Scan(&expSeg); err != nil {
+		return time.Time{}, err
+	}
+	expiration := expE2E
+	if expSeg < expiration {
+		expiration = expSeg
+	}
+	return util.SecsToTime(expiration), nil
+}
+
 // DeleteSegmentRsv removes the segment reservation
-func (x *executor) DeleteSegmentRsv(ctx context.Context, ID *reservation.SegmentID) error {
+func (x *executor) DeleteSegmentRsv(ctx context.Context, ID *reservation.ID) error {
 	return deleteSegmentRsv(ctx, x.db, ID)
 }
 
 // GetE2ERsvFromID finds the end to end resevation given its ID.
-func (x *executor) GetE2ERsvFromID(ctx context.Context, ID *reservation.E2EID) (
+func (x *executor) GetE2ERsvFromID(ctx context.Context, ID *reservation.ID) (
 	*e2e.Reservation, error) {
 
 	var rsv *e2e.Reservation
@@ -355,7 +362,7 @@ func (x *executor) GetE2ERsvFromID(ctx context.Context, ID *reservation.E2EID) (
 }
 
 // GetE2ERsvsOnSegRsv returns the e2e reservations running on top of a given segment one.
-func (x *executor) GetE2ERsvsOnSegRsv(ctx context.Context, ID *reservation.SegmentID) (
+func (x *executor) GetE2ERsvsOnSegRsv(ctx context.Context, ID *reservation.ID) (
 	[]*e2e.Reservation, error) {
 
 	var rsvs []*e2e.Reservation
@@ -390,33 +397,13 @@ func (x *executor) GetInterfaceUsageEgress(ctx context.Context, ifid uint16) (ui
 }
 
 func (x *executor) GetTransitDem(ctx context.Context, ingress, egress uint16) (uint64, error) {
-	query := `SELECT traffic_demand from state_transit_demand
-	WHERE ingress = ? AND egress = ?`
-	var transit uint64
-	if err := x.db.QueryRowContext(ctx, query, ingress, egress).Scan(&transit); err != nil {
-		if err == sql.ErrNoRows {
-			return 0, nil
-		}
-		return 0, serrors.WrapStr("get transit demand failed", err, "ingress", ingress, "egress", egress)
-	}
-	return transit, nil
+	return getTransitDem(ctx, x.db, ingress, egress)
 }
 
 func (x *executor) PersistTransitDem(ctx context.Context, ingress, egress uint16,
 	transit uint64) error {
 
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		query := `INSERT INTO state_transit_demand (ingress, egress, traffic_demand)
-		VALUES(?, ?, ?)
-		ON CONFLICT(ingress,egress) DO UPDATE
-		SET traffic_demand = ?`
-		_, err := tx.ExecContext(ctx, query, ingress, egress, transit, transit)
-		return err
-	})
-	if err != nil {
-		return db.NewTxError("error persisting transit demand", err)
-	}
-	return nil
+	return persistTransitDem(ctx, x.db, ingress, egress, transit)
 }
 
 func (x *executor) GetTransitAlloc(ctx context.Context, ingress, egress uint16) (uint64, error) {
@@ -592,12 +579,13 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 	if rsv.ActiveIndex() != nil {
 		activeIndex = int(rsv.ActiveIndex().Idx)
 	}
-	const query = `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress,
+	p := rsv.PathAtSource
+	const query = `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress, path_type,
 		path, end_props, traffic_split, src_ia, dst_ia,active_index)
-		VALUES (?, ?,?,?,?,?,?,?,?,?)`
+		VALUES (?, ?,?,?,?,?,?,?,?,?,?)`
 	res, err := x.ExecContext(ctx, query, rsv.ID.ASID, suffix,
-		rsv.Ingress, rsv.Egress, rsv.Path.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,
-		rsv.Path.GetSrcIA().IAInt(), rsv.Path.GetDstIA().IAInt(), activeIndex)
+		rsv.Ingress, rsv.Egress, rsv.PathType, p.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,
+		p.SrcIA().IAInt(), p.DstIA().IAInt(), activeIndex)
 	if err != nil {
 		return err
 	}
@@ -613,6 +601,10 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 			params = append(params, rsvRowID, index.Idx,
 				util.TimeToSecs(index.Expiration), index.State(), index.MinBW, index.MaxBW,
 				index.AllocBW, index.Token.ToRaw())
+			if _, err := reservation.TokenFromRaw(index.Token.ToRaw()); err != nil {
+				log.Error("inconsistent token being saved", "err", err, "id", rsv.ID.String(),
+					"idx", index.Idx)
+			}
 		}
 		q := queryIndexTmpl + strings.Repeat(",(?,?,?,?,?,?,?,?)", len(rsv.Indices)-1)
 		_, err = x.ExecContext(ctx, q, params...)
@@ -633,6 +625,7 @@ type rsvFields struct {
 	Suffix       uint32
 	Ingress      uint16
 	Egress       uint16
+	PathType     int
 	Path         []byte
 	EndProps     int
 	TrafficSplit int
@@ -642,7 +635,7 @@ type rsvFields struct {
 func getSegReservations(ctx context.Context, x db.Sqler, condition string, params []interface{}) (
 	[]*segment.Reservation, error) {
 
-	const queryTmpl = `SELECT ROWID,id_as,id_suffix,ingress,egress,path,
+	const queryTmpl = `SELECT ROWID,id_as,id_suffix,ingress,egress,path_type,path,
 		end_props,traffic_split,active_index
 		FROM seg_reservation %s`
 	query := fmt.Sprintf(queryTmpl, condition)
@@ -656,7 +649,7 @@ func getSegReservations(ctx context.Context, x db.Sqler, condition string, param
 	reservationFields := []*rsvFields{}
 	for rows.Next() {
 		var f rsvFields
-		err := rows.Scan(&f.RowID, &f.AsID, &f.Suffix, &f.Ingress, &f.Egress, &f.Path,
+		err := rows.Scan(&f.RowID, &f.AsID, &f.Suffix, &f.Ingress, &f.Egress, &f.PathType, &f.Path,
 			&f.EndProps, &f.TrafficSplit, &f.ActiveIndex)
 		if err != nil {
 			return nil, err
@@ -682,16 +675,18 @@ func buildSegRsvFromFields(ctx context.Context, x db.Sqler, fields *rsvFields) (
 	if err != nil {
 		return nil, err
 	}
-	rsv := segment.NewReservation()
-	rsv.ID.ASID = addr.AS(fields.AsID)
-	binary.BigEndian.PutUint32(rsv.ID.Suffix[:], fields.Suffix)
+	rsv := segment.NewReservation(addr.AS(fields.AsID))
+	rsv.ID.Suffix = make([]byte, 4)
+	binary.BigEndian.PutUint32(rsv.ID.Suffix, fields.Suffix)
 	rsv.Ingress = fields.Ingress
 	rsv.Egress = fields.Egress
-	p, err := segment.NewPathFromRaw(fields.Path)
+	rsv.PathType = reservation.PathType(fields.PathType)
+
+	p, err := base.OpaquePathFromRaw(fields.Path)
 	if err != nil {
 		return nil, err
 	}
-	rsv.Path = p
+	rsv.PathAtSource = p
 	rsv.PathEndProps = reservation.PathEndProps(fields.EndProps)
 	rsv.TrafficSplit = reservation.SplitCls(fields.TrafficSplit)
 	rsv.Indices = indices
@@ -735,11 +730,16 @@ func getSegIndices(ctx context.Context, x db.Sqler, rowID int) (segment.Indices,
 	return indices, nil
 }
 
-func deleteSegmentRsv(ctx context.Context, x db.Sqler, rsvID *reservation.SegmentID) error {
-	// get blocked bandwidth to update the ingress/egress interfaces tables
+func deleteSegmentRsv(ctx context.Context, x db.Sqler, rsvID *reservation.ID) error {
+	if len(rsvID.Suffix) < 4 {
+		return serrors.New("wrong suffix", "suffix", hex.EncodeToString(rsvID.Suffix))
+	}
+
+	// get blocked bandwidth to update the ingress/egress interfaces tables,
+	// and all the state ones in general
 	params := []interface{}{
 		rsvID.ASID,
-		binary.BigEndian.Uint32(rsvID.Suffix[:]),
+		binary.BigEndian.Uint32(rsvID.Suffix),
 	}
 	rsvs, err := getSegReservations(ctx, x, "WHERE id_as = ? AND id_suffix = ?", params)
 	if err != nil {
@@ -753,13 +753,17 @@ func deleteSegmentRsv(ctx context.Context, x db.Sqler, rsvID *reservation.Segmen
 		if err != nil {
 			return err
 		}
+		// err = subtractTransitDem(ctx, x, rsvs[0].Ingress, rsvs[0].Egress, uint64(blocked))
+		// if err != nil {
+		// 	return err
+		// }
 	default:
 		return serrors.New("Got more than one reservation for one ID", "ID", rsvID.String())
 	}
 
 	// now remove the reservation
 	const query = `DELETE FROM seg_reservation WHERE id_as = ? AND id_suffix = ?`
-	suffix := binary.BigEndian.Uint32(rsvID.Suffix[:])
+	suffix := binary.BigEndian.Uint32(rsvID.Suffix)
 	_, err = x.ExecContext(ctx, query, rsvID.ASID, suffix)
 	if err != nil {
 		return err
@@ -767,7 +771,7 @@ func deleteSegmentRsv(ctx context.Context, x db.Sqler, rsvID *reservation.Segmen
 	return err
 }
 
-func deleteE2ERsv(ctx context.Context, x db.Sqler, rsvID *reservation.E2EID) error {
+func deleteE2ERsv(ctx context.Context, x db.Sqler, rsvID *reservation.ID) error {
 	const query = `DELETE FROM e2e_reservation WHERE reservation_id = ?`
 	_, err := x.ExecContext(ctx, query, rsvID.ToRaw())
 	return err
@@ -784,7 +788,7 @@ func insertNewE2EReservation(ctx context.Context, x *sql.Tx, rsv *e2e.Reservatio
 		return err
 	}
 	if len(rsv.Indices) > 0 {
-		const queryTmpl = `INSERT INTO e2e_index (reservation, index_number, expiration, 
+		const queryTmpl = `INSERT INTO e2e_index (reservation, index_number, expiration,
 			alloc_bw, token) VALUES (?,?,?,?,?)`
 		params := make([]interface{}, 0, 5*len(rsv.Indices))
 		for _, index := range rsv.Indices {
@@ -799,12 +803,15 @@ func insertNewE2EReservation(ctx context.Context, x *sql.Tx, rsv *e2e.Reservatio
 	}
 	if len(rsv.SegmentReservations) > 0 {
 		const valuesPlaceholder = `(id_as = ? AND id_suffix = ?)`
-		const queryTmpl = `INSERT INTO e2e_to_seg (e2e, seg) 
+		const queryTmpl = `INSERT INTO e2e_to_seg (e2e, seg)
 		SELECT ?, ROWID FROM seg_reservation WHERE `
 		params := make([]interface{}, 1, 1+2*len(rsv.SegmentReservations))
 		params[0] = rowID
 		for _, segRsv := range rsv.SegmentReservations {
-			params = append(params, segRsv.ID.ASID, binary.BigEndian.Uint32(segRsv.ID.Suffix[:]))
+			if len(segRsv.ID.Suffix) < 4 {
+				return serrors.New("wrong suffix", "suffix", hex.EncodeToString(segRsv.ID.Suffix))
+			}
+			params = append(params, segRsv.ID.ASID, binary.BigEndian.Uint32(segRsv.ID.Suffix))
 		}
 		query := queryTmpl + valuesPlaceholder +
 			strings.Repeat(" OR "+valuesPlaceholder, len(rsv.SegmentReservations)-1)
@@ -824,7 +831,7 @@ func insertNewE2EReservation(ctx context.Context, x *sql.Tx, rsv *e2e.Reservatio
 	return nil
 }
 
-func getE2ERsvFromID(ctx context.Context, x *sql.Tx, ID *reservation.E2EID) (
+func getE2ERsvFromID(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
 	*e2e.Reservation, error) {
 
 	// read reservation
@@ -850,22 +857,25 @@ func getE2ERsvFromID(ctx context.Context, x *sql.Tx, ID *reservation.E2EID) (
 		return nil, err
 	}
 	rsv := &e2e.Reservation{
-		ID:                  *ID,
+		ID:                  *ID.Clone(),
 		Indices:             indices,
 		SegmentReservations: segRsvs,
 	}
 	return rsv, nil
 }
 
-func getE2ERsvsFromSegment(ctx context.Context, x *sql.Tx, ID *reservation.SegmentID) (
+func getE2ERsvsFromSegment(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
 	[]*e2e.Reservation, error) {
 
-	rowID2e2eIDs := make(map[int]*reservation.E2EID)
+	if len(ID.Suffix) < 4 {
+		return nil, serrors.New("wrong suffix", "suffix", hex.EncodeToString(ID.Suffix))
+	}
+	rowID2e2eIDs := make(map[int]*reservation.ID)
 	const query = `SELECT ROWID,reservation_id FROM e2e_reservation WHERE ROWID IN (
 		SELECT e2e FROM e2e_to_seg WHERE seg =  (
 			SELECT ROWID FROM seg_reservation WHERE id_as = ? AND id_suffix = ?
 		))`
-	suffix := binary.BigEndian.Uint32(ID.Suffix[:])
+	suffix := binary.BigEndian.Uint32(ID.Suffix)
 	rows, err := x.QueryContext(ctx, query, ID.ASID, suffix)
 	if err != nil {
 		return nil, err
@@ -878,7 +888,7 @@ func getE2ERsvsFromSegment(ctx context.Context, x *sql.Tx, ID *reservation.Segme
 		if err != nil {
 			return nil, err
 		}
-		id, err := reservation.E2EIDFromRaw(rsvID)
+		id, err := reservation.IDFromRaw(rsvID)
 		if err != nil {
 			return nil, err
 		}
@@ -897,7 +907,7 @@ func getE2ERsvsFromSegment(ctx context.Context, x *sql.Tx, ID *reservation.Segme
 			return nil, err
 		}
 		rsv := &e2e.Reservation{
-			ID:                  *e2eID,
+			ID:                  *e2eID.Clone(),
 			Indices:             indices,
 			SegmentReservations: segRsvs,
 		}
@@ -1076,4 +1086,58 @@ func interfacesStateUsedBWUpdate(ctx context.Context, x db.Sqler, ingress, egres
 		return err
 	}
 	return interfaceStateUsedBWUpdate(ctx, x, "state_egress_interface", egress, deltaBW)
+}
+
+func getTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16) (uint64, error) {
+
+	query := `SELECT traffic_demand from state_transit_demand
+	WHERE ingress = ? AND egress = ?`
+	var transit uint64
+	if err := x.QueryRowContext(ctx, query, ingress, egress).Scan(&transit); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, serrors.WrapStr("get transit demand failed", err,
+			"ingress", ingress, "egress", egress)
+	}
+	return transit, nil
+}
+
+func persistTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16,
+	transit uint64) error {
+
+	err := db.DoInTx(ctx, x, func(ctx context.Context, tx *sql.Tx) error {
+		query := `INSERT INTO state_transit_demand (ingress, egress, traffic_demand)
+		VALUES(?, ?, ?)
+		ON CONFLICT(ingress,egress) DO UPDATE
+		SET traffic_demand = ?`
+		_, err := tx.ExecContext(ctx, query, ingress, egress, transit, transit)
+		return err
+	})
+	if err != nil {
+		return db.NewTxError("error persisting transit demand", err)
+	}
+	return nil
+}
+
+func subtractTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16,
+	dem uint64) error {
+
+	balance, err := getTransitDem(ctx, x, ingress, egress)
+	if err != nil {
+		return err
+	}
+	if balance == 0 {
+		return nil
+	}
+	var newDem uint64
+	if balance > dem {
+		newDem = balance - dem
+	} else {
+		newDem = 0
+	}
+	query := `UPDATE state_transit_demand SET traffic_demand=?
+	WHERE ingress=? AND egress=?`
+	_, err = x.ExecContext(ctx, query, newDem, ingress, egress)
+	return err
 }

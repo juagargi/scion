@@ -15,63 +15,32 @@
 package e2e
 
 import (
-	"time"
-
 	base "github.com/scionproto/scion/go/cs/reservation"
-	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 
-// Request is the base struct for any type of COLIBRI e2e request.
-type Request struct {
-	base.RequestMetadata                         // information about the request (forwarding path)
-	ID                   reservation.E2EID       // the ID this request refers to
-	Index                reservation.IndexNumber // the index this request refers to
-	Timestamp            time.Time               // the mandatory timestamp
-}
-
-// NewRequest constructs the e2e Request type.
-func NewRequest(ts time.Time, id *reservation.E2EID, idx reservation.IndexNumber,
-	path base.ColibriPath) (*Request, error) {
-
-	metadata, err := base.NewRequestMetadata(path)
-	if err != nil {
-		return nil, serrors.WrapStr("new segment request", err)
-	}
-
-	if id == nil {
-		return nil, serrors.New("new e2e request with nil ID")
-	}
-
-	return &Request{
-		RequestMetadata: *metadata,
-		ID:              *id,
-		Index:           idx,
-		Timestamp:       ts,
-	}, nil
-}
-
-// SetupRequest represents all possible e2e setup requests.
-type SetupRequest interface {
-	IsSuccessful() bool
-	GetCommonSetupReq() *SetupReq // return the underlying basic SetupReq (common for all)
-}
-
 // SetupReq is an e2e setup/renewal request, that has been so far accepted.
 type SetupReq struct {
-	Request
-	SegmentRsvs              []reservation.SegmentID
+	base.Request
+	SegmentRsvs              []col.ID
 	SegmentRsvASCount        []uint8 // how many ASes per segment reservation
-	RequestedBW              reservation.BWCls
-	AllocationTrail          []reservation.BWCls
+	RequestedBW              col.BWCls
+	AllocationTrail          []col.BWCls
+	FailureInfo              *SetupFailureInfo // or nil if successful
 	totalASCount             int
 	currentASSegmentRsvIndex int // the index in SegmentRsv for the current AS
 	isTransfer               bool
 }
 
+type SetupFailureInfo struct {
+	NodeIndex int
+	Message   string
+}
+
 // NewSetupRequest creates and initializes an e2e setup request common for both success and failure.
-func NewSetupRequest(r *Request, segRsvs []reservation.SegmentID, segRsvCount []uint8,
-	requestedBW reservation.BWCls, allocTrail []reservation.BWCls) (*SetupReq, error) {
+func NewSetupRequest(r *base.Request, segRsvs []col.ID, segRsvCount []uint8,
+	requestedBW col.BWCls, allocTrail []col.BWCls) (*SetupReq, error) {
 
 	if len(segRsvs) != len(segRsvCount) || len(segRsvs) == 0 {
 		return nil, serrors.New("e2e setup request invalid", "seg_rsv_len", len(segRsvs),
@@ -109,9 +78,8 @@ func NewSetupRequest(r *Request, segRsvs []reservation.SegmentID, segRsvCount []
 	}, nil
 }
 
-// GetCommonSetupReq returns the pointer to the data structure.
-func (r *SetupReq) GetCommonSetupReq() *SetupReq {
-	return r
+func (r *SetupReq) Success() bool {
+	return r.FailureInfo == nil
 }
 
 func (r *SetupReq) Transfer() bool {
@@ -153,42 +121,11 @@ func (r *SetupReq) Location() PathLocation {
 // SegmentRsvIDsForThisAS returns the segment reservation ID this AS belongs to. Iff this
 // AS is a transfer AS (stitching point), there will be two reservation IDs returned, in the
 // order of traversal.
-func (r *SetupReq) SegmentRsvIDsForThisAS() []reservation.SegmentID {
-	indices := make([]reservation.SegmentID, 1, 2)
+func (r *SetupReq) SegmentRsvIDsForThisAS() []col.ID {
+	indices := make([]col.ID, 1, 2)
 	indices[0] = r.SegmentRsvs[r.currentASSegmentRsvIndex]
 	if r.isTransfer {
 		indices = append(indices, r.SegmentRsvs[r.currentASSegmentRsvIndex+1])
 	}
 	return indices
-}
-
-// SetupReqSuccess is a successful e2e setup request traveling along the reservation path.
-type SetupReqSuccess struct {
-	SetupReq
-	Token reservation.Token
-}
-
-var _ SetupRequest = (*SetupReqSuccess)(nil)
-
-// IsSuccessful returns true.
-func (s *SetupReqSuccess) IsSuccessful() bool {
-	return true
-}
-
-// SetupReqFailure is a failed e2e setup request also traveling along the reservation path.
-type SetupReqFailure struct {
-	SetupReq
-	ErrorCode uint8
-}
-
-var _ SetupRequest = (*SetupReqFailure)(nil)
-
-// IsSuccessful returns false, as this is a failed setup.
-func (s *SetupReqFailure) IsSuccessful() bool {
-	return false
-}
-
-// CleanupReq is a cleaup request for an e2e index.
-type CleanupReq struct {
-	Request
 }

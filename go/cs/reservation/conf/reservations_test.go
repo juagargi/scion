@@ -83,14 +83,14 @@ func TestReservationsJson(t *testing.T) {
 			require.Equal(t, expectedJSON, buf, "serialized failed.\nexpected: %s\nactual: %s",
 				string(expectedJSON), string(buf))
 			// parse back the json and compare to memory struct:
-			rsvs := Reservations{}
+			rsvs := &Reservations{}
 			err = json.Unmarshal(expectedJSON, &rsvs)
 			require.NoError(t, err)
-			require.Equal(t, tc.rsvs, rsvs)
+			require.Equal(t, tc.rsvs, *rsvs)
 			// fully construct from file and compare to memory struct:
 			rsvs, err = ReservationsFromFile(filepath.Join("testdata", tc.filename))
 			require.NoError(t, err)
-			require.Equal(t, tc.rsvs, rsvs)
+			require.Equal(t, tc.rsvs, *rsvs)
 		})
 	}
 }

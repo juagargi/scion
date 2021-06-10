@@ -38,18 +38,13 @@ func TestJson(t *testing.T) {
 			cap: Capacities{c: capacities{
 				CapIn: map[uint16]uint64{1: 100, 2: 200, 3: 300},
 				CapEg: map[uint16]uint64{1: 100, 2: 200, 3: 40},
-				In2Eg: map[uint16]map[uint16]uint64{
-					1: {2: 10, 3: 20},
-					2: {1: 10, 3: 20},
-					3: {1: 10, 2: 20},
-				},
-			},
-			},
+			}},
 		},
 		"big num no float": {
 			filename: "caps2.json",
 			cap: Capacities{c: capacities{
 				CapIn: map[uint16]uint64{1: bigint},
+				CapEg: map[uint16]uint64{1: bigint},
 			},
 			},
 		},
@@ -83,72 +78,27 @@ func TestValidation(t *testing.T) {
 			cap: Capacities{c: capacities{
 				CapIn: map[uint16]uint64{1: 100, 2: 200, 3: 300},
 				CapEg: map[uint16]uint64{1: 100, 2: 200, 3: 40},
-				In2Eg: map[uint16]map[uint16]uint64{
-					1: {2: 10, 3: 20},
-					2: {1: 10, 3: 20},
-					3: {1: 10, 2: 20},
-				},
-			},
-			},
+			}},
 		},
 		"too much ingress": {
 			okay: false,
 			cap: Capacities{c: capacities{
 				CapIn: map[uint16]uint64{1: 10},
-				In2Eg: map[uint16]map[uint16]uint64{
-					1: {2: 10, 3: 1},
-				},
-			},
-			},
-		},
-		"too much egress": {
-			okay: false,
-			cap: Capacities{c: capacities{
-				CapIn: map[uint16]uint64{1: 100, 2: 100, 3: 100},
-				CapEg: map[uint16]uint64{1: 100, 2: 100, 3: 100},
-				In2Eg: map[uint16]map[uint16]uint64{
-					1: {2: 90, 3: 1},
-					3: {2: 20, 1: 1},
-				},
-			},
-			},
-		},
-		"ingress to itself (reflection not allowed)": {
-			okay: false,
-			cap: Capacities{c: capacities{
-				CapIn: map[uint16]uint64{1: 100, 2: 100, 3: 100},
-				CapEg: map[uint16]uint64{1: 100, 2: 100, 3: 100},
-				In2Eg: map[uint16]map[uint16]uint64{
-					1: {1: 10, 3: 1},
-				},
-			},
-			},
+			}},
 		},
 		"too few ingress capacities": {
 			okay: false,
 			cap: Capacities{c: capacities{
 				CapIn: map[uint16]uint64{1: 100, 3: 100},
 				CapEg: map[uint16]uint64{1: 100, 2: 100, 3: 100},
-				In2Eg: map[uint16]map[uint16]uint64{
-					1: {2: 0, 3: 0},
-					2: {1: 0, 3: 0},
-					3: {1: 0, 2: 0},
-				},
-			},
-			},
+			}},
 		},
 		"too few egress capacities": {
 			okay: false,
 			cap: Capacities{c: capacities{
 				CapIn: map[uint16]uint64{1: 100, 2: 100, 3: 100},
 				CapEg: map[uint16]uint64{1: 100, 3: 100},
-				In2Eg: map[uint16]map[uint16]uint64{
-					1: {2: 0, 3: 0},
-					2: {1: 0, 3: 0},
-					3: {1: 0, 2: 0},
-				},
-			},
-			},
+			}},
 		},
 	}
 
@@ -170,13 +120,7 @@ func TestCapacities(t *testing.T) {
 	c := &Capacities{c: capacities{
 		CapIn: map[uint16]uint64{1: 100, 2: 100, 3: 100},
 		CapEg: map[uint16]uint64{1: 100, 2: 100, 3: 100},
-		In2Eg: map[uint16]map[uint16]uint64{
-			1: {2: 12, 3: 13},
-			2: {1: 21, 3: 23},
-			3: {1: 31, 2: 32},
-		},
-	},
-	}
+	}}
 	copy := cloneCapacities(c) // save a copy of the original
 	require.Equal(t, uint64(100), c.CapacityIngress(1))
 	require.Equal(t, uint64(0), c.CapacityIngress(5))
@@ -195,14 +139,6 @@ func cloneCapacities(c *Capacities) *Capacities {
 	ret.c.CapEg = make(map[uint16]uint64)
 	for k, v := range c.c.CapEg {
 		ret.c.CapEg[k] = v
-	}
-	ret.c.In2Eg = make(map[uint16]map[uint16]uint64)
-	for k, v := range c.c.In2Eg {
-		m := make(map[uint16]uint64)
-		for k, v := range v {
-			m[k] = v
-		}
-		ret.c.In2Eg[k] = m
 	}
 	return ret
 }

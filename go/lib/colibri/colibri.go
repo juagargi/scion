@@ -21,9 +21,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+	"encoding/hex"
 	"math"
 	"time"
 
+	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
@@ -34,10 +37,10 @@ const (
 	packetLifetimeMs uint16 = 2000
 	// clockSkewMs denotes the maximal clock skew in milliseconds
 	clockSkewMs uint16 = 1000
-	// lengthInputData denotes the length of InputData in bytes
-	lengthInputData = 30
-	// lengthInputDataRound16 denotes the lengthInputData rounded to the next multiple of 16
-	lengthInputDataRound16 = 32
+	// LengthInputData denotes the length of InputData in bytes
+	LengthInputData = 30
+	// LengthInputDataRound16 denotes the LengthInputData rounded to the next multiple of 16
+	LengthInputDataRound16 = ((LengthInputData-1)/16 + 1) * 16
 )
 
 // CreateColibriTimestamp creates the COLIBRI packetTimestamp from tsRel, coreID, and coreCounter.
@@ -155,7 +158,7 @@ func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField
 
 	switch inf.C {
 	case true:
-		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s)
+		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s.SrcIA.A)
 		if err != nil {
 			return err
 		}
@@ -171,17 +174,30 @@ func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField
 	}
 
 	if !bytes.Equal(mac[:4], currHop.Mac[:4]) {
-		return serrors.New("colibri mac verification failed", "calculated", mac[:4],
-			"packet", currHop.Mac[:4])
+		return serrors.New("colibri mac verification failed",
+			"calculated", hex.EncodeToString(mac[:4]),
+			"packet", hex.EncodeToString(currHop.Mac[:4]))
 	}
 
 	return nil
 }
 
+func StaticMAC(key []byte, input []byte) ([]byte, error) {
+	// Initialize cryptographic MAC function
+	f, err := initColibriMac(key)
+	if err != nil {
+		return nil, err
+	}
+	// Calculate CBC-MAC = first 4 bytes of the last CBC block
+	mac := make([]byte, len(input))
+	f.CryptBlocks(mac, input)
+	return mac[len(mac)-16 : len(mac)-12], nil
+}
+
 // CalculateColibriMacStatic calculates the static colibri MAC.
 // The private key comes from calling scrypto.DeriveColibriKey.
 func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
-	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
+	currHop *colibri.HopField, srcAS addr.AS) ([]byte, error) {
 
 	// Initialize cryptographic MAC function
 	f, err := initColibriMac(privateKey)
@@ -189,7 +205,7 @@ func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
 		return nil, err
 	}
 	// Prepare the input for the MAC function
-	input, err := prepareMacInputStatic(s, inf, currHop)
+	input, err := prepareMacInputStatic(srcAS, inf, currHop)
 	if err != nil {
 		return nil, err
 	}
@@ -258,12 +274,12 @@ func initColibriMac(key []byte) (cipher.BlockMode, error) {
 	return mode, nil
 }
 
-func prepareMacInputStatic(s *slayers.SCION, inf *colibri.InfoField,
+func prepareMacInputStatic(srcAS addr.AS, inf *colibri.InfoField,
 	hop *colibri.HopField) ([]byte, error) {
 
 	// Create buffer large enough to store InputData, with length aligned to 16 bytes
-	buffer := make([]byte, lengthInputDataRound16)
-	err := prepareInputData(s, inf, hop, buffer)
+	buffer := make([]byte, LengthInputDataRound16)
+	err := prepareInputData(srcAS, inf, hop, buffer)
 	if err != nil {
 		return nil, err
 	}
@@ -289,17 +305,17 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 
 	// The MAC input consists of the InputData plus the host addresses and the flags, rounded
 	// up to the next multiple of 16 bytes
-	bufLen := lengthInputData + 1 + srcLen + dstLen
+	bufLen := LengthInputData + 1 + srcLen + dstLen
 	nrBlocks := uint8(math.Ceil(float64(bufLen) / 16))
 	buffer := make([]byte, 16*nrBlocks)
 
-	err := prepareInputData(s, inf, hop, buffer)
+	err := prepareInputData(s.SrcIA.A, inf, hop, buffer)
 	if err != nil {
 		return nil, err
 	}
-	buffer[lengthInputData] = flags
-	copy(buffer[lengthInputData+1:], s.RawSrcAddr)
-	copy(buffer[lengthInputData+1+srcLen:], s.RawDstAddr)
+	buffer[LengthInputData] = flags
+	copy(buffer[LengthInputData+1:], s.RawSrcAddr)
+	copy(buffer[LengthInputData+1+srcLen:], s.RawDstAddr)
 
 	return buffer, nil
 }
@@ -330,13 +346,13 @@ func prepareMacInputPacket(packetTimestamp uint64, inf *colibri.InfoField,
 }
 
 // prepareInputData writes InputData to the given buffer.
-func prepareInputData(s *slayers.SCION, inf *colibri.InfoField,
+func prepareInputData(srcAS addr.AS, inf *colibri.InfoField,
 	hop *colibri.HopField, buffer []byte) error {
 
-	if s == nil || inf == nil || hop == nil {
+	if inf == nil || hop == nil {
 		return serrors.New("invalid input")
 	}
-	if len(buffer) < lengthInputData {
+	if len(buffer) < LengthInputData {
 		return serrors.New("provided buffer is too small")
 	}
 
@@ -353,11 +369,47 @@ func prepareInputData(s *slayers.SCION, inf *colibri.InfoField,
 	}
 	flags += inf.Ver << 4
 	buffer[19] = flags
-	srcAs := uint64(s.SrcIA.A)
-	binary.BigEndian.PutUint64(buffer[22:30], srcAs)
+
+	binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
 	binary.BigEndian.PutUint16(buffer[20:22], hop.IngressId)
 	binary.BigEndian.PutUint16(buffer[22:24], hop.EgressId)
 
+	return nil
+}
+
+// MACInput prepares the buffer using the passed parameters to be used as input for the
+// MAC computation.
+// buffer is expected to be at least `LengthInputData` bytes long.
+// suffix is expected to be at most 12 byte long.
+func MACInput(buffer []byte, suffix []byte, expTick uint32,
+	bwCls reservation.BWCls, rlc reservation.RLC, controlFlag, reverseFlag bool,
+	idx reservation.IndexNumber, srcAS, dstAS addr.AS, ingress, egress uint16) error {
+
+	if len(buffer) < LengthInputData {
+		return serrors.New("buffer too small", "actual", len(buffer), "expected", LengthInputData)
+	}
+	if copy(buffer[:12], suffix) > 12 {
+		return serrors.New("wrong suffix length", "len", len(suffix))
+	}
+	binary.BigEndian.PutUint32(buffer[12:16], expTick)
+	buffer[16] = uint8(bwCls)
+	buffer[17] = uint8(rlc)
+	buffer[18] = 0 // TODO(juagargi) shouldn't it be HFCount?
+
+	// Version | C | 0
+	var flags uint8
+	if controlFlag {
+		flags = uint8(1) << 3
+	}
+	flags += uint8(idx) << 4
+	buffer[19] = flags
+	if reverseFlag {
+		binary.BigEndian.PutUint64(buffer[22:30], uint64(dstAS))
+	} else {
+		binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
+	}
+	binary.BigEndian.PutUint16(buffer[20:22], ingress)
+	binary.BigEndian.PutUint16(buffer[22:24], egress)
 	return nil
 }
 

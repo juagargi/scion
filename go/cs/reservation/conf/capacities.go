@@ -29,8 +29,6 @@ type capacities struct {
 	CapIn map[uint16]uint64 `json:"ingress_kbps"`
 	// egress capacities
 	CapEg map[uint16]uint64 `json:"egress_kbps"`
-	// configured allowed transit
-	In2Eg map[uint16]map[uint16]uint64 `json:"ingress_to_egress_kbps"`
 }
 
 // Capacities aka capacity matrix.
@@ -47,7 +45,6 @@ var _ json.Marshaler = (*Capacities)(nil)
 
 func (c *Capacities) IngressInterfaces() []uint16           { return c.inIfs }
 func (c *Capacities) EgressInterfaces() []uint16            { return c.egIfs }
-func (c *Capacities) Capacity(from, to uint16) uint64       { return c.c.In2Eg[from][to] }
 func (c *Capacities) CapacityIngress(ingress uint16) uint64 { return c.c.CapIn[ingress] }
 func (c *Capacities) CapacityEgress(egress uint16) uint64   { return c.c.CapEg[egress] }
 
@@ -78,40 +75,13 @@ func (c Capacities) MarshalJSON() ([]byte, error) {
 }
 
 func (c *Capacities) init() error {
-	totalEgress := make(map[uint16]uint64)
-	for ingress, intoMap := range c.c.In2Eg {
-		var accumIngress uint64
-		for egress, cap := range intoMap {
-			accumIngress += cap
-			totalEgress[egress] += cap
-			if egress == ingress && cap != 0 {
-				return serrors.New("capacity is inconsistent, ingress to itself not zero",
-					"ingress", ingress)
-			}
-		}
-		if _, found := c.c.CapIn[ingress]; !found {
-			return serrors.New("capacity is inconsistent, must declare ingress capacity",
-				"ingress", ingress)
-		}
-		if accumIngress > c.c.CapIn[ingress] {
-			return serrors.New("capacity is inconsistent, ingress accum too high", "ingress",
-				ingress, "ingress_accum", accumIngress, "ingress_declared", c.c.CapIn[ingress])
-		}
-	}
-	for egress, accum := range totalEgress {
-		if _, found := c.c.CapEg[egress]; !found {
-			return serrors.New("capacity is inconsistent, must declare egress capacity",
-				"egress", egress)
-		}
-		if accum > c.c.CapEg[egress] {
-			return serrors.New("capacity is inconsistent, egress accum too high", "egress", egress,
-				"egress_accum", accum, "egress_declared", c.c.CapEg[egress])
-		}
-	}
 	// init list of ingress interfaces
 	c.inIfs = make([]uint16, len(c.c.CapIn))
 	i := 0
 	for ifid := range c.c.CapIn {
+		if _, ok := c.c.CapEg[ifid]; !ok {
+			return serrors.New("missing egress interface", "ifid", ifid)
+		}
 		c.inIfs[i] = ifid
 		i++
 	}
@@ -119,6 +89,9 @@ func (c *Capacities) init() error {
 	c.egIfs = make([]uint16, len(c.c.CapEg))
 	i = 0
 	for ifid := range c.c.CapEg {
+		if _, ok := c.c.CapIn[ifid]; !ok {
+			return serrors.New("missing ingress interface", "ifid", ifid)
+		}
 		c.egIfs[i] = ifid
 		i++
 	}

@@ -19,8 +19,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"
@@ -46,7 +48,7 @@ func TestValidate(t *testing.T) {
 
 	// invalid segment reservation
 	r = newReservation()
-	r.SegmentReservations[0].Path = segment.ReservationTransparentPath{}
+	r.SegmentReservations[0].PathAtSource = &base.OpaquePath{}
 	err = r.Validate()
 	require.Error(t, err)
 
@@ -113,12 +115,12 @@ func newSegmentReservation(asidPath ...string) *segment.Reservation {
 		pathComponents[i*3+2] = i*2 + 1
 	}
 	pathComponents[len(pathComponents)-1] = 0
-	r.Path = segmenttest.NewPathFromComponents(pathComponents...)
+	r.PathAtSource = test.NewPathFromComponents(pathComponents...)
 	return r
 }
 
 func newReservation() *Reservation {
-	id, err := reservation.NewE2EID(xtest.MustParseAS("ff00:0:111"),
+	id, err := reservation.NewID(xtest.MustParseAS("ff00:0:111"),
 		xtest.MustParseHexString("beefcafebeefcafebeef"))
 	if err != nil {
 		panic(err)

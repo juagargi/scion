@@ -26,6 +26,7 @@ const (
 		id_suffix	INTEGER NOT NULL,
 		ingress	INTEGER NOT NULL,
 		egress	INTEGER NOT NULL,
+		path_type	INTEGER NOT NULL,
 		path	BLOB,
 		end_props	INTEGER NOT NULL,
 		traffic_split	INTEGER NOT NULL,
@@ -33,8 +34,7 @@ const (
 		dst_ia INTEGER,
 		active_index	INTEGER NOT NULL,
 		PRIMARY KEY(ROWID),
-		UNIQUE(id_as,id_suffix),
-		UNIQUE(path)
+		UNIQUE(id_as,id_suffix)
 	);
 	CREATE TABLE seg_index (
 		reservation	INTEGER NOT NULL,
@@ -140,9 +140,6 @@ const (
 	);
 	CREATE INDEX "index3_seg_reservation" ON "seg_reservation" (
 		"egress"
-	);
-	CREATE UNIQUE INDEX "index4_seg_reservation" ON "seg_reservation" (
-		"path"
 	);
 	CREATE UNIQUE INDEX "index_seg_index" ON "seg_index" (
 		"reservation",

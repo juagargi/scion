@@ -25,7 +25,7 @@ import (
 
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
-	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
+	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -44,7 +44,6 @@ func TestDB(t *testing.T, db TestableDB) {
 		"persist segment reservation":            testPersistSegmentRsv,
 		"get segment reservation from ID":        testGetSegmentRsvFromID,
 		"get segment reservations from src/dst":  testGetSegmentRsvsFromSrcDstIA,
-		"get segment reservation from path":      testGetSegmentRsvFromPath,
 		"get all segment reservations":           testGetAllSegmentRsvs,
 		"get segment reservation from IF pair":   testGetSegmentRsvsFromIFPair,
 		"delete segment reservation":             testDeleteSegmentRsv,
@@ -66,35 +65,31 @@ func TestDB(t *testing.T, db TestableDB) {
 
 func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	r := newTestReservation(t)
-	r.Path = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
 	r.Indices = segment.Indices{}
 	// no indices
 	err := db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
-	require.Equal(t, xtest.MustParseHexString("00000001"), r.ID.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("00000001"), r.ID.Suffix)
 	rsv, err := db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
 	// at least one index, and change path
-	token := newToken()
-	_, err = r.NewIndexFromToken(token, 0, 0)
+	_, err = r.NewIndex(util.SecsToTime(10), 2, 3, 2, 2, reservation.CorePath)
 	require.NoError(t, err)
-	r.Path = segmenttest.NewPathFromComponents(1, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPathFromComponents(1, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0)
 	err = db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
-	require.Equal(t, xtest.MustParseHexString("00000002"), r.ID.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("00000002"), r.ID.Suffix)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
-	// same path should fail
-	err = db.NewSegmentRsv(ctx, r)
-	require.Error(t, err)
 	// different ASID should start with the lowest suffix
 	r = newTestReservation(t)
 	r.ID.ASID = xtest.MustParseAS("ff00:1234:1")
 	err = db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
-	require.Equal(t, xtest.MustParseHexString("00000001"), r.ID.Suffix[:])
+	require.Equal(t, xtest.MustParseHexString("00000001"), r.ID.Suffix)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
@@ -103,7 +98,7 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 func testPersistSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	r := newTestReservation(t)
 	for i := uint32(1); i < 10; i++ {
-		_, err := r.NewIndexAtSource(util.SecsToTime(i), 0, 0, 0, 0, reservation.CorePath)
+		_, err := r.NewIndex(util.SecsToTime(i), 0, 0, 0, 0, reservation.CorePath)
 		require.NoError(t, err)
 	}
 	require.Len(t, r.Indices, 10)
@@ -122,7 +117,7 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	require.Equal(t, r, rsv)
 	// change ID
 	r.ID.ASID = xtest.MustParseAS("ff00:1:12")
-	copy(r.ID.Suffix[:], xtest.MustParseHexString("beefcafe"))
+	copy(r.ID.Suffix, xtest.MustParseHexString("beefcafe"))
 	err = db.PersistSegmentRsv(ctx, r)
 	require.NoError(t, err)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
@@ -131,7 +126,7 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	// change attributes
 	r.Ingress = 3
 	r.Egress = 4
-	r.Path = segmenttest.NewPathFromComponents(3, "1-ff00:0:1", 11, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPathFromComponents(3, "1-ff00:0:1", 11, 1, "1-ff00:0:2", 0)
 	err = db.PersistSegmentRsv(ctx, r)
 	require.NoError(t, err)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
@@ -163,7 +158,7 @@ func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	require.NoError(t, err)
 	// create new index
 	expTime := util.SecsToTime(1)
-	_, err = r.NewIndexAtSource(expTime, 0, 0, 0, 0, reservation.CorePath)
+	_, err = r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
 	require.NoError(t, err)
 	err = db.PersistSegmentRsv(ctx, r)
 	require.NoError(t, err)
@@ -174,7 +169,7 @@ func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	require.Len(t, r.Indices, 2)
 	for i := 2; i < 16; i++ {
 		expTime = util.SecsToTime(uint32(i))
-		_, err = r.NewIndexAtSource(expTime, reservation.BWCls(i), reservation.BWCls(i),
+		_, err = r.NewIndex(expTime, reservation.BWCls(i), reservation.BWCls(i),
 			reservation.BWCls(i), 0, reservation.CorePath)
 		require.NoError(t, err)
 	}
@@ -194,75 +189,57 @@ func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 
 func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, db backend.DB) {
 	r := newTestReservation(t)
-	r.Path = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
 	err := db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
-	rsvs, err := db.GetSegmentRsvsFromSrcDstIA(ctx, r.Path.GetSrcIA(), r.Path.GetDstIA())
+	rsvs, err := db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
 	require.NoError(t, err)
 	require.Len(t, rsvs, 1)
 	require.Equal(t, r, rsvs[0])
 	// another reservation with same source and destination
 	r2 := newTestReservation(t)
-	r2.Path = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0)
+	r2.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0)
 	err = db.NewSegmentRsv(ctx, r2)
 	require.NoError(t, err)
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.Path.GetSrcIA(), r.Path.GetDstIA())
+	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
 	require.NoError(t, err)
 	require.Len(t, rsvs, 2)
 	// compare without order
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
 	// one more with same source different destination
 	r3 := newTestReservation(t)
-	r3.Path = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)
+	r3.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)
 	err = db.NewSegmentRsv(ctx, r3)
 	require.NoError(t, err)
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.Path.GetSrcIA(), r.Path.GetDstIA())
+	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
 	require.NoError(t, err)
 	require.Len(t, rsvs, 2)
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.Path.GetSrcIA(), addr.IA{})
+	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), addr.IA{})
 	require.NoError(t, err)
 	require.Len(t, rsvs, 3)
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2, r3})
 	// another reservation with unique source but same destination as r3
 	r4 := newTestReservation(t)
-	r4.Path = segmenttest.NewPathFromComponents(0, "1-ff00:0:4", 1, 1, "1-ff00:0:3", 0)
+	r4.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:4", 1, 1, "1-ff00:0:3", 0)
 	err = db.NewSegmentRsv(ctx, r4)
 	require.NoError(t, err)
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.Path.GetSrcIA(), r.Path.GetDstIA())
+	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
 	require.NoError(t, err)
 	require.Len(t, rsvs, 2)
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.Path.GetSrcIA(), addr.IA{})
+	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), addr.IA{})
 	require.NoError(t, err)
 	require.Len(t, rsvs, 3)
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2, r3})
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, addr.IA{}, r.Path.GetDstIA())
+	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, addr.IA{}, r.PathAtSource.DstIA())
 	require.NoError(t, err)
 	require.Len(t, rsvs, 2)
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, addr.IA{}, r3.Path.GetDstIA())
+	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, addr.IA{}, r3.PathAtSource.DstIA())
 	require.NoError(t, err)
 	require.Len(t, rsvs, 2)
 	require.ElementsMatch(t, rsvs, []*segment.Reservation{r3, r4})
-}
-
-func testGetSegmentRsvFromPath(ctx context.Context, t *testing.T, db backend.DB) {
-	r1 := newTestReservation(t)
-	r1.Path = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
-	err := db.NewSegmentRsv(ctx, r1)
-	require.NoError(t, err)
-	r2 := newTestReservation(t)
-	r2.Path = segmenttest.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)
-	err = db.NewSegmentRsv(ctx, r2)
-	require.NoError(t, err)
-	// retrieve
-	r, err := db.GetSegmentRsvFromPath(ctx, r1.Path)
-	require.NoError(t, err)
-	require.Equal(t, r1, r)
-	r, err = db.GetSegmentRsvFromPath(ctx, r2.Path)
-	require.NoError(t, err)
-	require.Equal(t, r2, r)
 }
 
 func testGetAllSegmentRsvs(ctx context.Context, t *testing.T, db backend.DB) {
@@ -367,7 +344,7 @@ func testDeleteExpiredIndices(ctx context.Context, t *testing.T, db backend.DB) 
 	// Each eX is linked to a rX, being X the same for both. But e5 is linked to r4.
 
 	// r1, e1
-	segIds := make([]reservation.SegmentID, 0)
+	segIds := make([]reservation.ID, 0)
 	r := newTestReservation(t)
 	r.Indices[0].Expiration = util.SecsToTime(2)
 	err := db.NewSegmentRsv(ctx, r) // save r1
@@ -391,7 +368,7 @@ func testDeleteExpiredIndices(ctx context.Context, t *testing.T, db backend.DB) 
 	require.NoError(t, err)
 	// r3, e3
 	r.Indices[0].Expiration = util.SecsToTime(3)
-	r.NewIndexAtSource(util.SecsToTime(6), 1, 3, 2, 5, reservation.CorePath)
+	r.NewIndex(util.SecsToTime(6), 1, 3, 2, 5, reservation.CorePath)
 	err = db.NewSegmentRsv(ctx, r) // save r3
 	require.NoError(t, err)
 	segIds = append(segIds, r.ID)
@@ -511,7 +488,7 @@ func testPersistE2ERsv(ctx context.Context, t *testing.T, db backend.DB) {
 		seg := newTestReservation(t)
 		seg.ID.ASID = xtest.MustParseAS(fmt.Sprintf("ff00:2:%d", i+1))
 		for j := uint32(1); j < 16; j++ {
-			_, err := seg.NewIndexAtSource(util.SecsToTime(j), 1, 3, 2, 5, reservation.CorePath)
+			_, err := seg.NewIndex(util.SecsToTime(j), 1, 3, 2, 5, reservation.CorePath)
 			require.NoError(t, err)
 		}
 		err := db.PersistSegmentRsv(ctx, seg)
@@ -544,7 +521,8 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	checkThisRsvs := map[int]*e2e.Reservation{1: nil, 16: nil, 50: nil, 100: nil}
 	for i := 1; i <= 100; i++ {
 		r := newTestE2EReservation(t)
-		binary.BigEndian.PutUint32(r.ID.Suffix[:], uint32(i))
+		r.ID.Suffix = make([]byte, 4)
+		binary.BigEndian.PutUint32(r.ID.Suffix, uint32(i))
 		_, found := checkThisRsvs[i]
 		if found {
 			checkThisRsvs[i] = r
@@ -568,8 +546,11 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	}
 	// now check
 	for i, r := range checkThisRsvs {
-		ID := reservation.E2EID{ASID: xtest.MustParseAS("ff00:0:1")}
-		binary.BigEndian.PutUint32(ID.Suffix[:], uint32(i))
+		ID := reservation.ID{
+			ASID:   xtest.MustParseAS("ff00:0:1"),
+			Suffix: make([]byte, 4),
+		}
+		binary.BigEndian.PutUint32(ID.Suffix, uint32(i))
 		rsv, err := db.GetE2ERsvFromID(ctx, &ID)
 		require.NoError(t, err)
 		require.Equal(t, r, rsv)
@@ -604,7 +585,7 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
 	// not present in DB
-	ID, err := reservation.NewE2EID(xtest.MustParseAS("ff00:2222:3333"),
+	ID, err := reservation.NewID(xtest.MustParseAS("ff00:2222:3333"),
 		xtest.MustParseHexString("0123456789abcdef0123"))
 	require.NoError(t, err)
 	rsv, err = db.GetE2ERsvFromID(ctx, ID)
@@ -666,7 +647,7 @@ func testGetInterfaceUsage(ctx context.Context, t *testing.T, db backend.DB) {
 	testInterfaceUseEgress(ctx, t, db, 1, toKbps(2))
 	testInterfaceUseEgress(ctx, t, db, 2, toKbps(3))
 	// add an index bwcls 9
-	_, err = rsv.NewIndexAtSource(util.SecsToTime(2), 1, 9, 9, 1, reservation.CorePath)
+	_, err = rsv.NewIndex(util.SecsToTime(2), 1, 9, 9, 1, reservation.CorePath)
 	require.NoError(t, err)
 	err = db.PersistSegmentRsv(ctx, rsv)
 	require.NoError(t, err)
@@ -778,15 +759,13 @@ func newToken() *reservation.Token {
 
 func newTestReservation(t *testing.T) *segment.Reservation {
 	t.Helper()
-	r := segment.NewReservation()
-	r.Path = segment.ReservationTransparentPath{}
-	r.ID.ASID = xtest.MustParseAS("ff00:0:1")
+	r := segment.NewReservation(xtest.MustParseAS("ff00:0:1"))
 	r.Ingress = 0
 	r.Egress = 1
 	r.TrafficSplit = 3
 	r.PathEndProps = reservation.EndLocal | reservation.StartLocal
 	expTime := util.SecsToTime(1)
-	_, err := r.NewIndexAtSource(expTime, 1, 3, 2, 5, reservation.CorePath)
+	_, err := r.NewIndex(expTime, 1, 3, 2, 5, reservation.CorePath)
 	require.NoError(t, err)
 	err = r.SetIndexConfirmed(0)
 	require.NoError(t, err)
@@ -795,8 +774,9 @@ func newTestReservation(t *testing.T) *segment.Reservation {
 
 func newTestE2EReservation(t *testing.T) *e2e.Reservation {
 	rsv := &e2e.Reservation{
-		ID: reservation.E2EID{
-			ASID: xtest.MustParseAS("ff00:0:1"),
+		ID: reservation.ID{
+			ASID:   xtest.MustParseAS("ff00:0:1"),
+			Suffix: make([]byte, 10),
 		},
 		SegmentReservations: []*segment.Reservation{
 			newTestReservation(t),
@@ -809,7 +789,7 @@ func newTestE2EReservation(t *testing.T) *e2e.Reservation {
 }
 
 func getAllE2ERsvsOnSegmentRsvs(ctx context.Context, t *testing.T, db backend.DB,
-	ids []reservation.SegmentID) []*e2e.Reservation {
+	ids []reservation.ID) []*e2e.Reservation {
 
 	set := make(map[string]struct{})
 	rsvs := make([]*e2e.Reservation, 0)
