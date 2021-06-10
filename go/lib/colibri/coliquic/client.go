@@ -67,7 +67,7 @@ func NewServiceClientOperator(topo topology.Topology, router snet.Router,
 }
 
 // ColibriClient finds or creates a ColibriClient to be used for the path argument.
-func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.TransparentPath) (
+func (o *ServiceClientOperator) ColibriClient(ctx context.Context, transp *base.TransparentPath) (
 	colpb.ColibriClient, error) {
 
 	o.mutex.Lock()
@@ -78,8 +78,8 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.
 			"neighbor_count", len(o.neighbors))
 	}
 
-	egressID := opaque.Steps[opaque.CurrentStep].Egress
-	spath := opaque.Spath
+	egressID := transp.Steps[transp.CurrentStep].Egress
+	spath := transp.Spath
 	rAddr, ok := o.neighbors[egressID]
 	if !ok {
 		return nil, serrors.New("bad packet: no neighbor on specified egress", "egress", egressID)
@@ -94,7 +94,7 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.
 		// // replace the service path with the colibri one.
 		// The source must also be the original one
 		// rAddr.Path = spath.Copy()
-		// rAddr.IA = opaque.SrcIA()
+		// rAddr.IA = transp.SrcIA()
 		// TODO(juagargi) check if the colibri path is expired, and don't use it in that case
 	}
 

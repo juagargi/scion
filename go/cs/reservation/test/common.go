@@ -85,7 +85,7 @@ func NewIfaces(args ...interface{}) []snet.PathInterface {
 // NewSnetPath("1-ff00:0:1", 1,  2, "1-ff00:1:2", 3,     4, "1-ff00:0:3"))
 func NewSnetPath(args ...interface{}) snet.Path {
 	ifaces := NewIfaces(args...)
-	opaque, err := base.TransparentPathFromInterfaces(ifaces)
+	transp, err := base.TransparentPathFromInterfaces(ifaces)
 	if err != nil {
 		panic(err)
 	}
@@ -95,18 +95,18 @@ func NewSnetPath(args ...interface{}) snet.Path {
 			PathMeta: scion.MetaHdr{
 				CurrINF: 0,
 				CurrHF:  0,
-				SegLen:  [3]uint8{uint8(len(opaque.Steps))},
+				SegLen:  [3]uint8{uint8(len(transp.Steps))},
 			},
 			NumINF:  1,
-			NumHops: len(opaque.Steps),
+			NumHops: len(transp.Steps),
 		},
 		InfoFields: []*slayerspath.InfoField{{
 			ConsDir: true,
 		}},
-		HopFields: make([]*slayerspath.HopField, len(opaque.Steps)),
+		HopFields: make([]*slayerspath.HopField, len(transp.Steps)),
 	}
 
-	for i, iface := range opaque.Steps {
+	for i, iface := range transp.Steps {
 		rp.HopFields[i] = &slayerspath.HopField{
 			ConsIngress: iface.Ingress,
 			ConsEgress:  iface.Egress,

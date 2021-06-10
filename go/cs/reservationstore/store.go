@@ -154,7 +154,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		path := origPath
 		if failure, ok := setupRes.(*segment.SegmentSetupResponseFailure); ok {
 			log.Info("deleteme setting the path for the cleanup/teardown",
-				"trail", failure.FailedRequest.AllocTrail, "opaque_steps before", path.Steps)
+				"trail", failure.FailedRequest.AllocTrail, "path_steps before", path.Steps)
 			path.Steps = path.Steps[:len(failure.FailedRequest.AllocTrail)]
 			log.Info("deleteme after", "steps", path.Steps)
 		}

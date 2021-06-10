@@ -56,7 +56,7 @@ func PBufRequest(req *base.Request) *colpb.Request {
 		Id:        PBufID(&req.ID),
 		Index:     uint32(req.Index),
 		Timestamp: util.TimeToSecs(req.Timestamp),
-		Opaque:    PBufOpaque(req.Path),
+		Path:      PBufPath(req.Path),
 	}
 }
 
@@ -116,14 +116,14 @@ func PBufAllocTrail(trail reservation.AllocationBeads) []*colpb.AllocationBead {
 	return beads
 }
 
-func PBufOpaque(opaque *base.TransparentPath) *colpb.TransparentPath {
-	if opaque == nil {
+func PBufPath(transp *base.TransparentPath) *colpb.TransparentPath {
+	if transp == nil {
 		return &colpb.TransparentPath{
 			Steps: []*colpb.PathStep{},
 		}
 	}
-	steps := make([]*colpb.PathStep, len(opaque.Steps))
-	for i, step := range opaque.Steps {
+	steps := make([]*colpb.PathStep, len(transp.Steps))
+	for i, step := range transp.Steps {
 		steps[i] = &colpb.PathStep{
 			Ia:      uint64(step.IA.IAInt()),
 			Ingress: uint32(step.Ingress),
@@ -131,10 +131,10 @@ func PBufOpaque(opaque *base.TransparentPath) *colpb.TransparentPath {
 		}
 	}
 	return &colpb.TransparentPath{
-		CurrentStep: uint32(opaque.CurrentStep),
+		CurrentStep: uint32(transp.CurrentStep),
 		Steps:       steps,
-		SpathType:   uint32(opaque.Spath.Type),
-		SpathRaw:    opaque.Spath.Raw,
+		SpathType:   uint32(transp.Spath.Type),
+		SpathRaw:    transp.Spath.Raw,
 	}
 
 }

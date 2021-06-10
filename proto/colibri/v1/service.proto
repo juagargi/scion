@@ -83,7 +83,7 @@ message Request {
     ReservationID id = 1;
     uint32 index = 2;
     uint32 timestamp = 3;
-    TransparentPath opaque = 4;
+    TransparentPath path = 4;
 }
 
 message Response {

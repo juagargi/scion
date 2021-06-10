@@ -38,15 +38,15 @@ func TransparentPathFromSnet(path snet.Path) (*TransparentPath, error) {
 	if path == nil {
 		return nil, nil
 	}
-	opaque, err := TransparentPathFromInterfaces(path.Metadata().Interfaces)
+	transp, err := TransparentPathFromInterfaces(path.Metadata().Interfaces)
 	if err != nil {
-		return opaque, err
+		return transp, err
 	}
-	opaque.Spath = spath.Path{
+	transp.Spath = spath.Path{
 		Type: path.Path().Type,
 		Raw:  append([]byte{}, path.Path().Raw...),
 	}
-	return opaque, nil
+	return transp, nil
 }
 
 // TransparentPathFromInterfaces constructs an TransparentPath given a list of snet.PathInterface .
@@ -58,17 +58,17 @@ func TransparentPathFromInterfaces(ifaces []snet.PathInterface) (*TransparentPat
 	if len(ifaces) == 0 {
 		return &TransparentPath{Steps: []PathStep{}}, nil
 	}
-	opaque := &TransparentPath{
+	transp := &TransparentPath{
 		Steps: make([]PathStep, len(ifaces)/2+1),
 	}
 
-	for i := 0; i < len(opaque.Steps)-1; i++ {
-		opaque.Steps[i].Egress = uint16(ifaces[i*2].ID)
-		opaque.Steps[i].IA = ifaces[i*2].IA
-		opaque.Steps[i+1].Ingress = uint16(ifaces[i*2+1].ID)
+	for i := 0; i < len(transp.Steps)-1; i++ {
+		transp.Steps[i].Egress = uint16(ifaces[i*2].ID)
+		transp.Steps[i].IA = ifaces[i*2].IA
+		transp.Steps[i+1].Ingress = uint16(ifaces[i*2+1].ID)
 	}
-	opaque.Steps[len(opaque.Steps)-1].IA = ifaces[len(ifaces)-1].IA
-	return opaque, nil
+	transp.Steps[len(transp.Steps)-1].IA = ifaces[len(ifaces)-1].IA
+	return transp, nil
 }
 
 func (p *TransparentPath) Interfaces() []snet.PathInterface {

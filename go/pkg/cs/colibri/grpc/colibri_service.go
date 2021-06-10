@@ -65,10 +65,10 @@ func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage
 func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
 	*colpb.SegmentSetupResponse, error) {
 
-	msg.Base.Opaque.CurrentStep++
+	msg.Base.Path.CurrentStep++
 	sizeeeeeeeeeeee := proto.Size(msg)
-	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee,
-		"setup_path", msg.Base.Opaque)
+	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Base.Path)
+
 	// path, err := extractPath(ctx)
 	// if err != nil {
 	// 	log.Error("setup segment", "err", err)
@@ -96,7 +96,7 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	msg.Opaque.CurrentStep++
+	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
@@ -117,7 +117,7 @@ func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Req
 func (s *ColibriService) ActivateSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	msg.Opaque.CurrentStep++
+	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
@@ -139,7 +139,7 @@ func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request
 	*colpb.Response, error) {
 
 	log.Info("DELETEME received call on TeardownSegment()")
-	msg.Opaque.CurrentStep++
+	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
@@ -160,7 +160,7 @@ func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request
 func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	msg.Opaque.CurrentStep++
+	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)

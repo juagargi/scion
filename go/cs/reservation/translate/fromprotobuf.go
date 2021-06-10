@@ -107,7 +107,7 @@ func Request(msg *colpb.Request) (*base.Request, error) {
 			Index:     idx,
 			Timestamp: timestamp,
 		},
-		Path: TransparentPath(msg.Opaque),
+		Path: TransparentPath(msg.Path),
 	}, nil
 }
 
@@ -192,7 +192,7 @@ func TransparentPath(msg *colpb.TransparentPath) *base.TransparentPath {
 	if msg == nil {
 		return nil
 	}
-	opaque := &base.TransparentPath{
+	transp := &base.TransparentPath{
 		CurrentStep: int(msg.CurrentStep),
 		Steps:       make([]base.PathStep, len(msg.Steps)),
 		Spath: spath.Path{
@@ -201,11 +201,11 @@ func TransparentPath(msg *colpb.TransparentPath) *base.TransparentPath {
 		},
 	}
 	for i, step := range msg.Steps {
-		opaque.Steps[i].IA = addr.IAInt(step.Ia).IA()
-		opaque.Steps[i].Ingress = uint16(step.Ingress)
-		opaque.Steps[i].Egress = uint16(step.Egress)
+		transp.Steps[i].IA = addr.IAInt(step.Ia).IA()
+		transp.Steps[i].Ingress = uint16(step.Ingress)
+		transp.Steps[i].Egress = uint16(step.Egress)
 	}
-	return opaque
+	return transp
 }
 
 func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (expTime time.Time,

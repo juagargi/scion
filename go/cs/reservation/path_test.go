@@ -25,21 +25,21 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-func TestOpaqueToRawFromRaw(t *testing.T) {
+func TestTransparentToRawFromRaw(t *testing.T) {
 	cases := map[string]struct {
-		opaque *TransparentPath
+		transp *TransparentPath
 	}{
 		"nil": {
-			opaque: nil,
+			transp: nil,
 		},
 		"empty": {
-			opaque: &TransparentPath{
+			transp: &TransparentPath{
 				CurrentStep: 0,
 				Steps:       []PathStep{},
 			},
 		},
 		"no spath": {
-			opaque: &TransparentPath{
+			transp: &TransparentPath{
 				CurrentStep: 1,
 				Steps: []PathStep{
 					{
@@ -56,7 +56,7 @@ func TestOpaqueToRawFromRaw(t *testing.T) {
 			},
 		},
 		"some spath": {
-			opaque: &TransparentPath{
+			transp: &TransparentPath{
 				CurrentStep: 1,
 				Steps: []PathStep{
 					{
@@ -77,7 +77,7 @@ func TestOpaqueToRawFromRaw(t *testing.T) {
 			},
 		},
 		"only spath": {
-			opaque: &TransparentPath{
+			transp: &TransparentPath{
 				CurrentStep: 111,
 				Steps:       []PathStep{},
 				Spath: spath.Path{
@@ -91,10 +91,10 @@ func TestOpaqueToRawFromRaw(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			raw := tc.opaque.ToRaw()
-			opaque, err := TransparentPathFromRaw(raw)
+			raw := tc.transp.ToRaw()
+			transp, err := TransparentPathFromRaw(raw)
 			require.NoError(t, err, "buffer=%s", hex.EncodeToString(raw))
-			require.Equal(t, tc.opaque, opaque, "buffer=%s", hex.EncodeToString(raw))
+			require.Equal(t, tc.transp, transp, "buffer=%s", hex.EncodeToString(raw))
 		})
 	}
 }

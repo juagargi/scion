@@ -387,7 +387,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 	requests := make([]*seg.SetupReq, len(filtered))
 	// create setup requests
 	for i, p := range filtered {
-		opaque, err := base.TransparentPathFromSnet(p)
+		transp, err := base.TransparentPathFromSnet(p)
 		if err != nil {
 			return nil, err
 		}
@@ -400,7 +400,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 					},
 					Timestamp: now,
 				},
-				Path: opaque,
+				Path: transp,
 			},
 			ExpirationTime: expTime,
 			// RLC:            rlc,
@@ -411,7 +411,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 			SplitCls:     e.splitCls,
 			PathProps:    e.endProps,
 			AllocTrail:   reservation.AllocationBeads{},
-			PathAtSource: opaque,
+			PathAtSource: transp,
 		}
 		requests[i] = req
 	}
