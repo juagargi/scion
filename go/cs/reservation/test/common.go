@@ -16,6 +16,7 @@ package test
 
 import (
 	base "github.com/scionproto/scion/go/cs/reservation"
+	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	slayerspath "github.com/scionproto/scion/go/lib/slayers/path"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
@@ -25,7 +26,15 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-func NewPathFromComponents(chain ...interface{}) *base.TransparentPath {
+func MustParseID(asid, suffix string) *col.ID {
+	id, err := col.NewID(xtest.MustParseAS(asid), xtest.MustParseHexString(suffix))
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+func NewPath(chain ...interface{}) *base.TransparentPath {
 	if len(chain)%3 != 0 {
 		panic("wrong number of arguments")
 	}
@@ -36,20 +45,6 @@ func NewPathFromComponents(chain ...interface{}) *base.TransparentPath {
 			Egress:  uint16(chain[i+2].(int)),
 			IA:      xtest.MustParseIA(chain[i+1].(string)),
 		})
-	}
-	return p
-}
-
-func NewTransparentPathFromComponents(ids ...uint16) *base.TransparentPath {
-	if len(ids)%2 != 0 {
-		panic("wrong number of arguments")
-	}
-	p := &base.TransparentPath{
-		Steps: make([]base.PathStep, len(ids)/2),
-	}
-	for i := 0; i < len(ids); i += 2 {
-		p.Steps[i/2].Ingress = ids[i]
-		p.Steps[i/2].Egress = ids[i+1]
 	}
 	return p
 }

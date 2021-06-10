@@ -85,7 +85,7 @@ func WithID(as, suffix string) ReservationMod {
 }
 
 func WithPath(path ...interface{}) ReservationMod {
-	transp := test.NewPathFromComponents(path...)
+	transp := test.NewPath(path...)
 	return func(rsv *segment.Reservation) *segment.Reservation {
 		rsv.PathAtSource = transp
 		return rsv

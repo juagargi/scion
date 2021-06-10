@@ -115,7 +115,7 @@ func newSegmentReservation(asidPath ...string) *segment.Reservation {
 		pathComponents[i*3+2] = i*2 + 1
 	}
 	pathComponents[len(pathComponents)-1] = 0
-	r.PathAtSource = test.NewPathFromComponents(pathComponents...)
+	r.PathAtSource = test.NewPath(pathComponents...)
 	return r
 }
 

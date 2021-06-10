@@ -24,22 +24,14 @@ import (
 
 	"github.com/scionproto/scion/go/cs/reservation/reservationdbtest"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-type TestDB struct {
-	*Backend
-}
-
-func (b *TestDB) Prepare(t *testing.T, _ context.Context) {
-	b.Backend = newDB(t)
-}
-
 func TestReservationDBSuite(t *testing.T) {
-	db := &TestDB{}
-	reservationdbtest.TestDB(t, db)
+	reservationdbtest.TestDB(t, func() backend.DB { return newDB(t) })
 }
 
 func TestNewSuffix(t *testing.T) {
