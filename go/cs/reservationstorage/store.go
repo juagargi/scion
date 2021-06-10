@@ -47,7 +47,9 @@ type Store interface {
 
 	// as the source of reservations:
 
-	ListReservations(ctx context.Context, dstIA addr.IA) ([]*sgt.Reservation, error)
+	GetReservationsAtSource(ctx context.Context, dstIA addr.IA) ([]*sgt.Reservation, error)
+	// ListReservations is used by endhost clients.
+	ListReservations(ctx context.Context, dstIA addr.IA) ([]*sgt.ReservationLooks, error)
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
 }

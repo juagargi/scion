@@ -144,6 +144,21 @@ func (mr *MockStoreMockRecorder) DeleteExpiredIndices(arg0 interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpiredIndices", reflect.TypeOf((*MockStore)(nil).DeleteExpiredIndices), arg0)
 }
 
+// GetReservationsAtSource mocks base method
+func (m *MockStore) GetReservationsAtSource(arg0 context.Context, arg1 addr.IA) ([]*segment.Reservation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetReservationsAtSource", arg0, arg1)
+	ret0, _ := ret[0].([]*segment.Reservation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetReservationsAtSource indicates an expected call of GetReservationsAtSource
+func (mr *MockStoreMockRecorder) GetReservationsAtSource(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReservationsAtSource", reflect.TypeOf((*MockStore)(nil).GetReservationsAtSource), arg0, arg1)
+}
+
 // InitSegmentReservation mocks base method
 func (m *MockStore) InitSegmentReservation(arg0 context.Context, arg1 *segment.SetupReq) error {
 	m.ctrl.T.Helper()
@@ -159,10 +174,10 @@ func (mr *MockStoreMockRecorder) InitSegmentReservation(arg0, arg1 interface{}) 
 }
 
 // ListReservations mocks base method
-func (m *MockStore) ListReservations(arg0 context.Context, arg1 addr.IA) ([]*segment.Reservation, error) {
+func (m *MockStore) ListReservations(arg0 context.Context, arg1 addr.IA) ([]*segment.ReservationLooks, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListReservations", arg0, arg1)
-	ret0, _ := ret[0].([]*segment.Reservation)
+	ret0, _ := ret[0].([]*segment.ReservationLooks)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

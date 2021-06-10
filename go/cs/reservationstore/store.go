@@ -84,12 +84,6 @@ func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRew
 	}, nil
 }
 
-func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA) (
-	[]*segment.Reservation, error) {
-
-	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
-}
-
 func (s *Store) err(err error) error {
 	if err == nil {
 		return nil
@@ -103,6 +97,32 @@ func (s *Store) errNew(msg string, params ...interface{}) error {
 
 func (s *Store) errWrapStr(msg string, err error, params ...interface{}) error {
 	return s.err(serrors.WrapStr(msg, err, params...))
+}
+
+func (s *Store) GetReservationsAtSource(ctx context.Context, dstIA addr.IA) (
+	[]*segment.Reservation, error) {
+
+	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
+}
+
+func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA) (
+	[]*segment.ReservationLooks, error) {
+
+	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
+	if err != nil {
+		log.Error("listing reservations", "err", err)
+		return nil, s.err(err)
+	}
+	looks := make([]*segment.ReservationLooks, len(rsvs))
+	for i, r := range rsvs {
+		looks[i] = &segment.ReservationLooks{
+			Id:    r.ID,
+			DstIA: r.PathAtSource.DstIA(),
+		}
+
+		return looks, nil
+	}
+	return looks, nil
 }
 
 // InitSegmentReservation will start a new segment reservation request. The source of

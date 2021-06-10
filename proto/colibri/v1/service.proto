@@ -135,12 +135,12 @@ message ListRequest {
 
 message ListResponse {
     message Reservations {
-        message Reservation {
+        message ReservationLooks {
             ReservationID ID = 1;
             uint64 dst_ia = 2;
             // other properties?
         }
-        repeated Reservation reservations = 1;
+        repeated ReservationLooks reservations = 1;
     }
 
     oneof success_failure {

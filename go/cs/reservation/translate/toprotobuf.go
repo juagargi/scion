@@ -98,6 +98,23 @@ func PBufResponse(res base.Response) *colpb.Response {
 	}
 }
 
+func PBufListResponse(res []*segment.ReservationLooks) *colpb.ListResponse {
+	looks := make([]*colpb.ListResponse_Reservations_ReservationLooks, len(res))
+	for i, l := range res {
+		looks[i] = &colpb.ListResponse_Reservations_ReservationLooks{
+			ID:    PBufID(&l.Id),
+			DstIa: uint64(l.DstIA.IAInt()),
+		}
+	}
+	return &colpb.ListResponse{
+		SuccessFailure: &colpb.ListResponse_Reservations_{
+			Reservations: &colpb.ListResponse_Reservations{
+				Reservations: looks,
+			},
+		},
+	}
+}
+
 func PBufID(id *reservation.ID) *colpb.ReservationID {
 	return &colpb.ReservationID{
 		Asid:   uint64(id.ASID),

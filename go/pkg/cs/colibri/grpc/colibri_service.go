@@ -183,13 +183,16 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 	*colpb.ListResponse, error) {
 
 	dstIA := addr.IAInt(msg.DstIa).IA()
-	rsvs, err := s.Store.ListReservations(ctx, dstIA)
+	looks, err := s.Store.ListReservations(ctx, dstIA)
 	if err != nil {
 		log.Error("colibri store while listing rsvs", "err", err)
-		return nil, err
+		return &colpb.ListResponse{
+			SuccessFailure: &colpb.ListResponse_FailureMessage{
+				FailureMessage: err.Error(),
+			},
+		}, nil
 	}
-	_ = rsvs
-	return nil, nil
+	return translate.PBufListResponse(looks), nil
 }
 
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
