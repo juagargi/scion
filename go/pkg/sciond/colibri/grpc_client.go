@@ -35,28 +35,6 @@ func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriLi
 		return nil, serrors.New("bad nil request")
 	}
 
-	// //
-	// // deleteme
-	// //
-	// log.Info("deleteme DaemonClient 2")
-	// conn1, err := c.Dialer.Dial(ctx, addr.SvcCS)
-	// log.Info("deleteme DaemonClient 3", "err", err)
-	// if err != nil {
-	// 	return nil, serrors.WrapStr("deleteme error dialing", err)
-	// }
-	// deletemeclient := deletemepb.NewSegmentLookupServiceClient(conn1)
-	// deletemeReq := &deletemepb.SegmentsRequest{
-	// 	SrcIsdAs: req.Base.DstIa + 1,
-	// 	DstIsdAs: req.Base.DstIa,
-	// }
-	// res, err := deletemeclient.Segments(ctx, deletemeReq)
-	// if err != nil {
-	// 	return nil, serrors.WrapStr("deleteme error requesting segments", err)
-	// }
-	// log.Info("deleteme, segments", "res", res.Segments)
-	// //
-	// //
-
 	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
 	if err != nil {
 		return nil, serrors.WrapStr("dialing daemon", err)
