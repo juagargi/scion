@@ -50,6 +50,7 @@ import (
 	cryptopb "github.com/scionproto/scion/go/pkg/proto/crypto"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
 	"github.com/scionproto/scion/go/pkg/sciond"
+	"github.com/scionproto/scion/go/pkg/sciond/colibri"
 	"github.com/scionproto/scion/go/pkg/sciond/config"
 	"github.com/scionproto/scion/go/pkg/sciond/drkey"
 	dk_grpc "github.com/scionproto/scion/go/pkg/sciond/drkey/grpc"
@@ -101,12 +102,15 @@ func realMain() error {
 
 	dialer := &libgrpc.TCPDialer{
 		SvcResolver: func(dst addr.HostSVC) []resolver.Address {
+			log.Info("------- deleteme dialing", "dst", dst.String())
 			targets := []resolver.Address{}
 			addrs, err := itopo.Provider().Get().Multicast(dst)
+			log.Info("------- deleteme after multicast", "err", err, "count", len(addrs))
 			if err != nil {
 				return targets
 			}
 			for _, entry := range addrs {
+				log.Info("-- deleteme", "addr", entry.String())
 				targets = append(targets, resolver.Address{Addr: entry.String()})
 			}
 			return targets
@@ -209,6 +213,7 @@ func realMain() error {
 		RevCache:     revCache,
 		TopoProvider: itopo.Provider(),
 		DRKeyStore:   drkeyStore,
+		Colibri:      &colibri.DaemonClient{Dialer: dialer},
 	}))
 
 	promgrpc.Register(server)

@@ -17,6 +17,7 @@ package translate
 import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
@@ -98,7 +99,7 @@ func PBufResponse(res base.Response) *colpb.Response {
 	}
 }
 
-func PBufListResponse(res []*segment.ReservationLooks) *colpb.ListResponse {
+func PBufListResponse(res []*colibri.ReservationLooks) *colpb.ListResponse {
 	looks := make([]*colpb.ListResponse_Reservations_ReservationLooks, len(res))
 	for i, l := range res {
 		looks[i] = &colpb.ListResponse_Reservations_ReservationLooks{

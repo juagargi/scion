@@ -272,8 +272,3 @@ func (r *Reservation) MaxRequestedBW() uint64 {
 	}
 	return max.ToKbps()
 }
-
-type ReservationLooks struct {
-	Id    reservation.ID
-	DstIA addr.IA
-}

@@ -16,12 +16,15 @@ package sciond
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
 	"google.golang.org/grpc"
 
+	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/common"
 	dkctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
@@ -33,6 +36,7 @@ import (
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
 )
 
@@ -195,6 +199,39 @@ func (c grpcConn) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 		return drkey.Lvl2Key{}, err
 	}
 	return lvl2Key, nil
+}
+
+func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
+	[]*colibri.ReservationLooks, error) {
+
+	req := &sdpb.ColibriListRequest{
+		Base: &colpb.ListRequest{
+			DstIa: uint64(dstIA.IAInt()),
+		},
+	}
+	fmt.Println("---- deleteme 1")
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	fmt.Println("---- deleteme 2")
+	sdRes, err := client.ColibriListRsvs(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("---- deleteme 3")
+	if failure, ok := sdRes.Base.SuccessFailure.(*colpb.ListResponse_FailureMessage); ok {
+		return nil, fmt.Errorf(failure.FailureMessage)
+	}
+	list := sdRes.Base.SuccessFailure.(*colpb.ListResponse_Reservations_).Reservations.Reservations
+	res := make([]*colibri.ReservationLooks, len(list))
+	for i, r := range list {
+		res[i].DstIA = addr.IAInt(r.DstIa).IA()
+		id, err := translate.ID(r.ID)
+		if err != nil {
+			return nil, serrors.WrapStr("traslating list of reservations", err)
+		}
+		res[i].Id = *id
+	}
+
+	return res, nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {

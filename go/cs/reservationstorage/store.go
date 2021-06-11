@@ -22,6 +22,7 @@ import (
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	sgt "github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
 )
 
 // Store is the interface to interact with the reservation store.
@@ -49,7 +50,7 @@ type Store interface {
 
 	GetReservationsAtSource(ctx context.Context, dstIA addr.IA) ([]*sgt.Reservation, error)
 	// ListReservations is used by endhost clients.
-	ListReservations(ctx context.Context, dstIA addr.IA) ([]*sgt.ReservationLooks, error)
+	ListReservations(ctx context.Context, dstIA addr.IA) ([]*colibri.ReservationLooks, error)
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
 }

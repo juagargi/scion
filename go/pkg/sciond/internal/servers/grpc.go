@@ -39,6 +39,7 @@ import (
 	"github.com/scionproto/scion/go/lib/topology"
 	"github.com/scionproto/scion/go/lib/util"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
+	"github.com/scionproto/scion/go/pkg/sciond/colibri"
 	"github.com/scionproto/scion/go/pkg/sciond/fetcher"
 	"github.com/scionproto/scion/go/pkg/trust"
 	"github.com/scionproto/scion/go/proto"
@@ -51,6 +52,7 @@ type DaemonServer struct {
 	RevCache     revcache.RevCache
 	ASInspector  trust.Inspector
 	DRKeyStore   drkeystorage.ClientStore
+	Colibri      *colibri.DaemonClient
 
 	Metrics Metrics
 
@@ -383,4 +385,12 @@ func keyToLvl2Resp(drkey drkey.Lvl2Key) (*sdpb.DRKeyLvl2Response, error) {
 	return &sdpb.DRKeyLvl2Response{
 		BaseRep: baseRep,
 	}, nil
+}
+
+func (s *DaemonServer) ColibriListRsvs(ctx context.Context, req *sdpb.ColibriListRequest) (
+	*sdpb.ColibriListResponse, error) {
+
+	dstIA := addr.IAInt(req.Base.DstIa).IA()
+	log.FromCtx(ctx).Info("fetching reservation list", "dst", dstIA.String())
+	return s.Colibri.ListReservations(ctx, req)
 }

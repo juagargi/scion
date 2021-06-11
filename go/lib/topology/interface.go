@@ -430,6 +430,8 @@ func (t *topologyS) SVCNames(svc addr.HostSVC) ServiceNames {
 		for k, v := range t.Topology.SIG {
 			m[k] = *v.CtrlAddr
 		}
+	case addr.SvcCOL:
+		m = t.Topology.CS
 	}
 
 	var names ServiceNames

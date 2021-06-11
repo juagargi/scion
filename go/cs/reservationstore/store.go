@@ -106,16 +106,16 @@ func (s *Store) GetReservationsAtSource(ctx context.Context, dstIA addr.IA) (
 }
 
 func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA) (
-	[]*segment.ReservationLooks, error) {
+	[]*colibri.ReservationLooks, error) {
 
 	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
 	if err != nil {
 		log.Error("listing reservations", "err", err)
 		return nil, s.err(err)
 	}
-	looks := make([]*segment.ReservationLooks, len(rsvs))
+	looks := make([]*colibri.ReservationLooks, len(rsvs))
 	for i, r := range rsvs {
-		looks[i] = &segment.ReservationLooks{
+		looks[i] = &colibri.ReservationLooks{
 			Id:    r.ID,
 			DstIA: r.PathAtSource.DstIA(),
 		}

@@ -11,6 +11,7 @@ import (
 	e2e "github.com/scionproto/scion/go/cs/reservation/e2e"
 	segment "github.com/scionproto/scion/go/cs/reservation/segment"
 	addr "github.com/scionproto/scion/go/lib/addr"
+	colibri "github.com/scionproto/scion/go/lib/colibri"
 	reflect "reflect"
 	time "time"
 )
@@ -174,10 +175,10 @@ func (mr *MockStoreMockRecorder) InitSegmentReservation(arg0, arg1 interface{}) 
 }
 
 // ListReservations mocks base method
-func (m *MockStore) ListReservations(arg0 context.Context, arg1 addr.IA) ([]*segment.ReservationLooks, error) {
+func (m *MockStore) ListReservations(arg0 context.Context, arg1 addr.IA) ([]*colibri.ReservationLooks, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListReservations", arg0, arg1)
-	ret0, _ := ret[0].([]*segment.ReservationLooks)
+	ret0, _ := ret[0].([]*colibri.ReservationLooks)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
