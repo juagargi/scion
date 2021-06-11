@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"path/filepath"
@@ -546,7 +547,9 @@ func realMain() error {
 	}
 	// colpb.RegisterColibriServer(quicServer, colibriService)
 	colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
+	tcpColServer := grpc.NewServer(libgrpc.UnaryServerInterceptor())
 	colpb.RegisterColibriServer(colServer, colibriService)
+	colpb.RegisterColibriServer(tcpColServer, colibriService)
 	go func() {
 		defer log.HandlePanic()
 		lis, err := coliquic.ColibriListener(topo)
@@ -555,6 +558,26 @@ func realMain() error {
 		}
 		log.Info("DELETEME %%%%%%%%% colibri grpc server listening", "addr", lis.Addr())
 		if err := colServer.Serve(lis); err != nil {
+			fatal.Fatal(err)
+		}
+	}()
+	go func() {
+		defer log.HandlePanic()
+		// TODO(juagargi) integrate TCP and QUIC with just one listener in coliquic.ColibriListener
+		publicAddr, err := topo.Anycast(addr.SvcCOL)
+		if err != nil {
+			fatal.Fatal(err)
+		}
+		tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{
+			IP:   publicAddr.IP,
+			Port: publicAddr.Port,
+			Zone: publicAddr.Zone,
+		})
+		if err != nil {
+			fatal.Fatal(err)
+		}
+		log.Info("DELETEME %%%%%%%%% colibri TCP grpc server listening", "tcp_addr", tcpListener.Addr())
+		if err := tcpColServer.Serve(tcpListener); err != nil {
 			fatal.Fatal(err)
 		}
 	}()
