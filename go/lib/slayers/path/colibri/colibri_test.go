@@ -30,7 +30,8 @@ var randSlice = []byte("fe31a2e94699ede20df7edaefd8042d866bf3a4c1a7f2be603973ff0
 func TestColibriSerializeDecode(t *testing.T) {
 	for i := 2; i < 11; i++ {
 		bufferLength := 8 + colibri.LenInfoField + i*colibri.LenHopField
-		// TODO(juagargi) just realized that randSlice was intended to be a slice of bytes, not of chars
+		// TODO(juagargi) just realized that randSlice was intended to
+		// be a slice of bytes, not of chars
 		buffer := randSlice[:bufferLength]
 		// Remove the "reserved" flags from the info field
 		buffer[8] = buffer[8] & uint8(0xE0)

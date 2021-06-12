@@ -77,7 +77,7 @@ type TasksConfig struct {
 	// hidden paths down segment registration. If it is nil, normal path
 	// registration is used instead.
 	HiddenPathRegistrationCfg *HiddenPathRegistrationCfg
-	ColibriInitialRsvs   *coli_conf.Reservations
+	ColibriInitialRsvs        *coli_conf.Reservations
 
 	AllowIsdLoop bool
 }

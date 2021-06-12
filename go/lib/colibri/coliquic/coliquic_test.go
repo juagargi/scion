@@ -155,7 +155,8 @@ func TestColibriGRPC(t *testing.T) {
 	}
 	serverQuicConfig := &quic.Config{KeepAlive: true}
 
-	quicLis, err := quic.Listen(newConnMock(t, serverAddr, thisNet), serverTlsConfig, serverQuicConfig)
+	quicLis, err := quic.Listen(newConnMock(t, serverAddr, thisNet),
+		serverTlsConfig, serverQuicConfig)
 	require.NoError(t, err)
 
 	listener := NewConnListener(quicLis)
@@ -220,7 +221,8 @@ func TestColibriGRPC(t *testing.T) {
 	dialer := func(context.Context, string) (net.Conn, error) {
 		return quicConn, nil
 	}
-	conn, err := grpc.DialContext(ctx, serverAddr.String(), grpc.WithInsecure(), grpc.WithContextDialer(dialer))
+	conn, err := grpc.DialContext(ctx, serverAddr.String(), grpc.WithInsecure(),
+		grpc.WithContextDialer(dialer))
 	require.NoError(t, err)
 	gRPCClient := colpb.NewColibriClient(conn)
 	res, err := gRPCClient.TestPeer(ctx, &colpb.TestingMessage{})
@@ -401,7 +403,8 @@ func createTestCertificate(t *testing.T) *tls.Certificate {
 	template := x509.Certificate{SerialNumber: big.NewInt(1)}
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	require.NoError(t, err)
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key)})
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 
 	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)

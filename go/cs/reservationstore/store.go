@@ -64,7 +64,8 @@ func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRew
 	cap := admitter.Capacities()
 	for _, ifid := range append(topo.InterfaceIDs(), 0) {
 		log.Info("colibri admission capacity", "ifid", ifid,
-			"ingress", cap.CapacityIngress(uint16(ifid)), "egress", cap.CapacityEgress(uint16(ifid)))
+			"ingress", cap.CapacityIngress(uint16(ifid)),
+			"egress", cap.CapacityEgress(uint16(ifid)))
 	}
 	operator, err := coliquic.NewServiceClientOperator(topo, router, arw, dialer)
 	if err != nil {
@@ -194,7 +195,8 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	rsv = req.Reservation
 	suc := res.(*segment.SegmentSetupResponseSuccess)
 	log.Info("deleteme $$$$$$$$$ TOKEN $$$$$$$$$ TOKEN $$$$$$$$$", "token", suc.Token)
-	log.Info("deleteme $$$$$$$$$", "srcia", rsv.PathAtSource.SrcIA(), "dstia", rsv.PathAtSource.DstIA())
+	log.Info("deleteme $$$$$$$$$", "srcia", rsv.PathAtSource.SrcIA(),
+		"dstia", rsv.PathAtSource.DstIA())
 	log.Info("deleteme $$$$$$$$$", "active", rsv.ActiveIndex())
 	log.Info("deleteme $$$$$$$$$", "req.path", req.Path)
 
@@ -323,7 +325,8 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 			Type: colpath.PathType,
 			Raw:  rawColibriPath,
 		}
-		log.Info("deleteme stored colibri path inside reservation", "path", hex.EncodeToString(rawColibriPath))
+		log.Info("deleteme stored colibri path inside reservation",
+			"path", hex.EncodeToString(rawColibriPath))
 	}
 	log.Info("deleteme activating 11")
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
@@ -353,7 +356,8 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 			return failedResponse, err
 		}
 		for _, r := range allRsvs {
-			log.Info("deleteme FOUND reservation", "id", r.ID.String(), "path_type", rsv.PathAtSource.Spath.Type)
+			log.Info("deleteme FOUND reservation", "id", r.ID.String(),
+				"path_type", rsv.PathAtSource.Spath.Type)
 		}
 	}
 	//
@@ -581,30 +585,33 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		// index.Token = &req.(*e2e.SetupReqSuccess).Token
 	}
 
-	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
-	if err != nil {
-		return failedResponse, s.errWrapStr("cannot compute free bw for e2e admission", err,
-			"e2e_id", rsv.ID.String())
-	}
-	free = free + rsv.AllocResv() // don't count this E2E request in the used BW
-
-	if req.Transfer() {
-		// this AS must stitch two segment rsvs. according to the request
-		if len(segRsvIDs) == 1 {
-			return failedResponse, s.errNew("e2e setup request with transfer inconsistent",
-				"e2e_id", req.ID.String(), "req_sgmt_rsvs_count", req.SegmentRsvASCount,
-				"trail_len", len(req.AllocationTrail))
-		}
-		freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv)
+	// Commented out because it contains ineffectual assignments:
+	/*
+		free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
 		if err != nil {
-			return failedResponse, s.errWrapStr("cannot compute transfer", err,
-				"id", req.ID.String())
+			return failedResponse, s.errWrapStr("cannot compute free bw for e2e admission", err,
+				"e2e_id", rsv.ID.String())
 		}
-		freeOutgoing += rsv.AllocResv() // do not count this rsv's BW
-		if free > freeOutgoing {
-			free = freeOutgoing
+		free = free + rsv.AllocResv() // don't count this E2E request in the used BW
+
+		if req.Transfer() {
+			// this AS must stitch two segment rsvs. according to the request
+			if len(segRsvIDs) == 1 {
+				return failedResponse, s.errNew("e2e setup request with transfer inconsistent",
+					"e2e_id", req.ID.String(), "req_sgmt_rsvs_count", req.SegmentRsvASCount,
+					"trail_len", len(req.AllocationTrail))
+			}
+			freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv)
+			if err != nil {
+				return failedResponse, s.errWrapStr("cannot compute transfer", err,
+					"id", req.ID.String())
+			}
+			freeOutgoing += rsv.AllocResv() // do not count this rsv's BW
+			if free > freeOutgoing {
+				free = freeOutgoing
+			}
 		}
-	}
+	*/
 
 	// TODO(juagargi) fix response type
 	// if !request.IsSuccessful() || req.RequestedBW.ToKbps() > free {
@@ -617,7 +624,8 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	// 				SetupReq:  *req,
 	// 				ErrorCode: 1,
 	// 			}
-	// 			asARequest.AllocationTrail = append(asARequest.AllocationTrail, maxWillingToAlloc)
+	// 			asARequest.AllocationTrail = append(asARequest.AllocationTrail,
+	//				maxWillingToAlloc)
 	// 			failedResponse = asARequest
 	// 	}
 	// 	return failedResponse, s.errWrapStr("e2e not admitted", err, "id", req.ID.String(),
@@ -737,7 +745,8 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		failedResponse.Message = "request failed validation: " + s.err(err).Error()
 		return failedResponse, nil
 	}
-	log.Info("deleteme 2 admit segment reservation", "id", req.ID, "curr_step", req.Path.CurrentStep)
+	log.Info("deleteme 2 admit segment reservation", "id", req.ID,
+		"curr_step", req.Path.CurrentStep)
 
 	if req.ID.IsEmptySuffix() && !req.IsSourceAS() {
 		failedResponse.Message = "empty suffix not allowed if not at source AS"
@@ -818,7 +827,8 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	if req.ID.IsEmptySuffix() && req.IsSourceAS() {
 		log.Info("deleteme 14")
 		if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
-			failedResponse.Message = "error creating new reservation at source: " + s.err(err).Error()
+			failedResponse.Message = "error creating new reservation at source: " +
+				s.err(err).Error()
 			return failedResponse, s.err(err)
 		}
 		req.ID = rsv.ID
@@ -847,7 +857,8 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 		log.Debug("deleteme 19", "id", req.ID)
 		pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
-		log.Info("deleteme store received a response to the setup request", "pbres", pbRes, "err", err)
+		log.Info("deleteme store received a response to the setup request",
+			"pbres", pbRes, "err", err)
 		if err != nil {
 			failedResponse.Message = "error in forwarded request: " + s.err(err).Error()
 			return failedResponse, serrors.WrapStr("forwarded request failed", err)
@@ -864,7 +875,8 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 	// update token
 	currStep := req.Path.Steps[req.Path.CurrentStep]
-	log.Info("deleteme $$$$$$$$$ received TOKEN", "curr_step", req.Path.CurrentStep, "token", token.String())
+	log.Info("deleteme $$$$$$$$$ received TOKEN", "curr_step", req.Path.CurrentStep,
+		"token", token.String())
 	// TODO(juagargi) compute MAC for token
 	token.HopFields = append([]reservation.HopField{{
 		Ingress: currStep.Ingress,
@@ -883,7 +895,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	log.Info("deleteme 220 rsv index token", "index.token", index.Token, "token", token.String())
 	// store token and colibri path inside reservation
 	index.Token = token
-	index.AllocBW = token.BWCls // could have been admited for less downstream
+	index.AllocBW = token.BWCls // could have been admitted for less downstream
 	log.Info("deleteme 221 rsv index token", "index.token", index.Token)
 
 	tx, err = s.db.BeginTransaction(ctx, nil)

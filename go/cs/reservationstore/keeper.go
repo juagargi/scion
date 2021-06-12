@@ -178,7 +178,8 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		}
 		expirationNewIndices := now.Add(newIndexMinDuration)
 		// new indices:
-		if err := k.askNewIndices(ctx, needIndices, dstIA, entry, expirationNewIndices); err != nil {
+		err := k.askNewIndices(ctx, needIndices, dstIA, entry, expirationNewIndices)
+		if err != nil {
 			return time.Time{}, err
 		}
 
@@ -188,7 +189,9 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		if requestCount < 0 {
 			requestCount = 0
 		}
-		if _, err := k.askNewReservations(ctx, requestCount, dstIA, entry, paths, expirationNewIndices); err != nil {
+		_, err = k.askNewReservations(ctx, requestCount,
+			dstIA, entry, paths, expirationNewIndices)
+		if err != nil {
 			return time.Time{}, err
 		}
 
@@ -248,7 +251,7 @@ func (k *keeper) askNewIndices(ctx context.Context, rsvs []*seg.Reservation, dst
 }
 
 // askNewReservations creates new requests based on the paths and the entry and ensures
-// that at least `requiredSuccesful` are succesful.
+// that at least `requiredSuccesful` are successful.
 func (k *keeper) askNewReservations(ctx context.Context, requiredSuccesful int, dstIA addr.IA,
 	entry requirements, paths []snet.Path, expTime time.Time) ([]*segment.Reservation, error) {
 
@@ -376,8 +379,8 @@ func (e *requirements) SplitByCompliance(rsvs []*seg.Reservation, atLeastUntil t
 // PrepareSetupRequests creates new reservation requests compliant with the requirements.
 // This function creates as many reservations requests as there are
 // scion paths compatible with the requirements.
-func (e *requirements) PrepareSetupRequests(paths []snet.Path, localAS addr.AS, now time.Time, expTime time.Time) (
-	[]*seg.SetupReq, error) {
+func (e *requirements) PrepareSetupRequests(paths []snet.Path,
+	localAS addr.AS, now time.Time, expTime time.Time) ([]*seg.SetupReq, error) {
 
 	// filter paths
 	filtered := e.predicate.Eval(paths)

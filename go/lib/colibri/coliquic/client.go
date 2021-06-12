@@ -91,7 +91,8 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.
 	case scion.PathType: // don't touch the service path
 	case colibri.PathType:
 		// TODO(juagargi): reactivate use of reservations for control traffic
-		// // replace the service path with the colibri one. The source must also be the original one
+		// // replace the service path with the colibri one.
+		// The source must also be the original one
 		// rAddr.Path = spath.Copy()
 		// rAddr.IA = opaque.SrcIA()
 		// TODO(juagargi) check if the colibri path is expired, and don't use it in that case

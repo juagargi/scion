@@ -67,7 +67,8 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 
 	msg.Base.Opaque.CurrentStep++
 	sizeeeeeeeeeeee := proto.Size(msg)
-	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Base.Opaque)
+	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee,
+		"setup_path", msg.Base.Opaque)
 	// path, err := extractPath(ctx)
 	// if err != nil {
 	// 	log.Error("setup segment", "err", err)

@@ -68,7 +68,8 @@ func ColibriListener(topo topology.Topology) (net.Listener, error) {
 		},
 	}
 	// topo.PublicAddress(addr.SvcCS, cfg.General.ID)
-	serverAddr, err := topo.Anycast(addr.SvcCS) // TODO(juagargi) should find the PublicAddress of SvcCOL
+	serverAddr, err := topo.Anycast(addr.SvcCS)
+	// TODO(juagargi) should find the PublicAddress of SvcCOL
 	// TODO(juagargi) read it from topo file and pass it along
 	// serverAddr, err := net.ResolveUDPAddr("udp", "localhost:4321")
 	if err != nil {

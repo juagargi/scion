@@ -287,11 +287,13 @@ func mapWithFunction(t *testing.T,
 	return values
 }
 
+type filterfunc func(*testing.T, []time.Duration) []time.Duration
+
 // returns a function applicable to map
 func repeatWithFilter(t *testing.T,
 	sampler func(*testing.T, int) time.Duration,
 	repeatCount int,
-	filter func(*testing.T, []time.Duration) []time.Duration) func(*testing.T, int) []time.Duration {
+	filter filterfunc) func(*testing.T, int) []time.Duration {
 
 	ret := func(t *testing.T, x int) []time.Duration {
 		samples := make([]time.Duration, repeatCount)
@@ -350,7 +352,9 @@ func getQuartiles(t *testing.T, values []time.Duration) []time.Duration {
 	return []time.Duration{q1, median, q3}
 }
 
-func toCSV(t *testing.T, filename string, columnTitles []string, xValues []int, values [][]time.Duration) {
+func toCSV(t *testing.T, filename string, columnTitles []string,
+	xValues []int, values [][]time.Duration) {
+
 	width := len(values[0]) + 1
 	require.Equal(t, len(xValues), len(values))
 	require.Equal(t, len(columnTitles), width)

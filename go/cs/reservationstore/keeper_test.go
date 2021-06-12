@@ -172,7 +172,8 @@ func TestKeepOneShot(t *testing.T) {
 					return tc.reservations[dstIA], nil
 				})
 			manager.EXPECT().Store().AnyTimes().Return(store)
-			manager.EXPECT().PathsTo(gomock.Any(), gomock.Any()).Times(len(tc.destinations)).DoAndReturn(
+			manager.EXPECT().PathsTo(gomock.Any(),
+				gomock.Any()).Times(len(tc.destinations)).DoAndReturn(
 				func(_ context.Context, dstIA addr.IA) ([]snet.Path, error) {
 					return tc.paths[dstIA], nil
 				})
@@ -203,19 +204,21 @@ func TestSetupsPerDestination(t *testing.T) {
 		"regular": {
 			requirements: []requirements{
 				{
-					predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
-					minBW:         10,
-					maxBW:         42,
-					splitCls:      2,
-					endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+					predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+					minBW:     10,
+					maxBW:     42,
+					splitCls:  2,
+					endProps: reservation.StartLocal | reservation.EndLocal |
+						reservation.EndTransfer,
 					minActiveRsvs: 1,
 				},
 				{
-					predicate:     newSequence(t, "1-ff00:0:1 0+ 1-ff00:0:2"), // not direct
-					minBW:         10,
-					maxBW:         42,
-					splitCls:      2,
-					endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+					predicate: newSequence(t, "1-ff00:0:1 0+ 1-ff00:0:2"), // not direct
+					minBW:     10,
+					maxBW:     42,
+					splitCls:  2,
+					endProps: reservation.StartLocal | reservation.EndLocal |
+						reservation.EndTransfer,
 					minActiveRsvs: 1,
 				},
 			},
@@ -265,11 +268,12 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 	}{
 		"empty": {
 			requirements: requirements{
-				predicate:     newSequence(t, ""),
-				minBW:         10,
-				maxBW:         42,
-				splitCls:      2,
-				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				predicate: newSequence(t, ""),
+				minBW:     10,
+				maxBW:     42,
+				splitCls:  2,
+				endProps: reservation.StartLocal | reservation.EndLocal |
+					reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
 			paths:             []snet.Path{},
@@ -279,11 +283,12 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 		},
 		"ask 2 get 2": {
 			requirements: requirements{
-				predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
-				minBW:         10,
-				maxBW:         42,
-				splitCls:      2,
-				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+				minBW:     10,
+				maxBW:     42,
+				splitCls:  2,
+				endProps: reservation.StartLocal | reservation.EndLocal |
+					reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
@@ -298,11 +303,12 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 		},
 		"ask too many": { // predicate(4 paths) -> 2 paths -> 2 requests; but desired is 4
 			requirements: requirements{
-				predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
-				minBW:         10,
-				maxBW:         42,
-				splitCls:      2,
-				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				predicate: newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
+				minBW:     10,
+				maxBW:     42,
+				splitCls:  2,
+				endProps: reservation.StartLocal | reservation.EndLocal |
+					reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
@@ -318,11 +324,12 @@ func TestRequestNSuccessfulRsvs(t *testing.T) {
 		},
 		"ask 3 return 2": {
 			requirements: requirements{
-				predicate:     newSequence(t, ""),
-				minBW:         10,
-				maxBW:         42,
-				splitCls:      2,
-				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				predicate: newSequence(t, ""),
+				minBW:     10,
+				maxBW:     42,
+				splitCls:  2,
+				endProps: reservation.StartLocal | reservation.EndLocal |
+					reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
@@ -630,11 +637,12 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 		},
 		"no paths": {
 			requirements: requirements{
-				predicate:     newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
-				minBW:         10,
-				maxBW:         42,
-				splitCls:      2,
-				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				predicate: newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
+				minBW:     10,
+				maxBW:     42,
+				splitCls:  2,
+				endProps: reservation.StartLocal | reservation.EndLocal |
+					reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
 			paths:    []snet.Path{},
@@ -642,11 +650,12 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 		},
 		"starts here and ends there": {
 			requirements: requirements{
-				predicate:     newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
-				minBW:         10,
-				maxBW:         42,
-				splitCls:      2,
-				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				predicate: newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
+				minBW:     10,
+				maxBW:     42,
+				splitCls:  2,
+				endProps: reservation.StartLocal | reservation.EndLocal |
+					reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{
@@ -659,11 +668,12 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 		},
 		"all filtered out": {
 			requirements: requirements{
-				predicate:     newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
-				minBW:         10,
-				maxBW:         42,
-				splitCls:      2,
-				endProps:      reservation.StartLocal | reservation.EndLocal | reservation.EndTransfer,
+				predicate: newSequence(t, "1-ff00:0:1 0* 1-ff00:0:2"),
+				minBW:     10,
+				maxBW:     42,
+				splitCls:  2,
+				endProps: reservation.StartLocal | reservation.EndLocal |
+					reservation.EndTransfer,
 				minActiveRsvs: 1,
 			},
 			paths: []snet.Path{

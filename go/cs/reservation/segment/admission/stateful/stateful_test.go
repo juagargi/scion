@@ -950,8 +950,8 @@ func prepareForMock(rsvs []*segment.Reservation, req *segment.SetupReq, globalCa
 	return sameIDAsRequest, sourceStateMap, inMap, egMap, transitDem, transitAlloc
 }
 
-func prepareMockForTubeRatio(db *mock_backend.MockDB, rsvs []*segment.Reservation, req *segment.SetupReq,
-	globalCapacity uint64) {
+func prepareMockForTubeRatio(db *mock_backend.MockDB, rsvs []*segment.Reservation,
+	req *segment.SetupReq, globalCapacity uint64) {
 
 	sameIDAsRequest, sourceStateMap, inMap, egMap, transitDem, transitAlloc :=
 		prepareForMock(rsvs, req, globalCapacity)
@@ -967,7 +967,9 @@ func prepareMockForTubeRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 
 	db.EXPECT().GetSourceState(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, source addr.AS, ingress, egress uint16) (uint64, uint64, error) {
+			func(_ context.Context, source addr.AS,
+				ingress, egress uint16) (uint64, uint64, error) {
+
 				key := sourceIngressEgress{
 					Source:  source,
 					Ingress: ingress,
@@ -990,8 +992,8 @@ func prepareMockForTubeRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 			})
 }
 
-func prepareMockForLinkRatio(db *mock_backend.MockDB, rsvs []*segment.Reservation, req *segment.SetupReq,
-	globalCapacity uint64) {
+func prepareMockForLinkRatio(db *mock_backend.MockDB, rsvs []*segment.Reservation,
+	req *segment.SetupReq, globalCapacity uint64) {
 
 	sameIDAsRequest, sourceStateMap, inMap, egMap, transitDem, transitAlloc :=
 		prepareForMock(rsvs, req, globalCapacity)
@@ -1004,7 +1006,9 @@ func prepareMockForLinkRatio(db *mock_backend.MockDB, rsvs []*segment.Reservatio
 
 	db.EXPECT().GetSourceState(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, source addr.AS, ingress, egress uint16) (uint64, uint64, error) {
+			func(_ context.Context, source addr.AS,
+				ingress, egress uint16) (uint64, uint64, error) {
+
 				key := sourceIngressEgress{
 					Source:  source,
 					Ingress: ingress,

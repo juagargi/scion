@@ -19,9 +19,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/xtest"
-	"github.com/stretchr/testify/require"
 )
 
 func TestReservationsJson(t *testing.T) {
@@ -39,7 +40,8 @@ func TestReservationsJson(t *testing.T) {
 						MaxSize:       13,
 						MinSize:       7,
 						SplitCls:      7,
-						EndProps:      EndProps(reservation.NewPathEndProps(true, true, true, true)),
+						EndProps: EndProps(reservation.NewPathEndProps(true, true,
+							true, true)),
 						RequiredCount: 3,
 					},
 				},
@@ -55,7 +57,8 @@ func TestReservationsJson(t *testing.T) {
 						MaxSize:       13,
 						MinSize:       7,
 						SplitCls:      7,
-						EndProps:      EndProps(reservation.NewPathEndProps(false, false, false, false)),
+						EndProps: EndProps(reservation.NewPathEndProps(false, false,
+							false, false)),
 						RequiredCount: 1,
 					},
 					{
@@ -64,7 +67,8 @@ func TestReservationsJson(t *testing.T) {
 						MaxSize:       13,
 						MinSize:       7,
 						SplitCls:      7,
-						EndProps:      EndProps(reservation.NewPathEndProps(false, true, true, false)),
+						EndProps: EndProps(reservation.NewPathEndProps(false, true,
+							true, false)),
 						RequiredCount: 2,
 					},
 				},

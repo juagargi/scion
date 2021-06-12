@@ -182,7 +182,7 @@ func (a *StatefulAdmission) tubeRatio(ctx context.Context, x backend.ColibriStor
 
 // linkRatio obtains the link ratio between req.Ingress and req.Egress.
 // It avoids summing thru all sources by storing the previously computed sum
-// and then adjusting it by substracting the stored egScalFctr x srcAlloc and adding
+// and then adjusting it by subtracting the stored egScalFctr x srcAlloc and adding
 // the computed egScalFctr x srcAlloc
 func (a *StatefulAdmission) linkRatio(ctx context.Context, x backend.ColibriStorage,
 	req segment.SetupReq, pad *ScratchPad) (float64, error) {
@@ -195,7 +195,7 @@ func (a *StatefulAdmission) linkRatio(ctx context.Context, x backend.ColibriStor
 	}
 	denominator = storedSum
 
-	// adjust by substracting the stored egScalFctr x srcAlloc for this source:
+	// adjust by subtracting the stored egScalFctr x srcAlloc for this source:
 	_, storedSrcAlloc, err := x.GetSourceState(ctx, req.ID.ASID, req.Ingress(), req.Egress())
 	if err != nil {
 		return 0, serrors.WrapStr("computing link ratio failed", err)
@@ -312,7 +312,7 @@ func (a *StatefulAdmission) srcDem(ctx context.Context, x backend.ColibriStorage
 	if ingress == req.Ingress() && egress == req.Egress() {
 		capIn := a.Caps.CapacityIngress(ingress)
 		capEg := a.Caps.CapacityEgress(egress)
-		// substract DB's capReqDem(req.ID)
+		// subtract DB's capReqDem(req.ID)
 		rsv, err := x.GetSegmentRsvFromID(ctx, &req.ID)
 		if err != nil {
 			return 0, serrors.WrapStr("computing src dem failed", err)
@@ -347,7 +347,7 @@ func (a *StatefulAdmission) inScalFctr(ctx context.Context, x backend.ColibriSto
 	if err != nil {
 		return 0, serrors.WrapStr("computing in scale factor", err)
 	}
-	// substract the srcDem(src,in,req.Eg) added in the past
+	// subtract the srcDem(src,in,req.Eg) added in the past
 	srcDem, _, err := x.GetSourceState(ctx, source, ingress, req.Egress())
 	if err != nil {
 		return 0, serrors.WrapStr("computing in scale factor failed", err)
@@ -371,7 +371,7 @@ func (a *StatefulAdmission) egScalFctr(ctx context.Context, x backend.ColibriSto
 	if err != nil {
 		return 0, serrors.WrapStr("computing eg scale factor", err)
 	}
-	// substract the srcDem(src,req.In,eg) added in the past
+	// subtract the srcDem(src,req.In,eg) added in the past
 	srcDem, _, err := x.GetSourceState(ctx, source, req.Ingress(), egress)
 	if err != nil {
 		return 0, serrors.WrapStr("computing eg scale factor failed", err)

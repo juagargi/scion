@@ -72,7 +72,8 @@ package e2e
 // 		IsTransfer        bool
 // 	}{
 // 		// "3-2-4 at 0" means:
-// 		// 3 segments, with 3 ASes in the first one, 2 and 4 in the others. Trail has 0 components
+// 		// 3 segments, with 3 ASes in the first one, 2 and 4 in the others.
+//      Trail has 0 components
 // 		"2 at 0": {
 // 			ASCountPerSegment: []uint8{2},
 // 			TrailLength:       0,

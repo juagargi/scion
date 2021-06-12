@@ -52,7 +52,8 @@ package test
 // 	return nil
 // }
 
-// // NewTestPath returns a new path with one segment consisting on 3 hopfields: (0,2)->(1,2)->(1,0).
+// // NewTestPath returns a new path with one segment consisting on 3 hopfields:
+// // (0,2)->(1,2)->(1,0).
 // func NewTestPath() base.PacketPath {
 // 	path := TestColibriPath{
 // 		Ingress: 1,
