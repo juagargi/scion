@@ -69,18 +69,11 @@ func HFMacFactory(key []byte) (func() hash.Hash, error) {
 // This uses 16B keys with 1000 hash iterations, which is the same as the
 // defaults used by pycrypto.
 func DeriveHFMacKey(key []byte) ([]byte, error) {
-	if len(key) == 0 {
-		return nil, serrors.New("empty key")
-	}
-
 	return pbkdf2.Key(key, hfMacSalt, 1000, 16, sha256.New), nil
 }
 
 // DeriveColibriMacKey derives the private Colibri key from the given key.
 func DeriveColibriMacKey(key []byte) ([]byte, error) {
-	if len(key) == 0 {
-		return nil, serrors.New("empty key")
-	}
 	// This uses 16B keys with 1000 hash iterations, which is the same as the
 	// defaults used by pycrypto.
 	return pbkdf2.Key(key, ColibriSalt, 1000, 16, sha256.New), nil
