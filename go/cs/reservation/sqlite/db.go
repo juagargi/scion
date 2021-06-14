@@ -343,6 +343,11 @@ func (x *executor) DeleteSegmentRsv(ctx context.Context, ID *reservation.ID) err
 	return deleteSegmentRsv(ctx, x.db, ID)
 }
 
+// DeleteE2ERsv removes the e2e reservation
+func (x *executor) DeleteE2ERsv(ctx context.Context, ID *reservation.ID) error {
+	return deleteE2ERsv(ctx, x.db, ID)
+}
+
 // GetE2ERsvFromID finds the end to end resevation given its ID.
 func (x *executor) GetE2ERsvFromID(ctx context.Context, ID *reservation.ID) (
 	*e2e.Reservation, error) {

@@ -74,6 +74,8 @@ type ReserverAndTransit interface {
 	GetE2ERsvsOnSegRsv(ctx context.Context, ID *reservation.ID) ([]*e2e.Reservation, error)
 	// PersistE2ERsv makes the DB reflect the same contents as the rsv parameter.
 	PersistE2ERsv(ctx context.Context, rsv *e2e.Reservation) error
+	// DeleteE2ERsv removes the e2e reservation. Used in CleanupE2EReservation
+	DeleteE2ERsv(ctx context.Context, ID *reservation.ID) error
 }
 
 // OptimizedStore is implemented by all DBs.

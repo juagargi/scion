@@ -710,9 +710,12 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 		return failedResponse, s.errWrapStr("cannot delete e2e reservation index", err,
 			"id", req.ID, "index", req.Index)
 	}
-	if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
-			"id", req.ID)
+	if len(rsv.Indices) == 0 {
+		if err := tx.DeleteE2ERsv(ctx, &rsv.ID); err != nil {
+			return failedResponse, s.errWrapStr("cannot delete e2e reservation", err, "id", rsv.ID)
+		}
+	} else if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
+		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err, "id", req.ID)
 	}
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
