@@ -204,7 +204,22 @@ func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupReques
 func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	return nil, nil
+	msg.Path.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	log.Info("deleteme path after translation", "path", req.Path)
+	res, err := s.Store.CleanupE2EReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+	log.Info("deleteme", "pbres", pbRes)
+
+	return pbRes, nil
 }
 
 // extractPath returns the PacketPath, ingress and egress used with this RPC.

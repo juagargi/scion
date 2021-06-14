@@ -684,10 +684,16 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
-	// if err := s.validateAuthenticators(&req.RequestMetadata); err != nil {
-	// 	return nil, s.errWrapStr("error validating request", err, "id", req.ID)
-	// }
-	failedResponse := s.prepareFailureResp("cannot cleanup e2e reservation")
+	if err := s.validateAuthenticators(req); err != nil {
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+	}
+
+	failedResponse := s.prepareFailureResp("failed to confirm index")
+
+	if err := req.Validate(); err != nil {
+		failedResponse.Message = "request validation failed: " + s.err(err).Error()
+		return failedResponse, nil
+	}
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
@@ -713,13 +719,19 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 			"id", req.ID)
 	}
 
-	// if req.Request.IsLastAS() {
-	// 	return &e2e.ResponseCleanupSuccess{
-	// 		Response: *morphE2EResponseToSuccess(response),
-	// 	}, nil
-	// }
-
-	return &base.ResponseSuccess{}, nil
+	if req.IsLastAS() {
+		return &base.ResponseSuccess{}, nil
+	}
+	// forward to next colibri service
+	client, err := s.operator.ColibriClient(ctx, req.Path)
+	if err != nil {
+		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+	}
+	pbRes, err := client.CleanupE2EIndex(ctx, translate.PBufRequest(req))
+	if err != nil {
+		return failedResponse, s.errWrapStr("forwarded request failed", err)
+	}
+	return translate.Response(pbRes), nil
 }
 
 // DeleteExpiredIndices will just call the DB's method to delete the expired indices.
