@@ -1351,6 +1351,7 @@ func (d *DataPlane) resolveLocalDst(s slayers.SCION) (*net.UDPAddr, error) {
 		// For map lookup use the Base address, i.e. strip the multi cast
 		// information, because we only register base addresses in the map.
 		a, ok := d.svc.Any(v.Base())
+		log.Info("deleteme resolving service", "svc", v.Base(), "addr", a.String())
 		if !ok {
 			return nil, noSVCBackend
 		}

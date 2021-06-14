@@ -188,14 +188,37 @@ func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
 		return nil, serrors.New("no route to IA", "ia", ia, "err", err, "path", path)
 	}
 
+	ctx, cancelCtx := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelCtx()
+
+	//
+	// deleteme
+	//
+	svcAddr2 := &snet.SVCAddr{
+		IA:      *ia,
+		Path:    path.Path(),
+		NextHop: path.UnderlayNextHop(),
+		SVC:     addr.SvcCS,
+	}
+	quicAddr2, ok, err := arw.RedirectToQUIC(context.Background(), svcAddr2)
+	log.Info("----- deleteme ----- rewrite to quic(test) [CS]", "addr", quicAddr2.String(), "ok", ok, "err", err)
+	if !ok || err != nil {
+		return nil, serrors.New("cannot resolve service", "svc", svcAddr2.SVC, "err", err)
+	}
+	if _, ok := quicAddr2.(*snet.UDPAddr); !ok {
+		return nil, serrors.New("resolved address is not snet.UDPAddr", "addr", quicAddr2,
+			"type", common.TypeOf(quicAddr2))
+	}
+	//
+	//
+
 	svcAddr := &snet.SVCAddr{
 		IA:      *ia,
 		Path:    path.Path(),
 		NextHop: path.UnderlayNextHop(),
-		SVC:     addr.SvcCS, // addr.SvcCOL
+		// SVC:     addr.SvcCS, // addr.SvcCOL
+		SVC: addr.SvcCOL,
 	}
-	ctx, cancelCtx := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancelCtx()
 	quicAddr, ok, err := arw.RedirectToQUIC(ctx, svcAddr)
 	if !ok || err != nil {
 		return nil, serrors.New("cannot resolve service", "svc", svcAddr.SVC, "err", err)
@@ -210,6 +233,6 @@ func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
 		NextHop: path.UnderlayNextHop(),
 		Host:    quicAddr.(*snet.UDPAddr).Host,
 	}
-	snetUDPAddr.Host.Port = 4321
+	// snetUDPAddr.Host.Port = 4321
 	return snetUDPAddr, nil
 }

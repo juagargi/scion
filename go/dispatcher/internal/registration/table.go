@@ -18,6 +18,7 @@ import (
 	"net"
 
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/log"
 )
 
 // Table manages the UDP/IP port registrations for a single AS.
@@ -47,6 +48,7 @@ func NewTable(minPort, maxPort int) *Table {
 func (t *Table) Register(public *net.UDPAddr, bind net.IP, svc addr.HostSVC,
 	value interface{}) (*TableReference, error) {
 
+	log.Info("deleteme Table.Register", "svc", svc, "public", public.String())
 	if public == nil {
 		return nil, ErrNoPublicAddress
 	}

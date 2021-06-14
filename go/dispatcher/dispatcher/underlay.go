@@ -16,6 +16,7 @@
 package dispatcher
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/google/gopacket"
@@ -239,6 +240,13 @@ func (d SVCDestination) Send(dp *NetToRingDataplane, pkt *respool.Packet) {
 	// FIXME(scrye): This should deliver to the correct IP address, based on
 	// information found in the underlay IP header.
 	routingEntries := dp.RoutingTable.LookupService(d.IA, d.Svc, nil)
+	log.Info("deleteme underlay svcdestination", "svc", d.Svc, "ia", d.IA.String(), "#entries", len(routingEntries))
+	if d.Svc == addr.SvcCS {
+		fmt.Println("deleteme Send svc:", d.Svc)
+	}
+	if d.Svc == addr.SvcCOL {
+		fmt.Println("deleteme Send svc:", d.Svc)
+	}
 	if len(routingEntries) == 0 {
 		metrics.M.AppNotFoundErrors().Inc()
 		log.Debug("destination address not found", "isd_as", d.IA, "svc", d.Svc)

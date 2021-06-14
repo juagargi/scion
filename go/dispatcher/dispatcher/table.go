@@ -19,6 +19,7 @@ import (
 
 	"github.com/scionproto/scion/go/dispatcher/internal/registration"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/ringbuf"
 )
 
@@ -59,6 +60,7 @@ func (t *IATable) LookupService(ia addr.IA, svc addr.HostSVC, bind net.IP) []*Ta
 	for i := range ifaces {
 		entries[i] = ifaces[i].(*TableEntry)
 	}
+	log.Info("deleteme LookupService", "svc", svc, "ia", ia.String(), "#entries", len(entries))
 	return entries
 }
 

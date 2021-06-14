@@ -20,6 +20,8 @@ import (
 	"net"
 
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/common"
+	"github.com/scionproto/scion/go/lib/log"
 )
 
 // SVCTable tracks SVC registrations.
@@ -107,6 +109,7 @@ func (t *svcTable) Register(svc addr.HostSVC, address *net.UDPAddr,
 	address = copyUDPAddr(address)
 
 	if svc == addr.SvcWildcard {
+		log.Info("deleteme register wildcard", "address", address.String(), "typeof_value", common.TypeOf(value))
 		refCS, err := t.registerOne(addr.SvcCS, address, value)
 		if err != nil {
 			return nil, err
@@ -132,6 +135,7 @@ func (t *svcTable) registerOne(svc addr.HostSVC, address *net.UDPAddr,
 		t.m[svc] = make(unicastIpTable)
 	}
 
+	log.Info("deleteme registerOne", "svc", svc, "addr", address.String())
 	element, err := t.m[svc].insert(address, value)
 	if err != nil {
 		return nil, err
@@ -143,6 +147,7 @@ func (t *svcTable) registerOne(svc addr.HostSVC, address *net.UDPAddr,
 
 func (t *svcTable) Lookup(svc addr.HostSVC, ip net.IP) []interface{} {
 	var values []interface{}
+	log.Info("deleteme svcTable Lookup", "svc", svc, "ismulticast", svc.IsMulticast())
 	if svc.IsMulticast() {
 		values = t.multicast(svc)
 	} else {
@@ -169,6 +174,7 @@ func (t *svcTable) multicast(svc addr.HostSVC) []interface{} {
 
 func (t *svcTable) anycast(svc addr.HostSVC, ip net.IP) (interface{}, bool) {
 	ipTable, ok := t.m[svc]
+	log.Info("deleteme anycast", "svc", svc, "ok", ok, "ipTable", ipTable)
 	if !ok {
 		return nil, false
 	}
