@@ -192,13 +192,14 @@ func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
 	defer cancelCtx()
 
 	//
-	// deleteme
+	// deleteme (test RedirectToQUIC for CS, for COL it doesn't work)
 	//
 	svcAddr2 := &snet.SVCAddr{
 		IA:      *ia,
 		Path:    path.Path(),
 		NextHop: path.UnderlayNextHop(),
 		SVC:     addr.SvcCS,
+		// SVC:     addr.SvcCOL,
 	}
 	quicAddr2, ok, err := arw.RedirectToQUIC(context.Background(), svcAddr2)
 	log.Info("----- deleteme ----- rewrite to quic(test) [CS]", "addr", quicAddr2.String(), "ok", ok, "err", err)
@@ -216,8 +217,8 @@ func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
 		IA:      *ia,
 		Path:    path.Path(),
 		NextHop: path.UnderlayNextHop(),
-		// SVC:     addr.SvcCS, // addr.SvcCOL
-		SVC: addr.SvcCOL,
+		SVC:     addr.SvcCOL,
+		// SVC:     addr.SvcCS,
 	}
 	quicAddr, ok, err := arw.RedirectToQUIC(ctx, svcAddr)
 	if !ok || err != nil {

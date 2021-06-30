@@ -15,25 +15,28 @@
 package main
 
 import (
+	"context"
 	"net"
 	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/resolver"
 
 	"github.com/scionproto/scion/go/cs/config"
 	coli_conf "github.com/scionproto/scion/go/cs/reservation/conf"
 	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateless"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/cs/reservationstore"
-	"github.com/scionproto/scion/go/cs/segreq"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/fatal"
 	"github.com/scionproto/scion/go/lib/infra/infraenv"
 	"github.com/scionproto/scion/go/lib/infra/messenger"
 	"github.com/scionproto/scion/go/lib/infra/modules/itopo"
+	"github.com/scionproto/scion/go/lib/infra/modules/segfetcher"
 	segfetchergrpc "github.com/scionproto/scion/go/lib/infra/modules/segfetcher/grpc"
+	"github.com/scionproto/scion/go/lib/infra/modules/seghandler"
 	"github.com/scionproto/scion/go/lib/keyconf"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/pathdb"
@@ -47,10 +50,10 @@ import (
 	colgrpc "github.com/scionproto/scion/go/pkg/cs/colibri/grpc"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
+	"github.com/scionproto/scion/go/pkg/sciond"
 	"github.com/scionproto/scion/go/pkg/storage"
 	"github.com/scionproto/scion/go/pkg/trust"
 	"github.com/scionproto/scion/go/pkg/trust/compat"
-	trustgrpc "github.com/scionproto/scion/go/pkg/trust/grpc"
 )
 
 func main() {
@@ -73,6 +76,48 @@ func realMain(cfg *config.Config) error {
 	}
 	defer cfgObjs.closeFcn()
 
+	// /////////////////////////////////////////////////////////////////////////////////////
+	// // deleteme:
+	// deletemeIA, _ := addr.IAFromString("1-ff00:0:110")
+	// ctx, cancelF := context.WithTimeout(context.Background(), time.Hour)
+	// defer cancelF()
+	// var path snet.Path
+	// for {
+	// 	path, err = cfgObjs.router.Route(ctx, deletemeIA)
+	// 	log.Info("deleteme router.Route", "err", err, "path", path)
+	// 	if err == nil && path != nil {
+	// 		break
+	// 	}
+	// 	time.Sleep(2 * time.Second)
+	// }
+
+	// arw := cfgObjs.nc.AddressRewriter(nil)
+	// for {
+	// 	ctx, cancelF = context.WithTimeout(context.Background(), 2*time.Second)
+	// 	defer cancelF()
+	// 	svcAddr2 := &snet.SVCAddr{
+	// 		IA:      deletemeIA,
+	// 		Path:    path.Path(),
+	// 		NextHop: path.UnderlayNextHop(),
+	// 		SVC:     addr.SvcCS,
+	// 	}
+	// 	quicAddr2, ok, err := arw.RedirectToQUIC(ctx, svcAddr2)
+	// 	log.Info("deleteme rewrite to quic(test) [CS]", "addr", quicAddr2, "ok", ok, "err", err)
+	// 	if err != nil {
+	// 		time.Sleep(time.Second)
+	// 		continue
+	// 	}
+	// 	svcAddr2.SVC = addr.SvcCOL
+	// 	quicAddr2, ok, err = arw.RedirectToQUIC(ctx, svcAddr2)
+	// 	log.Info("deleteme rewrite to quic(test) [COL]", "addr", quicAddr2, "ok", ok, "err", err)
+	// 	if err == nil {
+	// 		break
+	// 	}
+	// 	time.Sleep(time.Second)
+	// }
+	// // end of deleteme
+	// /////////////////////////////////////////////////////////////////////////////////////
+
 	manager, err := setupColibri(&cfg.Colibri, cfgObjs)
 	if err != nil {
 		return err
@@ -89,6 +134,7 @@ func realMain(cfg *config.Config) error {
 	}
 }
 
+// cfgObjs contains the objects needed for the confinguration of colibri.
 type cfgObjs struct {
 	masterKey keyconf.Master
 	revCache  revcache.RevCache
@@ -98,6 +144,7 @@ type cfgObjs struct {
 	quicStack *infraenv.QUICStack
 	tcpStack  net.Listener
 	dialer    *libgrpc.QUICDialer
+	tcpDialer *libgrpc.TCPDialer
 	router    snet.Router
 	closeFcn  func() // defer a call to this function
 }
@@ -169,6 +216,20 @@ func setupNetwork(cfg *config.Config) (*cfgObjs, error) {
 		Dialer:   quicStack.Dialer,
 	}
 
+	tcpDialer := &libgrpc.TCPDialer{
+		SvcResolver: func(dst addr.HostSVC) []resolver.Address {
+			targets := []resolver.Address{}
+			addrs, err := itopo.Provider().Get().Multicast(dst)
+			if err != nil {
+				return targets
+			}
+			for _, entry := range addrs {
+				targets = append(targets, resolver.Address{Addr: entry.String()})
+			}
+			return targets
+		},
+	}
+
 	cfgObjs := &cfgObjs{
 		revCache:  revCache,
 		pathDB:    pathDB,
@@ -177,67 +238,123 @@ func setupNetwork(cfg *config.Config) (*cfgObjs, error) {
 		quicStack: quicStack,
 		tcpStack:  tcpStack,
 		dialer:    dialer,
+		tcpDialer: tcpDialer,
 		closeFcn: func() {
-			defer revCache.Close()
-			defer quicStack.RedirectCloser()
-			defer pathDB.Close()
+			// LIFO order:
+			quicStack.RedirectCloser()
+			trustDB.Close()
+			pathDB.Close()
+			revCache.Close()
 		},
 	}
 
-	return withRouter(cfg, cfgObjs)
+	return setupRouter(cfg, cfgObjs)
 }
 
-func withRouter(cfg *config.Config, cfgObjs *cfgObjs) (*cfgObjs, error) {
-
-	topo := itopo.Get()
-	trustengineCache := cfg.TrustEngine.Cache.New()
-	inspector := trust.CachingInspector{
-		Inspector: trust.DBInspector{
-			DB: cfgObjs.trustDB,
-		},
-		// CacheHits:          cacheHits,
+func setupRouter(cfg *config.Config, cfgObjs *cfgObjs) (*cfgObjs, error) {
+	engine, err := sciond.TrustEngine(cfg.General.ConfigDir, cfgObjs.trustDB, cfgObjs.tcpDialer)
+	if err != nil {
+		return nil, serrors.WrapStr("creating trust engine", err)
+	}
+	requester := &segfetchergrpc.Requester{
+		Dialer: cfgObjs.tcpDialer,
+	}
+	verifier := compat.Verifier{Verifier: trust.Verifier{
+		Engine:             engine,
+		Cache:              cfg.TrustEngine.Cache.New(),
 		MaxCacheExpiration: cfg.TrustEngine.Cache.Expiration,
-		Cache:              trustengineCache,
-	}
-	provider := trust.FetchingProvider{
-		DB: cfgObjs.trustDB,
-		Fetcher: trustgrpc.Fetcher{
-			IA:     topo.IA(),
-			Dialer: cfgObjs.dialer,
-			// Requests: libmetrics.NewPromCounter(trustmetrics.RPC.Fetches),
-		},
-		Recurser: trust.ASLocalRecurser{IA: topo.IA()},
-	}
-	verifier := compat.Verifier{
-		Verifier: trust.Verifier{
-			Engine: provider,
-			// CacheHits:          cacheHits,
-			MaxCacheExpiration: cfg.TrustEngine.Cache.Expiration,
-			Cache:              trustengineCache,
-		},
-	}
-
-	fetcherCfg := segreq.FetcherConfig{
-		IA:            itopo.Get().IA(),
-		PathDB:        cfgObjs.pathDB,
-		RevCache:      cfgObjs.revCache,
-		QueryInterval: cfg.PS.QueryInterval.Duration,
-		RPC: &segfetchergrpc.Requester{
-			Dialer: cfgObjs.dialer,
-		},
-		Inspector:    inspector,
+	}}
+	pather := &segfetcher.Pather{
+		RevCache:     cfgObjs.revCache,
 		TopoProvider: itopo.Provider(),
-		Verifier:     verifier,
+		Fetcher: &segfetcher.Fetcher{
+			QueryInterval: 10 * time.Minute,
+			PathDB:        cfgObjs.pathDB,
+			Resolver: segfetcher.NewResolver(
+				cfgObjs.pathDB,
+				cfgObjs.revCache,
+				neverLocal{},
+			),
+			ReplyHandler: &seghandler.Handler{
+				Verifier: &seghandler.DefaultVerifier{Verifier: verifier},
+				Storage: &seghandler.DefaultStorage{
+					PathDB:   cfgObjs.pathDB,
+					RevCache: cfgObjs.revCache,
+				},
+			},
+			Requester: &segfetcher.DefaultRequester{
+				RPC:         requester,
+				DstProvider: &dstProvider{},
+			},
+			Metrics: segfetcher.NewFetcherMetrics("co"),
+		},
+		Splitter: &segfetcher.MultiSegmentSplitter{
+			LocalIA:   itopo.Provider().Get().IA(),
+			Core:      itopo.Get().Core(),
+			Inspector: engine,
+		},
 	}
-
-	cfgObjs.router = segreq.NewRouter(fetcherCfg)
-	provider.Router = trust.AuthRouter{
-		ISD:    topo.IA().I,
-		DB:     cfgObjs.trustDB,
-		Router: cfgObjs.router,
-	}
+	cfgObjs.router = NewRouter(pather)
 	return cfgObjs, nil
+
+	// fetcher := fetcher.NewFetcher(fetcher.FetcherConfig{
+	// 	RPC:          requester,
+	// 	PathDB:       cfgObjs.pathDB,
+	// 	Inspector:    engine,
+	// 	Verifier:     verifier,
+	// 	RevCache:     cfgObjs.revCache,
+	// 	TopoProvider: itopo.Provider(),
+	// 	// Cfg: cfg,
+	// })
 }
+
+// func setupRouter_deleteme(cfg *config.Config, cfgObjs *cfgObjs) (*cfgObjs, error) {
+// 	topo := itopo.Get()
+// 	trustengineCache := cfg.TrustEngine.Cache.New()
+// 	inspector := trust.CachingInspector{
+// 		Inspector: trust.DBInspector{
+// 			DB: cfgObjs.trustDB,
+// 		},
+// 		MaxCacheExpiration: cfg.TrustEngine.Cache.Expiration,
+// 		Cache:              trustengineCache,
+// 	}
+// 	provider := trust.FetchingProvider{
+// 		DB: cfgObjs.trustDB,
+// 		Fetcher: trustgrpc.Fetcher{
+// 			IA:     topo.IA(),
+// 			Dialer: cfgObjs.dialer,
+// 		},
+// 		Recurser: trust.ASLocalRecurser{IA: topo.IA()},
+// 	}
+// 	verifier := compat.Verifier{
+// 		Verifier: trust.Verifier{
+// 			Engine:             provider,
+// 			MaxCacheExpiration: cfg.TrustEngine.Cache.Expiration,
+// 			Cache:              trustengineCache,
+// 		},
+// 	}
+
+// 	fetcherCfg := segreq.FetcherConfig{
+// 		IA:            itopo.Get().IA(),
+// 		PathDB:        cfgObjs.pathDB,
+// 		RevCache:      cfgObjs.revCache,
+// 		QueryInterval: cfg.PS.QueryInterval.Duration,
+// 		RPC: &segfetchergrpc.Requester{
+// 			Dialer: cfgObjs.dialer,
+// 		},
+// 		Inspector:    inspector,
+// 		TopoProvider: itopo.Provider(),
+// 		Verifier:     verifier,
+// 	}
+
+// 	cfgObjs.router = segreq.NewRouter(fetcherCfg)
+// 	provider.Router = trust.AuthRouter{
+// 		ISD:    topo.IA().I,
+// 		DB:     cfgObjs.trustDB,
+// 		Router: cfgObjs.router,
+// 	}
+// 	return cfgObjs, nil
+// }
 
 // setupColibri returns the running manager.
 func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner, error) {
@@ -250,11 +367,6 @@ func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner
 		Caps:  cfg.Capacities,
 		Delta: cfg.Delta,
 	}
-	// colDialer := &libgrpc.QUICDialer{
-	// 	Rewriter: cfgObjs.nc.AddressRewriter(nil),
-	// 	Dialer:   cfgObjs.quicStack.Dialer,
-	// }
-
 	colibriStore, err := reservationstore.NewStore(itopo.Get(), cfgObjs.router, cfgObjs.nc.AddressRewriter(nil),
 		cfgObjs.dialer, db, admitter, cfgObjs.masterKey.Key0)
 	if err != nil {
@@ -264,7 +376,6 @@ func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner
 	colibriService := &colgrpc.ColibriService{
 		Store: colibriStore,
 	}
-	// colpb.RegisterColibriServer(quicServer, colibriService)
 	colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
 	tcpColServer := grpc.NewServer(libgrpc.UnaryServerInterceptor())
 	colpb.RegisterColibriServer(colServer, colibriService)
@@ -272,7 +383,7 @@ func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner
 
 	// run inter and intra AS servers
 	topo := itopo.Get()
-	// TODO(juagargi) integrate TCP and QUIC with just one listener in coliquic.ColibriListener
+	// TODO(juagargi) integrate TCP and QUIC with just one listener in coliquic.
 	go func() {
 		defer log.HandlePanic()
 		lis := cfgObjs.quicStack.Listener
@@ -321,4 +432,39 @@ func colibriManager(topo topology.Topology, router snet.Router, store reservatio
 	// remote
 	// deleteme
 	// return periodic.Start(mgr, 100*time.Millisecond, 5*time.Hour), nil // TODO(juagargi)
+}
+
+type dstProvider struct {
+}
+
+func (r *dstProvider) Dst(_ context.Context, _ segfetcher.Request) (net.Addr, error) {
+	return addr.SvcCS, nil
+}
+
+type neverLocal struct{}
+
+func (neverLocal) IsSegLocal(_ segfetcher.Request) bool {
+	return false
+}
+
+type router struct {
+	pather *segfetcher.Pather
+}
+
+func NewRouter(pather *segfetcher.Pather) *router {
+	return &router{
+		pather: pather,
+	}
+}
+
+func (r *router) Route(ctx context.Context, dst addr.IA) (snet.Path, error) {
+	paths, err := r.AllRoutes(ctx, dst)
+	if len(paths) > 0 {
+		return paths[0], err
+	}
+	return nil, err
+}
+
+func (r *router) AllRoutes(ctx context.Context, dst addr.IA) ([]snet.Path, error) {
+	return r.pather.GetPaths(ctx, dst, false)
 }
