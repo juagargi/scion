@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"path/filepath"
@@ -40,13 +39,10 @@ import (
 	"github.com/scionproto/scion/go/cs/config"
 	"github.com/scionproto/scion/go/cs/ifstate"
 	"github.com/scionproto/scion/go/cs/onehop"
-	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateless"
-	"github.com/scionproto/scion/go/cs/reservationstore"
 	segreggrpc "github.com/scionproto/scion/go/cs/segreg/grpc"
 	"github.com/scionproto/scion/go/cs/segreq"
 	segreqgrpc "github.com/scionproto/scion/go/cs/segreq/grpc"
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/drkeystorage"
 	"github.com/scionproto/scion/go/lib/fatal"
 	"github.com/scionproto/scion/go/lib/infra/infraenv"
@@ -75,14 +71,12 @@ import (
 	"github.com/scionproto/scion/go/pkg/command"
 	"github.com/scionproto/scion/go/pkg/cs"
 	"github.com/scionproto/scion/go/pkg/cs/api"
-	colgrpc "github.com/scionproto/scion/go/pkg/cs/colibri/grpc"
 	"github.com/scionproto/scion/go/pkg/cs/drkey"
 	drkeygrpc "github.com/scionproto/scion/go/pkg/cs/drkey/grpc"
 	cstrustgrpc "github.com/scionproto/scion/go/pkg/cs/trust/grpc"
 	cstrustmetrics "github.com/scionproto/scion/go/pkg/cs/trust/metrics"
 	"github.com/scionproto/scion/go/pkg/discovery"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
-	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	cppb "github.com/scionproto/scion/go/pkg/proto/control_plane"
 	dpb "github.com/scionproto/scion/go/pkg/proto/discovery"
 	"github.com/scionproto/scion/go/pkg/service"
@@ -517,73 +511,6 @@ func realMain() error {
 		return err
 	}
 
-	//////////////////////////////////////////////////////////////////////////////////////////////
-
-	db, err := storage.NewColibriStorage(globalCfg.Colibri.DB)
-	if err != nil {
-		return serrors.WrapStr("error initializing COLIBRI DB", err)
-	}
-
-	admitter := &admission.StatelessAdmission{
-		Caps:  globalCfg.Colibri.Capacities,
-		Delta: globalCfg.Colibri.Delta,
-	}
-	colDialer := &libgrpc.QUICDialer{
-		Rewriter: nc.AddressRewriter(nil),
-		Dialer:   quicStack.Dialer,
-	}
-	masterKey, err := loadMasterSecret(globalCfg.General.ConfigDir)
-	if err != nil {
-		return serrors.WrapStr("loading master secret in COLIBRI", err)
-	}
-	colibriStore, err := reservationstore.NewStore(topo, router, nc.AddressRewriter(nil),
-		colDialer, db, admitter, masterKey.Key0)
-	if err != nil {
-		return serrors.WrapStr("initializing colibri store", err)
-	}
-
-	colibriService := &colgrpc.ColibriService{
-		Store: colibriStore,
-	}
-	// colpb.RegisterColibriServer(quicServer, colibriService)
-	colServer := coliquic.NewGrpcServer(libgrpc.UnaryServerInterceptor())
-	tcpColServer := grpc.NewServer(libgrpc.UnaryServerInterceptor())
-	colpb.RegisterColibriServer(colServer, colibriService)
-	colpb.RegisterColibriServer(tcpColServer, colibriService)
-	go func() {
-		defer log.HandlePanic()
-		lis, err := coliquic.ColibriListener(topo)
-		if err != nil {
-			fatal.Fatal(err)
-		}
-		log.Info("DELETEME %%%%%%%%% colibri grpc server listening", "addr", lis.Addr())
-		if err := colServer.Serve(lis); err != nil {
-			fatal.Fatal(err)
-		}
-	}()
-	go func() {
-		defer log.HandlePanic()
-		// TODO(juagargi) integrate TCP and QUIC with just one listener in coliquic.ColibriListener
-		publicAddr, err := topo.Anycast(addr.SvcCOL)
-		if err != nil {
-			fatal.Fatal(err)
-		}
-		tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{
-			IP:   publicAddr.IP,
-			Port: publicAddr.Port,
-			Zone: publicAddr.Zone,
-		})
-		if err != nil {
-			fatal.Fatal(err)
-		}
-		log.Info("DELETEME %%%%%%%%% colibri TCP grpc server listening", "tcp_addr", tcpListener.Addr())
-		if err := tcpColServer.Serve(tcpListener); err != nil {
-			fatal.Fatal(err)
-		}
-	}()
-
-	//////////////////////////////////////////////////////////////////////////////////////////////
-
 	promgrpc.Register(quicServer)
 	promgrpc.Register(tcpServer)
 	go func() {
@@ -684,7 +611,6 @@ func realMain() error {
 		Inspector:       inspector,
 		Metrics:         metrics,
 		DRKeyStore:      drkeyServStore,
-		ColibriStore:    colibriStore,
 		MACGen:          macGen,
 		TopoProvider:    itopo.Provider(),
 		StaticInfo:      func() *beaconing.StaticInfoCfg { return staticInfo },
@@ -694,7 +620,6 @@ func realMain() error {
 		RegistrationInterval:      globalCfg.BS.RegistrationInterval.Duration,
 		DRKeyEpochInterval:        globalCfg.DRKey.EpochDuration.Duration,
 		HiddenPathRegistrationCfg: hpWriterCfg,
-		ColibriInitialRsvs:        globalCfg.Colibri.Reservations,
 		AllowIsdLoop:              isdLoopAllowed,
 	})
 	if err != nil {

@@ -17,11 +17,14 @@ package main
 import (
 	"net"
 	"path/filepath"
+	"time"
 
 	"google.golang.org/grpc"
 
 	"github.com/scionproto/scion/go/cs/config"
+	coli_conf "github.com/scionproto/scion/go/cs/reservation/conf"
 	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateless"
+	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/cs/reservationstore"
 	"github.com/scionproto/scion/go/cs/segreq"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -34,6 +37,7 @@ import (
 	"github.com/scionproto/scion/go/lib/keyconf"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/pathdb"
+	"github.com/scionproto/scion/go/lib/periodic"
 	"github.com/scionproto/scion/go/lib/revcache"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
@@ -67,12 +71,22 @@ func realMain(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	if err := setupColibri(&cfg.Colibri, cfgObjs); err != nil {
-		return err
-	}
 	defer cfgObjs.closeFcn()
 
-	return nil
+	manager, err := setupColibri(&cfg.Colibri, cfgObjs)
+	if err != nil {
+		return err
+	}
+	defer manager.Kill()
+
+	select {
+	case <-fatal.ShutdownChan():
+		// Whenever we receive a SIGINT or SIGTERM we exit without an error.
+		// Deferred shutdowns for all running servers run now.
+		return nil
+	case <-fatal.FatalChan():
+		return serrors.New("shutdown on error")
+	}
 }
 
 type cfgObjs struct {
@@ -225,25 +239,26 @@ func withRouter(cfg *config.Config, cfgObjs *cfgObjs) (*cfgObjs, error) {
 	return cfgObjs, nil
 }
 
-func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) error {
+// setupColibri returns the running manager.
+func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner, error) {
 	db, err := storage.NewColibriStorage(cfg.DB)
 	if err != nil {
-		return serrors.WrapStr("error initializing COLIBRI DB", err)
+		return nil, serrors.WrapStr("error initializing COLIBRI DB", err)
 	}
 
 	admitter := &admission.StatelessAdmission{
 		Caps:  cfg.Capacities,
 		Delta: cfg.Delta,
 	}
-	colDialer := &libgrpc.QUICDialer{
-		Rewriter: cfgObjs.nc.AddressRewriter(nil),
-		Dialer:   cfgObjs.quicStack.Dialer,
-	}
+	// colDialer := &libgrpc.QUICDialer{
+	// 	Rewriter: cfgObjs.nc.AddressRewriter(nil),
+	// 	Dialer:   cfgObjs.quicStack.Dialer,
+	// }
 
 	colibriStore, err := reservationstore.NewStore(itopo.Get(), cfgObjs.router, cfgObjs.nc.AddressRewriter(nil),
-		colDialer, db, admitter, cfgObjs.masterKey.Key0)
+		cfgObjs.dialer, db, admitter, cfgObjs.masterKey.Key0)
 	if err != nil {
-		return serrors.WrapStr("initializing colibri store", err)
+		return nil, serrors.WrapStr("initializing colibri store", err)
 	}
 
 	colibriService := &colgrpc.ColibriService{
@@ -257,12 +272,10 @@ func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) error {
 
 	// run inter and intra AS servers
 	topo := itopo.Get()
+	// TODO(juagargi) integrate TCP and QUIC with just one listener in coliquic.ColibriListener
 	go func() {
 		defer log.HandlePanic()
-		lis, err := coliquic.ColibriListener(topo)
-		if err != nil {
-			fatal.Fatal(err)
-		}
+		lis := cfgObjs.quicStack.Listener
 		log.Info("DELETEME %%%%%%%%% colibri grpc server listening", "addr", lis.Addr())
 		if err := colServer.Serve(lis); err != nil {
 			fatal.Fatal(err)
@@ -270,23 +283,42 @@ func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) error {
 	}()
 	go func() {
 		defer log.HandlePanic()
-		// TODO(juagargi) integrate TCP and QUIC with just one listener in coliquic.ColibriListener
-		publicAddr, err := topo.Anycast(addr.SvcCOL)
-		if err != nil {
-			fatal.Fatal(err)
-		}
-		tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{
-			IP:   publicAddr.IP,
-			Port: publicAddr.Port,
-			Zone: publicAddr.Zone,
-		})
-		if err != nil {
-			fatal.Fatal(err)
-		}
+		tcpListener := cfgObjs.tcpStack
 		log.Info("DELETEME %%%%%%%%% colibri TCP grpc server listening", "tcp_addr", tcpListener.Addr())
 		if err := tcpColServer.Serve(tcpListener); err != nil {
 			fatal.Fatal(err)
 		}
 	}()
-	return nil
+
+	manager, err := colibriManager(topo, cfgObjs.router, colibriStore, cfg.Reservations)
+	if err != nil {
+		return nil, serrors.WrapStr("starting colibri manager", err)
+	}
+
+	return manager, nil
+}
+
+func colibriManager(topo topology.Topology, router snet.Router, store reservationstorage.Store,
+	initialRsvs *coli_conf.Reservations) (*periodic.Runner, error) {
+
+	if store == nil {
+		return nil, nil
+	}
+	mgr, err := reservationstore.NewColibriManager(topo.IA(), router,
+		store, initialRsvs)
+	if err != nil {
+		return nil, serrors.WrapStr("could not start colibri manager", err)
+	}
+	return periodic.Start(mgr, 100*time.Millisecond, 5*time.Second), nil
+	//
+	//
+	//
+	//
+	//
+	// dont
+	// forget
+	// to
+	// remote
+	// deleteme
+	// return periodic.Start(mgr, 100*time.Millisecond, 5*time.Hour), nil // TODO(juagargi)
 }
