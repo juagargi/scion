@@ -76,48 +76,6 @@ func realMain(cfg *config.Config) error {
 	}
 	defer cfgObjs.closeFcn()
 
-	// /////////////////////////////////////////////////////////////////////////////////////
-	// // deleteme:
-	// deletemeIA, _ := addr.IAFromString("1-ff00:0:110")
-	// ctx, cancelF := context.WithTimeout(context.Background(), time.Hour)
-	// defer cancelF()
-	// var path snet.Path
-	// for {
-	// 	path, err = cfgObjs.router.Route(ctx, deletemeIA)
-	// 	log.Info("deleteme router.Route", "err", err, "path", path)
-	// 	if err == nil && path != nil {
-	// 		break
-	// 	}
-	// 	time.Sleep(2 * time.Second)
-	// }
-
-	// arw := cfgObjs.nc.AddressRewriter(nil)
-	// for {
-	// 	ctx, cancelF = context.WithTimeout(context.Background(), 2*time.Second)
-	// 	defer cancelF()
-	// 	svcAddr2 := &snet.SVCAddr{
-	// 		IA:      deletemeIA,
-	// 		Path:    path.Path(),
-	// 		NextHop: path.UnderlayNextHop(),
-	// 		SVC:     addr.SvcCS,
-	// 	}
-	// 	quicAddr2, ok, err := arw.RedirectToQUIC(ctx, svcAddr2)
-	// 	log.Info("deleteme rewrite to quic(test) [CS]", "addr", quicAddr2, "ok", ok, "err", err)
-	// 	if err != nil {
-	// 		time.Sleep(time.Second)
-	// 		continue
-	// 	}
-	// 	svcAddr2.SVC = addr.SvcCOL
-	// 	quicAddr2, ok, err = arw.RedirectToQUIC(ctx, svcAddr2)
-	// 	log.Info("deleteme rewrite to quic(test) [COL]", "addr", quicAddr2, "ok", ok, "err", err)
-	// 	if err == nil {
-	// 		break
-	// 	}
-	// 	time.Sleep(time.Second)
-	// }
-	// // end of deleteme
-	// /////////////////////////////////////////////////////////////////////////////////////
-
 	manager, err := setupColibri(&cfg.Colibri, cfgObjs)
 	if err != nil {
 		return err
@@ -203,6 +161,7 @@ func setupNetwork(cfg *config.Config) (*cfgObjs, error) {
 		},
 	}
 	quicStack, err := nc.QUICStack()
+	// quicStack, err := nc.QUICStack_deleteme()
 	if err != nil {
 		return nil, serrors.WrapStr("initializing QUIC stack", err)
 	}
@@ -296,65 +255,7 @@ func setupRouter(cfg *config.Config, cfgObjs *cfgObjs) (*cfgObjs, error) {
 	}
 	cfgObjs.router = NewRouter(pather)
 	return cfgObjs, nil
-
-	// fetcher := fetcher.NewFetcher(fetcher.FetcherConfig{
-	// 	RPC:          requester,
-	// 	PathDB:       cfgObjs.pathDB,
-	// 	Inspector:    engine,
-	// 	Verifier:     verifier,
-	// 	RevCache:     cfgObjs.revCache,
-	// 	TopoProvider: itopo.Provider(),
-	// 	// Cfg: cfg,
-	// })
 }
-
-// func setupRouter_deleteme(cfg *config.Config, cfgObjs *cfgObjs) (*cfgObjs, error) {
-// 	topo := itopo.Get()
-// 	trustengineCache := cfg.TrustEngine.Cache.New()
-// 	inspector := trust.CachingInspector{
-// 		Inspector: trust.DBInspector{
-// 			DB: cfgObjs.trustDB,
-// 		},
-// 		MaxCacheExpiration: cfg.TrustEngine.Cache.Expiration,
-// 		Cache:              trustengineCache,
-// 	}
-// 	provider := trust.FetchingProvider{
-// 		DB: cfgObjs.trustDB,
-// 		Fetcher: trustgrpc.Fetcher{
-// 			IA:     topo.IA(),
-// 			Dialer: cfgObjs.dialer,
-// 		},
-// 		Recurser: trust.ASLocalRecurser{IA: topo.IA()},
-// 	}
-// 	verifier := compat.Verifier{
-// 		Verifier: trust.Verifier{
-// 			Engine:             provider,
-// 			MaxCacheExpiration: cfg.TrustEngine.Cache.Expiration,
-// 			Cache:              trustengineCache,
-// 		},
-// 	}
-
-// 	fetcherCfg := segreq.FetcherConfig{
-// 		IA:            itopo.Get().IA(),
-// 		PathDB:        cfgObjs.pathDB,
-// 		RevCache:      cfgObjs.revCache,
-// 		QueryInterval: cfg.PS.QueryInterval.Duration,
-// 		RPC: &segfetchergrpc.Requester{
-// 			Dialer: cfgObjs.dialer,
-// 		},
-// 		Inspector:    inspector,
-// 		TopoProvider: itopo.Provider(),
-// 		Verifier:     verifier,
-// 	}
-
-// 	cfgObjs.router = segreq.NewRouter(fetcherCfg)
-// 	provider.Router = trust.AuthRouter{
-// 		ISD:    topo.IA().I,
-// 		DB:     cfgObjs.trustDB,
-// 		Router: cfgObjs.router,
-// 	}
-// 	return cfgObjs, nil
-// }
 
 // setupColibri returns the running manager.
 func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner, error) {
