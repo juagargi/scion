@@ -183,12 +183,9 @@ func (o *ServiceClientOperator) findNeighbors(addrBook map[uint16]*snet.UDPAddr,
 	return missingNeighbors
 }
 
-func (o *ServiceClientOperator) resolveAddr(ia *addr.IA) (
-	*snet.UDPAddr, error) {
-
+func (o *ServiceClientOperator) resolveAddr(ia *addr.IA) (*snet.UDPAddr, error) {
 	ctx, cancelCtx := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelCtx()
-
 	return o.srvResolver.ResolveColibriService(ctx, ia)
 }
 
@@ -223,7 +220,7 @@ func (r *AnycastColSrvRes) ResolveColibriService(ctx context.Context, ia *addr.I
 		return nil, serrors.New("resolved address is not snet.UDPAddr", "addr", quicAddr,
 			"type", common.TypeOf(quicAddr))
 	}
-	return &snet.UDPAddr{ // TODO(juagargi) should be a SVCAddr instead
+	return &snet.UDPAddr{
 		IA:      *ia,
 		Path:    path.Path(),
 		NextHop: path.UnderlayNextHop(),
