@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -231,18 +232,65 @@ type PathType uint8
 // the different COLIBRI path types.
 const (
 	UnknownPath PathType = iota
+	CorePath
 	DownPath
 	UpPath
 	PeeringDownPath
 	PeeringUpPath
 	E2EPath
-	CorePath
 )
 
 // Validate will return an error for invalid values.
 func (pt PathType) Validate() error {
 	if pt == UnknownPath || pt > CorePath {
 		return serrors.New("invalid path type", "path_type", pt)
+	}
+	return nil
+}
+
+func (pt PathType) MarshalJSON() ([]byte, error) {
+	var text string
+	switch pt {
+	case CorePath:
+		text = "core"
+	case DownPath:
+		text = "down"
+	case UpPath:
+		text = "up"
+	case PeeringDownPath:
+		text = "peer_down"
+	case PeeringUpPath:
+		text = "peer_up"
+	case E2EPath:
+		text = "e2e"
+	default:
+		return nil, serrors.New("unknown path_type", "path_type", pt)
+	}
+	return json.Marshal(text)
+}
+
+func (pt *PathType) UnmarshalJSON(b []byte) error {
+	var text string
+	err := json.Unmarshal(b, &text)
+	if err != nil {
+		return err
+	}
+	switch text {
+	case "core":
+		*pt = CorePath
+	case "down":
+		*pt = DownPath
+	case "up":
+		*pt = UpPath
+	case "peer_down":
+		*pt = PeeringDownPath
+	case "peer_up":
+		*pt = PeeringUpPath
+	case "e2e":
+		*pt = E2EPath
+	default:
+		return serrors.New("unknown path_type description", "text", text,
+			"bytes", hex.EncodeToString(b))
 	}
 	return nil
 }

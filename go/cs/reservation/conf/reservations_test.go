@@ -36,6 +36,7 @@ func TestReservationsJson(t *testing.T) {
 				Rsvs: []ReservationEntry{
 					{
 						DstAS:         xtest.MustParseIA("1-ff00:1:112"),
+						PathType:      reservation.DownPath,
 						PathPredicate: "1-ff00:1:112#0",
 						MaxSize:       13,
 						MinSize:       7,
@@ -53,6 +54,7 @@ func TestReservationsJson(t *testing.T) {
 				Rsvs: []ReservationEntry{
 					{
 						DstAS:         xtest.MustParseIA("1-ff00:1:112"),
+						PathType:      reservation.DownPath,
 						PathPredicate: "1-ff00:1:112#0",
 						MaxSize:       13,
 						MinSize:       7,
@@ -63,6 +65,7 @@ func TestReservationsJson(t *testing.T) {
 					},
 					{
 						DstAS:         xtest.MustParseIA("1-ff00:1:113"),
+						PathType:      reservation.UpPath,
 						PathPredicate: "1-ff00:1:113#0",
 						MaxSize:       13,
 						MinSize:       7,

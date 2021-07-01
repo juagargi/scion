@@ -44,6 +44,7 @@ func ReservationsFromFile(filename string) (*Reservations, error) {
 
 type ReservationEntry struct {
 	DstAS         addr.IA              `json:"destination"`
+	PathType      reservation.PathType `json:"path_type"`
 	PathPredicate string               `json:"path_predicate"`
 	MaxSize       reservation.BWCls    `json:"max_size"`
 	MinSize       reservation.BWCls    `json:"min_size"`
