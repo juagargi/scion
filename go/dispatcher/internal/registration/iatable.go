@@ -20,7 +20,6 @@ import (
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
-	"github.com/scionproto/scion/go/lib/log"
 )
 
 const (
@@ -126,7 +125,6 @@ func newIATable(minPort, maxPort int) *iaTable {
 func (t *iaTable) Register(ia addr.IA, public *net.UDPAddr, bind net.IP, svc addr.HostSVC,
 	value interface{}) (RegReference, error) {
 
-	log.Info("deleteme iaTable.Register", "svc", svc, "ia", ia.String(), "public", public.String())
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	if ia.I == 0 {

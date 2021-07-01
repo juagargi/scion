@@ -92,7 +92,6 @@ func (as *Server) Serve() error {
 func (as *Server) Register(ctx context.Context, ia addr.IA, address *net.UDPAddr,
 	svc addr.HostSVC) (net.PacketConn, uint16, error) {
 
-	log.Info("deleteme dispatcher/dispatcher.Server.Register", "svc", svc, "ia", ia.String(), "address", address.String())
 	tableEntry := newTableEntry()
 	ref, err := as.routingTable.Register(ia, address, nil, svc, tableEntry)
 	if err != nil {
