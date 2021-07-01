@@ -118,6 +118,13 @@ func WithEndProps(endProps reservation.PathEndProps) ReservationMod {
 	}
 }
 
+func WithPathType(pathType reservation.PathType) ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		rsv.PathType = pathType
+		return rsv
+	}
+}
+
 // WithActiveIndex sets the index specified with idx as active.
 func WithActiveIndex(idx int) ReservationMod {
 	return func(rsv *segment.Reservation) *segment.Reservation {

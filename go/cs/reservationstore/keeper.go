@@ -78,6 +78,11 @@ func NewKeeper(manager Manager, conf *conf.Reservations) (
 	*keeper, error) {
 
 	entries, err := parseInitial(conf)
+	rsvsCount := 0
+	for _, r := range entries {
+		rsvsCount += len(r)
+	}
+	log.Debug("colibri keeper", "destinations", len(entries), "rsvs", rsvsCount)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +155,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 	now := k.manager.Now()
 	wakeupTime := now.Add(sleepAtMost)
-	for _, entry := range entries {
+	for i, entry := range entries {
 		// filter reservations
 		atLeastUntil := k.manager.Now().Add(minDuration)
 		compliantRsvs, needActivation, needIndices, notCompliant :=
@@ -160,7 +165,8 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
 			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
 
-		log.Info("deleteme ____ colibri keeper, reservations by compliance",
+		log.Info("deleteme ____ colibri keeper, reservations by compliance", "ia", dstIA.String(),
+			"i/total", fmt.Sprintf("%d/%d", i+1, len(entries)),
 			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
 			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
 
@@ -318,6 +324,7 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 
 // requirements is a 1 to 1 association to a conf.ReservationEntry
 type requirements struct {
+	pathType      reservation.PathType
 	predicate     *pathpol.Sequence
 	minBW         reservation.BWCls
 	maxBW         reservation.BWCls
@@ -477,6 +484,8 @@ func (e *requirements) SelectRequests(requests []*seg.SetupReq, n int) []int {
 // it satisfies them, plus the reservation is good at least until the time in `atLeastUntil`.
 func (e requirements) Compliance(rsv *seg.Reservation, atLeastUntil time.Time) Compliance {
 	switch {
+	case rsv.PathType != e.pathType:
+		return NeverCompliant
 	case rsv.TrafficSplit != e.splitCls:
 		return NeverCompliant
 	case rsv.PathEndProps != e.endProps:
@@ -536,6 +545,7 @@ func parseInitial(conf *conf.Reservations) (map[addr.IA][]requirements, error) {
 		}
 
 		initial[r.DstAS] = append(initial[r.DstAS], requirements{
+			pathType:      r.PathType,
 			predicate:     seq,
 			minBW:         r.MinSize,
 			maxBW:         r.MaxSize,

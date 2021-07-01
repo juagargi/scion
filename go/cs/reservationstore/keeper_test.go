@@ -501,6 +501,7 @@ func TestRequirementsCompliance(t *testing.T) {
 	now := util.SecsToTime(0)
 	tomorrow := now.Add(3600 * 24 * time.Second)
 	reqs := requirements{
+		pathType:      reservation.UpPath,
 		predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
 		minBW:         10,
 		maxBW:         42,
@@ -518,11 +519,23 @@ func TestRequirementsCompliance(t *testing.T) {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithPathType(reservation.UpPath),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: Compliant,
+		},
+		"bad path type": {
+			requirements: reqs,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithPathType(reservation.DownPath),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(reqs.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: NeverCompliant,
 		},
 		"one compliant index but bad traffic split": {
 			requirements: reqs,
@@ -826,6 +839,7 @@ func TestParseInitial(t *testing.T) {
 			conf: conf.Reservations{Rsvs: []conf.ReservationEntry{
 				{
 					DstAS:         xtest.MustParseIA("1-ff00:0:2"),
+					PathType:      reservation.UpPath,
 					PathPredicate: "",
 					MinSize:       1,
 					MaxSize:       2,
@@ -837,6 +851,7 @@ func TestParseInitial(t *testing.T) {
 			expectedEntries: map[addr.IA][]requirements{
 				xtest.MustParseIA("1-ff00:0:2"): {
 					{
+						pathType:      reservation.UpPath,
 						predicate:     newSequence(t, ""),
 						minBW:         1,
 						maxBW:         2,
