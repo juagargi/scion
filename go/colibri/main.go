@@ -160,8 +160,8 @@ func setupNetwork(cfg *config.Config) (*cfgObjs, error) {
 			RevocationHandler: cs.RevocationHandler{RevCache: revCache},
 		},
 	}
-	quicStack, err := nc.QUICStack()
-	// quicStack, err := nc.QUICStack_deleteme()
+	// quicStack, err := nc.QUICStack()
+	quicStack, err := nc.QUICStack_deleteme()
 	if err != nil {
 		return nil, serrors.WrapStr("initializing QUIC stack", err)
 	}
@@ -268,8 +268,8 @@ func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner
 		Caps:  cfg.Capacities,
 		Delta: cfg.Delta,
 	}
-	colibriStore, err := reservationstore.NewStore(itopo.Get(), cfgObjs.router, cfgObjs.nc.AddressRewriter(nil),
-		cfgObjs.dialer, db, admitter, cfgObjs.masterKey.Key0)
+	colibriStore, err := reservationstore.NewStore(itopo.Get(), cfgObjs.router, cfgObjs.dialer,
+		db, admitter, cfgObjs.masterKey.Key0)
 	if err != nil {
 		return nil, serrors.WrapStr("initializing colibri store", err)
 	}

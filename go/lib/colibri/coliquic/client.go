@@ -54,7 +54,7 @@ type ServiceClientOperator struct {
 }
 
 func NewServiceClientOperator(topo topology.Topology, router snet.Router,
-	arw libgrpc.AddressRewriter, clientConn GRPCClientDialer) (*ServiceClientOperator, error) {
+	clientConn GRPCClientDialer) (*ServiceClientOperator, error) {
 
 	operator := &ServiceClientOperator{
 		connDialer:  clientConn,
@@ -65,7 +65,7 @@ func NewServiceClientOperator(topo topology.Topology, router snet.Router,
 			Dialer: clientConn,
 		},
 	}
-	operator.initialize(topo, router, arw)
+	operator.initialize(topo)
 
 	return operator, nil
 }
@@ -112,8 +112,7 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, transp *base.
 }
 
 // initialize waits in the background until this operator can obtain paths to all the remaining IAs.
-func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.Router,
-	arw libgrpc.AddressRewriter) {
+func (o *ServiceClientOperator) initialize(topo topology.Topology) {
 
 	remainingIAs := neighbors(topo)
 	go func() {
@@ -209,28 +208,6 @@ func (r *AnycastColSrvRes) ResolveColibriService(ctx context.Context, ia *addr.I
 	if err != nil || path == nil {
 		return nil, serrors.New("no route to IA", "ia", ia, "err", err, "path", path)
 	}
-
-	//
-	// deleteme (test RedirectToQUIC for CS, for COL it doesn't work)
-	//
-	svcAddr2 := &snet.SVCAddr{
-		IA:      *ia,
-		Path:    path.Path(),
-		NextHop: path.UnderlayNextHop(),
-		SVC:     addr.SvcCS,
-		// SVC:     addr.SvcCOL,
-	}
-	quicAddr2, ok, err := r.Arw.RedirectToQUIC(context.Background(), svcAddr2)
-	log.Info("----- deleteme ----- rewrite to quic(test) [CS]", "addr", quicAddr2.String(), "ok", ok, "err", err)
-	if !ok || err != nil {
-		return nil, serrors.New("cannot resolve service", "svc", svcAddr2.SVC, "err", err)
-	}
-	if _, ok := quicAddr2.(*snet.UDPAddr); !ok {
-		return nil, serrors.New("resolved address is not snet.UDPAddr", "addr", quicAddr2,
-			"type", common.TypeOf(quicAddr2))
-	}
-	//
-	//
 
 	svcAddr := &snet.SVCAddr{
 		IA:      *ia,
