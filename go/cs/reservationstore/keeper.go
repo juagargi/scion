@@ -161,7 +161,8 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		compliantRsvs, needActivation, needIndices, notCompliant :=
 			entry.SplitByCompliance(currentRsvs, atLeastUntil)
 
-		log.Debug("colibri keeper, reservations by compliance",
+		log.Debug("colibri keeper, reservations by compliance", "ia", dstIA.String(),
+			"i/total", fmt.Sprintf("%d/%d", i+1, len(entries)),
 			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
 			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
 
@@ -170,14 +171,6 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
 			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
 
-		// report not compliant ones; don't delete them, they will expire eventually.
-		if len(notCompliant) > 0 {
-			log.Info("Non compliant reservations found (a change in requirements?)",
-				"count", len(notCompliant))
-			for _, rsv := range notCompliant {
-				log.Info("not compliant rsv", "id", rsv.ID)
-			}
-		}
 		// activation:
 		if err := k.activateIndices(ctx, needActivation); err != nil {
 			return time.Time{}, err
@@ -411,8 +404,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 			},
 			ExpirationTime: expTime,
 			// RLC:            rlc,
-			// PathType:       pathType,
-			PathType:     reservation.CorePath, // TODO(juagargi) replace after tests
+			PathType:     e.pathType,
 			MinBW:        e.minBW,
 			MaxBW:        e.maxBW,
 			SplitCls:     e.splitCls,
@@ -457,8 +449,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 			},
 			ExpirationTime: expTime,
 			// RLC:            e.RLC,
-			// PathType: ,
-			PathType:     reservation.CorePath, // TODO(juagargi)
+			PathType:     rsv.PathType,
 			MinBW:        e.minBW,
 			MaxBW:        e.maxBW,
 			SplitCls:     rsv.TrafficSplit,

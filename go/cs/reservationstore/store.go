@@ -375,7 +375,8 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 		}
 		for _, r := range allRsvs {
 			log.Info("deleteme FOUND reservation", "id", r.ID.String(),
-				"path_type", rsv.PathAtSource.Spath.Type)
+				"path_type", rsv.PathAtSource.Spath.Type,
+				"direction", r.PathType)
 		}
 	}
 	//
