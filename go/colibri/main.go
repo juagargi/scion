@@ -21,9 +21,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/resolver"
 
-	"github.com/scionproto/scion/go/cs/config"
 	coli_conf "github.com/scionproto/scion/go/cs/reservation/conf"
 	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateless"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
@@ -32,11 +30,8 @@ import (
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/fatal"
 	"github.com/scionproto/scion/go/lib/infra/infraenv"
-	"github.com/scionproto/scion/go/lib/infra/messenger"
 	"github.com/scionproto/scion/go/lib/infra/modules/itopo"
 	"github.com/scionproto/scion/go/lib/infra/modules/segfetcher"
-	segfetchergrpc "github.com/scionproto/scion/go/lib/infra/modules/segfetcher/grpc"
-	"github.com/scionproto/scion/go/lib/infra/modules/seghandler"
 	"github.com/scionproto/scion/go/lib/keyconf"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/pathdb"
@@ -46,14 +41,11 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/topology"
 	"github.com/scionproto/scion/go/pkg/app/launcher"
-	"github.com/scionproto/scion/go/pkg/cs"
+	"github.com/scionproto/scion/go/pkg/colibri/config"
 	colgrpc "github.com/scionproto/scion/go/pkg/cs/colibri/grpc"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
-	"github.com/scionproto/scion/go/pkg/sciond"
 	"github.com/scionproto/scion/go/pkg/storage"
-	"github.com/scionproto/scion/go/pkg/trust"
-	"github.com/scionproto/scion/go/pkg/trust/compat"
 )
 
 func main() {
@@ -70,13 +62,17 @@ func main() {
 
 func realMain(cfg *config.Config) error {
 
-	cfgObjs, err := setup(cfg)
+	ctx, cancelF := context.WithTimeout(context.Background(), 20*time.Second) // 20 secs to init
+	defer cancelF()
+	ctx = context.Background() // deleteme
+
+	cfgObjs, err := setup(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	defer cfgObjs.closeFcn()
 
-	manager, err := setupColibri(&cfg.Colibri, cfgObjs)
+	manager, err := setupColibri(cfg, cfgObjs)
 	if err != nil {
 		return err
 	}
@@ -104,10 +100,13 @@ type cfgObjs struct {
 	dialer    *libgrpc.QUICDialer
 	tcpDialer *libgrpc.TCPDialer
 	router    snet.Router
-	closeFcn  func() // defer a call to this function
+
+	stack *coliquic.ServerStack
+
+	closeFcn func() // defer a call to this function
 }
 
-func setup(cfg *config.Config) (*cfgObjs, error) {
+func setup(ctx context.Context, cfg *config.Config) (*cfgObjs, error) {
 	topo, err := topology.FromJSONFile(cfg.General.Topology())
 	if err != nil {
 		return nil, serrors.WrapStr("loading topology", err)
@@ -121,7 +120,7 @@ func setup(cfg *config.Config) (*cfgObjs, error) {
 	}
 	infraenv.InitInfraEnvironment(cfg.General.Topology())
 
-	cfgObjs, err := setupNetwork(cfg)
+	cfgObjs, err := setupNetwork(ctx, cfg)
 	if err != nil {
 		return cfgObjs, serrors.WrapStr("setting network config", err)
 	}
@@ -134,141 +133,180 @@ func setup(cfg *config.Config) (*cfgObjs, error) {
 	return cfgObjs, nil
 }
 
-func setupNetwork(cfg *config.Config) (*cfgObjs, error) {
-	revCache := storage.NewRevocationStorage()
-	pathDB, err := storage.NewPathStorage(cfg.PathDB)
-	if err != nil {
-		return nil, serrors.WrapStr("initializing path storage", err)
-	}
-	pathDB = pathdb.WithMetrics(string(storage.BackendSqlite), pathDB)
-
-	trustDB, err := storage.NewTrustStorage(cfg.TrustDB)
-	if err != nil {
-		return nil, serrors.WrapStr("initializing trust storage", err)
-	}
+func setupNetwork(ctx context.Context, cfg *config.Config) (*cfgObjs, error) {
 
 	topo := itopo.Get()
-	nc := &infraenv.NetworkConfig{
-		IA:                    topo.IA(),
-		Public:                topo.PublicAddress(addr.SvcCOL, cfg.General.ID),
-		ReconnectToDispatcher: cfg.General.ReconnectToDispatcher,
-		QUIC: infraenv.QUIC{
-			Address: cfg.QUIC.Address,
-		},
-		SVCRouter: messenger.NewSVCRouter(itopo.Provider()),
-		SCMPHandler: snet.DefaultSCMPHandler{
-			RevocationHandler: cs.RevocationHandler{RevCache: revCache},
-		},
+	serverAddr := &snet.UDPAddr{
+		IA:   topo.IA(),
+		Host: topo.PublicAddress(addr.SvcCOL, cfg.General.ID),
 	}
-	// quicStack, err := nc.QUICStack()
-	quicStack, err := nc.QUICStack_deleteme()
+
+	stack, err := coliquic.NewServerStack(ctx, serverAddr, cfg.Daemon.Address)
 	if err != nil {
-		return nil, serrors.WrapStr("initializing QUIC stack", err)
-	}
-	tcpStack, err := nc.TCPStack()
-	if err != nil {
-		return nil, serrors.WrapStr("initializing TCP stack", err)
+		return nil, serrors.WrapStr("initializing server stack", err)
 	}
 
-	dialer := &libgrpc.QUICDialer{
-		Rewriter: nc.AddressRewriter(nil),
-		Dialer:   quicStack.Dialer,
-	}
+	// //
+	// // deleteme
+	// //
+	// ia, _ := addr.IAFromString("1-ff00:0:110")
+	// var path snet.Path
+	// for {
+	// 	path, err = stack.Router.Route(context.Background(), ia)
+	// 	if path != nil {
+	// 		break
+	// 	}
+	// 	time.Sleep(time.Second)
+	// }
 
-	tcpDialer := &libgrpc.TCPDialer{
-		SvcResolver: func(dst addr.HostSVC) []resolver.Address {
-			targets := []resolver.Address{}
-			addrs, err := itopo.Provider().Get().Multicast(dst)
-			if err != nil {
-				return targets
-			}
-			for _, entry := range addrs {
-				targets = append(targets, resolver.Address{Addr: entry.String()})
-			}
-			return targets
-		},
-	}
+	// ds := &snet.SVCAddr{
+	// 	IA:      ia,
+	// 	Path:    path.Path(),
+	// 	NextHop: path.UnderlayNextHop(),
+	// 	SVC:     addr.SvcDS,
+	// }
+	// conn, err := stack.Dialer.Dial(ctx, ds)
+	// _ = conn
+	// //
+	// //
 
-	cfgObjs := &cfgObjs{
-		revCache:  revCache,
-		pathDB:    pathDB,
-		trustDB:   trustDB,
-		nc:        nc,
-		quicStack: quicStack,
-		tcpStack:  tcpStack,
-		dialer:    dialer,
-		tcpDialer: tcpDialer,
-		closeFcn: func() {
-			// LIFO order:
-			quicStack.RedirectCloser()
-			trustDB.Close()
-			pathDB.Close()
-			revCache.Close()
-		},
-	}
+	return &cfgObjs{
+		stack: stack,
+	}, nil
 
-	return setupRouter(cfg, cfgObjs)
+	// revCache := storage.NewRevocationStorage()
+	// pathDB, err := storage.NewPathStorage(cfg.PathDB)
+	// if err != nil {
+	// 	return nil, serrors.WrapStr("initializing path storage", err)
+	// }
+	// pathDB = pathdb.WithMetrics(string(storage.BackendSqlite), pathDB)
+
+	// trustDB, err := storage.NewTrustStorage(cfg.TrustDB)
+	// if err != nil {
+	// 	return nil, serrors.WrapStr("initializing trust storage", err)
+	// }
+
+	// nc := &infraenv.NetworkConfig{
+	// 	IA:                    topo.IA(),
+	// 	Public:                topo.PublicAddress(addr.SvcCOL, cfg.General.ID),
+	// 	ReconnectToDispatcher: cfg.General.ReconnectToDispatcher,
+	// 	QUIC: infraenv.QUIC{
+	// 		Address: cfg.QUIC.Address,
+	// 	},
+	// 	SVCRouter: messenger.NewSVCRouter(itopo.Provider()),
+	// 	SCMPHandler: snet.DefaultSCMPHandler{
+	// 		RevocationHandler: cs.RevocationHandler{RevCache: revCache},
+	// 	},
+	// }
+	// // quicStack, err := nc.QUICStack()
+	// quicStack, err := nc.QUICStack_deleteme()
+	// if err != nil {
+	// 	return nil, serrors.WrapStr("initializing QUIC stack", err)
+	// }
+	// tcpStack, err := nc.TCPStack()
+	// if err != nil {
+	// 	return nil, serrors.WrapStr("initializing TCP stack", err)
+	// }
+
+	// dialer := &libgrpc.QUICDialer{
+	// 	Rewriter: nc.AddressRewriter(nil),
+	// 	Dialer:   quicStack.Dialer,
+	// }
+
+	// tcpDialer := &libgrpc.TCPDialer{
+	// 	SvcResolver: func(dst addr.HostSVC) []resolver.Address {
+	// 		targets := []resolver.Address{}
+	// 		addrs, err := itopo.Provider().Get().Multicast(dst)
+	// 		if err != nil {
+	// 			return targets
+	// 		}
+	// 		for _, entry := range addrs {
+	// 			targets = append(targets, resolver.Address{Addr: entry.String()})
+	// 		}
+	// 		return targets
+	// 	},
+	// }
+
+	// cfgObjs := &cfgObjs{
+	// 	revCache:  revCache,
+	// 	pathDB:    pathDB,
+	// 	trustDB:   trustDB,
+	// 	nc:        nc,
+	// 	quicStack: quicStack,
+	// 	tcpStack:  tcpStack,
+	// 	dialer:    dialer,
+	// 	tcpDialer: tcpDialer,
+	// 	closeFcn: func() {
+	// 		// LIFO order:
+	// 		quicStack.RedirectCloser()
+	// 		trustDB.Close()
+	// 		pathDB.Close()
+	// 		revCache.Close()
+	// 	},
+	// }
+
+	// return setupRouter(cfg, cfgObjs)
 }
 
-func setupRouter(cfg *config.Config, cfgObjs *cfgObjs) (*cfgObjs, error) {
-	engine, err := sciond.TrustEngine(cfg.General.ConfigDir, cfgObjs.trustDB, cfgObjs.tcpDialer)
-	if err != nil {
-		return nil, serrors.WrapStr("creating trust engine", err)
-	}
-	requester := &segfetchergrpc.Requester{
-		Dialer: cfgObjs.tcpDialer,
-	}
-	verifier := compat.Verifier{Verifier: trust.Verifier{
-		Engine:             engine,
-		Cache:              cfg.TrustEngine.Cache.New(),
-		MaxCacheExpiration: cfg.TrustEngine.Cache.Expiration,
-	}}
-	pather := &segfetcher.Pather{
-		RevCache:     cfgObjs.revCache,
-		TopoProvider: itopo.Provider(),
-		Fetcher: &segfetcher.Fetcher{
-			QueryInterval: 10 * time.Minute,
-			PathDB:        cfgObjs.pathDB,
-			Resolver: segfetcher.NewResolver(
-				cfgObjs.pathDB,
-				cfgObjs.revCache,
-				neverLocal{},
-			),
-			ReplyHandler: &seghandler.Handler{
-				Verifier: &seghandler.DefaultVerifier{Verifier: verifier},
-				Storage: &seghandler.DefaultStorage{
-					PathDB:   cfgObjs.pathDB,
-					RevCache: cfgObjs.revCache,
-				},
-			},
-			Requester: &segfetcher.DefaultRequester{
-				RPC:         requester,
-				DstProvider: &dstProvider{},
-			},
-			Metrics: segfetcher.NewFetcherMetrics("co"),
-		},
-		Splitter: &segfetcher.MultiSegmentSplitter{
-			LocalIA:   itopo.Provider().Get().IA(),
-			Core:      itopo.Get().Core(),
-			Inspector: engine,
-		},
-	}
-	cfgObjs.router = NewRouter(pather)
-	return cfgObjs, nil
-}
+// func setupRouter(cfg *config.Config, cfgObjs *cfgObjs) (*cfgObjs, error) {
+// 	engine, err := sciond.TrustEngine(cfg.General.ConfigDir, cfgObjs.trustDB, cfgObjs.tcpDialer)
+// 	if err != nil {
+// 		return nil, serrors.WrapStr("creating trust engine", err)
+// 	}
+// 	requester := &segfetchergrpc.Requester{
+// 		Dialer: cfgObjs.tcpDialer,
+// 	}
+// 	verifier := compat.Verifier{Verifier: trust.Verifier{
+// 		Engine:             engine,
+// 		Cache:              cfg.TrustEngine.Cache.New(),
+// 		MaxCacheExpiration: cfg.TrustEngine.Cache.Expiration,
+// 	}}
+// 	pather := &segfetcher.Pather{
+// 		RevCache:     cfgObjs.revCache,
+// 		TopoProvider: itopo.Provider(),
+// 		Fetcher: &segfetcher.Fetcher{
+// 			QueryInterval: 10 * time.Minute,
+// 			PathDB:        cfgObjs.pathDB,
+// 			Resolver: segfetcher.NewResolver(
+// 				cfgObjs.pathDB,
+// 				cfgObjs.revCache,
+// 				neverLocal{},
+// 			),
+// 			ReplyHandler: &seghandler.Handler{
+// 				Verifier: &seghandler.DefaultVerifier{Verifier: verifier},
+// 				Storage: &seghandler.DefaultStorage{
+// 					PathDB:   cfgObjs.pathDB,
+// 					RevCache: cfgObjs.revCache,
+// 				},
+// 			},
+// 			Requester: &segfetcher.DefaultRequester{
+// 				RPC:         requester,
+// 				DstProvider: &dstProvider{},
+// 			},
+// 			Metrics: segfetcher.NewFetcherMetrics("co"),
+// 		},
+// 		Splitter: &segfetcher.MultiSegmentSplitter{
+// 			LocalIA:   itopo.Provider().Get().IA(),
+// 			Core:      itopo.Get().Core(),
+// 			Inspector: engine,
+// 		},
+// 	}
+// 	cfgObjs.router = NewRouter(pather)
+// 	return cfgObjs, nil
+// }
 
 // setupColibri returns the running manager.
-func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner, error) {
-	db, err := storage.NewColibriStorage(cfg.DB)
+func setupColibri(cfg *config.Config, cfgObjs *cfgObjs) (*periodic.Runner, error) {
+	db, err := storage.NewColibriStorage(cfg.Colibri.DB)
 	if err != nil {
 		return nil, serrors.WrapStr("error initializing COLIBRI DB", err)
 	}
 
 	admitter := &admission.StatelessAdmission{
-		Caps:  cfg.Capacities,
-		Delta: cfg.Delta,
+		Caps:  cfg.Colibri.Capacities,
+		Delta: cfg.Colibri.Delta,
 	}
-	colibriStore, err := reservationstore.NewStore(itopo.Get(), cfgObjs.router, cfgObjs.dialer,
+	colibriStore, err := reservationstore.NewStore(itopo.Get(), cfgObjs.stack.Router, cfgObjs.stack.Dialer,
 		db, admitter, cfgObjs.masterKey.Key0)
 	if err != nil {
 		return nil, serrors.WrapStr("initializing colibri store", err)
@@ -287,7 +325,8 @@ func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner
 	// TODO(juagargi) integrate TCP and QUIC with just one listener in coliquic.
 	go func() {
 		defer log.HandlePanic()
-		lis := cfgObjs.quicStack.Listener
+		// lis := cfgObjs.quicStack.Listener
+		lis := cfgObjs.stack.QUICListener
 		log.Info("DELETEME %%%%%%%%% colibri grpc server listening", "addr", lis.Addr())
 		if err := colServer.Serve(lis); err != nil {
 			fatal.Fatal(err)
@@ -295,14 +334,15 @@ func setupColibri(cfg *config.ColibriConfig, cfgObjs *cfgObjs) (*periodic.Runner
 	}()
 	go func() {
 		defer log.HandlePanic()
-		tcpListener := cfgObjs.tcpStack
+		// tcpListener := cfgObjs.tcpStack
+		tcpListener := cfgObjs.stack.TCPListener
 		log.Info("DELETEME %%%%%%%%% colibri TCP grpc server listening", "tcp_addr", tcpListener.Addr())
 		if err := tcpColServer.Serve(tcpListener); err != nil {
 			fatal.Fatal(err)
 		}
 	}()
 
-	manager, err := colibriManager(topo, cfgObjs.router, colibriStore, cfg.Reservations)
+	manager, err := colibriManager(topo, cfgObjs.stack.Router, colibriStore, cfg.Colibri.Reservations)
 	if err != nil {
 		return nil, serrors.WrapStr("starting colibri manager", err)
 	}

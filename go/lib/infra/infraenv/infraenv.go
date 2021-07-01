@@ -194,11 +194,11 @@ func (nc *NetworkConfig) QUICStack_deleteme() (*QUICStack, error) {
 		return nil, serrors.WrapStr("listening TLS/QUIC/SCION", err)
 	}
 
-	cancel, err := nc.initSvcRedirect(fmt.Sprintf("%s", server.LocalAddr()),
-		fmt.Sprintf("%s", tlsServer.LocalAddr()))
-	if err != nil {
-		return nil, serrors.WrapStr("starting service redirection", err)
-	}
+	// cancel, err := nc.initSvcRedirect(fmt.Sprintf("%s", server.LocalAddr()),
+	// 	fmt.Sprintf("%s", tlsServer.LocalAddr()))
+	// if err != nil {
+	// 	return nil, serrors.WrapStr("starting service redirection", err)
+	// }
 
 	return &QUICStack{
 		Listener: squic.NewConnListener(listener),
@@ -211,7 +211,8 @@ func (nc *NetworkConfig) QUICStack_deleteme() (*QUICStack, error) {
 			Conn:      tlsClient,
 			TLSConfig: tlsQuicConfig,
 		},
-		RedirectCloser: cancel,
+		// RedirectCloser: cancel,
+		RedirectCloser: func() {},
 	}, nil
 }
 

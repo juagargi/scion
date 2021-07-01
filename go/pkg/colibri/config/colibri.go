@@ -63,3 +63,10 @@ func (cfg *ColibriConfig) Sample(dst io.Writer, _ config.Path, _ config.CtxMap) 
 func (cfg *ColibriConfig) ConfigName() string {
 	return "colibri"
 }
+
+const colibriSample = `
+# COLIBRI service configuration sample
+delta = 0.8
+capacities_file = "capacities.json"
+reservations_file = "reservations.json"
+`

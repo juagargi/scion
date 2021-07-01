@@ -240,6 +240,7 @@ func (r *DiscoveryColSrvRes) ResolveColibriService(ctx context.Context, ia *addr
 	*snet.UDPAddr, error) {
 
 	path, err := r.Router.Route(context.Background(), *ia)
+	log.Info("deleteme service resolver used router", "err", err, "path", path)
 	if err != nil || path == nil {
 		return nil, serrors.New("no route to IA", "ia", ia, "err", err, "path", path)
 	}
@@ -251,6 +252,7 @@ func (r *DiscoveryColSrvRes) ResolveColibriService(ctx context.Context, ia *addr
 		SVC:     addr.SvcDS,
 	}
 	conn, err := r.Dialer.Dial(ctx, ds)
+	log.Info("deleteme after Dial", "err", err, "conn", conn)
 	if err != nil {
 		return nil, err
 	}
