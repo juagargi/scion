@@ -238,12 +238,12 @@ const (
 	PeeringDownPath
 	PeeringUpPath
 	E2EPath
-	_lastvalue
+	_lastvaluePath
 )
 
 // Validate will return an error for invalid values.
 func (pt PathType) Validate() error {
-	if pt == UnknownPath || pt >= _lastvalue {
+	if pt == UnknownPath || pt >= _lastvaluePath {
 		return serrors.New("invalid path type", "path_type", pt)
 	}
 	return nil

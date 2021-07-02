@@ -570,6 +570,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"one non compliant index, minbw": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(1, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
@@ -580,6 +581,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"one non compliant index, maxbw": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(12, 44, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
@@ -590,6 +592,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"one non compliant index, expired": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(now)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
@@ -600,6 +603,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"no active indices": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
@@ -609,6 +613,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"no indices": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
@@ -617,6 +622,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"compliant in the past, not now": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.AddIndex(st.WithBW(1, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(1), // will destroy index 0
