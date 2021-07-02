@@ -32,12 +32,12 @@ type MsgId struct {
 // It contains a reference to the reservation it requests, or nil if not yet created.
 type Request struct {
 	MsgId
-	Path *OpaquePath // the path to the destination. It represents the hops of the reservation.
+	Path *TransparentPath // the path to the destination. It represents the hops of the reservation.
 }
 
 // NewRequest constructs the segment Request type.
 func NewRequest(ts time.Time, id *reservation.ID, idx reservation.IndexNumber,
-	path *OpaquePath) (*Request, error) {
+	path *TransparentPath) (*Request, error) {
 
 	if id == nil {
 		return nil, serrors.New("new segment request with nil ID")

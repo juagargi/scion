@@ -115,6 +115,31 @@ func (t Topology) HiddenSegmentServices(ctx context.Context,
 	return response, nil
 }
 
+func (t Topology) ColibriServices(ctx context.Context, _ *dpb.ColibriServicesRequest) (
+	*dpb.ColibriServicesResponse, error) {
+
+	span := opentracing.SpanFromContext(ctx)
+	labels := requestLabels{ReqType: "colibri_services"}
+	logger := log.FromCtx(ctx)
+
+	topo := t.Provider.Get()
+	colSrvs, err := topo.MakeHostInfos(topology.Colibri)
+	if err != nil && !errors.Is(err, topology.ErrAddressNotFound) {
+		logger.Debug("Failed to list colibri services", "err", err)
+		t.updateTelemetry(span, labels.WithResult(prom.ErrInternal), err)
+		return nil, err
+	}
+	reply := &dpb.ColibriServicesResponse{
+		Address: make([]string, len(colSrvs)),
+	}
+	for i, addr := range colSrvs {
+		reply.Address[i] = addr.String()
+	}
+	logger.Debug("Replied with colibri services", "services", colSrvs)
+	t.updateTelemetry(span, labels.WithResult(prom.Success), nil)
+	return reply, nil
+}
+
 // RequestsLabels exposes the labels required by the Requests metric.
 func (t Topology) RequestsLabels() []string {
 	return []string{"req_type", prom.LabelResult}

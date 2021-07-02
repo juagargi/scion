@@ -4,7 +4,6 @@ go_library(
     name = "go_default_library",
     srcs = [
         "bs_sample.go",
-        "colibri.go",
         "config.go",
         "drkey.go",
         "sample.go",
@@ -12,7 +11,6 @@ go_library(
     importpath = "github.com/scionproto/scion/go/cs/config",
     visibility = ["//visibility:public"],
     deps = [
-        "//go/cs/reservation/conf:go_default_library",
         "//go/lib/addr:go_default_library",
         "//go/lib/config:go_default_library",
         "//go/lib/drkey/protocol:go_default_library",

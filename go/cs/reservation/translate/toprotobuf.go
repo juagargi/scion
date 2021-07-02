@@ -17,6 +17,7 @@ package translate
 import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
@@ -56,7 +57,7 @@ func PBufRequest(req *base.Request) *colpb.Request {
 		Id:        PBufID(&req.ID),
 		Index:     uint32(req.Index),
 		Timestamp: util.TimeToSecs(req.Timestamp),
-		Opaque:    PBufOpaque(req.Path),
+		Path:      PBufPath(req.Path),
 	}
 }
 
@@ -98,6 +99,23 @@ func PBufResponse(res base.Response) *colpb.Response {
 	}
 }
 
+func PBufListResponse(res []*colibri.ReservationLooks) *colpb.ListResponse {
+	looks := make([]*colpb.ListResponse_Reservations_ReservationLooks, len(res))
+	for i, l := range res {
+		looks[i] = &colpb.ListResponse_Reservations_ReservationLooks{
+			ID:    PBufID(&l.Id),
+			DstIa: uint64(l.DstIA.IAInt()),
+		}
+	}
+	return &colpb.ListResponse{
+		SuccessFailure: &colpb.ListResponse_Reservations_{
+			Reservations: &colpb.ListResponse_Reservations{
+				Reservations: looks,
+			},
+		},
+	}
+}
+
 func PBufID(id *reservation.ID) *colpb.ReservationID {
 	return &colpb.ReservationID{
 		Asid:   uint64(id.ASID),
@@ -116,25 +134,25 @@ func PBufAllocTrail(trail reservation.AllocationBeads) []*colpb.AllocationBead {
 	return beads
 }
 
-func PBufOpaque(opaque *base.OpaquePath) *colpb.OpaquePath {
-	if opaque == nil {
-		return &colpb.OpaquePath{
+func PBufPath(transp *base.TransparentPath) *colpb.TransparentPath {
+	if transp == nil {
+		return &colpb.TransparentPath{
 			Steps: []*colpb.PathStep{},
 		}
 	}
-	steps := make([]*colpb.PathStep, len(opaque.Steps))
-	for i, step := range opaque.Steps {
+	steps := make([]*colpb.PathStep, len(transp.Steps))
+	for i, step := range transp.Steps {
 		steps[i] = &colpb.PathStep{
 			Ia:      uint64(step.IA.IAInt()),
 			Ingress: uint32(step.Ingress),
 			Egress:  uint32(step.Egress),
 		}
 	}
-	return &colpb.OpaquePath{
-		CurrentStep: uint32(opaque.CurrentStep),
+	return &colpb.TransparentPath{
+		CurrentStep: uint32(transp.CurrentStep),
 		Steps:       steps,
-		SpathType:   uint32(opaque.Spath.Type),
-		SpathRaw:    opaque.Spath.Raw,
+		SpathType:   uint32(transp.Spath.Type),
+		SpathRaw:    transp.Spath.Raw,
 	}
 
 }

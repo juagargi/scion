@@ -71,6 +71,7 @@ type Topology struct {
 	Attributes          []Attribute             `json:"attributes"`
 	BorderRouters       map[string]*BRInfo      `json:"border_routers,omitempty"`
 	ControlService      map[string]*ServerInfo  `json:"control_service,omitempty"`
+	ColibriService      map[string]*ServerInfo  `json:"colibri_service,omitempty"`
 	DiscoveryService    map[string]*ServerInfo  `json:"discovery_service,omitempty"`
 	HiddenSegmentLookup map[string]*ServerInfo  `json:"hidden_segment_lookup_service,omitempty"`
 	HiddenSegmentReg    map[string]*ServerInfo  `json:"hidden_segment_registration_service,omitempty"`

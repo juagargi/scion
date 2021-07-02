@@ -20,8 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
-
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
@@ -33,10 +31,11 @@ import (
 	"github.com/scionproto/scion/go/lib/topology"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
+	dpb "github.com/scionproto/scion/go/pkg/proto/discovery"
 )
 
 type GRPCClientDialer interface {
-	Dial(ctx context.Context, addr net.Addr) (*grpc.ClientConn, error)
+	libgrpc.Dialer
 }
 
 // ServiceClientOperator can obtain COLIBRI gRPC clients to talk to the service.
@@ -50,24 +49,29 @@ type ServiceClientOperator struct {
 	connDialer  GRPCClientDialer
 	neighbors   map[uint16]*snet.UDPAddr
 	initialized bool
+	srvResolver ColSrvResolver
 	mutex       sync.Mutex
 }
 
 func NewServiceClientOperator(topo topology.Topology, router snet.Router,
-	arw libgrpc.AddressRewriter, clientConn GRPCClientDialer) (*ServiceClientOperator, error) {
+	clientConn GRPCClientDialer) (*ServiceClientOperator, error) {
 
 	operator := &ServiceClientOperator{
 		connDialer:  clientConn,
 		neighbors:   make(map[uint16]*snet.UDPAddr, len(topo.InterfaceIDs())),
 		initialized: false,
+		srvResolver: &DiscoveryColSrvRes{
+			Router: router,
+			Dialer: clientConn,
+		},
 	}
-	operator.initialize(topo, router, arw)
+	operator.initialize(topo)
 
 	return operator, nil
 }
 
 // ColibriClient finds or creates a ColibriClient to be used for the path argument.
-func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.OpaquePath) (
+func (o *ServiceClientOperator) ColibriClient(ctx context.Context, transp *base.TransparentPath) (
 	colpb.ColibriClient, error) {
 
 	o.mutex.Lock()
@@ -78,8 +82,8 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.
 			"neighbor_count", len(o.neighbors))
 	}
 
-	egressID := opaque.Steps[opaque.CurrentStep].Egress
-	spath := opaque.Spath
+	egressID := transp.Steps[transp.CurrentStep].Egress
+	spath := transp.Spath
 	rAddr, ok := o.neighbors[egressID]
 	if !ok {
 		return nil, serrors.New("bad packet: no neighbor on specified egress", "egress", egressID)
@@ -94,7 +98,7 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.
 		// // replace the service path with the colibri one.
 		// The source must also be the original one
 		// rAddr.Path = spath.Copy()
-		// rAddr.IA = opaque.SrcIA()
+		// rAddr.IA = transp.SrcIA()
 		// TODO(juagargi) check if the colibri path is expired, and don't use it in that case
 	}
 
@@ -108,8 +112,7 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, opaque *base.
 }
 
 // initialize waits in the background until this operator can obtain paths to all the remaining IAs.
-func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.Router,
-	arw libgrpc.AddressRewriter) {
+func (o *ServiceClientOperator) initialize(topo topology.Topology) {
 
 	remainingIAs := neighbors(topo)
 	go func() {
@@ -121,20 +124,19 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology, router snet.R
 		for len(remainingIAs) > 0 {
 			time.Sleep(2 * time.Second)
 			log.Debug("colibri client operator initializing", "remaining", len(remainingIAs))
-			remainingIAs = findNeighbors(o.neighbors, remainingIAs, router, arw)
+			remainingIAs = o.findNeighbors(o.neighbors, remainingIAs)
 		}
 		log.Info("colibri client operator initialization complete")
 		o.initialized = true
 		go func() {
 			defer log.HandlePanic()
-			o.periodicResolveNeighbors(topo, router, arw)
+			o.periodicResolveNeighbors(topo)
 		}()
 	}()
 }
 
 // periodicResolveNeighbors scans the topology and gets new paths for the neighbors.
-func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology, router snet.Router,
-	arw libgrpc.AddressRewriter) {
+func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology) {
 
 	neighbors := neighbors(topo)
 	for {
@@ -142,7 +144,7 @@ func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology,
 		log.Debug("colibri client operator periodically findind neighbors",
 			"count", len(neighbors))
 		newAddrBook := make(map[uint16]*snet.UDPAddr)
-		findNeighbors(newAddrBook, neighbors, router, arw)
+		_ = o.findNeighbors(newAddrBook, neighbors)
 		log.Info("deleteme PERIODIC neighbor find", "found_count", len(newAddrBook))
 		o.mutex.Lock()
 		o.neighbors = newAddrBook
@@ -164,26 +166,42 @@ func neighbors(topo topology.Topology) map[uint16]addr.IA {
 
 // findNeighbors sets the address of the neighbors in the addrBook parameter.
 // Returns the neighbors for which it could not find an address.
-func findNeighbors(addrBook map[uint16]*snet.UDPAddr, neighbors map[uint16]addr.IA,
-	router snet.Router, arw libgrpc.AddressRewriter) map[uint16]addr.IA {
+func (o *ServiceClientOperator) findNeighbors(addrBook map[uint16]*snet.UDPAddr,
+	neighbors map[uint16]addr.IA) map[uint16]addr.IA {
 
 	missingNeighbors := make(map[uint16]addr.IA)
 	for egress, ia := range neighbors {
-		colAddr, err := resolveAddr(router, arw, &ia)
+		colAddr, err := o.resolveAddr(&ia)
 		if err != nil {
 			log.Debug("error resolving address for colibri service", "err", err)
 			missingNeighbors[egress] = ia
 			continue
 		}
+		log.Info("deleteme findNeighbors", "ia", ia.String(), "addr", colAddr.String())
 		addrBook[egress] = colAddr
 	}
 	return missingNeighbors
 }
 
-func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
+func (o *ServiceClientOperator) resolveAddr(ia *addr.IA) (*snet.UDPAddr, error) {
+	ctx, cancelCtx := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelCtx()
+	return o.srvResolver.ResolveColibriService(ctx, ia)
+}
+
+type ColSrvResolver interface {
+	ResolveColibriService(ctx context.Context, ia *addr.IA) (*snet.UDPAddr, error)
+}
+
+type AnycastColSrvRes struct {
+	Router snet.Router
+	Arw    libgrpc.AddressRewriter
+}
+
+func (r *AnycastColSrvRes) ResolveColibriService(ctx context.Context, ia *addr.IA) (
 	*snet.UDPAddr, error) {
 
-	path, err := router.Route(context.Background(), *ia)
+	path, err := r.Router.Route(context.Background(), *ia)
 	if err != nil || path == nil {
 		return nil, serrors.New("no route to IA", "ia", ia, "err", err, "path", path)
 	}
@@ -192,11 +210,9 @@ func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
 		IA:      *ia,
 		Path:    path.Path(),
 		NextHop: path.UnderlayNextHop(),
-		SVC:     addr.SvcCS, // addr.SvcCOL
+		SVC:     addr.SvcCOL,
 	}
-	ctx, cancelCtx := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancelCtx()
-	quicAddr, ok, err := arw.RedirectToQUIC(ctx, svcAddr)
+	quicAddr, ok, err := r.Arw.RedirectToQUIC(ctx, svcAddr)
 	if !ok || err != nil {
 		return nil, serrors.New("cannot resolve service", "svc", svcAddr.SVC, "err", err)
 	}
@@ -204,12 +220,59 @@ func resolveAddr(router snet.Router, arw libgrpc.AddressRewriter, ia *addr.IA) (
 		return nil, serrors.New("resolved address is not snet.UDPAddr", "addr", quicAddr,
 			"type", common.TypeOf(quicAddr))
 	}
-	snetUDPAddr := &snet.UDPAddr{ // TODO(juagargi) should be a SVCAddr instead
+	return &snet.UDPAddr{
 		IA:      *ia,
 		Path:    path.Path(),
 		NextHop: path.UnderlayNextHop(),
 		Host:    quicAddr.(*snet.UDPAddr).Host,
+	}, nil
+}
+
+type DiscoveryColSrvRes struct {
+	Router snet.Router
+	Dialer libgrpc.Dialer
+}
+
+func (r *DiscoveryColSrvRes) ResolveColibriService(ctx context.Context, ia *addr.IA) (
+	*snet.UDPAddr, error) {
+
+	path, err := r.Router.Route(context.Background(), *ia)
+	log.Info("deleteme service resolver used router", "err", err, "path", path)
+	if err != nil || path == nil {
+		return nil, serrors.New("no route to IA", "ia", ia, "err", err, "path", path)
 	}
-	snetUDPAddr.Host.Port = 4321
-	return snetUDPAddr, nil
+
+	ds := &snet.SVCAddr{
+		IA:      *ia,
+		Path:    path.Path(),
+		NextHop: path.UnderlayNextHop(),
+		SVC:     addr.SvcDS,
+	}
+	conn, err := r.Dialer.Dial(ctx, ds)
+	log.Info("deleteme after Dial", "err", err, "conn", conn)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	client := dpb.NewDiscoveryServiceClient(conn)
+	rep, err := client.ColibriServices(ctx, &dpb.ColibriServicesRequest{}, libgrpc.RetryProfile...)
+	if err != nil {
+		return nil, serrors.WrapStr("discovering colibri services", err)
+	}
+	if len(rep.Address) == 0 {
+		return nil, serrors.New("no colibri services discovered", "ia", ia.String())
+	}
+
+	host, err := net.ResolveUDPAddr("udp", rep.Address[0])
+	if err != nil {
+		return nil, serrors.WrapStr("parsing udp address for colibri service", err,
+			"udp", rep.Address[0])
+	}
+
+	return &snet.UDPAddr{ // TODO(juagargi) should be a SVCAddr instead
+		IA:      *ia,
+		Path:    path.Path(),
+		NextHop: path.UnderlayNextHop(),
+		Host:    host,
+	}, nil
 }

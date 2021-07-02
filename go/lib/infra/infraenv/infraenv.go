@@ -153,6 +153,69 @@ func (nc *NetworkConfig) QUICStack() (*QUICStack, error) {
 	}, nil
 }
 
+// deleteme this stack uses quic listening on the port specified by topology
+func (nc *NetworkConfig) QUICStack_deleteme() (*QUICStack, error) {
+	if nc.QUIC.Address == "" {
+		// nc.QUIC.Address = net.JoinHostPort(nc.Public.IP.String(), "0")
+		nc.QUIC.Address = nc.Public.String()
+	}
+	client, server, err := nc.initQUICSockets(false)
+	if err != nil {
+		return nil, err
+	}
+	log.Info("QUIC server conn initialized", "local_addr", server.LocalAddr())
+	log.Info("QUIC client conn initialized", "local_addr", client.LocalAddr())
+
+	tlsConfig, err := GenerateTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	listener, err := quic.Listen(server, tlsConfig, nil)
+	if err != nil {
+		return nil, serrors.WrapStr("listening QUIC/SCION", err)
+	}
+
+	//TLS/QUIC part
+	// Calling initQUICSockets again will fail if nc.QUIC.Address has a port other than 0.
+	// As a workaround, forcefully set the port to 0 via a parameter.
+	tlsClient, tlsServer, err := nc.initQUICSockets(true)
+	if err != nil {
+		return nil, err
+	}
+	log.Info("TLS/QUIC server conn initialized", "local_addr", tlsServer.LocalAddr())
+	log.Info("TLS/QUIC client conn initialized", "local_addr", tlsClient.LocalAddr())
+
+	tlsQuicConfig, err := GenerateTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	tlsListener, err := quic.Listen(tlsServer, tlsQuicConfig, nil)
+	if err != nil {
+		return nil, serrors.WrapStr("listening TLS/QUIC/SCION", err)
+	}
+
+	// cancel, err := nc.initSvcRedirect(fmt.Sprintf("%s", server.LocalAddr()),
+	// 	fmt.Sprintf("%s", tlsServer.LocalAddr()))
+	// if err != nil {
+	// 	return nil, serrors.WrapStr("starting service redirection", err)
+	// }
+
+	return &QUICStack{
+		Listener: squic.NewConnListener(listener),
+		Dialer: &squic.ConnDialer{
+			Conn:      client,
+			TLSConfig: tlsConfig,
+		},
+		TLSListener: squic.NewConnListener(tlsListener),
+		TLSDialer: &squic.ConnDialer{
+			Conn:      tlsClient,
+			TLSConfig: tlsQuicConfig,
+		},
+		// RedirectCloser: cancel,
+		RedirectCloser: func() {},
+	}, nil
+}
+
 // GenerateTLSConfig generates a self-signed certificate.
 func GenerateTLSConfig() (*tls.Config, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

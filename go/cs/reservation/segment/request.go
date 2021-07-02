@@ -35,8 +35,8 @@ type SetupReq struct {
 	SplitCls       reservation.SplitCls
 	PathProps      reservation.PathEndProps
 	AllocTrail     reservation.AllocationBeads
-	PathAtSource   *base.OpaquePath // requested path (maybe different than transport)
-	Reservation    *Reservation     // nil if no reservation yet
+	PathAtSource   *base.TransparentPath // requested path (maybe different than transport)
+	Reservation    *Reservation          // nil if no reservation yet
 }
 
 func (r *SetupReq) Validate() error {

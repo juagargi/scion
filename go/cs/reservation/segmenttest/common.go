@@ -85,9 +85,9 @@ func WithID(as, suffix string) ReservationMod {
 }
 
 func WithPath(path ...interface{}) ReservationMod {
-	opaque := test.NewPathFromComponents(path...)
+	transp := test.NewPath(path...)
 	return func(rsv *segment.Reservation) *segment.Reservation {
-		rsv.PathAtSource = opaque
+		rsv.PathAtSource = transp
 		return rsv
 	}
 }
@@ -114,6 +114,13 @@ func WithTrafficSplit(split int) ReservationMod {
 func WithEndProps(endProps reservation.PathEndProps) ReservationMod {
 	return func(rsv *segment.Reservation) *segment.Reservation {
 		rsv.PathEndProps = endProps
+		return rsv
+	}
+}
+
+func WithPathType(pathType reservation.PathType) ReservationMod {
+	return func(rsv *segment.Reservation) *segment.Reservation {
+		rsv.PathType = pathType
 		return rsv
 	}
 }

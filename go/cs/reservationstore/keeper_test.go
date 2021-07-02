@@ -164,9 +164,9 @@ func TestKeepOneShot(t *testing.T) {
 				entries: tc.destinations,
 			}
 			store := mockStore(ctrl)
-			store.EXPECT().GetSegmentRsvsFromSrcDstIA(gomock.Any(), gomock.Any(), gomock.Any()).
+			store.EXPECT().GetReservationsAtSource(gomock.Any(), gomock.Any()).
 				Times(len(tc.destinations)).DoAndReturn(
-				func(_ context.Context, _ addr.IA, dstIA addr.IA) (
+				func(_ context.Context, dstIA addr.IA) (
 					[]*segment.Reservation, error) {
 
 					return tc.reservations[dstIA], nil
@@ -501,6 +501,7 @@ func TestRequirementsCompliance(t *testing.T) {
 	now := util.SecsToTime(0)
 	tomorrow := now.Add(3600 * 24 * time.Second)
 	reqs := requirements{
+		pathType:      reservation.UpPath,
 		predicate:     newSequence(t, "1-ff00:0:1 1-ff00:0:2"), // direct
 		minBW:         10,
 		maxBW:         42,
@@ -518,11 +519,23 @@ func TestRequirementsCompliance(t *testing.T) {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithPathType(reservation.UpPath),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
 			expectedCompliance: Compliant,
+		},
+		"bad path type": {
+			requirements: reqs,
+			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
+				st.WithPathType(reservation.DownPath),
+				st.WithActiveIndex(0),
+				st.WithTrafficSplit(2),
+				st.WithEndProps(reqs.endProps)),
+			atLeastUntil:       now,
+			expectedCompliance: NeverCompliant,
 		},
 		"one compliant index but bad traffic split": {
 			requirements: reqs,
@@ -557,6 +570,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"one non compliant index, minbw": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(1, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
@@ -567,6 +581,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"one non compliant index, maxbw": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(12, 44, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
@@ -577,6 +592,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"one non compliant index, expired": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(now)),
 				st.WithActiveIndex(0),
 				st.WithTrafficSplit(2),
@@ -587,6 +603,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"no active indices": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
@@ -596,6 +613,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"no indices": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.WithTrafficSplit(2),
 				st.WithEndProps(reqs.endProps)),
 			atLeastUntil:       now,
@@ -604,6 +622,7 @@ func TestRequirementsCompliance(t *testing.T) {
 		"compliant in the past, not now": {
 			requirements: reqs,
 			rsv: st.NewRsv(st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+				st.WithPathType(reservation.UpPath),
 				st.AddIndex(st.WithBW(12, 24, 0), st.WithExpiration(tomorrow)),
 				st.AddIndex(st.WithBW(1, 24, 0), st.WithExpiration(tomorrow)),
 				st.WithActiveIndex(1), // will destroy index 0
@@ -699,9 +718,9 @@ func TestEntryPrepareSetupRequests(t *testing.T) {
 			require.Len(t, filtered, tc.expected) // this is internal, but forces 1 req per path
 			bagOfPaths := make(map[string]struct{}, len(filtered))
 			for _, p := range filtered {
-				opaque, err := base.OpaquePathFromInterfaces(p.Metadata().Interfaces)
+				transp, err := base.TransparentPathFromInterfaces(p.Metadata().Interfaces)
 				require.NoError(t, err)
-				k := opaque.String()
+				k := transp.String()
 				_, ok := bagOfPaths[k]
 				require.False(t, ok, "duplicated path in test", p)
 				bagOfPaths[k] = struct{}{}
@@ -826,6 +845,7 @@ func TestParseInitial(t *testing.T) {
 			conf: conf.Reservations{Rsvs: []conf.ReservationEntry{
 				{
 					DstAS:         xtest.MustParseIA("1-ff00:0:2"),
+					PathType:      reservation.UpPath,
 					PathPredicate: "",
 					MinSize:       1,
 					MaxSize:       2,
@@ -837,6 +857,7 @@ func TestParseInitial(t *testing.T) {
 			expectedEntries: map[addr.IA][]requirements{
 				xtest.MustParseIA("1-ff00:0:2"): {
 					{
+						pathType:      reservation.UpPath,
 						predicate:     newSequence(t, ""),
 						minBW:         1,
 						maxBW:         2,

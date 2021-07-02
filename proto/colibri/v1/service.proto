@@ -70,7 +70,7 @@ message PathStep {
     uint32 egress =3;
 }
 
-message OpaquePath {
+message TransparentPath {
     uint32 current_step = 1;
     repeated PathStep steps = 2;
     uint32 spathType = 3;
@@ -83,7 +83,7 @@ message Request {
     ReservationID id = 1;
     uint32 index = 2;
     uint32 timestamp = 3;
-    OpaquePath opaque = 4;
+    TransparentPath path = 4;
 }
 
 message Response {
@@ -129,6 +129,26 @@ message SegmentSetupResponse {
     }
 }
 
+message ListRequest {
+    uint64 dst_ia = 1;
+}
+
+message ListResponse {
+    message Reservations {
+        message ReservationLooks {
+            ReservationID ID = 1;
+            uint64 dst_ia = 2;
+            // other properties?
+        }
+        repeated ReservationLooks reservations = 1;
+    }
+
+    oneof success_failure {
+        Reservations reservations = 1;
+        string failure_message = 2;
+    }
+}
+
 message E2eSetupRequest {
     message PathParams {
         ReservationID up = 1;
@@ -154,24 +174,4 @@ message E2eSetupRequest {
 }
 
 message E2eSetupResponse {
-}
-
-message ListRequest {
-    uint64 dst_ia = 1;
-}
-
-message ListResponse {
-    message Reservations {
-        message Reservation {
-            ReservationID ID = 1;
-            uint64 dst_ia = 2;
-            // other properties?
-        }
-        repeated Reservation reservations = 1;
-    }
-
-    oneof success_failure {
-        Reservations reservations = 1;
-        string failure_message = 2;
-    }
 }

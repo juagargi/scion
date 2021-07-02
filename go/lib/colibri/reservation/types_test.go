@@ -227,12 +227,12 @@ func TestIndexNumberArithmetic(t *testing.T) {
 
 func TestValidatePathType(t *testing.T) {
 	validTypes := []PathType{
+		CorePath,
 		DownPath,
 		UpPath,
 		PeeringDownPath,
 		PeeringUpPath,
 		E2EPath,
-		CorePath,
 	}
 	for _, vt := range validTypes {
 		pt := PathType(vt)
@@ -243,7 +243,7 @@ func TestValidatePathType(t *testing.T) {
 	err := pt.Validate()
 	require.Error(t, err)
 
-	pt = PathType(CorePath + 1)
+	pt = PathType(_lastvaluePath)
 	err = pt.Validate()
 	require.Error(t, err)
 }
@@ -275,7 +275,7 @@ func TestValidateInfoField(t *testing.T) {
 	require.Error(t, err)
 
 	otherIF = infoField
-	otherIF.PathType = CorePath + 1
+	otherIF.PathType = _lastvaluePath
 	err = otherIF.Validate()
 	require.Error(t, err)
 }
@@ -474,7 +474,7 @@ func newInfoField() InfoField {
 }
 
 func newInfoFieldRaw() []byte {
-	return xtest.MustParseHexString("16ebdb4f0d042500")
+	return xtest.MustParseHexString("16ebdb4f0d042600")
 }
 
 func newHopField(ingress, egress uint16, mac []byte) *HopField {
@@ -499,7 +499,7 @@ func newToken() Token {
 	}
 }
 func newTokenRaw() []byte {
-	return xtest.MustParseHexString("16ebdb4f0d04250000010002badcffee00010002baadf00d")
+	return xtest.MustParseHexString("16ebdb4f0d04260000010002badcffee00010002baadf00d")
 }
 
 func mustParseID(s string) ID {

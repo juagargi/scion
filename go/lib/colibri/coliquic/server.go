@@ -30,13 +30,17 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/infra/infraenv"
+	"github.com/scionproto/scion/go/lib/infra/messenger"
 	"github.com/scionproto/scion/go/lib/log"
+	"github.com/scionproto/scion/go/lib/sciond"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/snet/squic"
 	"github.com/scionproto/scion/go/lib/sock/reliable"
-	"github.com/scionproto/scion/go/lib/topology"
+	"github.com/scionproto/scion/go/lib/sock/reliable/reconnect"
+	"github.com/scionproto/scion/go/lib/svc"
+	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 )
 
 // GetColibriPath returns the (last) COLIBRI path used with this quic Session, or nil if none.
@@ -57,52 +61,143 @@ func GetColibriPath(session quic.Session) (*colibri.ColibriPath, error) {
 	return colPath, nil
 }
 
-func ColibriListener(topo topology.Topology) (net.Listener, error) {
-	// as seen in NetworkConfig.initQUICSockets:
-	dispatcherService := reliable.NewDispatcher("")
-	serverNet := &snet.SCIONNetwork{
-		LocalIA: topo.IA(),
-		Dispatcher: &snet.DefaultPacketDispatcherService{
-			Dispatcher:  dispatcherService,
-			SCMPHandler: ignoreSCMP{},
-		},
-	}
-	// topo.PublicAddress(addr.SvcCS, cfg.General.ID)
-	serverAddr, err := topo.Anycast(addr.SvcCS)
-	// TODO(juagargi) should find the PublicAddress of SvcCOL
-	// TODO(juagargi) read it from topo file and pass it along
-	// serverAddr, err := net.ResolveUDPAddr("udp", "localhost:4321")
-	if err != nil {
-		return nil, err
-	}
-	serverAddr.Port = 4321
-	log.Info("deleteme deleteme server address will be", "addr", serverAddr)
-	packetConn, err := serverNet.Listen(context.Background(), "udp", serverAddr, addr.SvcCOL)
-	// packetConn, err := serverNet.Listen(context.Background(), "udp", serverAddr, addr.SvcNone)
-	if err != nil {
-		return nil, err
-	}
-	tlsConfig, err := infraenv.GenerateTLSConfig()
-	if err != nil {
-		return nil, err
-	}
-	quicListener, err := quic.Listen(packetConn, tlsConfig, nil)
-	if err != nil {
-		return nil, err
-	}
-	return squic.NewConnListener(quicListener), nil
-}
-
-type ignoreSCMP struct{}
-
-func (ignoreSCMP) Handle(pkt *snet.Packet) error {
-	// Always reattempt reads from the socket.
-	return nil
-}
-
+// NewConnListener adapts a quic.Listener to be a net.Listener.
 func NewConnListener(listener quic.Listener) net.Listener {
 	// TODO(juagargi) check squic.NewConnListener as it has weird error semantics for its Accept()
 	return squic.NewConnListener(listener)
+}
+
+type ServerStack struct {
+	Daemon       sciond.Connector
+	Router       snet.Router
+	Dialer       *libgrpc.QUICDialer
+	QUICListener net.Listener
+	TCPListener  net.Listener
+	serverAddr   *snet.UDPAddr
+	clientNet    *snet.SCIONNetwork
+	serverNet    *snet.SCIONNetwork
+}
+
+func NewServerStack(ctx context.Context, serverAddr *snet.UDPAddr, daemonAddr string) (
+	*ServerStack, error) {
+	s := &ServerStack{}
+	err := s.init(ctx, serverAddr, daemonAddr)
+	return s, err
+}
+
+func (s *ServerStack) init(ctx context.Context, serverAddr *snet.UDPAddr, daemonAddr string) error {
+
+	var err error
+	if s.clientNet != nil {
+		return serrors.New("already initialized")
+	}
+
+	s.serverAddr = serverAddr.Copy()
+	s.Daemon, err = sciond.Service{
+		Address: daemonAddr,
+	}.Connect(ctx)
+	if err != nil {
+		return serrors.WrapStr("connecting to daemon", err)
+	}
+	s.Router = &snet.BaseRouter{Querier: sciond.Querier{Connector: s.Daemon, IA: s.serverAddr.IA}}
+
+	s.TCPListener, err = net.ListenTCP("tcp", &net.TCPAddr{
+		IP:   serverAddr.Host.IP,
+		Port: serverAddr.Host.Port,
+		Zone: serverAddr.Host.Zone,
+	})
+	if err != nil {
+		return err
+	}
+
+	client, server, err := s.initQUICSockets(ctx, daemonAddr)
+	if err != nil {
+		return err
+	}
+	// Generate throwaway self-signed TLS certificates. These DO NOT PROVIDE ANY SECURITY.
+	ephemeralTLSConfig, err := infraenv.GenerateTLSConfig()
+	if err != nil {
+		return err
+	}
+	quicClientDialer := &squic.ConnDialer{
+		Conn:      client,
+		TLSConfig: ephemeralTLSConfig,
+	}
+	s.Dialer = &libgrpc.QUICDialer{
+		Dialer: quicClientDialer,
+		Rewriter: &messenger.AddressRewriter{
+			// Use the local Daemon to construct paths to the target AS.
+			Router: s.Router,
+			// We never resolve addresses in the local AS, so pass a nil here.
+			SVCRouter: nil,
+			Resolver: &svc.Resolver{
+				LocalIA: s.serverAddr.IA,
+				// Reuse the network with SCMP error support.
+				ConnFactory: s.clientNet.Dispatcher,
+				LocalIP:     s.serverAddr.Host.IP,
+			},
+			SVCResolutionFraction: 1.337,
+		},
+	}
+
+	rawListener, err := quic.Listen(server, ephemeralTLSConfig, nil)
+	if err != nil {
+		return err
+	}
+	s.QUICListener = NewConnListener(rawListener)
+
+	return nil
+}
+
+func (s *ServerStack) initQUICSockets(ctx context.Context, daemonAddr string) (
+	net.PacketConn, net.PacketConn, error) {
+
+	reconnectingDispatcher := reconnect.NewDispatcherService(reliable.NewDispatcher(""))
+
+	revocationHandler := sciond.RevHandler{Connector: s.Daemon}
+
+	s.clientNet = &snet.SCIONNetwork{
+		LocalIA: s.serverAddr.IA,
+		Dispatcher: &snet.DefaultPacketDispatcherService{
+			// Enable transparent reconnections to the dispatcher
+			Dispatcher: reconnectingDispatcher,
+			// Forward revocations to Daemon
+			SCMPHandler: snet.DefaultSCMPHandler{
+				RevocationHandler: revocationHandler,
+			},
+		},
+	}
+	client, err := s.clientNet.Listen(
+		ctx,
+		"udp",
+		&net.UDPAddr{IP: s.serverAddr.Host.IP},
+		addr.SvcNone,
+	)
+	if err != nil {
+		return nil, nil, serrors.WrapStr("initializing client QUIC connection", err)
+	}
+
+	// scionNetworkNoSCMP is the network for the QUIC server connection. Because SCMP errors
+	// will cause the server's accepts to fail, we ignore SCMP.
+	s.serverNet = &snet.SCIONNetwork{
+		LocalIA: s.serverAddr.IA,
+		Dispatcher: &snet.DefaultPacketDispatcherService{
+			// Enable transparent reconnections to the dispatcher
+			Dispatcher: reconnectingDispatcher,
+			// Discard all SCMP, to avoid accept errors on the QUIC server.
+			SCMPHandler: ignoreSCMP{},
+		},
+	}
+	server, err := s.serverNet.Listen(
+		context.TODO(),
+		"udp",
+		s.serverAddr.Host,
+		addr.SvcNone,
+	)
+	if err != nil {
+		return nil, nil, serrors.WrapStr("unable to initialize server QUIC connection", err)
+	}
+	return client, server, nil
 }
 
 func NewGrpcServer(opt ...grpc.ServerOption) *grpc.Server {
@@ -246,4 +341,14 @@ func (h *statsHandler) addUsage(rawColibriPath []byte, usage uint64) {
 	h.m.Lock()
 	defer h.m.Unlock()
 	h.usage[string(rawColibriPath)] += usage
+}
+
+// ignoreSCMP ignores all received SCMP packets.
+//
+// XXX(scrye): This is needed such that the QUIC server does not shut down when
+// receiving a SCMP error. DO NOT REMOVE!
+type ignoreSCMP struct{}
+
+func (ignoreSCMP) Handle(pkt *snet.Packet) error {
+	return nil
 }

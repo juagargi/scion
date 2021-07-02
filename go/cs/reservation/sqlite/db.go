@@ -145,19 +145,14 @@ func (x *executor) GetSegmentRsvFromID(ctx context.Context, ID *reservation.ID) 
 }
 
 // GetSegmentRsvsFromSrcDstIA returns all reservations that start at src AS and end in dst AS.
+// Both srcIA and dstIA can use wildcards: 1-0, 0-ff00:1:1, or 0-0 are valid.
 func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA) (
 	[]*segment.Reservation, error) {
 
 	conditions := make([]string, 0, 2)
 	params := make([]interface{}, 0, 2)
-	if !srcIA.IsZero() {
-		conditions = append(conditions, "src_ia = ?")
-		params = append(params, srcIA.IAInt())
-	}
-	if !dstIA.IsZero() {
-		conditions = append(conditions, "dst_ia = ?")
-		params = append(params, dstIA.IAInt())
-	}
+	conditionsForIA("src_ia", srcIA, &conditions, &params)
+	conditionsForIA("dst_ia", dstIA, &conditions, &params)
 	if len(conditions) == 0 {
 		return nil, serrors.New("no src or dst ia provided")
 	}
@@ -682,7 +677,7 @@ func buildSegRsvFromFields(ctx context.Context, x db.Sqler, fields *rsvFields) (
 	rsv.Egress = fields.Egress
 	rsv.PathType = reservation.PathType(fields.PathType)
 
-	p, err := base.OpaquePathFromRaw(fields.Path)
+	p, err := base.TransparentPathFromRaw(fields.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -857,7 +852,7 @@ func getE2ERsvFromID(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
 		return nil, err
 	}
 	rsv := &e2e.Reservation{
-		ID:                  *ID.Clone(),
+		ID:                  *ID.Copy(),
 		Indices:             indices,
 		SegmentReservations: segRsvs,
 	}
@@ -907,7 +902,7 @@ func getE2ERsvsFromSegment(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
 			return nil, err
 		}
 		rsv := &e2e.Reservation{
-			ID:                  *e2eID.Clone(),
+			ID:                  *e2eID.Copy(),
 			Indices:             indices,
 			SegmentReservations: segRsvs,
 		}
@@ -1140,4 +1135,24 @@ func subtractTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16,
 	WHERE ingress=? AND egress=?`
 	_, err = x.ExecContext(ctx, query, newDem, ingress, egress)
 	return err
+}
+
+func conditionsForIA(field string, ia addr.IA, conditions *[]string, params *[]interface{}) {
+	if !ia.IsZero() {
+		var condition string
+		var param uint64
+		switch {
+		case ia.I == 0:
+			condition = field + " & 0x0000FFFFFFFFFFFF = ?"
+			param = uint64(ia.A)
+		case ia.A == 0:
+			condition = field + " & 0xFFFF000000000000 >> 48 = ?"
+			param = uint64(ia.I)
+		default:
+			condition = field + " = ?"
+			param = uint64(ia.IAInt())
+		}
+		*conditions = append(*conditions, condition)
+		*params = append(*params, param)
+	}
 }

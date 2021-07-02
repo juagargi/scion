@@ -25,6 +25,7 @@ import (
 
 	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
+	st "github.com/scionproto/scion/go/cs/reservation/segmenttest"
 	"github.com/scionproto/scion/go/cs/reservation/test"
 	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -33,17 +34,12 @@ import (
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-type TestableDB interface {
-	backend.DB
-	Prepare(*testing.T, context.Context)
-}
-
-func TestDB(t *testing.T, db TestableDB) {
-	tests := map[string]func(context.Context, *testing.T, backend.DB){
+func TestDB(t *testing.T, newDB func() backend.DB) {
+	tests := map[string]func(context.Context, *testing.T, func() backend.DB){
 		"insert segment reservations create ID":  testNewSegmentRsv,
 		"persist segment reservation":            testPersistSegmentRsv,
 		"get segment reservation from ID":        testGetSegmentRsvFromID,
-		"get segment reservations from src/dst":  testGetSegmentRsvsFromSrcDstIA,
+		"get segment reservations from src_dst":  testGetSegmentRsvsFromSrcDstIA,
 		"get all segment reservations":           testGetAllSegmentRsvs,
 		"get segment reservation from IF pair":   testGetSegmentRsvsFromIFPair,
 		"delete segment reservation":             testDeleteSegmentRsv,
@@ -57,15 +53,15 @@ func TestDB(t *testing.T, db TestableDB) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			db.Prepare(t, ctx)
-			test(ctx, t, db)
+			test(ctx, t, newDB)
 		})
 	}
 }
 
-func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
+func testNewSegmentRsv(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	r := newTestReservation(t)
-	r.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
 	r.Indices = segment.Indices{}
 	// no indices
 	err := db.NewSegmentRsv(ctx, r)
@@ -77,7 +73,7 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	// at least one index, and change path
 	_, err = r.NewIndex(util.SecsToTime(10), 2, 3, 2, 2, reservation.CorePath)
 	require.NoError(t, err)
-	r.PathAtSource = test.NewPathFromComponents(1, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPath(1, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0)
 	err = db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, xtest.MustParseHexString("00000002"), r.ID.Suffix)
@@ -95,7 +91,8 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	require.Equal(t, r, rsv)
 }
 
-func testPersistSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
+func testPersistSegmentRsv(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	r := newTestReservation(t)
 	for i := uint32(1); i < 10; i++ {
 		_, err := r.NewIndex(util.SecsToTime(i), 0, 0, 0, 0, reservation.CorePath)
@@ -126,7 +123,7 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	// change attributes
 	r.Ingress = 3
 	r.Egress = 4
-	r.PathAtSource = test.NewPathFromComponents(3, "1-ff00:0:1", 11, 1, "1-ff00:0:2", 0)
+	r.PathAtSource = test.NewPath(3, "1-ff00:0:1", 11, 1, "1-ff00:0:2", 0)
 	err = db.PersistSegmentRsv(ctx, r)
 	require.NoError(t, err)
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
@@ -152,7 +149,8 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	require.Equal(t, r, rsv)
 }
 
-func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
+func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	r := newTestReservation(t)
 	err := db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
@@ -187,62 +185,138 @@ func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	require.Nil(t, r2)
 }
 
-func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, db backend.DB) {
-	r := newTestReservation(t)
-	r.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)
-	err := db.NewSegmentRsv(ctx, r)
-	require.NoError(t, err)
-	rsvs, err := db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
-	require.NoError(t, err)
-	require.Len(t, rsvs, 1)
-	require.Equal(t, r, rsvs[0])
-	// another reservation with same source and destination
-	r2 := newTestReservation(t)
-	r2.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 2, "1-ff00:0:2", 0)
-	err = db.NewSegmentRsv(ctx, r2)
-	require.NoError(t, err)
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
-	require.NoError(t, err)
-	require.Len(t, rsvs, 2)
-	// compare without order
-	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
-	// one more with same source different destination
-	r3 := newTestReservation(t)
-	r3.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)
-	err = db.NewSegmentRsv(ctx, r3)
-	require.NoError(t, err)
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
-	require.NoError(t, err)
-	require.Len(t, rsvs, 2)
-	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), addr.IA{})
-	require.NoError(t, err)
-	require.Len(t, rsvs, 3)
-	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2, r3})
-	// another reservation with unique source but same destination as r3
-	r4 := newTestReservation(t)
-	r4.PathAtSource = test.NewPathFromComponents(0, "1-ff00:0:4", 1, 1, "1-ff00:0:3", 0)
-	err = db.NewSegmentRsv(ctx, r4)
-	require.NoError(t, err)
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), r.PathAtSource.DstIA())
-	require.NoError(t, err)
-	require.Len(t, rsvs, 2)
-	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, r.PathAtSource.SrcIA(), addr.IA{})
-	require.NoError(t, err)
-	require.Len(t, rsvs, 3)
-	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2, r3})
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, addr.IA{}, r.PathAtSource.DstIA())
-	require.NoError(t, err)
-	require.Len(t, rsvs, 2)
-	require.ElementsMatch(t, rsvs, []*segment.Reservation{r, r2})
-	rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, addr.IA{}, r3.PathAtSource.DstIA())
-	require.NoError(t, err)
-	require.Len(t, rsvs, 2)
-	require.ElementsMatch(t, rsvs, []*segment.Reservation{r3, r4})
+func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	cases := map[string]struct {
+		srcIA    addr.IA
+		dstIA    addr.IA
+		rsvs     []*segment.Reservation
+		expected []*reservation.ID
+	}{
+		"empty db": {
+			srcIA:    xtest.MustParseIA("1-ff00:0:1"),
+			dstIA:    xtest.MustParseIA("1-ff00:0:2"),
+			expected: nil,
+		},
+		"regular": {
+			srcIA: xtest.MustParseIA("1-ff00:0:1"),
+			dstIA: xtest.MustParseIA("1-ff00:0:2"),
+			rsvs: []*segment.Reservation{
+				st.NewRsv(st.WithID("ff00:0:1", "00000001"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000002"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000003"),
+					st.WithPath(0, "1-ff00:0:3", 1, 1, "1-ff00:0:2", 0)),
+			},
+			expected: []*reservation.ID{
+				test.MustParseID("ff00:0:1", "00000001"),
+			},
+		},
+		"not found": {
+			srcIA: xtest.MustParseIA("1-ff00:0:1"),
+			dstIA: xtest.MustParseIA("1-ff00:0:20"),
+			rsvs: []*segment.Reservation{
+				st.NewRsv(st.WithID("ff00:0:1", "00000001"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000002"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000003"),
+					st.WithPath(0, "1-ff00:0:3", 1, 1, "1-ff00:0:2", 0)),
+			},
+			expected: []*reservation.ID{},
+		},
+		"dst_as wildcard": {
+			srcIA: xtest.MustParseIA("1-ff00:0:1"),
+			dstIA: xtest.MustParseIA("1-0"), // wildcard
+			rsvs: []*segment.Reservation{
+				st.NewRsv(st.WithID("ff00:0:1", "00000001"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000002"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000003"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "11-ff00:0:2", 0)),
+			},
+			expected: []*reservation.ID{
+				test.MustParseID("ff00:0:1", "00000001"),
+				test.MustParseID("ff00:0:1", "00000002"),
+			},
+		},
+		"dst_isd wildcard": {
+			srcIA: xtest.MustParseIA("1-ff00:0:1"),
+			// dstIA: xtest.MustParseIA("0-ff00:0:2"), // wildcard
+			dstIA: xtest.MustParseIA("0-ffff:ffff:ffff"), // wildcard
+			rsvs: []*segment.Reservation{
+				st.NewRsv(st.WithID("ff00:0:1", "00000001"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ffff:ffff:ffff", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000002"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000003"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "11-ffff:ffff:ffff", 0)),
+			},
+			expected: []*reservation.ID{
+				test.MustParseID("ff00:0:1", "00000001"),
+				test.MustParseID("ff00:0:1", "00000003"),
+			},
+		},
+		"src_as wildcard": {
+			srcIA: xtest.MustParseIA("11-0"),
+			dstIA: xtest.MustParseIA("1-ff00:0:2"), // wildcard
+			rsvs: []*segment.Reservation{
+				st.NewRsv(st.WithID("ff00:0:1", "00000001"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000002"),
+					st.WithPath(0, "11-ff00:0:1", 1, 1, "1-ff00:0:2", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000003"),
+					st.WithPath(0, "11-ff00:0:1", 1, 1, "11-ff00:0:2", 0)),
+			},
+			expected: []*reservation.ID{
+				test.MustParseID("ff00:0:1", "00000002"),
+			},
+		},
+		"many wildcards": {
+			srcIA: xtest.MustParseIA("0-0"),
+			dstIA: xtest.MustParseIA("11-0"), // wildcard
+			rsvs: []*segment.Reservation{
+				st.NewRsv(st.WithID("ff00:0:1", "00000001"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "11-ff00:0:1", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000002"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000003"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "11-ff00:0:2", 0)),
+			},
+			expected: []*reservation.ID{
+				test.MustParseID("ff00:0:1", "00000001"),
+				test.MustParseID("ff00:0:1", "00000003"),
+			},
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			db := newDB()
+			for _, r := range tc.rsvs {
+				err := db.PersistSegmentRsv(ctx, r)
+				require.NoError(t, err)
+			}
+			// sanity check (all rsvs stored in DB)
+			rsvs, err := db.GetAllSegmentRsvs(ctx)
+			require.NoError(t, err)
+			require.Len(t, rsvs, len(tc.rsvs))
+			// check the actual function
+			rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, tc.srcIA, tc.dstIA)
+			require.NoError(t, err)
+			actualIDs := make([]*reservation.ID, len(rsvs))
+			for i, r := range rsvs {
+				actualIDs[i] = &r.ID
+			}
+			require.ElementsMatch(t, tc.expected, actualIDs)
+		})
+	}
 }
 
-func testGetAllSegmentRsvs(ctx context.Context, t *testing.T, db backend.DB) {
+func testGetAllSegmentRsvs(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	// empty
 	rsvs, err := db.GetAllSegmentRsvs(ctx)
 	require.NoError(t, err)
@@ -270,7 +344,8 @@ func testGetAllSegmentRsvs(ctx context.Context, t *testing.T, db backend.DB) {
 	require.ElementsMatch(t, expected, rsvs)
 }
 
-func testGetSegmentRsvsFromIFPair(ctx context.Context, t *testing.T, db backend.DB) {
+func testGetSegmentRsvsFromIFPair(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	// insert in1,e1 ; in2,e1 ; in1,e2
 	r1 := newTestReservation(t)
 	r1.Ingress = 11
@@ -315,7 +390,8 @@ func testGetSegmentRsvsFromIFPair(ctx context.Context, t *testing.T, db backend.
 	require.Error(t, err)
 }
 
-func testDeleteSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
+func testDeleteSegmentRsv(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	r := newTestReservation(t)
 	err := db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
@@ -336,7 +412,8 @@ func testDeleteSegmentRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	require.Nil(t, rsv)
 }
 
-func testDeleteExpiredIndices(ctx context.Context, t *testing.T, db backend.DB) {
+func testDeleteExpiredIndices(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	// create seg. and e2e reservations that have indices expiring at different times.
 	// rX stands for segment rsv. and eX for an e2e. Twice the same symbol means another index.
 	// timeline: e1...r1...r2,r3...e2,e3...e3,e4...r3,r4...e5
@@ -463,7 +540,8 @@ func testDeleteExpiredIndices(ctx context.Context, t *testing.T, db backend.DB) 
 	require.Len(t, e2es, 0) // r4 is gone, cascades for e5
 }
 
-func testPersistE2ERsv(ctx context.Context, t *testing.T, db backend.DB) {
+func testPersistE2ERsv(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	r1 := newTestE2EReservation(t)
 	for _, seg := range r1.SegmentReservations {
 		err := db.PersistSegmentRsv(ctx, seg)
@@ -516,7 +594,8 @@ func testPersistE2ERsv(ctx context.Context, t *testing.T, db backend.DB) {
 	require.NoError(t, err)
 }
 
-func testGetE2ERsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
+func testGetE2ERsvFromID(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	// create several e2e reservations, with one segment reservations in common, and two not
 	checkThisRsvs := map[int]*e2e.Reservation{1: nil, 16: nil, 50: nil, 100: nil}
 	for i := 1; i <= 100; i++ {
@@ -593,7 +672,8 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, db backend.DB) {
 	require.Nil(t, rsv)
 }
 
-func testGetE2ERsvsOnSegRsv(ctx context.Context, t *testing.T, db backend.DB) {
+func testGetE2ERsvsOnSegRsv(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	s1 := newTestReservation(t)
 	err := db.NewSegmentRsv(ctx, s1)
 	require.NoError(t, err)
@@ -625,7 +705,8 @@ func testGetE2ERsvsOnSegRsv(ctx context.Context, t *testing.T, db backend.DB) {
 	require.ElementsMatch(t, rsvs, []*e2e.Reservation{e2, e3})
 }
 
-func testGetInterfaceUsage(ctx context.Context, t *testing.T, db backend.DB) {
+func testGetInterfaceUsage(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	// empty
 	testInterfaceUseIngress(ctx, t, db, 0, 0)
 	testInterfaceUseEgress(ctx, t, db, 1, 0)
@@ -670,7 +751,8 @@ func testGetInterfaceUsage(ctx context.Context, t *testing.T, db backend.DB) {
 	testInterfaceUseEgress(ctx, t, db, 2, toKbps(9))
 }
 
-func testStatefulTables(ctx context.Context, t *testing.T, db backend.DB) {
+func testStatefulTables(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
 	rsv := newTestReservation(t)
 	// empty interface usage tables
 	bw, err := db.GetInterfaceUsageIngress(ctx, rsv.Ingress)

@@ -40,7 +40,6 @@ import (
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
 	"github.com/scionproto/scion/go/lib/util"
-	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 )
 
 // Store is the reservation store.
@@ -56,9 +55,8 @@ type Store struct {
 var _ reservationstorage.Store = (*Store)(nil)
 
 // NewStore creates a new reservation store.
-func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRewriter,
-	dialer coliquic.GRPCClientDialer, db backend.DB, admitter admission.Admitter,
-	masterKey []byte) (*Store, error) {
+func NewStore(topo topology.Topology, router snet.Router, dialer coliquic.GRPCClientDialer,
+	db backend.DB, admitter admission.Admitter, masterKey []byte) (*Store, error) {
 
 	// check that the admitter is well configured
 	cap := admitter.Capacities()
@@ -67,7 +65,7 @@ func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRew
 			"ingress", cap.CapacityIngress(uint16(ifid)),
 			"egress", cap.CapacityEgress(uint16(ifid)))
 	}
-	operator, err := coliquic.NewServiceClientOperator(topo, router, arw, dialer)
+	operator, err := coliquic.NewServiceClientOperator(topo, router, dialer)
 	if err != nil {
 		return nil, err
 	}
@@ -84,12 +82,6 @@ func NewStore(topo topology.Topology, router snet.Router, arw libgrpc.AddressRew
 	}, nil
 }
 
-func (s *Store) GetSegmentRsvsFromSrcDstIA(ctx context.Context, src, dst addr.IA) (
-	[]*segment.Reservation, error) {
-
-	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, src, dst)
-}
-
 func (s *Store) err(err error) error {
 	if err == nil {
 		return nil
@@ -103,6 +95,32 @@ func (s *Store) errNew(msg string, params ...interface{}) error {
 
 func (s *Store) errWrapStr(msg string, err error, params ...interface{}) error {
 	return s.err(serrors.WrapStr(msg, err, params...))
+}
+
+func (s *Store) GetReservationsAtSource(ctx context.Context, dstIA addr.IA) (
+	[]*segment.Reservation, error) {
+
+	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
+}
+
+func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA) (
+	[]*colibri.ReservationLooks, error) {
+
+	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
+	if err != nil {
+		log.Error("listing reservations", "err", err)
+		return nil, s.err(err)
+	}
+	looks := make([]*colibri.ReservationLooks, len(rsvs))
+	for i, r := range rsvs {
+		looks[i] = &colibri.ReservationLooks{
+			Id:    r.ID,
+			DstIA: r.PathAtSource.DstIA(),
+		}
+
+		return looks, nil
+	}
+	return looks, nil
 }
 
 // InitSegmentReservation will start a new segment reservation request. The source of
@@ -154,7 +172,7 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		path := origPath
 		if failure, ok := setupRes.(*segment.SegmentSetupResponseFailure); ok {
 			log.Info("deleteme setting the path for the cleanup/teardown",
-				"trail", failure.FailedRequest.AllocTrail, "opaque_steps before", path.Steps)
+				"trail", failure.FailedRequest.AllocTrail, "path_steps before", path.Steps)
 			path.Steps = path.Steps[:len(failure.FailedRequest.AllocTrail)]
 			log.Info("deleteme after", "steps", path.Steps)
 		}
@@ -357,7 +375,8 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 		}
 		for _, r := range allRsvs {
 			log.Info("deleteme FOUND reservation", "id", r.ID.String(),
-				"path_type", rsv.PathAtSource.Spath.Type)
+				"path_type", rsv.PathAtSource.Spath.Type,
+				"direction", r.PathType)
 		}
 	}
 	//

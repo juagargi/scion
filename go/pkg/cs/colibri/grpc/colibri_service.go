@@ -24,6 +24,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -65,10 +66,10 @@ func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage
 func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
 	*colpb.SegmentSetupResponse, error) {
 
-	msg.Base.Opaque.CurrentStep++
+	msg.Base.Path.CurrentStep++
 	sizeeeeeeeeeeee := proto.Size(msg)
-	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee,
-		"setup_path", msg.Base.Opaque)
+	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Base.Path)
+
 	// path, err := extractPath(ctx)
 	// if err != nil {
 	// 	log.Error("setup segment", "err", err)
@@ -96,7 +97,7 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	msg.Opaque.CurrentStep++
+	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
@@ -117,7 +118,7 @@ func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Req
 func (s *ColibriService) ActivateSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	msg.Opaque.CurrentStep++
+	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
@@ -139,7 +140,7 @@ func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request
 	*colpb.Response, error) {
 
 	log.Info("DELETEME received call on TeardownSegment()")
-	msg.Opaque.CurrentStep++
+	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
@@ -160,7 +161,7 @@ func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request
 func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	msg.Opaque.CurrentStep++
+	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
@@ -181,7 +182,17 @@ func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Req
 func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRequest) (
 	*colpb.ListResponse, error) {
 
-	return nil, nil
+	dstIA := addr.IAInt(msg.DstIa).IA()
+	looks, err := s.Store.ListReservations(ctx, dstIA)
+	if err != nil {
+		log.Error("colibri store while listing rsvs", "err", err)
+		return &colpb.ListResponse{
+			SuccessFailure: &colpb.ListResponse_FailureMessage{
+				FailureMessage: err.Error(),
+			},
+		}, nil
+	}
+	return translate.PBufListResponse(looks), nil
 }
 
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
@@ -198,7 +209,7 @@ func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request
 
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
 func extractPath(ctx context.Context) (base.PacketPath, error) {
-	// TODO(juagargi) move from PacketPath to OpaquePath
+	// TODO(juagargi) move from PacketPath to TransparentPath
 	// TODO(juagargi) call this function to check that the transport path matches that
 	// of base.Request.Path if the transport path is of colibri type.
 	p, ok := peer.FromContext(ctx)

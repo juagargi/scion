@@ -36,6 +36,7 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/topology"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
+	"github.com/scionproto/scion/go/pkg/sciond/colibri"
 	"github.com/scionproto/scion/go/pkg/sciond/fetcher"
 	"github.com/scionproto/scion/go/pkg/sciond/internal/servers"
 	"github.com/scionproto/scion/go/pkg/trust"
@@ -108,6 +109,7 @@ type ServerConfig struct {
 	Engine       trust.Engine
 	TopoProvider topology.Provider
 	DRKeyStore   drkeystorage.ClientStore
+	Colibri      *colibri.DaemonClient
 }
 
 // NewServer constructs a daemon API server.
@@ -118,6 +120,7 @@ func NewServer(cfg ServerConfig) *servers.DaemonServer {
 		RevCache:     cfg.RevCache,
 		TopoProvider: cfg.TopoProvider,
 		DRKeyStore:   cfg.DRKeyStore,
+		Colibri:      cfg.Colibri,
 		Metrics: servers.Metrics{
 			PathsRequests: servers.RequestMetrics{
 				Requests: metrics.NewPromCounterFrom(prometheus.CounterOpts{

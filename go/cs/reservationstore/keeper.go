@@ -78,6 +78,11 @@ func NewKeeper(manager Manager, conf *conf.Reservations) (
 	*keeper, error) {
 
 	entries, err := parseInitial(conf)
+	rsvsCount := 0
+	for _, r := range entries {
+		rsvsCount += len(r)
+	}
+	log.Debug("colibri keeper", "destinations", len(entries), "rsvs", rsvsCount)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +135,7 @@ func (k *keeper) keepDestination(ctx context.Context, dstIA addr.IA, entries []r
 	paths []snet.Path) (time.Time, error) {
 
 	// get reservations once and pass them along.
-	rsvs, err := k.manager.Store().GetSegmentRsvsFromSrcDstIA(ctx, k.manager.LocalIA(), dstIA)
+	rsvs, err := k.manager.Store().GetReservationsAtSource(ctx, dstIA)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -150,28 +155,22 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 	now := k.manager.Now()
 	wakeupTime := now.Add(sleepAtMost)
-	for _, entry := range entries {
+	for i, entry := range entries {
 		// filter reservations
 		atLeastUntil := k.manager.Now().Add(minDuration)
 		compliantRsvs, needActivation, needIndices, notCompliant :=
 			entry.SplitByCompliance(currentRsvs, atLeastUntil)
 
-		log.Debug("colibri keeper, reservations by compliance",
+		log.Debug("colibri keeper, reservations by compliance", "ia", dstIA.String(),
+			"i/total", fmt.Sprintf("%d/%d", i+1, len(entries)),
 			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
 			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
 
-		log.Info("deleteme ____ colibri keeper, reservations by compliance",
+		log.Info("deleteme ____ colibri keeper, reservations by compliance", "ia", dstIA.String(),
+			"i/total", fmt.Sprintf("%d/%d", i+1, len(entries)),
 			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
 			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
 
-		// report not compliant ones; don't delete them, they will expire eventually.
-		if len(notCompliant) > 0 {
-			log.Info("Non compliant reservations found (a change in requirements?)",
-				"count", len(notCompliant))
-			for _, rsv := range notCompliant {
-				log.Info("not compliant rsv", "id", rsv.ID)
-			}
-		}
 		// activation:
 		if err := k.activateIndices(ctx, needActivation); err != nil {
 			return time.Time{}, err
@@ -318,6 +317,7 @@ func (k *keeper) requestNSuccessfulRsvs(ctx context.Context, dstIA addr.IA, entr
 
 // requirements is a 1 to 1 association to a conf.ReservationEntry
 type requirements struct {
+	pathType      reservation.PathType
 	predicate     *pathpol.Sequence
 	minBW         reservation.BWCls
 	maxBW         reservation.BWCls
@@ -387,7 +387,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 	requests := make([]*seg.SetupReq, len(filtered))
 	// create setup requests
 	for i, p := range filtered {
-		opaque, err := base.OpaquePathFromSnet(p)
+		transp, err := base.TransparentPathFromSnet(p)
 		if err != nil {
 			return nil, err
 		}
@@ -400,18 +400,17 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 					},
 					Timestamp: now,
 				},
-				Path: opaque,
+				Path: transp,
 			},
 			ExpirationTime: expTime,
 			// RLC:            rlc,
-			// PathType:       pathType,
-			PathType:     reservation.CorePath, // TODO(juagargi) replace after tests
+			PathType:     e.pathType,
 			MinBW:        e.minBW,
 			MaxBW:        e.maxBW,
 			SplitCls:     e.splitCls,
 			PathProps:    e.endProps,
 			AllocTrail:   reservation.AllocationBeads{},
-			PathAtSource: opaque,
+			PathAtSource: transp,
 		}
 		requests[i] = req
 	}
@@ -440,7 +439,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 					Timestamp: now,
 				},
 				Path: rsv.PathAtSource,
-				// Path: &base.OpaquePath{
+				// Path: &base.TransparentPath{
 				// 	Steps: rsv.PathAtSource.Steps,
 				// 	Spath: spath.Path{
 				// 		Type: colibri.PathType,
@@ -450,8 +449,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 			},
 			ExpirationTime: expTime,
 			// RLC:            e.RLC,
-			// PathType: ,
-			PathType:     reservation.CorePath, // TODO(juagargi)
+			PathType:     rsv.PathType,
 			MinBW:        e.minBW,
 			MaxBW:        e.maxBW,
 			SplitCls:     rsv.TrafficSplit,
@@ -477,6 +475,8 @@ func (e *requirements) SelectRequests(requests []*seg.SetupReq, n int) []int {
 // it satisfies them, plus the reservation is good at least until the time in `atLeastUntil`.
 func (e requirements) Compliance(rsv *seg.Reservation, atLeastUntil time.Time) Compliance {
 	switch {
+	case rsv.PathType != e.pathType:
+		return NeverCompliant
 	case rsv.TrafficSplit != e.splitCls:
 		return NeverCompliant
 	case rsv.PathEndProps != e.endProps:
@@ -536,6 +536,7 @@ func parseInitial(conf *conf.Reservations) (map[addr.IA][]requirements, error) {
 		}
 
 		initial[r.DstAS] = append(initial[r.DstAS], requirements{
+			pathType:      r.PathType,
 			predicate:     seq,
 			minBW:         r.MinSize,
 			maxBW:         r.MaxSize,

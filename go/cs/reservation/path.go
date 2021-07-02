@@ -27,52 +27,51 @@ import (
 	"github.com/scionproto/scion/go/lib/spath"
 )
 
-// OpaquePath is used in e.g. setup requests, where the IAs should not be visible.
-type OpaquePath struct {
-	// TODO(juagargi) change name to TransparentPath
+// TransparentPath is used in e.g. setup requests, where the IAs should not be visible.
+type TransparentPath struct {
 	CurrentStep int
 	Steps       []PathStep // could contain IAs
 	Spath       spath.Path // from slayers
 }
 
-func OpaquePathFromSnet(path snet.Path) (*OpaquePath, error) {
+func TransparentPathFromSnet(path snet.Path) (*TransparentPath, error) {
 	if path == nil {
 		return nil, nil
 	}
-	opaque, err := OpaquePathFromInterfaces(path.Metadata().Interfaces)
+	transp, err := TransparentPathFromInterfaces(path.Metadata().Interfaces)
 	if err != nil {
-		return opaque, err
+		return transp, err
 	}
-	opaque.Spath = spath.Path{
+	transp.Spath = spath.Path{
 		Type: path.Path().Type,
 		Raw:  append([]byte{}, path.Path().Raw...),
 	}
-	return opaque, nil
+	return transp, nil
 }
 
-// OpaquePathFromInterfaces constructs an OpaquePath given a list of snet.PathInterface .
+// TransparentPathFromInterfaces constructs an TransparentPath given a list of snet.PathInterface .
 // from a scion path e.g. 1-1#1, 1-2#33, 1-2#44, i-3#2
-func OpaquePathFromInterfaces(ifaces []snet.PathInterface) (*OpaquePath, error) {
+func TransparentPathFromInterfaces(ifaces []snet.PathInterface) (*TransparentPath, error) {
 	if len(ifaces)%2 != 0 {
 		return nil, serrors.New("wrong number of interfaces, not even", "ifaces", ifaces)
 	}
 	if len(ifaces) == 0 {
-		return &OpaquePath{Steps: []PathStep{}}, nil
+		return &TransparentPath{Steps: []PathStep{}}, nil
 	}
-	opaque := &OpaquePath{
+	transp := &TransparentPath{
 		Steps: make([]PathStep, len(ifaces)/2+1),
 	}
 
-	for i := 0; i < len(opaque.Steps)-1; i++ {
-		opaque.Steps[i].Egress = uint16(ifaces[i*2].ID)
-		opaque.Steps[i].IA = ifaces[i*2].IA
-		opaque.Steps[i+1].Ingress = uint16(ifaces[i*2+1].ID)
+	for i := 0; i < len(transp.Steps)-1; i++ {
+		transp.Steps[i].Egress = uint16(ifaces[i*2].ID)
+		transp.Steps[i].IA = ifaces[i*2].IA
+		transp.Steps[i+1].Ingress = uint16(ifaces[i*2+1].ID)
 	}
-	opaque.Steps[len(opaque.Steps)-1].IA = ifaces[len(ifaces)-1].IA
-	return opaque, nil
+	transp.Steps[len(transp.Steps)-1].IA = ifaces[len(ifaces)-1].IA
+	return transp, nil
 }
 
-func (p *OpaquePath) Interfaces() []snet.PathInterface {
+func (p *TransparentPath) Interfaces() []snet.PathInterface {
 	if p == nil {
 		return []snet.PathInterface{}
 	}
@@ -86,15 +85,15 @@ func (p *OpaquePath) Interfaces() []snet.PathInterface {
 	return ifaces[1 : len(ifaces)-1]
 }
 
-func (p *OpaquePath) Copy() *OpaquePath {
-	return &OpaquePath{
+func (p *TransparentPath) Copy() *TransparentPath {
+	return &TransparentPath{
 		Steps:       append(p.Steps[:0:0], p.Steps...),
 		CurrentStep: p.CurrentStep,
 		Spath:       p.Spath.Copy(),
 	}
 }
 
-func (p *OpaquePath) String() string {
+func (p *TransparentPath) String() string {
 	if p == nil {
 		return "<nil>"
 	}
@@ -114,7 +113,7 @@ func (p *OpaquePath) String() string {
 	return str
 }
 
-func (p *OpaquePath) ToRaw() []byte {
+func (p *TransparentPath) ToRaw() []byte {
 	if p == nil {
 		return []byte{}
 	}
@@ -140,7 +139,7 @@ func (p *OpaquePath) ToRaw() []byte {
 	return initialBuff
 }
 
-func OpaquePathFromRaw(raw []byte) (*OpaquePath, error) {
+func TransparentPathFromRaw(raw []byte) (*TransparentPath, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
@@ -167,7 +166,7 @@ func OpaquePathFromRaw(raw []byte) (*OpaquePath, error) {
 	if len(rawSpath) == 0 {
 		rawSpath = nil
 	}
-	return &OpaquePath{
+	return &TransparentPath{
 		CurrentStep: currStep,
 		Steps:       steps,
 		Spath: spath.Path{
@@ -177,21 +176,21 @@ func OpaquePathFromRaw(raw []byte) (*OpaquePath, error) {
 	}, nil
 }
 
-func (p *OpaquePath) SrcIA() addr.IA {
+func (p *TransparentPath) SrcIA() addr.IA {
 	if p == nil {
 		return addr.IA{}
 	}
 	return p.Steps[0].IA
 }
 
-func (p *OpaquePath) DstIA() addr.IA {
+func (p *TransparentPath) DstIA() addr.IA {
 	if p == nil {
 		return addr.IA{}
 	}
 	return p.Steps[len(p.Steps)-1].IA
 }
 
-func (p *OpaquePath) Validate() error {
+func (p *TransparentPath) Validate() error {
 	if p == nil {
 		return nil
 	}
@@ -202,7 +201,7 @@ func (p *OpaquePath) Validate() error {
 	return nil
 }
 
-// PathStep is one hop of the OpaquePath.
+// PathStep is one hop of the TransparentPath.
 // For a source AS: Ingress will be invalid. Conversely for dst.
 // So as opposed to snet.Path, these paths have length = number of ASes in the path.
 type PathStep struct {

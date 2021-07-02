@@ -66,7 +66,6 @@ type Config struct {
 	CA          CA                 `toml:"ca,omitempty"`
 	TrustEngine trustengine.Config `toml:"trustengine,omitempty"`
 	DRKey       DRKeyConfig        `toml:"drkey,omitempty"`
-	Colibri     ColibriConfig      `toml:"colibri,omitempty"`
 }
 
 // InitDefaults initializes the default values for all parts of the config.
@@ -87,7 +86,6 @@ func (cfg *Config) InitDefaults() {
 		&cfg.CA,
 		&cfg.TrustEngine,
 		&cfg.DRKey,
-		&cfg.Colibri,
 	)
 }
 
@@ -108,7 +106,6 @@ func (cfg *Config) Validate() error {
 		&cfg.CA,
 		&cfg.TrustEngine,
 		&cfg.DRKey,
-		&cfg.Colibri,
 	)
 }
 

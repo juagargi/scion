@@ -2,6 +2,7 @@
   "reservation_list": [
     {
       "destination": "1-ff00:1:112",
+      "path_type": "down",
       "path_predicate": "1-ff00:1:112#0",
       "max_size": 13,
       "min_size": 7,
@@ -14,6 +15,7 @@
     },
     {
       "destination": "1-ff00:1:113",
+      "path_type": "up",
       "path_predicate": "1-ff00:1:113#0",
       "max_size": 13,
       "min_size": 7,
