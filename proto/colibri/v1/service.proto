@@ -111,10 +111,13 @@ message SegmentSetupRequest {
         PathEndProps props_at_start = 7;
         PathEndProps props_at_end = 8;
         repeated AllocationBead allocationtrail = 9;
+        bool reverse_traveling = 10;
     }
 
     Request base = 1;
     Params params = 2;
+    // when a down rsv., indicates the req. is just traveling to the last AS to be
+    // re-requested from there (admission is done in the direction of the reservation).
 }
 
 message SegmentSetupResponse {
