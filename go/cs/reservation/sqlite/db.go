@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -332,8 +333,14 @@ func (x *executor) NextExpirationTime(ctx context.Context) (time.Time, error) {
 		return time.Time{}, err
 	}
 	expiration := expE2E
-	if expSeg < expiration {
+	if expiration == uint32(math.MaxUint32) || expSeg < expiration {
 		expiration = expSeg
+	}
+	if expiration == uint32(math.MaxUint32) {
+		expiration = 0
+	}
+	if expiration == 0 {
+		return time.Time{}, nil
 	}
 	return util.SecsToTime(expiration), nil
 }
