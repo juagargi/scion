@@ -155,6 +155,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 	now := k.manager.Now()
 	wakeupTime := now.Add(sleepAtMost)
+	errors := make(serrors.List, 0)
 	for i, entry := range entries {
 		// filter reservations
 		atLeastUntil := k.manager.Now().Add(minDuration)
@@ -173,13 +174,15 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 		// activation:
 		if err := k.activateIndices(ctx, needActivation); err != nil {
-			return time.Time{}, err
+			errors = append(errors, err)
+			continue
 		}
 		expirationNewIndices := now.Add(newIndexMinDuration)
 		// new indices:
 		err := k.askNewIndices(ctx, needIndices, dstIA, entry, expirationNewIndices)
 		if err != nil {
-			return time.Time{}, err
+			errors = append(errors, err)
+			continue
 		}
 
 		// totally new reservations:
@@ -191,7 +194,8 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		_, err = k.askNewReservations(ctx, requestCount,
 			dstIA, entry, paths, expirationNewIndices)
 		if err != nil {
-			return time.Time{}, err
+			errors = append(errors, err)
+			continue
 		}
 
 		// the needIndices and new reservations are good for newIndexMinDuration
@@ -204,6 +208,9 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 				wakeupTime = rsv.ActiveIndex().Expiration
 			}
 		}
+	}
+	if len(errors) > 0 {
+		return time.Time{}, errors.ToError()
 	}
 	return wakeupTime, nil
 }

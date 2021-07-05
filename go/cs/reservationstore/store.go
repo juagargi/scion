@@ -333,7 +333,7 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request
 func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
-	log.Info("deleteme activate index", "id", req.ID, "idx", req.Index)
+	log.Info("deleteme activate index", "id", req.ID.String(), "idx", req.Index)
 	// TODO(juagargi) refactor these functions that share a lot of code
 	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
