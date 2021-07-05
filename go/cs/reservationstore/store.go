@@ -46,6 +46,7 @@ import (
 type Store struct {
 	// TODO(juagargi) bind the logger to use the localIA in messages
 	localIA    addr.IA
+	isCore     bool
 	db         backend.DB                      // aka reservation map
 	admitter   admission.Admitter              // the chosen admission entity
 	operator   *coliquic.ServiceClientOperator // dials next colibri service
@@ -75,6 +76,7 @@ func NewStore(topo topology.Topology, router snet.Router, dialer coliquic.GRPCCl
 	}
 	return &Store{
 		localIA:    topo.IA(),
+		isCore:     topo.Core(),
 		db:         db,
 		admitter:   admitter,
 		operator:   operator,
@@ -154,6 +156,13 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	if !req.ID.IsEmptySuffix() {
 		newSetup = false
 	}
+	if req.PathType == reservation.DownPath {
+		// reverse_traveling must be true if this is a down rsv. and this AS is non core.
+		// It must be false otherwise. The flag indicates the admission to send the request to
+		// the last AS of the path to re-start the request process from there, as the
+		// admission must be computed in the direction of the reservation.
+		req.ReverseTraveling = !s.isCore
+	}
 
 	rsv, err := s.db.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
@@ -228,6 +237,35 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 	if err := s.validateAuthenticators(&req.Request); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+	}
+	log.Info("deleteme", "reverse_traveling", req.ReverseTraveling)
+	if req.ReverseTraveling {
+		if req.IsLastAS() {
+			// the req. has reached the last AS. Start normal admission request
+			req.ReverseTraveling = false
+			log.Info("deleteme this is the last AS, turning reverse_traveling to false")
+		} else {
+			// forward to next colibri service
+			// TODO(juagargi) this is very subobtimal: the response needs 2 round trips.
+			failedResponse := &segment.SegmentSetupResponseFailure{
+				MsgId: base.MsgId{
+					ID:        req.ID,
+					Index:     req.Index,
+					Timestamp: time.Now(),
+				},
+				FailedRequest: req,
+			}
+			client, err := s.operator.ColibriClient(ctx, req.Path)
+			if err != nil {
+				return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+			}
+
+			pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
+			if err != nil {
+				return failedResponse, s.errWrapStr("forwarded request failed", err)
+			}
+			return translate.SetupResponse(pbRes)
+		}
 	}
 	return s.admitSegmentReservation(ctx, req)
 }
