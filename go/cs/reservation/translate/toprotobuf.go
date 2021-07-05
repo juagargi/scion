@@ -77,7 +77,8 @@ func PBufSetupRequestParams(req *segment.SetupReq) *colpb.SegmentSetupRequest_Pa
 			Local:    req.PathProps.EndLocal(),
 			Transfer: req.PathProps.EndTransfer(),
 		},
-		Allocationtrail: PBufAllocTrail(req.AllocTrail),
+		Allocationtrail:  PBufAllocTrail(req.AllocTrail),
+		ReverseTraveling: req.ReverseTraveling,
 	}
 }
 
