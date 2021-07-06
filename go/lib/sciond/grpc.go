@@ -223,12 +223,14 @@ func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 	list := sdRes.Base.SuccessFailure.(*colpb.ListResponse_Reservations_).Reservations.Reservations
 	res := make([]*colibri.ReservationLooks, len(list))
 	for i, r := range list {
-		res[i].DstIA = addr.IAInt(r.DstIa).IA()
 		id, err := translate.ID(r.ID)
 		if err != nil {
 			return nil, serrors.WrapStr("traslating list of reservations", err)
 		}
-		res[i].Id = *id
+		res[i] = &colibri.ReservationLooks{
+			DstIA: addr.IAInt(r.DstIa).IA(),
+			Id:    *id,
+		}
 	}
 
 	return res, nil
