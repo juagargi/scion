@@ -25,6 +25,7 @@ import (
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
@@ -158,7 +159,7 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 
 	log.Info("deleteme ListReservations", "dst", addr.IAInt(msg.DstIa).IA().String())
 	dstIA := addr.IAInt(msg.DstIa).IA()
-	looks, err := s.Store.ListReservations(ctx, dstIA)
+	looks, err := s.Store.ListReservations(ctx, dstIA, reservation.PathType(msg.PathType))
 	if err != nil {
 		log.Error("colibri store while listing rsvs", "err", err)
 		return &colpb.ListResponse{

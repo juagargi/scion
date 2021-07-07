@@ -127,6 +127,7 @@ message SegmentSetupResponse {
 
 message ListRequest {
     uint64 dst_ia = 1;
+    uint32 path_type = 2;
 }
 
 message ListResponse {

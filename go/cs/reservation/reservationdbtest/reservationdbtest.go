@@ -191,6 +191,7 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, newDB fun
 	cases := map[string]struct {
 		srcIA    addr.IA
 		dstIA    addr.IA
+		pathType reservation.PathType
 		rsvs     []*segment.Reservation
 		expected []*reservation.ID
 	}{
@@ -291,6 +292,25 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, newDB fun
 				test.MustParseID("ff00:0:1", "00000003"),
 			},
 		},
+		"up reservation to any core": {
+			srcIA:    xtest.MustParseIA("1-ff00:0:1"),
+			dstIA:    xtest.MustParseIA("1-0"), // wildcard
+			pathType: reservation.UpPath,
+			rsvs: []*segment.Reservation{
+				st.NewRsv(st.WithID("ff00:0:1", "00000001"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+					st.WithPathType(reservation.DownPath)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000002"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0), // to a core AS
+					st.WithPathType(reservation.UpPath)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000003"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "11-ff00:0:2", 0), // to a core AS
+					st.WithPathType(reservation.UpPath)),
+			},
+			expected: []*reservation.ID{
+				test.MustParseID("ff00:0:1", "00000002"),
+			},
+		},
 	}
 	for name, tc := range cases {
 		name, tc := name, tc
@@ -306,7 +326,7 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, newDB fun
 			require.NoError(t, err)
 			require.Len(t, rsvs, len(tc.rsvs))
 			// check the actual function
-			rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, tc.srcIA, tc.dstIA)
+			rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, tc.srcIA, tc.dstIA, tc.pathType)
 			require.NoError(t, err)
 			actualIDs := make([]*reservation.ID, len(rsvs))
 			for i, r := range rsvs {

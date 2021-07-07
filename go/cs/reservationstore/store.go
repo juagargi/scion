@@ -102,13 +102,13 @@ func (s *Store) errWrapStr(msg string, err error, params ...interface{}) error {
 func (s *Store) GetReservationsAtSource(ctx context.Context, dstIA addr.IA) (
 	[]*segment.Reservation, error) {
 
-	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
+	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA, reservation.UnknownPath)
 }
 
-func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA) (
-	[]*colibri.ReservationLooks, error) {
+func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA,
+	pathType reservation.PathType) ([]*colibri.ReservationLooks, error) {
 
-	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
+	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA, pathType)
 	if err != nil {
 		log.Error("listing reservations", "err", err)
 		return nil, s.err(err)
