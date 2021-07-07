@@ -69,6 +69,20 @@ func (mr *MockDBMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockDB)(nil).Close))
 }
 
+// DeleteE2ERsv mocks base method
+func (m *MockDB) DeleteE2ERsv(arg0 context.Context, arg1 *reservation.ID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteE2ERsv", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteE2ERsv indicates an expected call of DeleteE2ERsv
+func (mr *MockDBMockRecorder) DeleteE2ERsv(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteE2ERsv", reflect.TypeOf((*MockDB)(nil).DeleteE2ERsv), arg0, arg1)
+}
+
 // DeleteExpiredIndices mocks base method
 func (m *MockDB) DeleteExpiredIndices(arg0 context.Context, arg1 time.Time) (int, error) {
 	m.ctrl.T.Helper()

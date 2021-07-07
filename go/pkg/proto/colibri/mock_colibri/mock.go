@@ -195,26 +195,6 @@ func (mr *MockColibriClientMockRecorder) TeardownSegment(arg0, arg1 interface{},
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownSegment", reflect.TypeOf((*MockColibriClient)(nil).TeardownSegment), varargs...)
 }
 
-// TestPeer mocks base method
-func (m *MockColibriClient) TestPeer(arg0 context.Context, arg1 *colibri.TestingMessage, arg2 ...grpc.CallOption) (*colibri.TestingMessage, error) {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{arg0, arg1}
-	for _, a := range arg2 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "TestPeer", varargs...)
-	ret0, _ := ret[0].(*colibri.TestingMessage)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// TestPeer indicates an expected call of TestPeer
-func (mr *MockColibriClientMockRecorder) TestPeer(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{arg0, arg1}, arg2...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TestPeer", reflect.TypeOf((*MockColibriClient)(nil).TestPeer), varargs...)
-}
-
 // MockColibriServer is a mock of ColibriServer interface
 type MockColibriServer struct {
 	ctrl     *gomock.Controller
@@ -356,19 +336,4 @@ func (m *MockColibriServer) TeardownSegment(arg0 context.Context, arg1 *colibri.
 func (mr *MockColibriServerMockRecorder) TeardownSegment(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownSegment", reflect.TypeOf((*MockColibriServer)(nil).TeardownSegment), arg0, arg1)
-}
-
-// TestPeer mocks base method
-func (m *MockColibriServer) TestPeer(arg0 context.Context, arg1 *colibri.TestingMessage) (*colibri.TestingMessage, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TestPeer", arg0, arg1)
-	ret0, _ := ret[0].(*colibri.TestingMessage)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// TestPeer indicates an expected call of TestPeer
-func (mr *MockColibriServerMockRecorder) TestPeer(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TestPeer", reflect.TypeOf((*MockColibriServer)(nil).TestPeer), arg0, arg1)
 }
