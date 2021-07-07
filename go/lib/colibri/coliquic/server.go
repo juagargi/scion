@@ -210,7 +210,7 @@ func NewGrpcServer(opt ...grpc.ServerOption) *grpc.Server {
 
 // UsageFromContext returns a bool saying if this peer was using colibri and
 // an approximation of the bandwidth used in that case.
-// the peer was not COLIBRI.
+// TODO(juagargi) maybe use google.golang.org/protobuf/proto Size() instead?
 func UsageFromContext(ctx context.Context) (usage uint64, isColibri bool, err error) {
 	// the context has a pointer to the statsHandler
 	var handler *statsHandler

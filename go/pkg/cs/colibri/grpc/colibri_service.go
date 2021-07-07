@@ -16,7 +16,6 @@ package grpc
 
 import (
 	"context"
-	"fmt"
 
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/proto"
@@ -37,31 +36,6 @@ type ColibriService struct {
 }
 
 var _ colpb.ColibriServer = (*ColibriService)(nil)
-
-func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
-	*colpb.TestingMessage, error) {
-
-	log.Info("DELETEME received call on TestPeer()")
-	p, ok := peer.FromContext(ctx)
-	if !ok || p == nil {
-		log.Info("DELETEME weird, no peer", "peer", p)
-		return nil, serrors.New("no peer found")
-	}
-	raddr, ok := p.Addr.(*snet.UDPAddr)
-	if !ok || raddr == nil {
-		log.Info("DELETEME weird error, raddr is what?", "raddr", raddr, "ok", ok)
-		return nil, serrors.New("no valid raddr found")
-	}
-	// require.IsType(t, &snet.UDPAddr{}, p.Addr)
-	// require.Equal(t, colibri.PathType, p.Addr.(*snet.UDPAddr).Path.Type)
-	log.Info("DELETEME so far so good", "path_type", raddr.Path.Type)
-	usage, ok, err := coliquic.UsageFromContext(ctx)
-	_, _, _ = usage, ok, err
-	return &colpb.TestingMessage{
-		Message: fmt.Sprintf("answering your message: %s", msg.Message),
-		Data:    p.Addr.(*snet.UDPAddr).Path.Raw,
-	}, nil
-}
 
 func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
 	*colpb.SegmentSetupResponse, error) {
@@ -246,5 +220,7 @@ func extractPath(ctx context.Context) (base.PacketPath, error) {
 	}
 	log.Info("deleteme path and interfaces", "path_type", raddr.Path.Type,
 		"packet_path", path)
+	usage, ok, err := coliquic.UsageFromContext(ctx)
+	_, _, _ = usage, ok, err
 	return path, err
 }
