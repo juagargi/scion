@@ -166,8 +166,12 @@ func TestColibriGRPC(t *testing.T) {
 	mctrl := gomock.NewController(t)
 	defer mctrl.Finish()
 	handler := mock_col.NewMockColibriServer(mctrl)
-	handler.EXPECT().TestPeer(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-		func(ctx context.Context, _ *colpb.TestingMessage) (*colpb.TestingMessage, error) {
+	// use SetupSegment to check that the client talks to the server as expected,
+	// and that the server is able to extract the address and path to the client.
+	handler.EXPECT().SetupSegment(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+		func(ctx context.Context, _ *colpb.SegmentSetupRequest) (
+			*colpb.SegmentSetupResponse, error) {
+
 			p, ok := peer.FromContext(ctx)
 			require.True(t, ok)
 			require.NotNil(t, p)
@@ -177,7 +181,9 @@ func TestColibriGRPC(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, ok)
 			require.Greater(t, usage, uint64(0))
-			return &colpb.TestingMessage{Data: p.Addr.(*snet.UDPAddr).Path.Raw}, nil
+			return &colpb.SegmentSetupResponse{SuccessFailure: &colpb.SegmentSetupResponse_Token{
+				Token: p.Addr.(*snet.UDPAddr).Path.Raw,
+			}}, nil
 		})
 
 	var testInterceptorCalled bool
@@ -225,9 +231,9 @@ func TestColibriGRPC(t *testing.T) {
 		grpc.WithContextDialer(dialer))
 	require.NoError(t, err)
 	gRPCClient := colpb.NewColibriClient(conn)
-	res, err := gRPCClient.TestPeer(ctx, &colpb.TestingMessage{})
+	res, err := gRPCClient.SetupSegment(ctx, &colpb.SegmentSetupRequest{})
 	require.NoError(t, err)
-	require.Equal(t, clientAddr.(*snet.UDPAddr).Path.Raw, res.Data)
+	require.Equal(t, clientAddr.(*snet.UDPAddr).Path.Raw, res.GetToken())
 	require.True(t, testInterceptorCalled)
 
 	gRPCServer.GracefulStop()
