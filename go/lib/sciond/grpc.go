@@ -202,38 +202,40 @@ func (c grpcConn) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 }
 
 func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
-	[]*colibri.ReservationLooks, error) {
+	*colibri.StitchableSegments, error) {
 
 	req := &sdpb.ColibriListRequest{
 		Base: &colpb.ListRequest{
 			DstIa: uint64(dstIA.IAInt()),
 		},
 	}
-	fmt.Println("---- deleteme 1")
 	client := sdpb.NewDaemonServiceClient(c.conn)
-	fmt.Println("---- deleteme 2")
 	sdRes, err := client.ColibriListRsvs(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("---- deleteme 3")
-	if failure, ok := sdRes.Base.SuccessFailure.(*colpb.ListResponse_FailureMessage); ok {
-		return nil, fmt.Errorf(failure.FailureMessage)
-	}
-	list := sdRes.Base.SuccessFailure.(*colpb.ListResponse_Reservations_).Reservations.Reservations
-	res := make([]*colibri.ReservationLooks, len(list))
-	for i, r := range list {
-		id, err := translate.ID(r.ID)
-		if err != nil {
-			return nil, serrors.WrapStr("traslating list of reservations", err)
-		}
-		res[i] = &colibri.ReservationLooks{
-			DstIA: addr.IAInt(r.DstIa).IA(),
-			Id:    *id,
-		}
+	if sdRes.ErrorMessage != "" {
+		return nil, fmt.Errorf(sdRes.ErrorMessage)
 	}
 
-	return res, nil
+	// translate the reservation segments
+	up, err := translateRsvLooks(sdRes.Up)
+	if err != nil {
+		return nil, err
+	}
+	core, err := translateRsvLooks(sdRes.Core)
+	if err != nil {
+		return nil, err
+	}
+	down, err := translateRsvLooks(sdRes.Down)
+	if err != nil {
+		return nil, err
+	}
+	return &colibri.StitchableSegments{
+		Up:   up,
+		Core: core,
+		Down: down,
+	}, nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {
@@ -346,4 +348,21 @@ func lvl2reqToProtoRequest(req dkctrl.Lvl2Req) (*sdpb.DRKeyLvl2Request, error) {
 // getLvl2KeyFromReply decrypts and extracts the level 1 drkey from the reply.
 func getLvl2KeyFromReply(rep *sdpb.DRKeyLvl2Response, meta drkey.Lvl2Meta) (drkey.Lvl2Key, error) {
 	return dkctrl.GetLvl2KeyFromReply(rep.BaseRep, meta)
+}
+
+// translateRsvLooks converts a list of reservation looks from protobuf to colibri types.
+func translateRsvLooks(list []*colpb.ListResponse_Reservations_ReservationLooks) (
+	[]*colibri.ReservationLooks, error) {
+	res := make([]*colibri.ReservationLooks, len(list))
+	for i, r := range list {
+		id, err := translate.ID(r.ID)
+		if err != nil {
+			return nil, serrors.WrapStr("traslating list of reservations", err)
+		}
+		res[i] = &colibri.ReservationLooks{
+			DstIA: addr.IAInt(r.DstIa).IA(),
+			Id:    *id,
+		}
+	}
+	return res, nil
 }
