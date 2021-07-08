@@ -157,8 +157,16 @@ func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Req
 func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRequest) (
 	*colpb.ListResponse, error) {
 
-	log.Info("deleteme ListReservations", "dst", addr.IAInt(msg.DstIa).IA().String())
+	log.Info("deleteme ListReservations", "dst", addr.IAInt(msg.DstIa).IA().String(),
+		"type", reservation.PathType(msg.PathType))
 	dstIA := addr.IAInt(msg.DstIa).IA()
+	//
+	// deleteme
+	//
+	deletemeRsvs, err := s.Store.GetReservationsAtSource(ctx, dstIA)
+	log.Info("deleteme all rsvs from this AS", "count", len(deletemeRsvs), "err", err)
+	//
+	//
 	looks, err := s.Store.ListReservations(ctx, dstIA, reservation.PathType(msg.PathType))
 	if err != nil {
 		log.Error("colibri store while listing rsvs", "err", err)

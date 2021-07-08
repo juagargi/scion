@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.25.0
 // 	protoc        v3.13.0
-// source: proto/colibri/v1/service.proto
+// source: proto/colibri/v1/colibri.proto
 
 package colibri
 
@@ -60,11 +60,11 @@ func (x IndexState_State) String() string {
 }
 
 func (IndexState_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_colibri_v1_service_proto_enumTypes[0].Descriptor()
+	return file_proto_colibri_v1_colibri_proto_enumTypes[0].Descriptor()
 }
 
 func (IndexState_State) Type() protoreflect.EnumType {
-	return &file_proto_colibri_v1_service_proto_enumTypes[0]
+	return &file_proto_colibri_v1_colibri_proto_enumTypes[0]
 }
 
 func (x IndexState_State) Number() protoreflect.EnumNumber {
@@ -73,7 +73,7 @@ func (x IndexState_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use IndexState_State.Descriptor instead.
 func (IndexState_State) EnumDescriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{1, 0}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{1, 0}
 }
 
 type ReservationID struct {
@@ -88,7 +88,7 @@ type ReservationID struct {
 func (x *ReservationID) Reset() {
 	*x = ReservationID{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[0]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -101,7 +101,7 @@ func (x *ReservationID) String() string {
 func (*ReservationID) ProtoMessage() {}
 
 func (x *ReservationID) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[0]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -114,7 +114,7 @@ func (x *ReservationID) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReservationID.ProtoReflect.Descriptor instead.
 func (*ReservationID) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{0}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ReservationID) GetAsid() uint64 {
@@ -142,7 +142,7 @@ type IndexState struct {
 func (x *IndexState) Reset() {
 	*x = IndexState{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[1]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -155,7 +155,7 @@ func (x *IndexState) String() string {
 func (*IndexState) ProtoMessage() {}
 
 func (x *IndexState) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[1]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -168,7 +168,7 @@ func (x *IndexState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexState.ProtoReflect.Descriptor instead.
 func (*IndexState) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{1}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *IndexState) GetState() IndexState_State {
@@ -190,7 +190,7 @@ type PathEndProps struct {
 func (x *PathEndProps) Reset() {
 	*x = PathEndProps{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[2]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -203,7 +203,7 @@ func (x *PathEndProps) String() string {
 func (*PathEndProps) ProtoMessage() {}
 
 func (x *PathEndProps) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[2]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -216,7 +216,7 @@ func (x *PathEndProps) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PathEndProps.ProtoReflect.Descriptor instead.
 func (*PathEndProps) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{2}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *PathEndProps) GetLocal() bool {
@@ -245,7 +245,7 @@ type AllocationBead struct {
 func (x *AllocationBead) Reset() {
 	*x = AllocationBead{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[3]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -258,7 +258,7 @@ func (x *AllocationBead) String() string {
 func (*AllocationBead) ProtoMessage() {}
 
 func (x *AllocationBead) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[3]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -271,7 +271,7 @@ func (x *AllocationBead) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AllocationBead.ProtoReflect.Descriptor instead.
 func (*AllocationBead) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{3}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AllocationBead) GetAllocbw() uint32 {
@@ -301,7 +301,7 @@ type PathStep struct {
 func (x *PathStep) Reset() {
 	*x = PathStep{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[4]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -314,7 +314,7 @@ func (x *PathStep) String() string {
 func (*PathStep) ProtoMessage() {}
 
 func (x *PathStep) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[4]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -327,7 +327,7 @@ func (x *PathStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PathStep.ProtoReflect.Descriptor instead.
 func (*PathStep) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{4}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PathStep) GetIa() uint64 {
@@ -365,7 +365,7 @@ type TransparentPath struct {
 func (x *TransparentPath) Reset() {
 	*x = TransparentPath{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[5]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -378,7 +378,7 @@ func (x *TransparentPath) String() string {
 func (*TransparentPath) ProtoMessage() {}
 
 func (x *TransparentPath) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[5]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -391,7 +391,7 @@ func (x *TransparentPath) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransparentPath.ProtoReflect.Descriptor instead.
 func (*TransparentPath) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{5}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TransparentPath) GetCurrentStep() uint32 {
@@ -436,7 +436,7 @@ type Request struct {
 func (x *Request) Reset() {
 	*x = Request{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[6]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -449,7 +449,7 @@ func (x *Request) String() string {
 func (*Request) ProtoMessage() {}
 
 func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[6]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -462,7 +462,7 @@ func (x *Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Request.ProtoReflect.Descriptor instead.
 func (*Request) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{6}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Request) GetId() *ReservationID {
@@ -507,7 +507,7 @@ type Response struct {
 func (x *Response) Reset() {
 	*x = Response{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[7]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -520,7 +520,7 @@ func (x *Response) String() string {
 func (*Response) ProtoMessage() {}
 
 func (x *Response) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[7]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -533,7 +533,7 @@ func (x *Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response.ProtoReflect.Descriptor instead.
 func (*Response) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{7}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{7}
 }
 
 func (m *Response) GetSuccessFailure() isResponse_SuccessFailure {
@@ -585,7 +585,7 @@ type SegmentSetupRequest struct {
 func (x *SegmentSetupRequest) Reset() {
 	*x = SegmentSetupRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[8]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -598,7 +598,7 @@ func (x *SegmentSetupRequest) String() string {
 func (*SegmentSetupRequest) ProtoMessage() {}
 
 func (x *SegmentSetupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[8]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +611,7 @@ func (x *SegmentSetupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentSetupRequest.ProtoReflect.Descriptor instead.
 func (*SegmentSetupRequest) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{8}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SegmentSetupRequest) GetBase() *Request {
@@ -642,7 +642,7 @@ type SegmentSetupResponse struct {
 func (x *SegmentSetupResponse) Reset() {
 	*x = SegmentSetupResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[9]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -655,7 +655,7 @@ func (x *SegmentSetupResponse) String() string {
 func (*SegmentSetupResponse) ProtoMessage() {}
 
 func (x *SegmentSetupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[9]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -668,7 +668,7 @@ func (x *SegmentSetupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentSetupResponse.ProtoReflect.Descriptor instead.
 func (*SegmentSetupResponse) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{9}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{9}
 }
 
 func (m *SegmentSetupResponse) GetSuccessFailure() isSegmentSetupResponse_SuccessFailure {
@@ -720,7 +720,7 @@ type ListRequest struct {
 func (x *ListRequest) Reset() {
 	*x = ListRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[10]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -733,7 +733,7 @@ func (x *ListRequest) String() string {
 func (*ListRequest) ProtoMessage() {}
 
 func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[10]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[10]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -746,7 +746,7 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{10}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListRequest) GetDstIa() uint64 {
@@ -777,7 +777,7 @@ type ListResponse struct {
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[11]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[11]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -790,7 +790,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[11]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[11]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +803,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{11}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{11}
 }
 
 func (m *ListResponse) GetSuccessFailure() isListResponse_SuccessFailure {
@@ -858,7 +858,7 @@ type E2ESetupRequest struct {
 func (x *E2ESetupRequest) Reset() {
 	*x = E2ESetupRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[12]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[12]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -871,7 +871,7 @@ func (x *E2ESetupRequest) String() string {
 func (*E2ESetupRequest) ProtoMessage() {}
 
 func (x *E2ESetupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[12]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[12]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -884,7 +884,7 @@ func (x *E2ESetupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use E2ESetupRequest.ProtoReflect.Descriptor instead.
 func (*E2ESetupRequest) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{12}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *E2ESetupRequest) GetBase() *Request {
@@ -931,7 +931,7 @@ type E2ESetupResponse struct {
 func (x *E2ESetupResponse) Reset() {
 	*x = E2ESetupResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[13]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[13]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -944,7 +944,7 @@ func (x *E2ESetupResponse) String() string {
 func (*E2ESetupResponse) ProtoMessage() {}
 
 func (x *E2ESetupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[13]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[13]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -957,7 +957,7 @@ func (x *E2ESetupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use E2ESetupResponse.ProtoReflect.Descriptor instead.
 func (*E2ESetupResponse) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{13}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{13}
 }
 
 type Response_Success struct {
@@ -969,7 +969,7 @@ type Response_Success struct {
 func (x *Response_Success) Reset() {
 	*x = Response_Success{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[14]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[14]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -982,7 +982,7 @@ func (x *Response_Success) String() string {
 func (*Response_Success) ProtoMessage() {}
 
 func (x *Response_Success) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[14]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[14]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +995,7 @@ func (x *Response_Success) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response_Success.ProtoReflect.Descriptor instead.
 func (*Response_Success) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{7, 0}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{7, 0}
 }
 
 type Response_Failure struct {
@@ -1011,7 +1011,7 @@ type Response_Failure struct {
 func (x *Response_Failure) Reset() {
 	*x = Response_Failure{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[15]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[15]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1024,7 +1024,7 @@ func (x *Response_Failure) String() string {
 func (*Response_Failure) ProtoMessage() {}
 
 func (x *Response_Failure) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[15]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[15]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1037,7 +1037,7 @@ func (x *Response_Failure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response_Failure.ProtoReflect.Descriptor instead.
 func (*Response_Failure) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{7, 1}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{7, 1}
 }
 
 func (x *Response_Failure) GetErrorCode() uint32 {
@@ -1081,7 +1081,7 @@ type SegmentSetupRequest_Params struct {
 func (x *SegmentSetupRequest_Params) Reset() {
 	*x = SegmentSetupRequest_Params{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[16]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[16]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1094,7 +1094,7 @@ func (x *SegmentSetupRequest_Params) String() string {
 func (*SegmentSetupRequest_Params) ProtoMessage() {}
 
 func (x *SegmentSetupRequest_Params) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[16]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[16]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1107,7 +1107,7 @@ func (x *SegmentSetupRequest_Params) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentSetupRequest_Params.ProtoReflect.Descriptor instead.
 func (*SegmentSetupRequest_Params) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{8, 0}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{8, 0}
 }
 
 func (x *SegmentSetupRequest_Params) GetExpirationTime() uint32 {
@@ -1192,7 +1192,7 @@ type SegmentSetupResponse_Failure struct {
 func (x *SegmentSetupResponse_Failure) Reset() {
 	*x = SegmentSetupResponse_Failure{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[17]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[17]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1205,7 +1205,7 @@ func (x *SegmentSetupResponse_Failure) String() string {
 func (*SegmentSetupResponse_Failure) ProtoMessage() {}
 
 func (x *SegmentSetupResponse_Failure) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[17]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[17]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1218,7 +1218,7 @@ func (x *SegmentSetupResponse_Failure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentSetupResponse_Failure.ProtoReflect.Descriptor instead.
 func (*SegmentSetupResponse_Failure) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{9, 0}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{9, 0}
 }
 
 func (x *SegmentSetupResponse_Failure) GetFailure() *Response_Failure {
@@ -1246,7 +1246,7 @@ type ListResponse_Reservations struct {
 func (x *ListResponse_Reservations) Reset() {
 	*x = ListResponse_Reservations{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[18]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[18]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1259,7 +1259,7 @@ func (x *ListResponse_Reservations) String() string {
 func (*ListResponse_Reservations) ProtoMessage() {}
 
 func (x *ListResponse_Reservations) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[18]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[18]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1272,7 +1272,7 @@ func (x *ListResponse_Reservations) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse_Reservations.ProtoReflect.Descriptor instead.
 func (*ListResponse_Reservations) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{11, 0}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{11, 0}
 }
 
 func (x *ListResponse_Reservations) GetReservations() []*ListResponse_Reservations_ReservationLooks {
@@ -1294,7 +1294,7 @@ type ListResponse_Reservations_ReservationLooks struct {
 func (x *ListResponse_Reservations_ReservationLooks) Reset() {
 	*x = ListResponse_Reservations_ReservationLooks{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[19]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[19]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1307,7 +1307,7 @@ func (x *ListResponse_Reservations_ReservationLooks) String() string {
 func (*ListResponse_Reservations_ReservationLooks) ProtoMessage() {}
 
 func (x *ListResponse_Reservations_ReservationLooks) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[19]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[19]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +1320,7 @@ func (x *ListResponse_Reservations_ReservationLooks) ProtoReflect() protoreflect
 
 // Deprecated: Use ListResponse_Reservations_ReservationLooks.ProtoReflect.Descriptor instead.
 func (*ListResponse_Reservations_ReservationLooks) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{11, 0, 0}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{11, 0, 0}
 }
 
 func (x *ListResponse_Reservations_ReservationLooks) GetID() *ReservationID {
@@ -1351,7 +1351,7 @@ type E2ESetupRequest_PathParams struct {
 func (x *E2ESetupRequest_PathParams) Reset() {
 	*x = E2ESetupRequest_PathParams{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[20]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[20]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1364,7 +1364,7 @@ func (x *E2ESetupRequest_PathParams) String() string {
 func (*E2ESetupRequest_PathParams) ProtoMessage() {}
 
 func (x *E2ESetupRequest_PathParams) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[20]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[20]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1377,7 +1377,7 @@ func (x *E2ESetupRequest_PathParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use E2ESetupRequest_PathParams.ProtoReflect.Descriptor instead.
 func (*E2ESetupRequest_PathParams) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{12, 0}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{12, 0}
 }
 
 func (x *E2ESetupRequest_PathParams) GetUp() *ReservationID {
@@ -1420,7 +1420,7 @@ type E2ESetupRequest_E2ESetupBead struct {
 func (x *E2ESetupRequest_E2ESetupBead) Reset() {
 	*x = E2ESetupRequest_E2ESetupBead{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[21]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[21]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1433,7 +1433,7 @@ func (x *E2ESetupRequest_E2ESetupBead) String() string {
 func (*E2ESetupRequest_E2ESetupBead) ProtoMessage() {}
 
 func (x *E2ESetupRequest_E2ESetupBead) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[21]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[21]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1446,7 +1446,7 @@ func (x *E2ESetupRequest_E2ESetupBead) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use E2ESetupRequest_E2ESetupBead.ProtoReflect.Descriptor instead.
 func (*E2ESetupRequest_E2ESetupBead) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{12, 1}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{12, 1}
 }
 
 func (x *E2ESetupRequest_E2ESetupBead) GetMaxbw() uint32 {
@@ -1475,7 +1475,7 @@ type E2ESetupRequest_Failure struct {
 func (x *E2ESetupRequest_Failure) Reset() {
 	*x = E2ESetupRequest_Failure{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_colibri_v1_service_proto_msgTypes[22]
+		mi := &file_proto_colibri_v1_colibri_proto_msgTypes[22]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1488,7 +1488,7 @@ func (x *E2ESetupRequest_Failure) String() string {
 func (*E2ESetupRequest_Failure) ProtoMessage() {}
 
 func (x *E2ESetupRequest_Failure) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_colibri_v1_service_proto_msgTypes[22]
+	mi := &file_proto_colibri_v1_colibri_proto_msgTypes[22]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1501,7 +1501,7 @@ func (x *E2ESetupRequest_Failure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use E2ESetupRequest_Failure.ProtoReflect.Descriptor instead.
 func (*E2ESetupRequest_Failure) Descriptor() ([]byte, []int) {
-	return file_proto_colibri_v1_service_proto_rawDescGZIP(), []int{12, 2}
+	return file_proto_colibri_v1_colibri_proto_rawDescGZIP(), []int{12, 2}
 }
 
 func (x *E2ESetupRequest_Failure) GetFailedStep() uint32 {
@@ -1518,11 +1518,11 @@ func (x *E2ESetupRequest_Failure) GetMessage() string {
 	return ""
 }
 
-var File_proto_colibri_v1_service_proto protoreflect.FileDescriptor
+var File_proto_colibri_v1_colibri_proto protoreflect.FileDescriptor
 
-var file_proto_colibri_v1_service_proto_rawDesc = []byte{
+var file_proto_colibri_v1_colibri_proto_rawDesc = []byte{
 	0x0a, 0x1e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2f,
-	0x76, 0x31, 0x2f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x76, 0x31, 0x2f, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
 	0x12, 0x10, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e,
 	0x76, 0x31, 0x1a, 0x1f, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
 	0x62, 0x75, 0x66, 0x2f, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72,
@@ -1761,20 +1761,20 @@ var file_proto_colibri_v1_service_proto_rawDesc = []byte{
 }
 
 var (
-	file_proto_colibri_v1_service_proto_rawDescOnce sync.Once
-	file_proto_colibri_v1_service_proto_rawDescData = file_proto_colibri_v1_service_proto_rawDesc
+	file_proto_colibri_v1_colibri_proto_rawDescOnce sync.Once
+	file_proto_colibri_v1_colibri_proto_rawDescData = file_proto_colibri_v1_colibri_proto_rawDesc
 )
 
-func file_proto_colibri_v1_service_proto_rawDescGZIP() []byte {
-	file_proto_colibri_v1_service_proto_rawDescOnce.Do(func() {
-		file_proto_colibri_v1_service_proto_rawDescData = protoimpl.X.CompressGZIP(file_proto_colibri_v1_service_proto_rawDescData)
+func file_proto_colibri_v1_colibri_proto_rawDescGZIP() []byte {
+	file_proto_colibri_v1_colibri_proto_rawDescOnce.Do(func() {
+		file_proto_colibri_v1_colibri_proto_rawDescData = protoimpl.X.CompressGZIP(file_proto_colibri_v1_colibri_proto_rawDescData)
 	})
-	return file_proto_colibri_v1_service_proto_rawDescData
+	return file_proto_colibri_v1_colibri_proto_rawDescData
 }
 
-var file_proto_colibri_v1_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_colibri_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
-var file_proto_colibri_v1_service_proto_goTypes = []interface{}{
+var file_proto_colibri_v1_colibri_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_colibri_v1_colibri_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_proto_colibri_v1_colibri_proto_goTypes = []interface{}{
 	(IndexState_State)(0),                              // 0: proto.colibri.v1.IndexState.State
 	(*ReservationID)(nil),                              // 1: proto.colibri.v1.ReservationID
 	(*IndexState)(nil),                                 // 2: proto.colibri.v1.IndexState
@@ -1800,7 +1800,7 @@ var file_proto_colibri_v1_service_proto_goTypes = []interface{}{
 	(*E2ESetupRequest_E2ESetupBead)(nil),               // 22: proto.colibri.v1.E2eSetupRequest.E2eSetupBead
 	(*E2ESetupRequest_Failure)(nil),                    // 23: proto.colibri.v1.E2eSetupRequest.Failure
 }
-var file_proto_colibri_v1_service_proto_depIdxs = []int32{
+var file_proto_colibri_v1_colibri_proto_depIdxs = []int32{
 	0,  // 0: proto.colibri.v1.IndexState.state:type_name -> proto.colibri.v1.IndexState.State
 	5,  // 1: proto.colibri.v1.TransparentPath.steps:type_name -> proto.colibri.v1.PathStep
 	1,  // 2: proto.colibri.v1.Request.id:type_name -> proto.colibri.v1.ReservationID
@@ -1848,13 +1848,13 @@ var file_proto_colibri_v1_service_proto_depIdxs = []int32{
 	0,  // [0:24] is the sub-list for field type_name
 }
 
-func init() { file_proto_colibri_v1_service_proto_init() }
-func file_proto_colibri_v1_service_proto_init() {
-	if File_proto_colibri_v1_service_proto != nil {
+func init() { file_proto_colibri_v1_colibri_proto_init() }
+func file_proto_colibri_v1_colibri_proto_init() {
+	if File_proto_colibri_v1_colibri_proto != nil {
 		return
 	}
 	if !protoimpl.UnsafeEnabled {
-		file_proto_colibri_v1_service_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ReservationID); i {
 			case 0:
 				return &v.state
@@ -1866,7 +1866,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*IndexState); i {
 			case 0:
 				return &v.state
@@ -1878,7 +1878,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*PathEndProps); i {
 			case 0:
 				return &v.state
@@ -1890,7 +1890,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*AllocationBead); i {
 			case 0:
 				return &v.state
@@ -1902,7 +1902,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*PathStep); i {
 			case 0:
 				return &v.state
@@ -1914,7 +1914,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*TransparentPath); i {
 			case 0:
 				return &v.state
@@ -1926,7 +1926,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Request); i {
 			case 0:
 				return &v.state
@@ -1938,7 +1938,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Response); i {
 			case 0:
 				return &v.state
@@ -1950,7 +1950,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SegmentSetupRequest); i {
 			case 0:
 				return &v.state
@@ -1962,7 +1962,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SegmentSetupResponse); i {
 			case 0:
 				return &v.state
@@ -1974,7 +1974,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ListRequest); i {
 			case 0:
 				return &v.state
@@ -1986,7 +1986,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ListResponse); i {
 			case 0:
 				return &v.state
@@ -1998,7 +1998,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*E2ESetupRequest); i {
 			case 0:
 				return &v.state
@@ -2010,7 +2010,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*E2ESetupResponse); i {
 			case 0:
 				return &v.state
@@ -2022,7 +2022,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Response_Success); i {
 			case 0:
 				return &v.state
@@ -2034,7 +2034,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Response_Failure); i {
 			case 0:
 				return &v.state
@@ -2046,7 +2046,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SegmentSetupRequest_Params); i {
 			case 0:
 				return &v.state
@@ -2058,7 +2058,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SegmentSetupResponse_Failure); i {
 			case 0:
 				return &v.state
@@ -2070,7 +2070,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ListResponse_Reservations); i {
 			case 0:
 				return &v.state
@@ -2082,7 +2082,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ListResponse_Reservations_ReservationLooks); i {
 			case 0:
 				return &v.state
@@ -2094,7 +2094,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*E2ESetupRequest_PathParams); i {
 			case 0:
 				return &v.state
@@ -2106,7 +2106,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*E2ESetupRequest_E2ESetupBead); i {
 			case 0:
 				return &v.state
@@ -2118,7 +2118,7 @@ func file_proto_colibri_v1_service_proto_init() {
 				return nil
 			}
 		}
-		file_proto_colibri_v1_service_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
+		file_proto_colibri_v1_colibri_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*E2ESetupRequest_Failure); i {
 			case 0:
 				return &v.state
@@ -2131,15 +2131,15 @@ func file_proto_colibri_v1_service_proto_init() {
 			}
 		}
 	}
-	file_proto_colibri_v1_service_proto_msgTypes[7].OneofWrappers = []interface{}{
+	file_proto_colibri_v1_colibri_proto_msgTypes[7].OneofWrappers = []interface{}{
 		(*Response_Success_)(nil),
 		(*Response_Failure_)(nil),
 	}
-	file_proto_colibri_v1_service_proto_msgTypes[9].OneofWrappers = []interface{}{
+	file_proto_colibri_v1_colibri_proto_msgTypes[9].OneofWrappers = []interface{}{
 		(*SegmentSetupResponse_Token)(nil),
 		(*SegmentSetupResponse_Failure_)(nil),
 	}
-	file_proto_colibri_v1_service_proto_msgTypes[11].OneofWrappers = []interface{}{
+	file_proto_colibri_v1_colibri_proto_msgTypes[11].OneofWrappers = []interface{}{
 		(*ListResponse_Reservations_)(nil),
 		(*ListResponse_FailureMessage)(nil),
 	}
@@ -2147,21 +2147,21 @@ func file_proto_colibri_v1_service_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: file_proto_colibri_v1_service_proto_rawDesc,
+			RawDescriptor: file_proto_colibri_v1_colibri_proto_rawDesc,
 			NumEnums:      1,
 			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_colibri_v1_service_proto_goTypes,
-		DependencyIndexes: file_proto_colibri_v1_service_proto_depIdxs,
-		EnumInfos:         file_proto_colibri_v1_service_proto_enumTypes,
-		MessageInfos:      file_proto_colibri_v1_service_proto_msgTypes,
+		GoTypes:           file_proto_colibri_v1_colibri_proto_goTypes,
+		DependencyIndexes: file_proto_colibri_v1_colibri_proto_depIdxs,
+		EnumInfos:         file_proto_colibri_v1_colibri_proto_enumTypes,
+		MessageInfos:      file_proto_colibri_v1_colibri_proto_msgTypes,
 	}.Build()
-	File_proto_colibri_v1_service_proto = out.File
-	file_proto_colibri_v1_service_proto_rawDesc = nil
-	file_proto_colibri_v1_service_proto_goTypes = nil
-	file_proto_colibri_v1_service_proto_depIdxs = nil
+	File_proto_colibri_v1_colibri_proto = out.File
+	file_proto_colibri_v1_colibri_proto_rawDesc = nil
+	file_proto_colibri_v1_colibri_proto_goTypes = nil
+	file_proto_colibri_v1_colibri_proto_depIdxs = nil
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -2493,5 +2493,5 @@ var _Colibri_serviceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/colibri/v1/service.proto",
+	Metadata: "proto/colibri/v1/colibri.proto",
 }

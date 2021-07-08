@@ -196,7 +196,7 @@ func (c connector) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 }
 
 func (c connector) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
-	[]*colibri.ReservationLooks, error) {
+	*colibri.StitchableSegments, error) {
 
 	panic("not implemented")
 }
