@@ -21,6 +21,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -125,6 +126,28 @@ func Response(msg *colpb.Response) base.Response {
 	default:
 		panic(fmt.Sprintf("unknown type %s", common.TypeOf(msg.SuccessFailure)))
 	}
+}
+
+func ListResponse(msg *colpb.ListResponse) ([]*colibri.ReservationLooks, error) {
+	return ReservationLooks(msg.Reservations)
+}
+
+func ReservationLooks(msg []*colpb.ListResponse_ReservationLooks) (
+	[]*colibri.ReservationLooks, error) {
+
+	res := make([]*colibri.ReservationLooks, len(msg))
+	for i, l := range msg {
+		id, err := ID(l.ID)
+		if err != nil {
+			return nil, err
+		}
+		res[i] = &colibri.ReservationLooks{
+			Id:             *id,
+			DstIA:          addr.IAInt(l.DstIa).IA(),
+			ExpirationTime: util.SecsToTime(l.ExpirationTime),
+		}
+	}
+	return res, nil
 }
 
 func Index(msg uint32) (col.IndexNumber, error) {

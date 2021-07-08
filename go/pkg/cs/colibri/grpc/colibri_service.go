@@ -171,9 +171,7 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 	if err != nil {
 		log.Error("colibri store while listing rsvs", "err", err)
 		return &colpb.ListResponse{
-			SuccessFailure: &colpb.ListResponse_FailureMessage{
-				FailureMessage: err.Error(),
-			},
+			FailureMessage: err.Error(),
 		}, nil
 	}
 	log.Info("deleteme ListReservations returning", "count", len(looks))

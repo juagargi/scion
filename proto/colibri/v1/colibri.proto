@@ -131,19 +131,14 @@ message ListRequest {
 }
 
 message ListResponse {
-    message Reservations {
-        message ReservationLooks {
-            ReservationID ID = 1;
-            uint64 dst_ia = 2;
-            // other properties?
-        }
-        repeated ReservationLooks reservations = 1;
+    message ReservationLooks {
+        ReservationID ID = 1;
+        uint64 dst_ia = 2;
+        uint32 expiration_time = 3;
+        // other properties?
     }
-
-    oneof success_failure {
-        Reservations reservations = 1;
-        string failure_message = 2;
-    }
+    repeated ReservationLooks reservations = 1;
+    string failure_message = 2;
 }
 
 message E2eSetupRequest {

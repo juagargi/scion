@@ -205,7 +205,7 @@ message ColibriListRequest {
 
 message ColibriListResponse {
     string error_message = 1;
-    repeated proto.colibri.v1.ListResponse.Reservations.ReservationLooks up = 2;
-    repeated proto.colibri.v1.ListResponse.Reservations.ReservationLooks core = 3;
-    repeated proto.colibri.v1.ListResponse.Reservations.ReservationLooks down = 4;
+    repeated proto.colibri.v1.ListResponse.ReservationLooks up = 2;
+    repeated proto.colibri.v1.ListResponse.ReservationLooks core = 3;
+    repeated proto.colibri.v1.ListResponse.ReservationLooks down = 4;
 }

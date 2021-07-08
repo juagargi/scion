@@ -101,19 +101,16 @@ func PBufResponse(res base.Response) *colpb.Response {
 }
 
 func PBufListResponse(res []*colibri.ReservationLooks) *colpb.ListResponse {
-	looks := make([]*colpb.ListResponse_Reservations_ReservationLooks, len(res))
+	looks := make([]*colpb.ListResponse_ReservationLooks, len(res))
 	for i, l := range res {
-		looks[i] = &colpb.ListResponse_Reservations_ReservationLooks{
-			ID:    PBufID(&l.Id),
-			DstIa: uint64(l.DstIA.IAInt()),
+		looks[i] = &colpb.ListResponse_ReservationLooks{
+			ID:             PBufID(&l.Id),
+			DstIa:          uint64(l.DstIA.IAInt()),
+			ExpirationTime: util.TimeToSecs(l.ExpirationTime),
 		}
 	}
 	return &colpb.ListResponse{
-		SuccessFailure: &colpb.ListResponse_Reservations_{
-			Reservations: &colpb.ListResponse_Reservations{
-				Reservations: looks,
-			},
-		},
+		Reservations: looks,
 	}
 }
 

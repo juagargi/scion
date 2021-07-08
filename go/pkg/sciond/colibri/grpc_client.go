@@ -58,9 +58,9 @@ func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriLi
 	}
 	dstIA := addr.IAInt(req.Base.DstIa).IA()
 	response := &sdpb.ColibriListResponse{
-		Up:   make([]*colpb.ListResponse_Reservations_ReservationLooks, 0),
-		Core: make([]*colpb.ListResponse_Reservations_ReservationLooks, 0),
-		Down: make([]*colpb.ListResponse_Reservations_ReservationLooks, 0),
+		Up:   make([]*colpb.ListResponse_ReservationLooks, 0),
+		Core: make([]*colpb.ListResponse_ReservationLooks, 0),
+		Down: make([]*colpb.ListResponse_ReservationLooks, 0),
 	}
 	localIsdCores := make(map[addr.IA]struct{})
 	farIsdCores := make(map[addr.IA]struct{})
@@ -117,7 +117,7 @@ func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriLi
 }
 
 func listRsvs(ctx context.Context, conn *grpc.ClientConn, dstIA *addr.IA,
-	pathType reservation.PathType) ([]*colpb.ListResponse_Reservations_ReservationLooks, error) {
+	pathType reservation.PathType) ([]*colpb.ListResponse_ReservationLooks, error) {
 
 	client := colpb.NewColibriClient(conn)
 	colReq := &colpb.ListRequest{
@@ -128,9 +128,9 @@ func listRsvs(ctx context.Context, conn *grpc.ClientConn, dstIA *addr.IA,
 	if err != nil {
 		return nil, serrors.WrapStr("rpc list_reservations", err, "ia", dstIA.String())
 	}
-	if fail, ok := colRes.SuccessFailure.(*colpb.ListResponse_FailureMessage); ok {
-		err := fmt.Errorf(fail.FailureMessage)
+	if colRes.FailureMessage != "" {
+		err := fmt.Errorf(colRes.FailureMessage)
 		return nil, serrors.WrapStr("rpc list_reservations failure", err, "ia", dstIA.String())
 	}
-	return colRes.SuccessFailure.(*colpb.ListResponse_Reservations_).Reservations.Reservations, nil
+	return colRes.Reservations, nil
 }

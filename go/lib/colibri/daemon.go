@@ -17,13 +17,16 @@
 package colibri
 
 import (
+	"time"
+
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
 
 type ReservationLooks struct {
-	Id    reservation.ID
-	DstIA addr.IA
+	Id             reservation.ID
+	DstIA          addr.IA
+	ExpirationTime time.Time
 }
 
 // StitchableSegments is a collection of up, core and down segments that could be stitched
