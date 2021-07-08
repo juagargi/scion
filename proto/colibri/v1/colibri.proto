@@ -104,13 +104,13 @@ message SegmentSetupRequest {
         PathEndProps props_at_start = 7;
         PathEndProps props_at_end = 8;
         repeated AllocationBead allocationtrail = 9;
+        // when a down rsv., indicates the req. is just traveling to the last AS to be
+        // re-requested from there (admission is done in the direction of the reservation).
         bool reverse_traveling = 10;
     }
 
     Request base = 1;
     Params params = 2;
-    // when a down rsv., indicates the req. is just traveling to the last AS to be
-    // re-requested from there (admission is done in the direction of the reservation).
 }
 
 message SegmentSetupResponse {
@@ -137,8 +137,8 @@ message ListResponse {
         uint32 expiration_time = 3;
         // other properties?
     }
-    repeated ReservationLooks reservations = 1;
-    string failure_message = 2;
+    string error_message = 1;
+    repeated ReservationLooks reservations = 2;
 }
 
 message E2eSetupRequest {

@@ -128,8 +128,8 @@ func listRsvs(ctx context.Context, conn *grpc.ClientConn, dstIA *addr.IA,
 	if err != nil {
 		return nil, serrors.WrapStr("rpc list_reservations", err, "ia", dstIA.String())
 	}
-	if colRes.FailureMessage != "" {
-		err := fmt.Errorf(colRes.FailureMessage)
+	if colRes.ErrorMessage != "" {
+		err := fmt.Errorf(colRes.ErrorMessage)
 		return nil, serrors.WrapStr("rpc list_reservations failure", err, "ia", dstIA.String())
 	}
 	return colRes.Reservations, nil

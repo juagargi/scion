@@ -72,10 +72,10 @@ func (mr *MockConnectorMockRecorder) Close(arg0 interface{}) *gomock.Call {
 }
 
 // ColibriListRsvs mocks base method
-func (m *MockConnector) ColibriListRsvs(arg0 context.Context, arg1 addr.IA) ([]*colibri.ReservationLooks, error) {
+func (m *MockConnector) ColibriListRsvs(arg0 context.Context, arg1 addr.IA) (*colibri.StitchableSegments, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ColibriListRsvs", arg0, arg1)
-	ret0, _ := ret[0].([]*colibri.ReservationLooks)
+	ret0, _ := ret[0].(*colibri.StitchableSegments)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
