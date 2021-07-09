@@ -205,7 +205,7 @@ func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 	*colibri.StitchableSegments, error) {
 
 	req := &sdpb.ColibriListRequest{
-		Base: &colpb.ListRequest{
+		Base: &colpb.ListStitchablesRequest{
 			DstIa: uint64(dstIA.IAInt()),
 		},
 	}
@@ -214,20 +214,20 @@ func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 	if err != nil {
 		return nil, err
 	}
-	if sdRes.ErrorMessage != "" {
-		return nil, fmt.Errorf(sdRes.ErrorMessage)
+	if sdRes.Base.ErrorMessage != "" {
+		return nil, fmt.Errorf(sdRes.Base.ErrorMessage)
 	}
 
 	// translate the reservation segments
-	up, err := translate.ReservationLooks(sdRes.Up)
+	up, err := translate.ReservationLooks(sdRes.Base.Up)
 	if err != nil {
 		return nil, err
 	}
-	core, err := translate.ReservationLooks(sdRes.Core)
+	core, err := translate.ReservationLooks(sdRes.Base.Core)
 	if err != nil {
 		return nil, err
 	}
-	down, err := translate.ReservationLooks(sdRes.Down)
+	down, err := translate.ReservationLooks(sdRes.Base.Down)
 	if err != nil {
 		return nil, err
 	}

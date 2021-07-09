@@ -160,13 +160,13 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 	log.Info("deleteme ListReservations", "dst", addr.IAInt(msg.DstIa).IA().String(),
 		"type", reservation.PathType(msg.PathType))
 	dstIA := addr.IAInt(msg.DstIa).IA()
-	//
-	// deleteme
-	//
-	deletemeRsvs, err := s.Store.GetReservationsAtSource(ctx, dstIA)
-	log.Info("deleteme all rsvs from this AS", "count", len(deletemeRsvs), "err", err)
-	//
-	//
+	// //
+	// // deleteme
+	// //
+	// deletemeRsvs, err := s.Store.GetReservationsAtSource(ctx, dstIA)
+	// log.Info("deleteme all rsvs from this AS", "count", len(deletemeRsvs), "err", err)
+	// //
+	// //
 	looks, err := s.Store.ListReservations(ctx, dstIA, reservation.PathType(msg.PathType))
 	if err != nil {
 		log.Error("colibri store while listing rsvs", "err", err)
@@ -176,6 +176,35 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 	}
 	log.Info("deleteme ListReservations returning", "count", len(looks))
 	return translate.PBufListResponse(looks), nil
+}
+
+func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListStitchablesRequest) (
+	*colpb.ListStitchablesResponse, error) {
+
+	// To prevent this service from doing anything if the caller is not from the local AS,
+	// we check the peer. We could instantiate the local ColibriService differently.
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		log.Error("deleteme no peer found")
+		return nil, serrors.New("no peer found")
+	}
+	raddr, ok := p.Addr.(*snet.UDPAddr)
+	if !ok || raddr == nil {
+		log.Error("deleteme no scion address found")
+		return nil, serrors.New("no valid scion address found", "addr", p.Addr)
+	}
+
+	dstIA := addr.IAInt(msg.DstIa).IA()
+	log.Info("deleteme ListStitchables called", "dst", dstIA.String())
+	segments, err := s.Store.ListStitchableSegments(ctx, dstIA)
+	log.Info("deleteme returned from store", "err", err, "segments", segments)
+	if err != nil {
+		log.Error("colibri store while listing stitchables", "err", err)
+		return &colpb.ListStitchablesResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+	return translate.PBufStitchableResponse(segments), nil
 }
 
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (

@@ -200,12 +200,9 @@ message DRKeyLvl2Response {
 }
 
 message ColibriListRequest {
-    proto.colibri.v1.ListRequest base = 1;
+    proto.colibri.v1.ListStitchablesRequest base = 1;
 }
 
 message ColibriListResponse {
-    string error_message = 1;
-    repeated proto.colibri.v1.ListResponse.ReservationLooks up = 2;
-    repeated proto.colibri.v1.ListResponse.ReservationLooks core = 3;
-    repeated proto.colibri.v1.ListResponse.ReservationLooks down = 4;
+    proto.colibri.v1.ListStitchablesResponse base = 1;
 }

@@ -135,6 +135,26 @@ func (mr *MockColibriClientMockRecorder) ListReservations(arg0, arg1 interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockColibriClient)(nil).ListReservations), varargs...)
 }
 
+// ListStitchables mocks base method
+func (m *MockColibriClient) ListStitchables(arg0 context.Context, arg1 *colibri.ListStitchablesRequest, arg2 ...grpc.CallOption) (*colibri.ListStitchablesResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ListStitchables", varargs...)
+	ret0, _ := ret[0].(*colibri.ListStitchablesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListStitchables indicates an expected call of ListStitchables
+func (mr *MockColibriClientMockRecorder) ListStitchables(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStitchables", reflect.TypeOf((*MockColibriClient)(nil).ListStitchables), varargs...)
+}
+
 // SetupE2E mocks base method
 func (m *MockColibriClient) SetupE2E(arg0 context.Context, arg1 *colibri.E2ESetupRequest, arg2 ...grpc.CallOption) (*colibri.E2ESetupResponse, error) {
 	m.ctrl.T.Helper()
@@ -291,6 +311,21 @@ func (m *MockColibriServer) ListReservations(arg0 context.Context, arg1 *colibri
 func (mr *MockColibriServerMockRecorder) ListReservations(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockColibriServer)(nil).ListReservations), arg0, arg1)
+}
+
+// ListStitchables mocks base method
+func (m *MockColibriServer) ListStitchables(arg0 context.Context, arg1 *colibri.ListStitchablesRequest) (*colibri.ListStitchablesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListStitchables", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.ListStitchablesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListStitchables indicates an expected call of ListStitchables
+func (mr *MockColibriServerMockRecorder) ListStitchables(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStitchables", reflect.TypeOf((*MockColibriServer)(nil).ListStitchables), arg0, arg1)
 }
 
 // SetupE2E mocks base method

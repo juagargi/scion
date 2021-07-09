@@ -28,6 +28,7 @@ service Colibri {
     rpc CleanupSegmentIndex(Request) returns (Response) {}
 
     rpc ListReservations(ListRequest) returns (ListResponse) {}
+    rpc ListStitchables(ListStitchablesRequest) returns (ListStitchablesResponse) {}
     rpc SetupE2e(E2eSetupRequest) returns (E2eSetupResponse) {}
     rpc CleanupE2eIndex(Request) returns (Response) {}
 }
@@ -139,6 +140,17 @@ message ListResponse {
     }
     string error_message = 1;
     repeated ReservationLooks reservations = 2;
+}
+
+message ListStitchablesRequest {
+    uint64 dst_ia = 1;
+}
+
+message ListStitchablesResponse {
+    string error_message = 1;
+    repeated ListResponse.ReservationLooks up = 2;
+    repeated ListResponse.ReservationLooks core = 3;
+    repeated ListResponse.ReservationLooks down = 4;
 }
 
 message E2eSetupRequest {

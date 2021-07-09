@@ -46,11 +46,13 @@ type GRPCClientDialer interface {
 // - Ensure we return a gRPC client using the correct path (the path is used at the server to
 //   measure the BW used by the services).
 type ServiceClientOperator struct {
-	connDialer  GRPCClientDialer
-	neighbors   map[uint16]*snet.UDPAddr
-	initialized bool
-	srvResolver ColSrvResolver
-	mutex       sync.Mutex
+	connDialer       GRPCClientDialer
+	neighbors        map[uint16]*snet.UDPAddr // SvcCOL addr per interface ID
+	neighborsMutex   sync.Mutex
+	initialized      bool
+	srvResolver      ColSrvResolver
+	colServices      map[addr.IA]*snet.UDPAddr // cached discovered addresses
+	colServicesMutex sync.Mutex
 }
 
 func NewServiceClientOperator(topo topology.Topology, router snet.Router,
@@ -64,18 +66,43 @@ func NewServiceClientOperator(topo topology.Topology, router snet.Router,
 			Router: router,
 			Dialer: clientConn,
 		},
+		colServices: make(map[addr.IA]*snet.UDPAddr),
 	}
 	operator.initialize(topo)
 
 	return operator, nil
 }
 
-// ColibriClient finds or creates a ColibriClient to be used for the path argument.
-func (o *ServiceClientOperator) ColibriClient(ctx context.Context, transp *base.TransparentPath) (
+func (o *ServiceClientOperator) DialSvcCOL(ctx context.Context, dst *addr.IA) (
 	colpb.ColibriClient, error) {
 
-	o.mutex.Lock()
-	defer o.mutex.Unlock()
+	o.colServicesMutex.Lock()
+	defer o.colServicesMutex.Unlock()
+
+	// TODO(juagargi) the map of service addresses must be re-queried constantly (or emptied)
+	addr, ok := o.colServices[*dst]
+	if !ok {
+		var err error
+		addr, err = o.srvResolver.ResolveColibriService(ctx, dst)
+		if err != nil {
+			return nil, err
+		}
+		o.colServices[*dst] = addr
+	}
+
+	conn, err := o.connDialer.Dial(ctx, addr)
+	if err != nil {
+		log.Debug("error dialing a grpc connection", "addr", addr, "err", err)
+		return nil, err
+	}
+	return colpb.NewColibriClient(conn), nil
+}
+
+// ColibriClient finds or creates a ColibriClient that can reach the next neighbor in
+// the path passed as argument. The underneath connection will be COLIBRI or regular SCION,
+// depending on the type of the path passed as argument.
+func (o *ServiceClientOperator) ColibriClient(ctx context.Context, transp *base.TransparentPath) (
+	colpb.ColibriClient, error) {
 
 	if !o.initialized {
 		return nil, serrors.New("client operator not yet initialized",
@@ -83,11 +110,13 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, transp *base.
 	}
 
 	egressID := transp.Steps[transp.CurrentStep].Egress
-	spath := transp.Spath
+	o.neighborsMutex.Lock()
 	rAddr, ok := o.neighbors[egressID]
+	o.neighborsMutex.Unlock()
 	if !ok {
 		return nil, serrors.New("bad packet: no neighbor on specified egress", "egress", egressID)
 	}
+	spath := transp.Spath
 	rAddr = rAddr.Copy() // preserve the original data
 
 	// prepare remote address with the new path
@@ -118,8 +147,8 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology) {
 	go func() {
 		defer log.HandlePanic()
 		log.Info("will initialize colibri client operator", "neighbor_count", len(remainingIAs))
-		o.mutex.Lock()
-		defer o.mutex.Unlock()
+		o.neighborsMutex.Lock()
+		defer o.neighborsMutex.Unlock()
 
 		for len(remainingIAs) > 0 {
 			time.Sleep(2 * time.Second)
@@ -146,9 +175,9 @@ func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology)
 		newAddrBook := make(map[uint16]*snet.UDPAddr)
 		_ = o.findNeighbors(newAddrBook, neighbors)
 		log.Info("deleteme PERIODIC neighbor find", "found_count", len(newAddrBook))
-		o.mutex.Lock()
+		o.neighborsMutex.Lock()
 		o.neighbors = newAddrBook
-		o.mutex.Unlock()
+		o.neighborsMutex.Unlock()
 	}
 }
 

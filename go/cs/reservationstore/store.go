@@ -40,6 +40,7 @@ import (
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
 	"github.com/scionproto/scion/go/lib/util"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
 // Store is the reservation store.
@@ -113,16 +114,91 @@ func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA,
 		log.Error("listing reservations", "err", err)
 		return nil, s.err(err)
 	}
-	looks := make([]*colibri.ReservationLooks, len(rsvs))
-	for i, r := range rsvs {
-		looks[i] = &colibri.ReservationLooks{
-			Id:    r.ID,
-			DstIA: r.PathAtSource.DstIA(),
-		}
+	return reservationsToLooks(rsvs), nil
+}
 
-		return looks, nil
+// ListStitchableSegments will first get the rsv. segments starting from this store.
+// It may dial two times more to two external AS colibri services, to get core and down
+// segments.
+func (s *Store) ListStitchableSegments(ctx context.Context, dst addr.IA) (
+	*colibri.StitchableSegments, error) {
+
+	// The function obtains first all the up segments to core (if the local AS is non-core).
+	// If core, it adds itself to the local ISD reachable core ASes.
+	// The function then finds all core segments from the reachable local ISD core ASes to
+	// the core ISD of the destination.
+	// The function then finds all the down segments from the reachable remote core ISD to the
+	// destination.
+	// Additionally, if the local ISD is the same as the remote ISD, the function tries to find
+	// up segments to the destination.
+	response := &colibri.StitchableSegments{
+		Up:   make([]*colibri.ReservationLooks, 0),
+		Core: make([]*colibri.ReservationLooks, 0),
+		Down: make([]*colibri.ReservationLooks, 0),
 	}
-	return looks, nil
+	var err error
+
+	localIsdCores := make(map[addr.IA]struct{}) // set of reachable local ISD core ASes
+	localCore := addr.IA{I: s.localIA.I, A: 0}
+	if !s.isCore {
+		response.Up, err = s.obtainRsvs(ctx, s.localIA, localCore, reservation.UpPath)
+		if err != nil {
+			return nil, serrors.WrapStr("listing stitchable segments, up", err,
+				"src", "local", "dst", localCore.String())
+		}
+		for _, r := range response.Up {
+			localIsdCores[r.DstIA] = struct{}{}
+		}
+	} else {
+		localIsdCores[s.localIA] = struct{}{}
+	}
+
+	// from core of local ISD to core of destination ISD:
+	// TODO(juagargi) run all this in parallel with go routines.
+	remoteIsdCore := addr.IA{I: dst.I, A: 0}
+	for core := range localIsdCores {
+		cores, err := s.obtainRsvs(ctx, core, remoteIsdCore, reservation.CorePath)
+		if err != nil {
+			return nil, serrors.WrapStr("listing stitchable segments, core", err,
+				"src", core.String(), "dst", remoteIsdCore.String())
+		}
+		response.Core = append(response.Core, cores...)
+	}
+	farIsdCores := make(map[addr.IA]struct{}) // set of reachable remote ISD core ASes
+	for _, r := range response.Core {
+		farIsdCores[r.DstIA] = struct{}{}
+	}
+	if s.localIA.I == dst.I {
+		// if the ISD is the same, farIsdCores is a superset of localIsdCores
+		for localCore := range localIsdCores {
+			farIsdCores[localCore] = struct{}{}
+		}
+	}
+	// from core of destination ISD to final destination:
+	for remoteCore := range farIsdCores {
+		down, err := s.obtainRsvs(ctx, remoteCore, dst, reservation.DownPath)
+		if err != nil {
+			return nil, serrors.WrapStr("listing stitchable segments, down", err,
+				"src", remoteCore.String(), "dst", dst.String())
+		}
+		response.Down = append(response.Down, down...)
+	}
+
+	// additionally, if the ISD is the same, and we didn't find an up segment when trying to
+	// reach the local ISD core, it means that the destination is non core, and that maybe we can
+	// reach it directly with an up segment: look for an up segment to the destination
+	if _, ok := localIsdCores[dst]; !ok && s.localIA.I == dst.I {
+		up, err := s.obtainRsvs(ctx, s.localIA, dst, reservation.UpPath)
+		if err != nil {
+			return nil, serrors.WrapStr("listing stitchable segments, up direct", err,
+				"src", "local", "dst", localCore.String())
+		}
+		// note: we couldn't possibly find these up segments before: the dst is non-core.
+		response.Up = append(response.Up, up...)
+	}
+
+	// TODO(juagargi) we could use a local DB to cache the results, like the path query does.
+	return response, nil
 }
 
 // InitSegmentReservation will start a new segment reservation request. The source of
@@ -1006,6 +1082,37 @@ func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS a
 	return colibri.StaticMAC(s.colibriKey, buff)
 }
 
+// obtainRsvs will query the local DB if the src is local, or dial the corresponding col service.
+// Note that the returned slice could be empty if no segments could reach the destination.
+func (s *Store) obtainRsvs(ctx context.Context, src, dst addr.IA, pathType reservation.PathType) (
+	[]*colibri.ReservationLooks, error) {
+
+	if src == s.localIA {
+		segs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, src, dst, pathType)
+		if err != nil {
+			return nil, serrors.WrapStr("getting reservations from db", err)
+		}
+		return reservationsToLooks(segs), nil
+	}
+	client, err := s.operator.DialSvcCOL(ctx, &src)
+	if err != nil {
+		return nil, serrors.WrapStr("dialing to list reservations from remote to remote", err,
+			"src", src.String(), "dst", dst.String())
+	}
+	res, err := client.ListReservations(ctx, &colpb.ListRequest{
+		DstIa:    uint64(dst.IAInt()),
+		PathType: uint32(pathType),
+	})
+	if res.GetErrorMessage() != "" {
+		err = fmt.Errorf(res.ErrorMessage)
+	}
+	if err != nil {
+		return nil, serrors.WrapStr("listing reservations from remote to remote", err,
+			"src", src.String(), "dst", dst.String())
+	}
+	return translate.ListResponse(res)
+}
+
 func sumAllBW(rsvs []*e2e.Reservation) uint64 {
 	var accum uint64
 	for _, r := range rsvs {
@@ -1058,4 +1165,20 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	total = sumAllBW(e2es)
 	// the available BW for this e2e rsv is the effective minus the already used
 	return uint64(effectiveE2eTraffic) - total, nil
+}
+
+func reservationsToLooks(rsvs []*segment.Reservation) []*colibri.ReservationLooks {
+	looks := make([]*colibri.ReservationLooks, len(rsvs))
+	for i, r := range rsvs {
+		var expTime time.Time
+		if r.ActiveIndex() != nil {
+			expTime = r.ActiveIndex().Expiration
+		}
+		looks[i] = &colibri.ReservationLooks{
+			Id:             r.ID,
+			DstIA:          r.PathAtSource.DstIA(),
+			ExpirationTime: expTime,
+		}
+	}
+	return looks
 }

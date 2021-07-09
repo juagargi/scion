@@ -190,6 +190,21 @@ func (mr *MockStoreMockRecorder) ListReservations(arg0, arg1, arg2 interface{}) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockStore)(nil).ListReservations), arg0, arg1, arg2)
 }
 
+// ListStitchableSegments mocks base method
+func (m *MockStore) ListStitchableSegments(arg0 context.Context, arg1 addr.IA) (*colibri.StitchableSegments, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListStitchableSegments", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.StitchableSegments)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListStitchableSegments indicates an expected call of ListStitchableSegments
+func (mr *MockStoreMockRecorder) ListStitchableSegments(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStitchableSegments", reflect.TypeOf((*MockStore)(nil).ListStitchableSegments), arg0, arg1)
+}
+
 // TearDownSegmentReservation mocks base method
 func (m *MockStore) TearDownSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()
