@@ -21,7 +21,6 @@ package proto.colibri.v1;
 import "google/protobuf/timestamp.proto";
 
 service Colibri {
-    rpc TestPeer(TestingMessage) returns (TestingMessage) {}
     rpc SetupSegment(SegmentSetupRequest) returns (SegmentSetupResponse) {}
     rpc ConfirmSegmentIndex(Request) returns (Response) {}
     rpc ActivateSegmentIndex(Request) returns (Response) {}
@@ -29,14 +28,9 @@ service Colibri {
     rpc CleanupSegmentIndex(Request) returns (Response) {}
 
     rpc ListReservations(ListRequest) returns (ListResponse) {}
+    rpc ListStitchables(ListStitchablesRequest) returns (ListStitchablesResponse) {}
     rpc SetupE2e(E2eSetupRequest) returns (E2eSetupResponse) {}
     rpc CleanupE2eIndex(Request) returns (Response) {}
-}
-
-message TestingMessage{
-    string message = 1;
-    google.protobuf.Timestamp timestamp = 2;
-    bytes data = 3;
 }
 
 // /////////////////////////////////////////////////
@@ -111,6 +105,9 @@ message SegmentSetupRequest {
         PathEndProps props_at_start = 7;
         PathEndProps props_at_end = 8;
         repeated AllocationBead allocationtrail = 9;
+        // when a down rsv., indicates the req. is just traveling to the last AS to be
+        // re-requested from there (admission is done in the direction of the reservation).
+        bool reverse_traveling = 10;
     }
 
     Request base = 1;
@@ -131,22 +128,29 @@ message SegmentSetupResponse {
 
 message ListRequest {
     uint64 dst_ia = 1;
+    uint32 path_type = 2;
 }
 
 message ListResponse {
-    message Reservations {
-        message ReservationLooks {
-            ReservationID ID = 1;
-            uint64 dst_ia = 2;
-            // other properties?
-        }
-        repeated ReservationLooks reservations = 1;
+    message ReservationLooks {
+        ReservationID ID = 1;
+        uint64 dst_ia = 2;
+        uint32 expiration_time = 3;
+        // other properties?
     }
+    string error_message = 1;
+    repeated ReservationLooks reservations = 2;
+}
 
-    oneof success_failure {
-        Reservations reservations = 1;
-        string failure_message = 2;
-    }
+message ListStitchablesRequest {
+    uint64 dst_ia = 1;
+}
+
+message ListStitchablesResponse {
+    string error_message = 1;
+    repeated ListResponse.ReservationLooks up = 2;
+    repeated ListResponse.ReservationLooks core = 3;
+    repeated ListResponse.ReservationLooks down = 4;
 }
 
 message E2eSetupRequest {

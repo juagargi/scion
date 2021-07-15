@@ -201,6 +201,22 @@ func (p *TransparentPath) Validate() error {
 	return nil
 }
 
+func (p *TransparentPath) Reverse() error {
+	if p == nil {
+		return nil
+	}
+	rev := make([]PathStep, len(p.Steps))
+	for i, s := range p.Steps {
+		s.Ingress, s.Egress = s.Egress, s.Ingress
+		rev[len(rev)-i-1] = s
+	}
+	p.Steps = rev
+	if p.CurrentStep < len(rev) { // if curr step is past the last item, leave it as is.
+		p.CurrentStep = len(rev) - p.CurrentStep - 1
+	}
+	return p.Spath.Reverse()
+}
+
 // PathStep is one hop of the TransparentPath.
 // For a source AS: Ingress will be invalid. Conversely for dst.
 // So as opposed to snet.Path, these paths have length = number of ASes in the path.

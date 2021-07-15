@@ -16,7 +16,7 @@ package grpc
 
 import (
 	"context"
-	"fmt"
+	"net"
 
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/proto"
@@ -26,6 +26,8 @@ import (
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
@@ -37,31 +39,6 @@ type ColibriService struct {
 }
 
 var _ colpb.ColibriServer = (*ColibriService)(nil)
-
-func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
-	*colpb.TestingMessage, error) {
-
-	log.Info("DELETEME received call on TestPeer()")
-	p, ok := peer.FromContext(ctx)
-	if !ok || p == nil {
-		log.Info("DELETEME weird, no peer", "peer", p)
-		return nil, serrors.New("no peer found")
-	}
-	raddr, ok := p.Addr.(*snet.UDPAddr)
-	if !ok || raddr == nil {
-		log.Info("DELETEME weird error, raddr is what?", "raddr", raddr, "ok", ok)
-		return nil, serrors.New("no valid raddr found")
-	}
-	// require.IsType(t, &snet.UDPAddr{}, p.Addr)
-	// require.Equal(t, colibri.PathType, p.Addr.(*snet.UDPAddr).Path.Type)
-	log.Info("DELETEME so far so good", "path_type", raddr.Path.Type)
-	usage, ok, err := coliquic.UsageFromContext(ctx)
-	_, _, _ = usage, ok, err
-	return &colpb.TestingMessage{
-		Message: fmt.Sprintf("answering your message: %s", msg.Message),
-		Data:    p.Addr.(*snet.UDPAddr).Path.Raw,
-	}, nil
-}
 
 func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
 	*colpb.SegmentSetupResponse, error) {
@@ -182,17 +159,55 @@ func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Req
 func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRequest) (
 	*colpb.ListResponse, error) {
 
+	log.Info("deleteme ListReservations", "dst", addr.IAInt(msg.DstIa).IA().String(),
+		"type", reservation.PathType(msg.PathType))
 	dstIA := addr.IAInt(msg.DstIa).IA()
-	looks, err := s.Store.ListReservations(ctx, dstIA)
+	// //
+	// // deleteme
+	// //
+	// deletemeRsvs, err := s.Store.GetReservationsAtSource(ctx, dstIA)
+	// log.Info("deleteme all rsvs from this AS", "count", len(deletemeRsvs), "err", err)
+	// //
+	// //
+	looks, err := s.Store.ListReservations(ctx, dstIA, reservation.PathType(msg.PathType))
 	if err != nil {
 		log.Error("colibri store while listing rsvs", "err", err)
 		return &colpb.ListResponse{
-			SuccessFailure: &colpb.ListResponse_FailureMessage{
-				FailureMessage: err.Error(),
-			},
+			ErrorMessage: err.Error(),
 		}, nil
 	}
+	log.Info("deleteme ListReservations returning", "count", len(looks))
 	return translate.PBufListResponse(looks), nil
+}
+
+func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListStitchablesRequest) (
+	*colpb.ListStitchablesResponse, error) {
+
+	// To prevent this service from doing anything if the caller is not from the local AS,
+	// we check the peer. We could instantiate the local ColibriService differently.
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		log.Error("deleteme no peer found")
+		return nil, serrors.New("no peer found")
+	}
+	tcpaddr, ok := p.Addr.(*net.TCPAddr)
+	if !ok || tcpaddr == nil {
+		log.Error("deleteme no tcp address found", "type", common.TypeOf(p.Addr))
+		return nil, serrors.New("no valid local tcp address found", "addr", p.Addr,
+			"type", common.TypeOf(p.Addr))
+	}
+
+	dstIA := addr.IAInt(msg.DstIa).IA()
+	log.Info("deleteme ListStitchables called", "dst", dstIA.String())
+	segments, err := s.Store.ListStitchableSegments(ctx, dstIA)
+	log.Info("deleteme returned from store", "err", err, "segments", segments)
+	if err != nil {
+		log.Error("colibri store while listing stitchables", "err", err)
+		return &colpb.ListStitchablesResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+	return translate.PBufStitchableResponse(segments), nil
 }
 
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
@@ -244,5 +259,7 @@ func extractPath(ctx context.Context) (base.PacketPath, error) {
 	}
 	log.Info("deleteme path and interfaces", "path_type", raddr.Path.Type,
 		"packet_path", path)
+	usage, ok, err := coliquic.UsageFromContext(ctx)
+	_, _, _ = usage, ok, err
 	return path, err
 }

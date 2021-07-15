@@ -21,6 +21,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -38,21 +39,22 @@ func SetupReq(msg *colpb.SegmentSetupRequest) (*segment.SetupReq, error) {
 	if err != nil {
 		return nil, err
 	}
-	expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, err :=
+	expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, revTravel, err :=
 		segmentSetupRequest_Params(msg.Params)
 	if err != nil {
 		return nil, err
 	}
 	req := &segment.SetupReq{
-		Request:        *base,
-		ExpirationTime: expTime,
-		RLC:            rlc,
-		PathType:       pathType,
-		MinBW:          minbw,
-		MaxBW:          maxbw,
-		SplitCls:       splitcls,
-		PathProps:      pathProps,
-		AllocTrail:     allocTrail,
+		Request:          *base,
+		ExpirationTime:   expTime,
+		RLC:              rlc,
+		PathType:         pathType,
+		MinBW:            minbw,
+		MaxBW:            maxbw,
+		SplitCls:         splitcls,
+		PathProps:        pathProps,
+		AllocTrail:       allocTrail,
+		ReverseTraveling: revTravel,
 	}
 	return req, nil
 }
@@ -69,21 +71,22 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 			Token: *tok,
 		}
 	case *colpb.SegmentSetupResponse_Failure_:
-		expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, err :=
+		expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, revTravel, err :=
 			segmentSetupRequest_Params(oneof.Failure.Request)
 		if err != nil {
 			return nil, err
 		}
 		res = &segment.SegmentSetupResponseFailure{
 			FailedRequest: &segment.SetupReq{ // without base request
-				ExpirationTime: expTime,
-				RLC:            rlc,
-				PathType:       pathType,
-				MinBW:          minbw,
-				MaxBW:          maxbw,
-				SplitCls:       splitcls,
-				PathProps:      pathProps,
-				AllocTrail:     allocTrail,
+				ExpirationTime:   expTime,
+				RLC:              rlc,
+				PathType:         pathType,
+				MinBW:            minbw,
+				MaxBW:            maxbw,
+				SplitCls:         splitcls,
+				PathProps:        pathProps,
+				AllocTrail:       allocTrail,
+				ReverseTraveling: revTravel,
 			},
 			Message: oneof.Failure.Failure.Message,
 		}
@@ -123,6 +126,28 @@ func Response(msg *colpb.Response) base.Response {
 	default:
 		panic(fmt.Sprintf("unknown type %s", common.TypeOf(msg.SuccessFailure)))
 	}
+}
+
+func ListResponse(msg *colpb.ListResponse) ([]*colibri.ReservationLooks, error) {
+	return ReservationLooks(msg.Reservations)
+}
+
+func ReservationLooks(msg []*colpb.ListResponse_ReservationLooks) (
+	[]*colibri.ReservationLooks, error) {
+
+	res := make([]*colibri.ReservationLooks, len(msg))
+	for i, l := range msg {
+		id, err := ID(l.ID)
+		if err != nil {
+			return nil, err
+		}
+		res[i] = &colibri.ReservationLooks{
+			Id:             *id,
+			DstIA:          addr.IAInt(l.DstIa).IA(),
+			ExpirationTime: util.SecsToTime(l.ExpirationTime),
+		}
+	}
+	return res, nil
 }
 
 func Index(msg uint32) (col.IndexNumber, error) {
@@ -210,7 +235,7 @@ func TransparentPath(msg *colpb.TransparentPath) *base.TransparentPath {
 
 func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (expTime time.Time,
 	rlc col.RLC, pathType col.PathType, minbw col.BWCls, maxbw col.BWCls, splitcls col.SplitCls,
-	pathProps col.PathEndProps, allocTrail col.AllocationBeads, err error) {
+	pathProps col.PathEndProps, allocTrail col.AllocationBeads, revTravel bool, err error) {
 
 	expTime = util.SecsToTime(msg.ExpirationTime)
 	rlc, err = RLC(msg.Rlc)
@@ -239,5 +264,6 @@ func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (expTime 
 		msg.PropsAtEnd.Local,
 		msg.PropsAtEnd.Transfer)
 	allocTrail = AllocTrail(msg.Allocationtrail)
+	revTravel = msg.ReverseTraveling
 	return
 }

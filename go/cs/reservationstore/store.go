@@ -40,12 +40,14 @@ import (
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
 	"github.com/scionproto/scion/go/lib/util"
+	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
 // Store is the reservation store.
 type Store struct {
 	// TODO(juagargi) bind the logger to use the localIA in messages
 	localIA    addr.IA
+	isCore     bool
 	db         backend.DB                      // aka reservation map
 	admitter   admission.Admitter              // the chosen admission entity
 	operator   *coliquic.ServiceClientOperator // dials next colibri service
@@ -75,11 +77,26 @@ func NewStore(topo topology.Topology, router snet.Router, dialer coliquic.GRPCCl
 	}
 	return &Store{
 		localIA:    topo.IA(),
+		isCore:     topo.Core(),
 		db:         db,
 		admitter:   admitter,
 		operator:   operator,
 		colibriKey: colibriKey,
 	}, nil
+}
+
+func (s *Store) deletemePrintAllRsvs(ctx context.Context) {
+
+	allRsvs, err := s.db.GetAllSegmentRsvs(ctx)
+	if err != nil {
+		panic(err)
+	}
+	for _, r := range allRsvs {
+		log.Info("deleteme FOUND reservation", "id", r.ID.String(),
+			"spath_type", r.PathAtSource.Spath.Type,
+			"direction", r.PathType,
+			"src", r.PathAtSource.SrcIA(), "dst", r.PathAtSource.DstIA())
+	}
 }
 
 func (s *Store) err(err error) error {
@@ -100,27 +117,108 @@ func (s *Store) errWrapStr(msg string, err error, params ...interface{}) error {
 func (s *Store) GetReservationsAtSource(ctx context.Context, dstIA addr.IA) (
 	[]*segment.Reservation, error) {
 
-	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
+	return s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA, reservation.UnknownPath)
 }
 
-func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA) (
-	[]*colibri.ReservationLooks, error) {
-
-	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA)
+func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA,
+	pathType reservation.PathType) ([]*colibri.ReservationLooks, error) {
+	log.Info("---------------------- vvvvv ------------")
+	s.deletemePrintAllRsvs(ctx)
+	log.Info("---------------------- ^^^^^ ------------")
+	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA, pathType)
 	if err != nil {
 		log.Error("listing reservations", "err", err)
 		return nil, s.err(err)
 	}
-	looks := make([]*colibri.ReservationLooks, len(rsvs))
-	for i, r := range rsvs {
-		looks[i] = &colibri.ReservationLooks{
-			Id:    r.ID,
-			DstIA: r.PathAtSource.DstIA(),
-		}
+	return reservationsToLooks(rsvs), nil
+}
 
-		return looks, nil
+// ListStitchableSegments will first get the rsv. segments starting from this store.
+// It may dial two times more to two external AS colibri services, to get core and down
+// segments.
+func (s *Store) ListStitchableSegments(ctx context.Context, dst addr.IA) (
+	*colibri.StitchableSegments, error) {
+
+	log.Info("deleteme list stitchables called", "dst", dst.String())
+	// The function obtains first all the up segments to core (if the local AS is non-core).
+	// If core, it adds itself to the local ISD reachable core ASes.
+	// The function then finds all core segments from the reachable local ISD core ASes to
+	// the core ISD of the destination.
+	// The function then finds all the down segments from the reachable remote core ISD to the
+	// destination.
+	// Additionally, if the local ISD is the same as the remote ISD, the function tries to find
+	// up segments to the destination.
+	response := &colibri.StitchableSegments{
+		Up:   make([]*colibri.ReservationLooks, 0),
+		Core: make([]*colibri.ReservationLooks, 0),
+		Down: make([]*colibri.ReservationLooks, 0),
 	}
-	return looks, nil
+	var err error
+
+	localIsdCores := make(map[addr.IA]struct{}) // set of reachable local ISD core ASes
+	localCore := addr.IA{I: s.localIA.I, A: 0}
+	log.Info("deleteme list", "core", s.isCore)
+	if !s.isCore {
+		response.Up, err = s.obtainRsvs(ctx, s.localIA, localCore, reservation.UpPath)
+		log.Info("deleteme list", "err", err)
+		if err != nil {
+			return nil, serrors.WrapStr("listing stitchable segments, up", err,
+				"src", "local", "dst", localCore.String())
+		}
+		for _, r := range response.Up {
+			localIsdCores[r.DstIA] = struct{}{}
+		}
+	} else {
+		localIsdCores[s.localIA] = struct{}{}
+	}
+	log.Info("deleteme list", "local_cores", localIsdCores)
+
+	// from core of local ISD to core of destination ISD:
+	// TODO(juagargi) run all this in parallel with go routines.
+	remoteIsdCore := addr.IA{I: dst.I, A: 0}
+	for core := range localIsdCores {
+		cores, err := s.obtainRsvs(ctx, core, remoteIsdCore, reservation.CorePath)
+		if err != nil {
+			return nil, serrors.WrapStr("listing stitchable segments, core", err,
+				"src", core.String(), "dst", remoteIsdCore.String())
+		}
+		response.Core = append(response.Core, cores...)
+	}
+	farIsdCores := make(map[addr.IA]struct{}) // set of reachable remote ISD core ASes
+	for _, r := range response.Core {
+		farIsdCores[r.DstIA] = struct{}{}
+	}
+	if s.localIA.I == dst.I {
+		// if the ISD is the same, farIsdCores is a superset of localIsdCores
+		for localCore := range localIsdCores {
+			farIsdCores[localCore] = struct{}{}
+		}
+	}
+	// from core of destination ISD to final destination:
+	for remoteCore := range farIsdCores {
+		down, err := s.obtainRsvs(ctx, remoteCore, dst, reservation.DownPath)
+		if err != nil {
+			return nil, serrors.WrapStr("listing stitchable segments, down", err,
+				"src", remoteCore.String(), "dst", dst.String())
+		}
+		response.Down = append(response.Down, down...)
+	}
+
+	// additionally, if the ISD is the same, and we didn't find an up segment when trying to
+	// reach the local ISD core, it means that the destination is non core, and that maybe we can
+	// reach it directly with an up segment: look for an up segment to the destination
+	if _, ok := localIsdCores[dst]; !ok && s.localIA.I == dst.I {
+		up, err := s.obtainRsvs(ctx, s.localIA, dst, reservation.UpPath)
+		if err != nil {
+			return nil, serrors.WrapStr("listing stitchable segments, up direct", err,
+				"src", "local", "dst", localCore.String())
+		}
+		// note: we couldn't possibly find these up segments before: the dst is non-core.
+		response.Up = append(response.Up, up...)
+	}
+
+	// TODO(juagargi) we could use a local DB to cache the results, like the path query does.
+	return response, nil
 }
 
 // InitSegmentReservation will start a new segment reservation request. The source of
@@ -129,9 +227,9 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 	if req.IsLastAS() {
 		return s.errNew("cannot initiate a reservation with this AS only in the path")
 	}
-	newSetup := true
+	newSetup := false
 	log.Info("deleteme path current step", "curr.step", req.Path.CurrentStep)
-	log.Info("deleteme path", "type", req.Path.Spath.Type, "raw_len", len(req.Path.Spath.Raw))
+	log.Info("deleteme spath", "type", req.Path.Spath.Type, "raw_len", len(req.Path.Spath.Raw))
 	if req.Path.Spath.Type == colpath.PathType {
 		log.Info("deleteme deleteme deleteme !!!! COLIBRI path type in renewal")
 		colp := colpath.ColibriPath{}
@@ -144,37 +242,41 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 		}
 	}
 	log.Info("deleteme PATHATSOURCE", "path_at_source", req.PathAtSource)
-	log.Info("deleteme", "src", req.PathAtSource.SrcIA(), "dst", req.PathAtSource.DstIA())
+	log.Info("deleteme path", "type", req.PathType,
+		"src", req.PathAtSource.SrcIA(), "dst", req.PathAtSource.DstIA())
 	if req.ID.IsEmpty() {
 		return serrors.New("bad empty ID")
 	}
 	if req.ID.ASID != s.localIA.A {
 		return s.errNew("bad reservation id", "as", req.ID.ASID)
 	}
-	if !req.ID.IsEmptySuffix() {
-		newSetup = false
+	if req.ID.IsEmptySuffix() {
+		newSetup = true
 	}
 
 	rsv, err := s.db.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
-		return s.errWrapStr("cannot obtain segment reservation", err, "id", req.ID)
+		return s.errWrapStr("cannot obtain segment reservation", err, "id", req.ID.String())
 	}
 	if rsv != nil && newSetup {
-		return s.errNew("found existing reservation in db for a new setup", "id", req.ID)
+		return s.errNew("found existing reservation in db for a new setup", "id", req.ID.String())
 	} else if rsv == nil && !newSetup {
-		return s.errNew("reservation not found for a renewal", "id", req.ID)
+		return s.errNew("reservation not found for a renewal", "id", req.ID.String())
 	}
 	log.Info("COLIBRI requesting setup/renewal", "new_setup", newSetup,
 		"id", req.ID.String(), "idx", req.Index)
 
 	origPath := req.Request.Path.Copy()
 	rollbackChanges := func(setupRes segment.SegmentSetupResponse) {
-		path := origPath
 		if failure, ok := setupRes.(*segment.SegmentSetupResponseFailure); ok {
 			log.Info("deleteme setting the path for the cleanup/teardown",
-				"trail", failure.FailedRequest.AllocTrail, "path_steps before", path.Steps)
-			path.Steps = path.Steps[:len(failure.FailedRequest.AllocTrail)]
-			log.Info("deleteme after", "steps", path.Steps)
+				"reverse_traveling", req.ReverseTraveling,
+				"trail", failure.FailedRequest.AllocTrail, "path_steps before", origPath.Steps)
+			if !req.ReverseTraveling {
+				// shorten the path to exclude those nodes the request never transited
+				origPath.Steps = origPath.Steps[:len(failure.FailedRequest.AllocTrail)]
+			}
+			log.Info("deleteme after", "steps", origPath.Steps)
 		}
 		// uses the `req` that will have the new ID and index, but the original path
 		req := &base.Request{
@@ -197,8 +299,38 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 			log.Info("while cleaning reservations down the path, received failure response",
 				"new_setup", newSetup, "res", res)
 		}
+		log.Debug("reservation has been rollback", "new_setup", newSetup)
 	}
-	res, err := s.admitSegmentReservation(ctx, req)
+	// create new reservation in DB
+	if rsv == nil { // new setup
+		rsv = segment.NewReservation(req.ID.ASID)
+		rsv.ID = req.ID
+		rsv.Ingress = req.Ingress()
+		rsv.Egress = req.Egress()
+		rsv.PathType = req.PathType
+		rsv.PathEndProps = req.PathProps
+		rsv.TrafficSplit = req.SplitCls
+		rsv.PathAtSource = req.Path
+
+		if err := s.db.NewSegmentRsv(ctx, rsv); err != nil {
+			return s.errWrapStr("initial reservation creation", err, "dst", req.Path.DstIA())
+		}
+		log.Info("deleteme 5.9 source path is set", "path_at_source", rsv.PathAtSource)
+		req.ID = rsv.ID // the DB created a new suffix for the rsv.; copy it to the request
+	}
+
+	var res segment.SegmentSetupResponse
+	if req.PathType == reservation.DownPath {
+		// reverse_traveling must be true if this is a down rsv. and this AS is non core.
+		// It must be false otherwise.
+		// The flag indicates the admission to send the request to
+		// the last AS of the path to re-start the request process from there, as the
+		// admission must be computed in the direction of the reservation.
+		req.ReverseTraveling = !s.isCore
+		res, err = s.sendUpstreamForAdmission(ctx, req)
+	} else {
+		res, err = s.admitSegmentReservation(ctx, req)
+	}
 	if err != nil {
 		log.Info("deleteme admit segment returned error", "err", err)
 		rollbackChanges(res)
@@ -227,7 +359,12 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 	segment.SegmentSetupResponse, error) {
 
 	if err := s.validateAuthenticators(&req.Request); err != nil {
-		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
+	}
+
+	log.Info("deleteme", "reverse_traveling", req.ReverseTraveling)
+	if req.ReverseTraveling {
+		return s.sendUpstreamForAdmission(ctx, req)
 	}
 	return s.admitSegmentReservation(ctx, req)
 }
@@ -236,8 +373,9 @@ func (s *Store) AdmitSegmentReservation(ctx context.Context, req *segment.SetupR
 func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
+	log.Info("deleteme confirming index", "id", req.ID, "idx", req.Index)
 	if err := s.validateAuthenticators(req); err != nil {
-		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
 	failedResponse := s.prepareFailureResp("failed to confirm index")
@@ -249,14 +387,14 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
 		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	if rsv == nil {
 		failedResponse.Message = "no reservation found"
@@ -264,17 +402,18 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request
 	}
 	if err := rsv.SetIndexConfirmed(req.Index); err != nil {
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 
+	log.Info("deleteme rsv confirmed here", "id", req.ID, "is_last_as", req.IsLastAS())
 	if req.IsLastAS() {
 		return &base.ResponseSuccess{}, nil
 	}
@@ -295,10 +434,10 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request
 func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
-	log.Info("deleteme activate index", "id", req.ID, "idx", req.Index)
+	log.Info("deleteme activate index", "id", req.ID.String(), "idx", req.Index)
 	// TODO(juagargi) refactor these functions that share a lot of code
 	if err := s.validateAuthenticators(req); err != nil {
-		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
 	log.Info("deleteme activating 2", "req.path", req.Path)
@@ -311,14 +450,14 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 	log.Info("deleteme activating 4")
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
 	}
 	defer tx.Rollback()
 	log.Info("deleteme activating 5")
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
 		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	log.Info("deleteme activating 6")
 	if rsv == nil {
@@ -328,14 +467,18 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 	log.Info("deleteme activating 7")
 	if err := rsv.SetIndexActive(req.Index); err != nil {
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
-	log.Info("deleteme activating 8")
-	if req.IsSourceAS() {
-		log.Info("deleteme activating 9")
+	log.Info("deleteme activating 8", "path_type", rsv.PathType,
+		"is_last", req.IsLastAS(), "is_first", req.IsFirstAS())
+
+	// if req.IsFirstAS() {
+	if isFirstASInReservation(rsv, req) {
+		log.Info("deleteme activating 9", "rsv.path", rsv.PathAtSource)
 		colibriPath := rsv.DeriveColibriPathAtSource()
 		rawColibriPath := make([]byte, colibriPath.Len())
 		if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
+			log.Debug("error obtaining colibri path from reservation", "err", err)
 			return nil, s.errWrapStr("error obtaining colibri path from reservation", err)
 		}
 		log.Info("deleteme activating 10")
@@ -349,12 +492,12 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 	log.Info("deleteme activating 11")
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	log.Info("deleteme activating 12")
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 
 	//
@@ -366,18 +509,10 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 	//
 	//
 	log.Info("deleteme activating 13")
-	if req.IsSourceAS() {
+	// if req.IsFirstAS() {
+	if isFirstASInReservation(rsv, req) {
 		log.Info("deleteme activating 14")
-		allRsvs, err := s.db.GetAllSegmentRsvs(ctx)
-		if err != nil {
-			log.Error("deleteme ERROR querying all RSVS", "err", err)
-			return failedResponse, err
-		}
-		for _, r := range allRsvs {
-			log.Info("deleteme FOUND reservation", "id", r.ID.String(),
-				"path_type", rsv.PathAtSource.Spath.Type,
-				"direction", r.PathType)
-		}
+		s.deletemePrintAllRsvs(ctx)
 	}
 	//
 	//
@@ -402,7 +537,7 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 	if err != nil {
 		return failedResponse, s.errWrapStr("forwarded request failed", err)
 	}
-	log.Info("deleteme ActivateIndex", "active", rsv.ActiveIndex())
+	log.Info("deleteme ActivateIndex successfully finished", "active", rsv.ActiveIndex())
 	return translate.Response(pbRes), nil
 }
 
@@ -414,7 +549,7 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *base.Request
 		"idx", req.Index)
 
 	if err := s.validateAuthenticators(req); err != nil {
-		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
 	failedResponse := s.prepareFailureResp("failed to cleanup index")
@@ -426,14 +561,14 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *base.Request
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
 		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	if rsv == nil {
 		failedResponse.Message = "no reservation found"
@@ -446,11 +581,11 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *base.Request
 	}
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 
 	if req.IsLastAS() {
@@ -476,7 +611,7 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 	log.Info("deleteme deleteme 1")
 
 	if err := s.validateAuthenticators(req); err != nil {
-		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 	log.Info("deleteme deleteme 2")
 
@@ -490,7 +625,7 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
 	}
 	defer tx.Rollback()
 
@@ -498,20 +633,19 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 
 	if err := tx.DeleteSegmentRsv(ctx, &req.ID); err != nil {
 		return failedResponse, s.errWrapStr("cannot teardown reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	log.Info("deleteme deleteme 5")
 
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 
 	log.Info("deleteme deleteme 6")
 
 	if req.IsLastAS() {
 		log.Info("deleteme deleteme 7")
-
 		return &base.ResponseSuccess{}, nil
 	}
 	// forward to next colibri service
@@ -685,7 +819,7 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
 	if err := s.validateAuthenticators(req); err != nil {
-		return nil, s.errWrapStr("error validating request", err, "id", req.ID)
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
 	failedResponse := s.prepareFailureResp("failed to confirm index")
@@ -697,29 +831,29 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetE2ERsvFromID(ctx, &req.ID)
 	if err != nil {
 		return failedResponse, s.errWrapStr("cannot obtain e2e reservation", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 	if err := rsv.RemoveIndex(req.Index); err != nil {
 		return failedResponse, s.errWrapStr("cannot delete e2e reservation index", err,
-			"id", req.ID, "index", req.Index)
+			"id", req.ID.String(), "index", req.Index)
 	}
 	if len(rsv.Indices) == 0 {
 		if err := tx.DeleteE2ERsv(ctx, &rsv.ID); err != nil {
 			return failedResponse, s.errWrapStr("cannot delete e2e reservation", err, "id", rsv.ID)
 		}
 	} else if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err, "id", req.ID.String())
 	}
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
-			"id", req.ID)
+			"id", req.ID.String())
 	}
 
 	if req.IsLastAS() {
@@ -779,11 +913,12 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		failedResponse.Message = "request failed validation: " + s.err(err).Error()
 		return failedResponse, nil
 	}
-	log.Info("deleteme 2 admit segment reservation", "id", req.ID,
-		"curr_step", req.Path.CurrentStep)
+	log.Info("deleteme 2 admit segment reservation", "id", req.ID.String(),
+		"type", req.PathType, "curr_step", req.Path.CurrentStep)
 
-	if req.ID.IsEmptySuffix() && !req.IsSourceAS() {
-		failedResponse.Message = "empty suffix not allowed if not at source AS"
+	// if req.ID.IsEmptySuffix() && !req.IsFirstAS() {
+	if req.ID.IsEmptySuffix() {
+		failedResponse.Message = s.errNew("empty suffix not allowed").Error()
 		return failedResponse, nil
 	}
 
@@ -792,7 +927,8 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
 		failedResponse.Message = "cannot create transaction: " + s.err(err).Error()
-		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("cannot create transaction", err,
+			"id", req.ID.String())
 	}
 	defer tx.Rollback()
 
@@ -801,10 +937,10 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
 		failedResponse.Message = "looking for reservation: " + s.err(err).Error()
-		return failedResponse, s.errWrapStr("looking for reservation", err, "id", req.ID)
+		return failedResponse, s.errWrapStr("looking for reservation", err, "id", req.ID.String())
 	}
 
-	log.Info("deleteme 5 admit segment reservation", "req_id", req.ID, "rsv", rsv)
+	log.Info("deleteme 5 admit segment reservation", "req_id", req.ID.String(), "rsv", rsv)
 
 	if rsv != nil { // renewal, ensure index is not used
 		if rsv.Index(req.Index) != nil {
@@ -819,11 +955,19 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		rsv.PathType = req.PathType
 		rsv.PathEndProps = req.PathProps
 		rsv.TrafficSplit = req.SplitCls
-		if req.IsSourceAS() {
-			rsv.PathAtSource = req.PathAtSource
-			log.Info("deleteme 5.9 source path is set", "path_at_source", rsv.PathAtSource)
-		}
+		// if req.IsFirstAS() {
+		// 	rsv.PathAtSource = req.PathAtSource
+		// } else {
+		rsv.PathAtSource = req.Path // opaque for all AS but the source AS
+		// }
+		// we are going to extend a bit the information in the path of this reservation: if this
+		// AS is at the beginning of the path or at the end, we can annotate the opaque path with
+		// our IA id:
+		log.Info("deleteme annotation", "curr_step", rsv.PathAtSource.CurrentStep, "ia", s.localIA)
+		rsv.PathAtSource.Steps[rsv.PathAtSource.CurrentStep].IA = s.localIA
 	}
+	log.Info("deleteme 5.9 source path is set", "path_at_source", rsv.PathAtSource)
+
 	req.Reservation = rsv
 	log.Info("deleteme 6 admit segment reservation")
 
@@ -832,18 +976,19 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, nil
 	}
 
-	log.Debug("deleteme 10")
+	var token *reservation.Token
+	log.Debug("deleteme 10", "trail", req.AllocTrail)
 	// compute admission max BW
 	err = s.admitter.AdmitRsv(ctx, tx, req)
 	if err != nil {
-		log.Debug("segment not admitted here", "err", err)
+		log.Debug("segment not admitted here", "id", req.ID.String(), "err", err)
 		failedResponse.Message = "segment not admitted: " + s.err(err).Error()
 		return failedResponse, nil
 	}
 	// admitted; the request contains already the value inside the "allocation beads" of the rsv
 	allocBW := req.AllocTrail[len(req.AllocTrail)-1].AllocBW
 	log.Info("COLIBRI admission successful", "id", req.ID.String(), "idx", req.Index,
-		"alloc", allocBW)
+		"alloc", allocBW, "trail", req.AllocTrail)
 	log.Info("deleteme 12", "req.Reservation.Pathtype", req.Reservation.PathType,
 		"req.pathtype", req.PathType)
 
@@ -858,15 +1003,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	log.Info("deleteme token inside index", "token", index.Token)
 	log.Info("deleteme", "id", rsv.ID)
 
-	if req.ID.IsEmptySuffix() && req.IsSourceAS() {
-		log.Info("deleteme 14")
-		if err = tx.NewSegmentRsv(ctx, rsv); err != nil { // get a new suffix right now
-			failedResponse.Message = "error creating new reservation at source: " +
-				s.err(err).Error()
-			return failedResponse, s.err(err)
-		}
-		req.ID = rsv.ID
-	} else if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
+	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		failedResponse.Message = "cannot persist segment reservation: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("persisting segment reservation", err)
 	}
@@ -876,37 +1013,19 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, s.errWrapStr("cannot commit transaction", err)
 	}
 
-	log.Debug("deleteme 16", "id", rsv.ID)
-	var token *reservation.Token
+	log.Debug("deleteme 16", "id", rsv.ID, "is_last_as", req.IsLastAS())
+
 	if req.IsLastAS() {
 		token = index.Token
 	} else {
 		// forward the request to the next COLIBRI service
-		log.Info("deleteme dialing grpc")
-		client, err := s.operator.ColibriClient(ctx, req.Path)
+		token, err = s.getTokenFromDownstreamAdmission(ctx, req)
 		if err != nil {
-			failedResponse.Message = "error forwarding request: " + s.err(err).Error()
-			return failedResponse, s.errWrapStr("while finding a colibri service client", err)
-		}
-
-		log.Debug("deleteme 19", "id", req.ID)
-		pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
-		log.Info("deleteme store received a response to the setup request",
-			"pbres", pbRes, "err", err)
-		if err != nil {
-			failedResponse.Message = "error in forwarded request: " + s.err(err).Error()
-			return failedResponse, serrors.WrapStr("forwarded request failed", err)
-		}
-		res, err := translate.SetupResponse(pbRes)
-		log.Info("deleteme response after translation", "res", res, "err", err)
-		if suc, ok := res.(*segment.SegmentSetupResponseSuccess); ok {
-			token = &suc.Token
-		} else {
-			log.Debug("failure from downstream, returning it as well", "msg",
-				res.(*segment.SegmentSetupResponseFailure).Message)
-			return res, nil
+			failedResponse.Message = s.err(err).Error()
+			return failedResponse, nil
 		}
 	}
+
 	// update token
 	currStep := req.Path.Steps[req.Path.CurrentStep]
 	log.Info("deleteme $$$$$$$$$ received TOKEN", "curr_step", req.Path.CurrentStep,
@@ -938,6 +1057,7 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, s.errWrapStr("storing token, cannot create transaction", err)
 	}
 	defer tx.Rollback()
+	// TODO(juagargi) can we do with one call to PersistSegmentRsv instead of two?
 	if err := tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		failedResponse.Message = "storing token, cannot persist rsv: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("storing token, cannot persist rsv", err)
@@ -946,10 +1066,96 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		failedResponse.Message = "storing token, cannot commit transaction: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("storing token, cannot commit transaction", err)
 	}
+	log.Info("deleteme all good, returning token")
 	return &segment.SegmentSetupResponseSuccess{
 		MsgId: failedResponse.MsgId,
 		Token: *token,
 	}, nil
+}
+
+func (s *Store) getTokenFromDownstreamAdmission(ctx context.Context, req *segment.SetupReq) (
+	*reservation.Token, error) {
+
+	log.Info("deleteme dialing grpc")
+	client, err := s.operator.ColibriClient(ctx, req.Path)
+	if err != nil {
+		log.Debug("error finding a colibri service client", "err", err)
+		return nil, serrors.WrapStr("while finding a colibri service client", err)
+	}
+
+	log.Debug("deleteme 19", "id", req.ID.String())
+	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
+	log.Info("deleteme store received a response to the setup request",
+		"pbres", pbRes, "err", err)
+	if err != nil {
+		return nil, serrors.WrapStr("forwarded request failed", err)
+	}
+	res, err := translate.SetupResponse(pbRes)
+	log.Info("deleteme response after translation", "res", res, "err", err)
+	if suc, ok := res.(*segment.SegmentSetupResponseSuccess); ok {
+		return &suc.Token, nil
+	}
+	msg := res.(*segment.SegmentSetupResponseFailure).Message
+	log.Debug("failure from downstream, returning it as well", "msg", msg)
+	return nil, serrors.New(msg)
+}
+
+// sendUpstreamForAdmission sends the request upstream until it reaches the last node in the
+// path; the request's traveling path is then reversed and a normal admission is computed from this
+// node until the end node of the reversed path (which is the source of a down segment request).
+func (s *Store) sendUpstreamForAdmission(ctx context.Context, req *segment.SetupReq) (
+	segment.SegmentSetupResponse, error) {
+
+	assert(req.ReverseTraveling,
+		"sendUpstreamForAdmission must only be called for reverse traveling")
+
+	failedResponse := &segment.SegmentSetupResponseFailure{
+		MsgId: base.MsgId{
+			ID:        req.ID,
+			Index:     req.Index,
+			Timestamp: time.Now(),
+		},
+		FailedRequest: req,
+	}
+
+	log.Info("deleteme sendupstream 1")
+	if req.IsLastAS() {
+		log.Info("deleteme sendupstream 2", "path", req.Path)
+		req.ReverseTraveling = false
+		if err := req.Path.Reverse(); err != nil {
+			log.Info("deleteme sendupstream 3")
+			failedResponse.Message = "cannot reverse path at first node in reverse trip: " +
+				err.Error()
+			return failedResponse, err
+		}
+		log.Info("deleteme sendupstream 4", "reversed path", req.Path)
+		return s.admitSegmentReservation(ctx, req)
+	}
+	log.Info("deleteme sendupstream 10")
+	// forward to next colibri service upstream
+	// TODO(juagargi) this is very subobtimal: the response needs 2 round trips.
+	client, err := s.operator.ColibriClient(ctx, req.Path)
+	if err != nil {
+		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
+	}
+
+	log.Info("deleteme sendupstream 11")
+	pbRes, err := client.SetupSegment(ctx, translate.PBufSetupReq(req))
+	log.Info("deleteme sendupstream 12", "err", err, "res", pbRes)
+	if err != nil {
+		return failedResponse, s.errWrapStr("forwarded request failed", err)
+	}
+	// at this point, the reservation has been accepted. Update the request link with it:
+	req.Reservation, err = s.db.GetSegmentRsvFromID(ctx, &req.ID)
+	log.Info("deleteme rsv reloaded", "err", err, "rsv", req.Reservation,
+		"path", req.Reservation.PathAtSource)
+	if err != nil {
+		log.Error("reloading the admitted reservation", "err", err)
+		return nil, serrors.WrapStr("reloading the admitted reservation", err)
+	}
+
+	return translate.SetupResponse(pbRes)
+
 }
 
 // func (s *Store) computeMAC(id reservation.SegmentID, expTick uint32) ([]byte, error) {
@@ -966,6 +1172,38 @@ func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS a
 	log.Info("deleteme MAC MAC MAC MAC MAC", "privatekey", hex.EncodeToString(s.colibriKey),
 		"input", hex.EncodeToString(buff))
 	return colibri.StaticMAC(s.colibriKey, buff)
+}
+
+// obtainRsvs will query the local DB if the src is local, or dial the corresponding col service.
+// Note that the returned slice could be empty if no segments could reach the destination.
+func (s *Store) obtainRsvs(ctx context.Context, src, dst addr.IA, pathType reservation.PathType) (
+	[]*colibri.ReservationLooks, error) {
+
+	if src == s.localIA {
+		segs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, src, dst, pathType)
+		if err != nil {
+			return nil, serrors.WrapStr("getting reservations from db", err)
+		}
+		return reservationsToLooks(segs), nil
+	}
+	client, err := s.operator.DialSvcCOL(ctx, &src)
+	log.Info("deleteme list after operator dial", "src", src.String(), "err", err)
+	if err != nil {
+		return nil, serrors.WrapStr("dialing to list reservations from remote to remote", err,
+			"src", src.String(), "dst", dst.String())
+	}
+	res, err := client.ListReservations(ctx, &colpb.ListRequest{
+		DstIa:    uint64(dst.IAInt()),
+		PathType: uint32(pathType),
+	})
+	if res.GetErrorMessage() != "" {
+		err = fmt.Errorf(res.ErrorMessage)
+	}
+	if err != nil {
+		return nil, serrors.WrapStr("listing reservations from remote to remote", err,
+			"src", src.String(), "dst", dst.String())
+	}
+	return translate.ListResponse(res)
 }
 
 func sumAllBW(rsvs []*e2e.Reservation) uint64 {
@@ -1020,4 +1258,42 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	total = sumAllBW(e2es)
 	// the available BW for this e2e rsv is the effective minus the already used
 	return uint64(effectiveE2eTraffic) - total, nil
+}
+
+func reservationsToLooks(rsvs []*segment.Reservation) []*colibri.ReservationLooks {
+	looks := make([]*colibri.ReservationLooks, len(rsvs))
+	for i, r := range rsvs {
+		var expTime time.Time
+		if r.ActiveIndex() != nil {
+			expTime = r.ActiveIndex().Expiration
+		}
+		looks[i] = &colibri.ReservationLooks{
+			Id:             r.ID,
+			DstIA:          r.PathAtSource.DstIA(),
+			ExpirationTime: expTime,
+		}
+	}
+	return looks
+}
+
+// isFirstASInReservation indicates that an AS is the first AS in the path of the reservation.
+// For up and core segments this is the first AS in the request as well.
+// For down segments the first AS in the reservation will be the last AS in the request path,
+// as the request travels in reverse until this last AS, and from there a "regular" setup is done.
+func isFirstASInReservation(rsv *segment.Reservation, req *base.Request) bool {
+	switch rsv.PathType {
+	case reservation.UpPath, reservation.CorePath:
+		return req.IsFirstAS()
+	case reservation.DownPath:
+		return req.IsLastAS()
+	default:
+		panic(fmt.Sprintf("unknown path type %v", rsv.PathType))
+	}
+}
+
+// assert performs an assertion on an invariant. An assertion is part of the documentation.
+func assert(cond bool, msg string) {
+	if !cond {
+		panic(msg)
+	}
 }

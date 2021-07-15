@@ -77,7 +77,8 @@ func PBufSetupRequestParams(req *segment.SetupReq) *colpb.SegmentSetupRequest_Pa
 			Local:    req.PathProps.EndLocal(),
 			Transfer: req.PathProps.EndTransfer(),
 		},
-		Allocationtrail: PBufAllocTrail(req.AllocTrail),
+		Allocationtrail:  PBufAllocTrail(req.AllocTrail),
+		ReverseTraveling: req.ReverseTraveling,
 	}
 }
 
@@ -100,20 +101,31 @@ func PBufResponse(res base.Response) *colpb.Response {
 }
 
 func PBufListResponse(res []*colibri.ReservationLooks) *colpb.ListResponse {
-	looks := make([]*colpb.ListResponse_Reservations_ReservationLooks, len(res))
+	return &colpb.ListResponse{
+		Reservations: PBufListReservationLooks(res),
+	}
+}
+
+func PBufStitchableResponse(res *colibri.StitchableSegments) *colpb.ListStitchablesResponse {
+	return &colpb.ListStitchablesResponse{
+		Up:   PBufListReservationLooks(res.Up),
+		Core: PBufListReservationLooks(res.Core),
+		Down: PBufListReservationLooks(res.Down),
+	}
+}
+
+func PBufListReservationLooks(
+	res []*colibri.ReservationLooks) []*colpb.ListResponse_ReservationLooks {
+
+	looks := make([]*colpb.ListResponse_ReservationLooks, len(res))
 	for i, l := range res {
-		looks[i] = &colpb.ListResponse_Reservations_ReservationLooks{
-			ID:    PBufID(&l.Id),
-			DstIa: uint64(l.DstIA.IAInt()),
+		looks[i] = &colpb.ListResponse_ReservationLooks{
+			ID:             PBufID(&l.Id),
+			DstIa:          uint64(l.DstIA.IAInt()),
+			ExpirationTime: util.TimeToSecs(l.ExpirationTime),
 		}
 	}
-	return &colpb.ListResponse{
-		SuccessFailure: &colpb.ListResponse_Reservations_{
-			Reservations: &colpb.ListResponse_Reservations{
-				Reservations: looks,
-			},
-		},
-	}
+	return looks
 }
 
 func PBufID(id *reservation.ID) *colpb.ReservationID {

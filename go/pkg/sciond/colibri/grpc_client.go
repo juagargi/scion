@@ -18,36 +18,32 @@ import (
 	"context"
 
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/coliquic"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
-	"github.com/scionproto/scion/go/pkg/grpc"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
 )
 
 type DaemonClient struct {
-	Dialer grpc.Dialer
+	Dialer coliquic.GRPCClientDialer
 }
 
+// ListReservations will dial to the intra AS colibri service to get the list of rsvs.
 func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriListRequest) (
 	*sdpb.ColibriListResponse, error) {
 
+	log.Info("deleteme about to dial colibri service", "req", req)
 	if req == nil {
 		return nil, serrors.New("bad nil request")
 	}
-
 	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
+	log.Info("deleteme dialed", "err", err)
 	if err != nil {
-		return nil, serrors.WrapStr("dialing daemon", err)
+		return nil, err
 	}
 	client := colpb.NewColibriClient(conn)
-	colReq := &colpb.ListRequest{
-		DstIa: req.Base.DstIa,
-	}
-	colRes, err := client.ListReservations(ctx, colReq)
-	if err != nil {
-		return nil, serrors.WrapStr("rpc list_reservations", err)
-	}
-	return &sdpb.ColibriListResponse{
-		Base: colRes,
-	}, nil
+	response, err := client.ListStitchables(ctx, req.Base)
+	log.Info("deleteme back from listing", "err", err)
+	return &sdpb.ColibriListResponse{Base: response}, err
 }

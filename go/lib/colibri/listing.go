@@ -17,11 +17,30 @@
 package colibri
 
 import (
+	"time"
+
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
 
 type ReservationLooks struct {
-	Id    reservation.ID
-	DstIA addr.IA
+	Id             reservation.ID
+	DstIA          addr.IA
+	ExpirationTime time.Time
+}
+
+// StitchableSegments is a collection of up, core and down segments that could be stitched
+// to reach a destination, after a combination process.
+type StitchableSegments struct {
+	Up, Core, Down []*ReservationLooks
+}
+
+// FullTrip is a set of stitched segment reservations that would allow to setup an E2E rsv.
+// The length of a fulltrip is 1, 2 or 3 segments.
+type FullTrip []*ReservationLooks // in order
+
+// Combine will attempt to create full reservations that have two stitching points, from
+// an up, core and down slices of reservations.
+func Combine(segments *StitchableSegments) []*FullTrip {
+	return nil
 }

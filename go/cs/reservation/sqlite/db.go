@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -146,8 +147,9 @@ func (x *executor) GetSegmentRsvFromID(ctx context.Context, ID *reservation.ID) 
 
 // GetSegmentRsvsFromSrcDstIA returns all reservations that start at src AS and end in dst AS.
 // Both srcIA and dstIA can use wildcards: 1-0, 0-ff00:1:1, or 0-0 are valid.
-func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA) (
-	[]*segment.Reservation, error) {
+// The path type argument is ignored if it equals UnknownPath, or used to match against otherwise.
+func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA,
+	pathType reservation.PathType) ([]*segment.Reservation, error) {
 
 	conditions := make([]string, 0, 2)
 	params := make([]interface{}, 0, 2)
@@ -155,6 +157,10 @@ func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA 
 	conditionsForIA("dst_ia", dstIA, &conditions, &params)
 	if len(conditions) == 0 {
 		return nil, serrors.New("no src or dst ia provided")
+	}
+	if pathType != reservation.UnknownPath {
+		conditions = append(conditions, "path_type = ?")
+		params = append(params, pathType)
 	}
 	condition := fmt.Sprintf("WHERE %s", strings.Join(conditions, " AND "))
 	return getSegReservations(ctx, x.db, condition, params)
@@ -332,8 +338,14 @@ func (x *executor) NextExpirationTime(ctx context.Context) (time.Time, error) {
 		return time.Time{}, err
 	}
 	expiration := expE2E
-	if expSeg < expiration {
+	if expiration == uint32(math.MaxUint32) || expSeg < expiration {
 		expiration = expSeg
+	}
+	if expiration == uint32(math.MaxUint32) {
+		expiration = 0
+	}
+	if expiration == 0 {
+		return time.Time{}, nil
 	}
 	return util.SecsToTime(expiration), nil
 }
@@ -581,7 +593,7 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 	}
 	p := rsv.PathAtSource
 	const query = `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress, path_type,
-		path, end_props, traffic_split, src_ia, dst_ia,active_index)
+		path, end_props, traffic_split, src_ia, dst_ia, active_index)
 		VALUES (?, ?,?,?,?,?,?,?,?,?,?)`
 	res, err := x.ExecContext(ctx, query, rsv.ID.ASID, suffix,
 		rsv.Ingress, rsv.Egress, rsv.PathType, p.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,

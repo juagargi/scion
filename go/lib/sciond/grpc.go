@@ -29,6 +29,7 @@ import (
 	dkctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
 	"github.com/scionproto/scion/go/lib/drkey"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
@@ -202,36 +203,41 @@ func (c grpcConn) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 }
 
 func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
-	[]*colibri.ReservationLooks, error) {
+	*colibri.StitchableSegments, error) {
 
+	log.Info("deleteme colibri list Rsvs")
 	req := &sdpb.ColibriListRequest{
-		Base: &colpb.ListRequest{
+		Base: &colpb.ListStitchablesRequest{
 			DstIa: uint64(dstIA.IAInt()),
 		},
 	}
-	fmt.Println("---- deleteme 1")
 	client := sdpb.NewDaemonServiceClient(c.conn)
-	fmt.Println("---- deleteme 2")
 	sdRes, err := client.ColibriListRsvs(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("---- deleteme 3")
-	if failure, ok := sdRes.Base.SuccessFailure.(*colpb.ListResponse_FailureMessage); ok {
-		return nil, fmt.Errorf(failure.FailureMessage)
-	}
-	list := sdRes.Base.SuccessFailure.(*colpb.ListResponse_Reservations_).Reservations.Reservations
-	res := make([]*colibri.ReservationLooks, len(list))
-	for i, r := range list {
-		res[i].DstIA = addr.IAInt(r.DstIa).IA()
-		id, err := translate.ID(r.ID)
-		if err != nil {
-			return nil, serrors.WrapStr("traslating list of reservations", err)
-		}
-		res[i].Id = *id
+	if sdRes.Base.ErrorMessage != "" {
+		return nil, fmt.Errorf(sdRes.Base.ErrorMessage)
 	}
 
-	return res, nil
+	// translate the reservation segments
+	up, err := translate.ReservationLooks(sdRes.Base.Up)
+	if err != nil {
+		return nil, err
+	}
+	core, err := translate.ReservationLooks(sdRes.Base.Core)
+	if err != nil {
+		return nil, err
+	}
+	down, err := translate.ReservationLooks(sdRes.Base.Down)
+	if err != nil {
+		return nil, err
+	}
+	return &colibri.StitchableSegments{
+		Up:   up,
+		Core: core,
+		Down: down,
+	}, nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {

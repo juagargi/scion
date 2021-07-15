@@ -4,7 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = [
         "colibri.go",
-        "daemon.go",
+        "listing.go",
     ],
     importpath = "github.com/scionproto/scion/go/lib/colibri",
     visibility = ["//visibility:public"],

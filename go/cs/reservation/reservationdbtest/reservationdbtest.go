@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -44,6 +45,7 @@ func TestDB(t *testing.T, newDB func() backend.DB) {
 		"get segment reservation from IF pair":   testGetSegmentRsvsFromIFPair,
 		"delete segment reservation":             testDeleteSegmentRsv,
 		"delete expired indices":                 testDeleteExpiredIndices,
+		"test next expiration time":              testNextExpirationTime,
 		"persist e2e reservation":                testPersistE2ERsv,
 		"get e2e reservation from ID":            testGetE2ERsvFromID,
 		"get e2e reservations from segment ones": testGetE2ERsvsOnSegRsv,
@@ -189,6 +191,7 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, newDB fun
 	cases := map[string]struct {
 		srcIA    addr.IA
 		dstIA    addr.IA
+		pathType reservation.PathType
 		rsvs     []*segment.Reservation
 		expected []*reservation.ID
 	}{
@@ -289,6 +292,25 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, newDB fun
 				test.MustParseID("ff00:0:1", "00000003"),
 			},
 		},
+		"up reservation to any core": {
+			srcIA:    xtest.MustParseIA("1-ff00:0:1"),
+			dstIA:    xtest.MustParseIA("1-0"), // wildcard
+			pathType: reservation.UpPath,
+			rsvs: []*segment.Reservation{
+				st.NewRsv(st.WithID("ff00:0:1", "00000001"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
+					st.WithPathType(reservation.DownPath)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000002"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0), // to a core AS
+					st.WithPathType(reservation.UpPath)),
+				st.NewRsv(st.WithID("ff00:0:1", "00000003"),
+					st.WithPath(0, "1-ff00:0:1", 1, 1, "11-ff00:0:2", 0), // to a core AS
+					st.WithPathType(reservation.UpPath)),
+			},
+			expected: []*reservation.ID{
+				test.MustParseID("ff00:0:1", "00000002"),
+			},
+		},
 	}
 	for name, tc := range cases {
 		name, tc := name, tc
@@ -304,7 +326,7 @@ func testGetSegmentRsvsFromSrcDstIA(ctx context.Context, t *testing.T, newDB fun
 			require.NoError(t, err)
 			require.Len(t, rsvs, len(tc.rsvs))
 			// check the actual function
-			rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, tc.srcIA, tc.dstIA)
+			rsvs, err = db.GetSegmentRsvsFromSrcDstIA(ctx, tc.srcIA, tc.dstIA, tc.pathType)
 			require.NoError(t, err)
 			actualIDs := make([]*reservation.ID, len(rsvs))
 			for i, r := range rsvs {
@@ -538,6 +560,63 @@ func testDeleteExpiredIndices(ctx context.Context, t *testing.T, newDB func() ba
 	require.Len(t, rsvs, 0)
 	e2es = getAllE2ERsvsOnSegmentRsvs(ctx, t, db, segIds)
 	require.Len(t, e2es, 0) // r4 is gone, cascades for e5
+}
+
+func testNextExpirationTime(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
+
+	// empty
+	exp, err := db.NextExpirationTime(ctx)
+	require.NoError(t, err)
+	require.True(t, exp.IsZero())
+
+	t1 := util.SecsToTime(111)
+	r := st.NewRsv(st.WithID("ff00:0:1", "00000001"), st.AddIndex(
+		st.WithExpiration(t1)))
+	err = db.NewSegmentRsv(ctx, r)
+	require.NoError(t, err)
+
+	exp, err = db.NextExpirationTime(ctx)
+	require.NoError(t, err)
+	require.Equal(t, t1, exp)
+
+	// add an E2E index that will expire later
+	re2e := &e2e.Reservation{
+		ID: reservation.ID{
+			ASID:   xtest.MustParseAS("ff00:0:1"),
+			Suffix: make([]byte, 10),
+		},
+		SegmentReservations: []*segment.Reservation{r},
+	}
+	t2 := t1.Add(time.Second)
+	_, err = re2e.NewIndex(t2)
+	require.NoError(t, err)
+	err = db.PersistE2ERsv(ctx, re2e)
+	require.NoError(t, err)
+
+	exp, err = db.NextExpirationTime(ctx)
+	require.NoError(t, err)
+	require.Equal(t, t1, exp)
+
+	// the E2E index will expire earlier
+	err = db.DeleteE2ERsv(ctx, &re2e.ID)
+	require.NoError(t, err)
+	re2e = &e2e.Reservation{
+		ID: reservation.ID{
+			ASID:   xtest.MustParseAS("ff00:0:1"),
+			Suffix: make([]byte, 10),
+		},
+		SegmentReservations: []*segment.Reservation{r},
+	}
+	t3 := t1.Add(-time.Second)
+	_, err = re2e.NewIndex(t3)
+	require.NoError(t, err)
+	err = db.PersistE2ERsv(ctx, re2e)
+	require.NoError(t, err)
+
+	exp, err = db.NextExpirationTime(ctx)
+	require.NoError(t, err)
+	require.Equal(t, t3, exp)
 }
 
 func testPersistE2ERsv(ctx context.Context, t *testing.T, newDB func() backend.DB) {

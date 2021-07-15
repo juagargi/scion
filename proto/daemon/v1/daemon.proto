@@ -19,7 +19,7 @@ option go_package = "github.com/scionproto/scion/go/pkg/proto/daemon";
 package proto.daemon.v1;
 
 import "proto/drkey/mgmt/v1/mgmt.proto";
-import "proto/colibri/v1/service.proto";
+import "proto/colibri/v1/colibri.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
@@ -200,9 +200,9 @@ message DRKeyLvl2Response {
 }
 
 message ColibriListRequest {
-    proto.colibri.v1.ListRequest base = 1;
+    proto.colibri.v1.ListStitchablesRequest base = 1;
 }
 
 message ColibriListResponse {
-    proto.colibri.v1.ListResponse base = 1;
+    proto.colibri.v1.ListStitchablesResponse base = 1;
 }
