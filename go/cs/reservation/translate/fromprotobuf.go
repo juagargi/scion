@@ -143,6 +143,7 @@ func ReservationLooks(msg []*colpb.ListResponse_ReservationLooks) (
 		}
 		res[i] = &colibri.ReservationLooks{
 			Id:             *id,
+			SrcIA:          addr.IAInt(l.SrcIa).IA(),
 			DstIA:          addr.IAInt(l.DstIa).IA(),
 			ExpirationTime: util.SecsToTime(l.ExpirationTime),
 		}

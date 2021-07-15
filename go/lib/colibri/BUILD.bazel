@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "colibri.go",
         "listing.go",
+        "stitching.go",
     ],
     importpath = "github.com/scionproto/scion/go/lib/colibri",
     visibility = ["//visibility:public"],
@@ -22,6 +23,7 @@ go_test(
     srcs = [
         "colibri_test.go",
         "export_test.go",
+        "stitching_test.go",
     ],
     embed = [":go_default_library"],
     deps = [
@@ -30,5 +32,6 @@ go_test(
         "//go/lib/slayers/path/colibri:go_default_library",
         "//go/lib/xtest:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
+        "@com_github_stretchr_testify//require:go_default_library",
     ],
 )

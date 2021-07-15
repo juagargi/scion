@@ -27,17 +27,25 @@ import (
 
 type ReservationLooks struct {
 	Id             reservation.ID
+	SrcIA          addr.IA // might be different than the Id.ASID if the segment is e.g. down
 	DstIA          addr.IA
 	ExpirationTime time.Time
+}
+
+func (l *ReservationLooks) Copy() *ReservationLooks {
+	tmp := *l
+	return &tmp
 }
 
 // StitchableSegments is a collection of up, core and down segments that could be stitched
 // to reach a destination, after a combination process.
 type StitchableSegments struct {
+	SrcIA          addr.IA
+	DstIA          addr.IA
 	Up, Core, Down []*ReservationLooks
 }
 
-func (s StitchableSegments) String() string {
+func (s *StitchableSegments) String() string {
 	printSegments := func(dir string, segments []*ReservationLooks) []string {
 		strs := make([]string, len(segments))
 		for i, s := range segments {
@@ -46,19 +54,27 @@ func (s StitchableSegments) String() string {
 		}
 		return strs
 	}
-	msgs := []string{}
+	msgs := []string{fmt.Sprintf("%s -> %s", s.SrcIA, s.DstIA)}
 	msgs = append(msgs, printSegments("up,", s.Up)...)
 	msgs = append(msgs, printSegments("core,", s.Core)...)
 	msgs = append(msgs, printSegments("down,", s.Down)...)
 	return strings.Join(msgs, "\n")
 }
 
-// FullTrip is a set of stitched segment reservations that would allow to setup an E2E rsv.
-// The length of a fulltrip is 1, 2 or 3 segments.
-type FullTrip []*ReservationLooks // in order
+func (s *StitchableSegments) Copy() *StitchableSegments {
+	return &StitchableSegments{
+		SrcIA: s.SrcIA,
+		DstIA: s.DstIA,
+		Up:    copyReservationLooks(s.Up),
+		Core:  copyReservationLooks(s.Core),
+		Down:  copyReservationLooks(s.Down),
+	}
+}
 
-// Combine will attempt to create full reservations that have two stitching points, from
-// an up, core and down slices of reservations.
-func Combine(segments *StitchableSegments) []*FullTrip {
-	return nil
+func copyReservationLooks(rsvs []*ReservationLooks) []*ReservationLooks {
+	ret := make([]*ReservationLooks, len(rsvs))
+	for i, r := range rsvs {
+		ret[i] = r.Copy()
+	}
+	return ret
 }

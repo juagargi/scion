@@ -130,7 +130,7 @@ func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA,
 		log.Error("listing reservations", "err", err)
 		return nil, s.err(err)
 	}
-	return reservationsToLooks(rsvs), nil
+	return reservationsToLooks(rsvs, s.localIA), nil
 }
 
 // ListStitchableSegments will first get the rsv. segments starting from this store.
@@ -149,9 +149,11 @@ func (s *Store) ListStitchableSegments(ctx context.Context, dst addr.IA) (
 	// Additionally, if the local ISD is the same as the remote ISD, the function tries to find
 	// up segments to the destination.
 	response := &colibri.StitchableSegments{
-		Up:   make([]*colibri.ReservationLooks, 0),
-		Core: make([]*colibri.ReservationLooks, 0),
-		Down: make([]*colibri.ReservationLooks, 0),
+		SrcIA: s.localIA,
+		DstIA: dst,
+		Up:    make([]*colibri.ReservationLooks, 0),
+		Core:  make([]*colibri.ReservationLooks, 0),
+		Down:  make([]*colibri.ReservationLooks, 0),
 	}
 	var err error
 
@@ -1184,7 +1186,7 @@ func (s *Store) obtainRsvs(ctx context.Context, src, dst addr.IA, pathType reser
 		if err != nil {
 			return nil, serrors.WrapStr("getting reservations from db", err)
 		}
-		return reservationsToLooks(segs), nil
+		return reservationsToLooks(segs, s.localIA), nil
 	}
 	client, err := s.operator.DialSvcCOL(ctx, &src)
 	log.Info("deleteme list after operator dial", "src", src.String(), "err", err)
@@ -1260,7 +1262,7 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	return uint64(effectiveE2eTraffic) - total, nil
 }
 
-func reservationsToLooks(rsvs []*segment.Reservation) []*colibri.ReservationLooks {
+func reservationsToLooks(rsvs []*segment.Reservation, localIA addr.IA) []*colibri.ReservationLooks {
 	looks := make([]*colibri.ReservationLooks, len(rsvs))
 	for i, r := range rsvs {
 		var expTime time.Time
@@ -1269,6 +1271,7 @@ func reservationsToLooks(rsvs []*segment.Reservation) []*colibri.ReservationLook
 		}
 		looks[i] = &colibri.ReservationLooks{
 			Id:             r.ID,
+			SrcIA:          localIA,
 			DstIA:          r.PathAtSource.DstIA(),
 			ExpirationTime: expTime,
 		}

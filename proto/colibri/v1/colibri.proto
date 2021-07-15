@@ -134,8 +134,9 @@ message ListRequest {
 message ListResponse {
     message ReservationLooks {
         ReservationID ID = 1;
-        uint64 dst_ia = 2;
-        uint32 expiration_time = 3;
+        uint64 src_ia = 2;
+        uint64 dst_ia = 3;
+        uint32 expiration_time = 4;
         // other properties?
     }
     string error_message = 1;

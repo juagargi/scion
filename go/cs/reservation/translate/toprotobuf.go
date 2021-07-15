@@ -121,6 +121,7 @@ func PBufListReservationLooks(
 	for i, l := range res {
 		looks[i] = &colpb.ListResponse_ReservationLooks{
 			ID:             PBufID(&l.Id),
+			SrcIa:          uint64(l.SrcIA.IAInt()),
 			DstIa:          uint64(l.DstIA.IAInt()),
 			ExpirationTime: util.TimeToSecs(l.ExpirationTime),
 		}
