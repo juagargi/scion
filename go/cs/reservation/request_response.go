@@ -64,7 +64,7 @@ func (r *Request) Validate() error {
 	return nil
 }
 
-func (r *Request) IsSourceAS() bool {
+func (r *Request) IsFirstAS() bool {
 	return r.Path.CurrentStep == 0
 }
 

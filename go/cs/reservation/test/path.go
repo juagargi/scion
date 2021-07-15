@@ -14,50 +14,103 @@
 
 package test
 
-// import (
-// 	base "github.com/scionproto/scion/go/cs/reservation"
-// 	"github.com/scionproto/scion/go/lib/slayers/path"
-// )
+import (
+	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/lib/common"
+	slayerspath "github.com/scionproto/scion/go/lib/slayers/path"
+	"github.com/scionproto/scion/go/lib/slayers/path/scion"
+	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/snet/path"
+	"github.com/scionproto/scion/go/lib/spath"
+	"github.com/scionproto/scion/go/lib/xtest"
+)
 
-// type TestColibriPath struct {
-// 	HopCount   int
-// 	CurrentHop int
-// 	Ingress    uint16
-// 	Egress     uint16
-// }
+func NewPath(chain ...interface{}) *base.TransparentPath {
+	if len(chain)%3 != 0 {
+		panic("wrong number of arguments")
+	}
+	p := &base.TransparentPath{}
+	for i := 0; i < len(chain); i += 3 {
+		p.Steps = append(p.Steps, base.PathStep{
+			Ingress: uint16(chain[i].(int)),
+			Egress:  uint16(chain[i+2].(int)),
+			IA:      xtest.MustParseIA(chain[i+1].(string)),
+		})
+	}
+	return p
+}
 
-// var _ base.PacketPath = (*TestColibriPath)(nil)
+// NewIfaces is invoked like:
+// NewIfaces("1-ff00:0:1",1,   2, "1-ff00:1:2", 3,   4, "1-ff00:0:3") .
+func NewIfaces(args ...interface{}) []snet.PathInterface {
+	if len(args) == 0 {
+		return []snet.PathInterface{}
+	}
+	if (len(args)+2)%3 != 0 {
+		panic("wrong number of arguments")
+	}
+	list := make([]snet.PathInterface, (len(args)+2)/3*2-2)
+	list[0].IA = xtest.MustParseIA(args[0].(string))
+	list[0].ID = common.IFIDType(args[1].(int))
+	for i := 2; i < len(args)-2; i += 3 {
+		ingress := args[i].(int)
+		ia := xtest.MustParseIA(args[i+1].(string))
+		egress := args[i+2].(int)
+		// two hops: first ingress, then egress
+		list[(i-2)/3+1].IA = ia
+		list[(i-2)/3+1].ID = common.IFIDType(ingress)
+		list[(i-2)/3+2].IA = ia
+		list[(i-2)/3+2].ID = common.IFIDType(egress)
+	}
+	list[len(list)-1].ID = common.IFIDType(args[len(args)-2].(int))
+	list[len(list)-1].IA = xtest.MustParseIA(args[len(args)-1].(string))
+	return list
+}
 
-// func (p *TestColibriPath) Copy() base.PacketPath {
-// 	return p
-// }
+// NewSnetPath is invoked like:
+// NewSnetPath("1-ff00:0:1", 1,  2, "1-ff00:1:2", 3,     4, "1-ff00:0:3"))
+func NewSnetPath(args ...interface{}) snet.Path {
+	ifaces := NewIfaces(args...)
+	transp, err := base.TransparentPathFromInterfaces(ifaces)
+	if err != nil {
+		panic(err)
+	}
 
-// func (p *TestColibriPath) Reverse() error {
-// 	return nil
-// }
+	rp := scion.Decoded{
+		Base: scion.Base{
+			PathMeta: scion.MetaHdr{
+				CurrINF: 0,
+				CurrHF:  0,
+				SegLen:  [3]uint8{uint8(len(transp.Steps))},
+			},
+			NumINF:  1,
+			NumHops: len(transp.Steps),
+		},
+		InfoFields: []*slayerspath.InfoField{{
+			ConsDir: true,
+		}},
+		HopFields: make([]*slayerspath.HopField, len(transp.Steps)),
+	}
 
-// func (p *TestColibriPath) NumberOfHops() int {
-// 	return p.HopCount
-// }
+	for i, iface := range transp.Steps {
+		rp.HopFields[i] = &slayerspath.HopField{
+			ConsIngress: iface.Ingress,
+			ConsEgress:  iface.Egress,
+		}
+	}
+	buff := make([]byte, rp.Len())
+	err = rp.SerializeTo(buff)
+	if err != nil {
+		panic(err)
+	}
 
-// func (p *TestColibriPath) IndexOfCurrentHop() int {
-// 	return p.CurrentHop
-// }
-
-// func (p *TestColibriPath) IngressEgressIFIDs() (uint16, uint16, error) {
-// 	return p.Ingress, p.Egress, nil
-// }
-
-// func (p *TestColibriPath) Path() path.Path {
-// 	return nil
-// }
-
-// // NewTestPath returns a new path with one segment consisting on 3 hopfields:
-// // (0,2)->(1,2)->(1,0).
-// func NewTestPath() base.PacketPath {
-// 	path := TestColibriPath{
-// 		Ingress: 1,
-// 		Egress:  2,
-// 	}
-// 	return &path
-// }
+	return path.Path{
+		Meta: snet.PathMetadata{
+			Interfaces: ifaces,
+		},
+		SPath: spath.Path{
+			Raw:  buff,
+			Type: scion.PathType,
+		},
+	}
+}

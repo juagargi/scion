@@ -16,6 +16,7 @@ package grpc
 
 import (
 	"context"
+	"net"
 
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/proto"
@@ -26,6 +27,7 @@ import (
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
@@ -188,10 +190,11 @@ func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListSti
 		log.Error("deleteme no peer found")
 		return nil, serrors.New("no peer found")
 	}
-	raddr, ok := p.Addr.(*snet.UDPAddr)
-	if !ok || raddr == nil {
-		log.Error("deleteme no scion address found")
-		return nil, serrors.New("no valid scion address found", "addr", p.Addr)
+	tcpaddr, ok := p.Addr.(*net.TCPAddr)
+	if !ok || tcpaddr == nil {
+		log.Error("deleteme no tcp address found", "type", common.TypeOf(p.Addr))
+		return nil, serrors.New("no valid local tcp address found", "addr", p.Addr,
+			"type", common.TypeOf(p.Addr))
 	}
 
 	dstIA := addr.IAInt(msg.DstIa).IA()

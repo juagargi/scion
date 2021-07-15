@@ -29,6 +29,7 @@ import (
 	dkctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
 	"github.com/scionproto/scion/go/lib/drkey"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
@@ -204,6 +205,7 @@ func (c grpcConn) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 	*colibri.StitchableSegments, error) {
 
+	log.Info("deleteme colibri list Rsvs")
 	req := &sdpb.ColibriListRequest{
 		Base: &colpb.ListStitchablesRequest{
 			DstIa: uint64(dstIA.IAInt()),

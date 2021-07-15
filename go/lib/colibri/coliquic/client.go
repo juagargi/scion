@@ -16,7 +16,9 @@ package coliquic
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -164,16 +166,34 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology) {
 	}()
 }
 
-// periodicResolveNeighbors scans the topology and gets new paths for the neighbors.
+// periodicResolveNeighbors periodically scans the topology and gets new paths for the neighbors.
 func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology) {
-
-	neighbors := neighbors(topo)
 	for {
 		time.Sleep(15 * time.Minute)
+		neighbors := neighbors(topo)
 		log.Debug("colibri client operator periodically findind neighbors",
 			"count", len(neighbors))
 		newAddrBook := make(map[uint16]*snet.UDPAddr)
-		_ = o.findNeighbors(newAddrBook, neighbors)
+		remainingIAs := make(map[uint16]addr.IA)
+		for id, ia := range neighbors {
+			remainingIAs[id] = ia
+		}
+		for iter := 0; len(remainingIAs) > 0 && iter < 30; iter++ {
+			time.Sleep(2 * time.Second)
+			remainingIAs = o.findNeighbors(newAddrBook, neighbors)
+			log.Debug("periodic resolve neighbors",
+				"total", len(neighbors), "missing", len(remainingIAs))
+		}
+		if len(remainingIAs) > 0 {
+			missing := make([]string, 0, len(remainingIAs))
+			for id, ia := range remainingIAs {
+				missing = append(missing, fmt.Sprintf("%s on ifid %d", ia, id))
+			}
+			log.Error("periodic resolve neighbors: neighbors without address",
+				"missing_count", len(remainingIAs), "total", len(neighbors),
+				"missing", strings.Join(missing, ","))
+			continue
+		}
 		log.Info("deleteme PERIODIC neighbor find", "found_count", len(newAddrBook))
 		o.neighborsMutex.Lock()
 		o.neighbors = newAddrBook

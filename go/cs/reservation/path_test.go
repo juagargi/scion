@@ -98,3 +98,62 @@ func TestTransparentToRawFromRaw(t *testing.T) {
 		})
 	}
 }
+
+func TestReverse(t *testing.T) {
+	// TODO(juagargi) use go/cs/reservation/test.NewPath for the tests
+	cases := map[string]struct {
+		original    *TransparentPath
+		reversed    *TransparentPath
+		expectedErr bool
+	}{
+		"nil": {
+			original: nil,
+			reversed: nil,
+		},
+		"two steps": {
+			original: &TransparentPath{
+				CurrentStep: 1,
+				Steps: []PathStep{
+					{
+						Ingress: 0,
+						Egress:  1,
+						IA:      xtest.MustParseIA("1-ff00:0:111"),
+					},
+					{
+						Ingress: 4,
+						Egress:  0,
+						IA:      xtest.MustParseIA("1-ff00:0:110"),
+					},
+				},
+			},
+			reversed: &TransparentPath{
+				CurrentStep: 0,
+				Steps: []PathStep{
+					{
+						Ingress: 0,
+						Egress:  4,
+						IA:      xtest.MustParseIA("1-ff00:0:110"),
+					},
+					{
+						Ingress: 1,
+						Egress:  0,
+						IA:      xtest.MustParseIA("1-ff00:0:111"),
+					},
+				},
+			},
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.original.Reverse()
+			if tc.expectedErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.reversed, tc.original)
+			}
+		})
+	}
+}

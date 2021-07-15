@@ -593,7 +593,7 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 	}
 	p := rsv.PathAtSource
 	const query = `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress, path_type,
-		path, end_props, traffic_split, src_ia, dst_ia,active_index)
+		path, end_props, traffic_split, src_ia, dst_ia, active_index)
 		VALUES (?, ?,?,?,?,?,?,?,?,?,?)`
 	res, err := x.ExecContext(ctx, query, rsv.ID.ASID, suffix,
 		rsv.Ingress, rsv.Egress, rsv.PathType, p.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,

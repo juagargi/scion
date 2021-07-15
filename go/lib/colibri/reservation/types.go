@@ -122,7 +122,7 @@ func (id *ID) ToRaw() []byte {
 	return buf
 }
 
-func (id *ID) String() string {
+func (id ID) String() string {
 	return fmt.Sprintf("%s-%x", id.ASID, id.Suffix)
 }
 
@@ -249,25 +249,27 @@ func (pt PathType) Validate() error {
 	return nil
 }
 
-func (pt PathType) MarshalJSON() ([]byte, error) {
-	var text string
+func (pt PathType) String() string {
 	switch pt {
 	case CorePath:
-		text = "core"
+		return "core"
 	case DownPath:
-		text = "down"
+		return "down"
 	case UpPath:
-		text = "up"
+		return "up"
 	case PeeringDownPath:
-		text = "peer_down"
+		return "peer_down"
 	case PeeringUpPath:
-		text = "peer_up"
+		return "peer_up"
 	case E2EPath:
-		text = "e2e"
+		return "e2e"
 	default:
-		return nil, serrors.New("unknown path_type", "path_type", pt)
+		return fmt.Sprintf("unknown path_type %d", pt)
 	}
-	return json.Marshal(text)
+}
+
+func (pt PathType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(pt.String())
 }
 
 func (pt *PathType) UnmarshalJSON(b []byte) error {
