@@ -17,6 +17,8 @@
 package colibri
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
@@ -33,6 +35,22 @@ type ReservationLooks struct {
 // to reach a destination, after a combination process.
 type StitchableSegments struct {
 	Up, Core, Down []*ReservationLooks
+}
+
+func (s StitchableSegments) String() string {
+	printSegments := func(dir string, segments []*ReservationLooks) []string {
+		strs := make([]string, len(segments))
+		for i, s := range segments {
+			strs[i] = fmt.Sprintf("[%3d] %6s %s: -> %s (until %s)",
+				i, dir, s.Id, s.DstIA, s.ExpirationTime)
+		}
+		return strs
+	}
+	msgs := []string{}
+	msgs = append(msgs, printSegments("up,", s.Up)...)
+	msgs = append(msgs, printSegments("core,", s.Core)...)
+	msgs = append(msgs, printSegments("down,", s.Down)...)
+	return strings.Join(msgs, "\n")
 }
 
 // FullTrip is a set of stitched segment reservations that would allow to setup an E2E rsv.
