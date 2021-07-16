@@ -69,6 +69,13 @@ func IDFromRaw(raw []byte) (*ID, error) {
 	return IDFromRawBuffers(raw[:6], raw[6:])
 }
 
+func (id *ID) SetSegmentSuffix(suffix int) {
+	if id.Suffix == nil {
+		id.Suffix = make([]byte, 4)
+	}
+	binary.BigEndian.PutUint32(id.Suffix, uint32(suffix))
+}
+
 // Len returns the length of this ID in bytes.
 func (id *ID) Len() int {
 	return 6 + len(id.Suffix)

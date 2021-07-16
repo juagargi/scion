@@ -49,8 +49,8 @@ func (s *StitchableSegments) String() string {
 	printSegments := func(dir string, segments []*ReservationLooks) []string {
 		strs := make([]string, len(segments))
 		for i, s := range segments {
-			strs[i] = fmt.Sprintf("[%3d] %6s %s: -> %s (until %s)",
-				i, dir, s.Id, s.DstIA, s.ExpirationTime)
+			strs[i] = fmt.Sprintf("[%3d] %6s %s: %s -> %s (until %s)",
+				i, dir, s.Id, s.SrcIA, s.DstIA, s.ExpirationTime)
 		}
 		return strs
 	}

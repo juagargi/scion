@@ -18,6 +18,7 @@ package colibri
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -32,6 +33,14 @@ func (t FullTrip) Validate() error {
 		return serrors.New("bad reservation full trip", "segment_count", len(t))
 	}
 	return nil
+}
+
+func (t FullTrip) String() string {
+	stitches := make([]string, len(t))
+	for i, s := range t {
+		stitches[i] = fmt.Sprintf("%s -[%s]-> %s", s.SrcIA, s.Id, s.DstIA)
+	}
+	return strings.Join(stitches, " >>> ")
 }
 
 func (t FullTrip) SrcIA() addr.IA {
@@ -58,7 +67,7 @@ func CombineAll(stitchable *StitchableSegments) []*FullTrip {
 			fmt.Sprintf("dst AS not valid at trip %d / %d", i, len(fullTrips)))
 		err := t.Validate()
 		assert(err == nil,
-			fmt.Sprintf("invalid trip at %d / %d : %s", i, len(fullTrips), err.Error()))
+			fmt.Sprintf("invalid trip at %d / %d : %v", i, len(fullTrips), err))
 	}
 	return fullTrips
 }
@@ -67,6 +76,9 @@ func CombineAll(stitchable *StitchableSegments) []*FullTrip {
 // reach the destination from the source. Some segments might be omitted in some of the trips,
 // e.g. some trips could consist of an up segment only, or up-down, or core, or core-down.
 func combineAll(stitchable *StitchableSegments) []*FullTrip {
+	if stitchable == nil {
+		return nil
+	}
 	fulltrips := make([]*FullTrip, 0)
 	// check which of the up segments do not reach the destination
 	ups := make([]*ReservationLooks, 0, len(stitchable.Up))
