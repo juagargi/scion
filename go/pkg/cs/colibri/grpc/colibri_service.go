@@ -213,6 +213,16 @@ func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListSti
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
 	*colpb.E2ESetupResponse, error) {
 
+	req, err := translate.E2ESetupRequest(msg)
+	if err != nil {
+		log.Error("translating e2e setup", "err", err)
+		return nil, serrors.WrapStr("translating e2e setup", err)
+	}
+	res, err := s.Store.AdmitE2EReservation(ctx, req)
+	if err != nil {
+		log.Error("admitting e2e", "err", err)
+	}
+	_ = res
 	return nil, nil
 }
 

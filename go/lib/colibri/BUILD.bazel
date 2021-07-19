@@ -28,6 +28,7 @@ go_test(
     embed = [":go_default_library"],
     deps = [
         "//go/lib/addr:go_default_library",
+        "//go/lib/colibri/reservation:go_default_library",
         "//go/lib/slayers:go_default_library",
         "//go/lib/slayers/path/colibri:go_default_library",
         "//go/lib/xtest:go_default_library",

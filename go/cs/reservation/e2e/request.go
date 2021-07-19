@@ -23,8 +23,8 @@ import (
 // SetupReq is an e2e setup/renewal request, that has been so far accepted.
 type SetupReq struct {
 	base.Request
-	SegmentRsvs              []col.ID
-	SegmentRsvASCount        []uint8 // how many ASes per segment reservation
+	SegmentRsvs []col.ID
+	// SegmentRsvASCount        []uint8 // how many ASes per segment reservation
 	RequestedBW              col.BWCls
 	AllocationTrail          []col.BWCls
 	FailureInfo              *SetupFailureInfo // or nil if successful
@@ -67,9 +67,9 @@ func NewSetupRequest(r *base.Request, segRsvs []col.ID, segRsvCount []uint8,
 			"alloc_trail_len", len(allocTrail), "seg_rsv_count", segRsvCount)
 	}
 	return &SetupReq{
-		Request:                  *r,
-		SegmentRsvs:              segRsvs,
-		SegmentRsvASCount:        segRsvCount,
+		Request:     *r,
+		SegmentRsvs: segRsvs,
+		// SegmentRsvASCount:        segRsvCount,
 		RequestedBW:              requestedBW,
 		AllocationTrail:          allocTrail,
 		totalASCount:             totalASCount,

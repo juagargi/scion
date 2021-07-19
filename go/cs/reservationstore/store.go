@@ -672,11 +672,22 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	base.Response, error) {
 
+	if err := s.validateAuthenticators(&req.Request); err != nil {
+		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
+	}
+
+	log.Info("deleteme e2esetup 1", "id", req.ID)
+
 	failedResponse := s.prepareFailureResp("cannot admit e2e reservation")
 
+	if !req.ID.IsE2EID() {
+		failedResponse.Message = s.errNew("invalid non e2e ID", "id", req.ID).Error()
+		return failedResponse, nil
+	}
 	if len(req.SegmentRsvs) == 0 || len(req.SegmentRsvs) > 3 {
-		return failedResponse, s.errNew("invalid number of segment reservations for an e2e one",
-			"count", len(req.SegmentRsvs))
+		failedResponse.Message = s.errNew("invalid number of segment reservations for an e2e one",
+			"count", len(req.SegmentRsvs)).Error()
+		return failedResponse, nil
 	}
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
