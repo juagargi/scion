@@ -219,6 +219,7 @@ func (s *Store) ListStitchableSegments(ctx context.Context, dst addr.IA) (
 		response.Up = append(response.Up, up...)
 	}
 
+	log.Info("deleteme returning", "stitchables", response.String())
 	// TODO(juagargi) we could use a local DB to cache the results, like the path query does.
 	return response, nil
 }

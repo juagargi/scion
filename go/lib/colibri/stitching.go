@@ -60,7 +60,12 @@ func (t FullTrip) Copy() *FullTrip {
 // an up, core and down slices of reservations.
 func CombineAll(stitchable *StitchableSegments) []*FullTrip {
 	fullTrips := combineAll(stitchable)
+	fmt.Printf("deleteme fulltrips:\n")
+	for _, t := range fullTrips {
+		fmt.Println(t.String())
+	}
 	for i, t := range fullTrips {
+		fmt.Printf("src1: %s, src2: %s\n", stitchable.SrcIA, t.SrcIA())
 		assert(t.SrcIA() == stitchable.SrcIA,
 			fmt.Sprintf("src AS not valid at trip %d / %d", i, len(fullTrips)))
 		assert(t.DstIA() == stitchable.DstIA,

@@ -108,9 +108,11 @@ func PBufListResponse(res []*colibri.ReservationLooks) *colpb.ListResponse {
 
 func PBufStitchableResponse(res *colibri.StitchableSegments) *colpb.ListStitchablesResponse {
 	return &colpb.ListStitchablesResponse{
-		Up:   PBufListReservationLooks(res.Up),
-		Core: PBufListReservationLooks(res.Core),
-		Down: PBufListReservationLooks(res.Down),
+		SrcIa: uint64(res.SrcIA.IAInt()),
+		DstIa: uint64(res.DstIA.IAInt()),
+		Up:    PBufListReservationLooks(res.Up),
+		Core:  PBufListReservationLooks(res.Core),
+		Down:  PBufListReservationLooks(res.Down),
 	}
 }
 

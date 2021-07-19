@@ -128,6 +128,28 @@ func Response(msg *colpb.Response) base.Response {
 	}
 }
 
+func StitchableSegments(msg *colpb.ListStitchablesResponse) (*colibri.StitchableSegments, error) {
+	up, err := ReservationLooks(msg.Up)
+	if err != nil {
+		return nil, err
+	}
+	core, err := ReservationLooks(msg.Core)
+	if err != nil {
+		return nil, err
+	}
+	down, err := ReservationLooks(msg.Down)
+	if err != nil {
+		return nil, err
+	}
+	return &colibri.StitchableSegments{
+		SrcIA: addr.IAInt(msg.SrcIa).IA(),
+		DstIA: addr.IAInt(msg.DstIa).IA(),
+		Up:    up,
+		Core:  core,
+		Down:  down,
+	}, nil
+}
+
 func ListResponse(msg *colpb.ListResponse) ([]*colibri.ReservationLooks, error) {
 	return ReservationLooks(msg.Reservations)
 }

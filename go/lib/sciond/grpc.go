@@ -29,7 +29,6 @@ import (
 	dkctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
 	"github.com/scionproto/scion/go/lib/drkey"
-	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
@@ -205,7 +204,6 @@ func (c grpcConn) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 	*colibri.StitchableSegments, error) {
 
-	log.Info("deleteme colibri list Rsvs")
 	req := &sdpb.ColibriListRequest{
 		Base: &colpb.ListStitchablesRequest{
 			DstIa: uint64(dstIA.IAInt()),
@@ -220,24 +218,11 @@ func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 		return nil, fmt.Errorf(sdRes.Base.ErrorMessage)
 	}
 
-	// translate the reservation segments
-	up, err := translate.ReservationLooks(sdRes.Base.Up)
+	stitchable, err := translate.StitchableSegments(sdRes.Base)
 	if err != nil {
 		return nil, err
 	}
-	core, err := translate.ReservationLooks(sdRes.Base.Core)
-	if err != nil {
-		return nil, err
-	}
-	down, err := translate.ReservationLooks(sdRes.Base.Down)
-	if err != nil {
-		return nil, err
-	}
-	return &colibri.StitchableSegments{
-		Up:   up,
-		Core: core,
-		Down: down,
-	}, nil
+	return stitchable, nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {

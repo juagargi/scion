@@ -199,15 +199,15 @@ func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListSti
 
 	dstIA := addr.IAInt(msg.DstIa).IA()
 	log.Info("deleteme ListStitchables called", "dst", dstIA.String())
-	segments, err := s.Store.ListStitchableSegments(ctx, dstIA)
-	log.Info("deleteme returned from store", "err", err, "segments", segments)
+	stitchables, err := s.Store.ListStitchableSegments(ctx, dstIA)
+	log.Info("deleteme returned from store", "err", err, "segments", stitchables)
 	if err != nil {
 		log.Error("colibri store while listing stitchables", "err", err)
 		return &colpb.ListStitchablesResponse{
 			ErrorMessage: err.Error(),
 		}, nil
 	}
-	return translate.PBufStitchableResponse(segments), nil
+	return translate.PBufStitchableResponse(stitchables), nil
 }
 
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (

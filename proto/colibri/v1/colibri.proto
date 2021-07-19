@@ -149,9 +149,11 @@ message ListStitchablesRequest {
 
 message ListStitchablesResponse {
     string error_message = 1;
-    repeated ListResponse.ReservationLooks up = 2;
-    repeated ListResponse.ReservationLooks core = 3;
-    repeated ListResponse.ReservationLooks down = 4;
+    uint64 src_ia = 2;
+    uint64 dst_ia = 3;
+    repeated ListResponse.ReservationLooks up = 4;
+    repeated ListResponse.ReservationLooks core = 5;
+    repeated ListResponse.ReservationLooks down = 6;
 }
 
 message E2eSetupRequest {
