@@ -166,13 +166,8 @@ message E2eSetupRequest {
         uint32 maxbw = 1;
         bytes hopfield = 2; // TODO(juagargi) unnecessary?
     }
-    message Failure {
-        uint32 failed_step = 1;
-        string Message = 2;
-    }
 
     Request base = 1; // the path here is from src to dst
-    Failure failure = 2; // if present: info about the failure
     uint32 requestedBw = 3;
     PathParams params = 4;
     repeated E2eSetupBead allocationtrail = 5; // even failed nodes will write an entry
@@ -182,6 +177,7 @@ message E2eSetupResponse {
     message Failure {
         string Message = 1;
         uint32 failed_step = 2;
+        repeated E2eSetupRequest.E2eSetupBead allocationtrail = 3;
     }
     Failure failure = 1; // if present: information about the failure
     bytes token = 2;

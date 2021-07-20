@@ -55,12 +55,14 @@ func NewRequest(ts time.Time, id *reservation.ID, idx reservation.IndexNumber,
 // Validate ensures the data in the request is consistent. Calling methods on the request
 // before a call to Validate may result in invalid behavior or panic.
 func (r *Request) Validate() error {
-	if r.Path == nil || len(r.Path.Steps) <= r.Path.CurrentStep {
-		return serrors.New("bad path in request", "path", r.Path)
+	if err := r.Path.Validate(); err != nil {
+		return serrors.WrapStr("bad path in request", err)
 	}
+
 	if r.ID.ASID == 0 {
 		return serrors.New("bad AS id in request", "asid", r.ID.ASID)
 	}
+
 	return nil
 }
 

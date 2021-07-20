@@ -15,7 +15,6 @@
 package segment
 
 import (
-	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
 
@@ -24,14 +23,12 @@ type SegmentSetupResponse interface {
 }
 
 type SegmentSetupResponseSuccess struct {
-	base.MsgId
 	Token reservation.Token
 }
 
 func (*SegmentSetupResponseSuccess) isSegmentSetupResponse_Success_Failure() {}
 
 type SegmentSetupResponseFailure struct {
-	base.MsgId
 	FailedRequest *SetupReq
 	Message       string
 }

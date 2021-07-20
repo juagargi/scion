@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
@@ -670,7 +671,7 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 
 // AdmitE2EReservation will attempt to admit an e2e reservation.
 func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
-	base.Response, error) {
+	e2e.SetupResponse, error) {
 
 	if err := s.validateAuthenticators(&req.Request); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
@@ -678,40 +679,34 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 
 	log.Info("deleteme e2esetup 1", "id", req.ID)
 
-	failedResponse := s.prepareFailureResp("cannot admit e2e reservation")
-
-	if !req.ID.IsE2EID() {
-		failedResponse.Message = s.errNew("invalid non e2e ID", "id", req.ID).Error()
-		return failedResponse, nil
+	failedResponse := &e2e.SetupResponseFailure{
+		FailedStep: uint8(req.Path.CurrentStep),
+		Message:    "cannot admit e2e reservation",
 	}
-	if len(req.SegmentRsvs) == 0 || len(req.SegmentRsvs) > 3 {
-		failedResponse.Message = s.errNew("invalid number of segment reservations for an e2e one",
-			"count", len(req.SegmentRsvs)).Error()
+
+	if err := req.Validate(); err != nil {
+		failedResponse.Message = s.errWrapStr("request failed validation", err).Error()
 		return failedResponse, nil
 	}
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot create transaction", err,
-			"id", req.ID.String())
+		err := s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
+		failedResponse.Message = err.Error()
+		return failedResponse, err
 	}
 	defer tx.Rollback()
 
 	rsv, err := tx.GetE2ERsvFromID(ctx, &req.ID)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot obtain e2e reservation", err,
-			"id", req.ID.String())
+		err := s.errWrapStr("cannot obtain e2e reservation", err, "id", req.ID.String())
+		failedResponse.Message = err.Error()
+		return failedResponse, err
 	}
+	newSetup := (rsv == nil)
 
 	segRsvIDs := req.SegmentRsvIDsForThisAS()
-	if rsv != nil {
-		// renewal
-		if index := rsv.Index(req.Index); index != nil {
-			return failedResponse, s.errNew("already existing e2e index", "id", req.ID.String(),
-				"idx", req.Index)
-		}
-	} else {
-		// new setup
+	if newSetup {
 		rsv = &e2e.Reservation{
 			ID:                  req.ID,
 			SegmentReservations: make([]*segment.Reservation, len(segRsvIDs)),
@@ -720,97 +715,155 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 			r, err := tx.GetSegmentRsvFromID(ctx, &id)
 			if err != nil || r == nil {
 				return failedResponse, s.errWrapStr("cannot get segment rsv for e2e admission",
-					err, "e2e_id", req.ID.String(), "seg_id", id.String())
+					err, "e2e_id", req.ID, "seg_id", id)
 			}
 			rsv.SegmentReservations[i] = r
 		}
-	}
-	if len(rsv.SegmentReservations) == 0 {
-		return failedResponse, s.errNew("there is no segment rsv. associated to this e2e rsv.",
-			"id", req.ID.String(), "idx", req.Index)
 	} else {
-		for i, r := range rsv.SegmentReservations {
-			if r == nil {
-				return failedResponse, s.errNew("there is no segment rsv. associated to "+
-					"this e2e rsv.", "id", req.ID.String(), "seg_id", segRsvIDs[i].String())
+		if index := rsv.Index(req.Index); index != nil {
+			// renewal with index clash
+			failedResponse.Message = s.errNew("already existing e2e index", "id", req.ID.String(),
+				"idx", req.Index).Error()
+			return failedResponse, nil
+		}
+		if len(rsv.SegmentReservations) != len(segRsvIDs) {
+			// when loading, some seg. rsvs. where not found
+			missingSegIDs := make(map[string]struct{})
+			for _, id := range segRsvIDs {
+				missingSegIDs[id.String()] = struct{}{}
 			}
-			if r.ActiveIndex() == nil {
-				return failedResponse, s.errNew("seg. rsv. for e2e rsv has no active index",
-					"id", req.ID.String(), "seg_id", r.ID.String())
+			for _, r := range rsv.SegmentReservations {
+				delete(missingSegIDs, r.ID.String())
 			}
+			missing := make([]string, len(missingSegIDs))
+			for id := range missingSegIDs {
+				missing = append(missing, id)
+			}
+			failedResponse.Message = s.errNew("could not find all seg. rsv. for an e2e request",
+				"requested", len(segRsvIDs), "found", len(rsv.SegmentReservations),
+				"missing", strings.Join(missing, ", ")).Error()
+			return failedResponse, nil
+		}
+	}
+
+	// check the seg. reservations
+	for _, r := range rsv.SegmentReservations {
+		if r.ActiveIndex() == nil {
+			return failedResponse, s.errNew("seg. rsv. for e2e rsv has no active index",
+				"id", req.ID, "seg_id", r.ID)
 		}
 	}
 
 	idx, err := rsv.NewIndex(req.Timestamp)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot create index in e2e admission", err,
-			"e2e_id", req.ID.String())
+		failedResponse.Message = s.errWrapStr("cannot create index in e2e admission", err,
+			"e2e_id", req.ID).Error()
+		return failedResponse, nil
 	}
 	index := rsv.Index(idx)
 	index.AllocBW = req.RequestedBW
-	if req.Success() {
-		// index.Token = &req.(*e2e.SetupReqSuccess).Token
-	}
+
+	// if req.Success() {
+	// 	index.Token = &req.(*e2e.SetupReqSuccess).Token
+	// }
 
 	// Commented out because it contains ineffectual assignments:
-	/*
-		free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
+
+	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
+	if err != nil {
+		failedResponse.Message = s.errWrapStr("cannot compute free bw for e2e admission", err,
+			"e2e_id", rsv.ID).Error()
+		return failedResponse, nil
+	}
+	free = free + rsv.AllocResv() // don't count this E2E request in the used BW
+
+	if req.Transfer() {
+		// this AS must stitch two segment rsvs. according to the request
+		if len(segRsvIDs) != 2 {
+			failedResponse.Message = s.errNew("e2e setup request with transfer inconsistent",
+				"e2e_id", req.ID, "len_segs", len(segRsvIDs),
+				"trail_len", len(req.AllocationTrail)).Error()
+			return failedResponse, nil
+		}
+		freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv)
 		if err != nil {
-			return failedResponse, s.errWrapStr("cannot compute free bw for e2e admission", err,
-				"e2e_id", rsv.ID.String())
+			failedResponse.Message = s.errWrapStr("cannot compute transfer", err,
+				"id", req.ID).Error()
+			return failedResponse, nil
 		}
-		free = free + rsv.AllocResv() // don't count this E2E request in the used BW
-
-		if req.Transfer() {
-			// this AS must stitch two segment rsvs. according to the request
-			if len(segRsvIDs) == 1 {
-				return failedResponse, s.errNew("e2e setup request with transfer inconsistent",
-					"e2e_id", req.ID.String(), "req_sgmt_rsvs_count", req.SegmentRsvASCount,
-					"trail_len", len(req.AllocationTrail))
-			}
-			freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv)
-			if err != nil {
-				return failedResponse, s.errWrapStr("cannot compute transfer", err,
-					"id", req.ID.String())
-			}
-			freeOutgoing += rsv.AllocResv() // do not count this rsv's BW
-			if free > freeOutgoing {
-				free = freeOutgoing
-			}
+		freeOutgoing += rsv.AllocResv() // do not count this rsv's BW
+		if free > freeOutgoing {
+			free = freeOutgoing
 		}
-	*/
+	}
+	// always store the computed free BW in the request
+	req.AllocationTrail = append(req.AllocationTrail, reservation.BWClsFromBW(free))
+	admitted := true
+	for _, step := range req.AllocationTrail {
+		if step.ToKbps() < req.RequestedBW.ToKbps() {
+			admitted = false
+			break
+		}
+	}
 
-	// TODO(juagargi) fix response type
-	// if !request.IsSuccessful() || req.RequestedBW.ToKbps() > free {
+	// // TODO(juagargi) fix response type
+	// if !req.Success() || req.RequestedBW.ToKbps() > free {
 	// 	maxWillingToAlloc := reservation.BWClsFromBW(free)
 	// 	if req.Location() == e2e.Destination {
 	// 		asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
 	// 		asAResponse.MaxBWs = append(asAResponse.MaxBWs, maxWillingToAlloc)
 	// 	} else {
-	// 			asARequest := &e2e.SetupReqFailure{
-	// 				SetupReq:  *req,
-	// 				ErrorCode: 1,
-	// 			}
-	// 			asARequest.AllocationTrail = append(asARequest.AllocationTrail,
-	//				maxWillingToAlloc)
-	// 			failedResponse = asARequest
+	// 		asARequest := &e2e.SetupReqFailure{
+	// 			SetupReq:  *req,
+	// 			ErrorCode: 1,
+	// 		}
+	// 		asARequest.AllocationTrail = append(asARequest.AllocationTrail,
+	// 			maxWillingToAlloc)
+	// 		failedResponse = asARequest
 	// 	}
 	// 	return failedResponse, s.errWrapStr("e2e not admitted", err, "id", req.ID.String(),
 	// 		"index", req.Index)
 	// }
 
-	// // admitted so far
-	// // TODO(juagargi) update token here
-	// if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-	// 	return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
-	// 		"id", req.ID.String())
-	// }
+	if admitted {
+		// TODO(juagargi) update token here
+		if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
+			return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
+				"id", req.ID.String())
+		}
 
-	// if err := tx.Commit(); err != nil {
-	// 	return failedResponse, s.errWrapStr("cannot commit transaction", err,
-	// 		"id", req.ID.String())
-	// }
+		if err := tx.Commit(); err != nil {
+			return failedResponse, s.errWrapStr("cannot commit transaction", err,
+				"id", req.ID.String())
+		}
+	}
 
+	if req.IsLastAS() {
+		// TODO(juagargi): contact the endhost
+		// return the response
+		return &e2e.SetupResponseSuccess{
+			Token: *index.Token,
+		}, nil
+	} else {
+		log.Info("deleteme dialing grpc")
+		client, err := s.operator.ColibriClient(ctx, req.Path)
+		if err != nil {
+			log.Debug("error finding a colibri service client", "err", err)
+			return nil, serrors.WrapStr("while finding a colibri service client", err)
+		}
+
+		pbRes, err := client.SetupE2E(ctx, translate.PBufE2ESetupReq(req))
+		if err != nil {
+			failedResponse.Message = s.errWrapStr("cannot forward request", err).Error()
+			return failedResponse, nil
+		}
+		res, err := translate.E2ESetupResponse(pbRes)
+		if err != nil {
+			return nil, serrors.WrapStr("translating response", err)
+		}
+		// TODO(juagargi) add something to the token?
+		return res, nil
+	}
 	// var msg base.MessageWithPath
 	// if req.Location() == e2e.Destination {
 	// 	asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
@@ -825,7 +878,6 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	// 	}
 	// }
 	// return msg, nil
-	return &base.ResponseSuccess{}, nil
 }
 
 // CleanupE2EReservation will remove an index from an e2e reservation.
@@ -915,16 +967,11 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 	log.Info("deleteme 1 admit segment reservation")
 	failedResponse := &segment.SegmentSetupResponseFailure{
-		MsgId: base.MsgId{
-			ID:        req.ID,
-			Index:     req.Index,
-			Timestamp: time.Now(),
-		},
 		FailedRequest: req,
 	}
 
 	if err := req.Validate(); err != nil {
-		failedResponse.Message = "request failed validation: " + s.err(err).Error()
+		failedResponse.Message = s.errWrapStr("request failed validation", err).Error()
 		return failedResponse, nil
 	}
 	log.Info("deleteme 2 admit segment reservation", "id", req.ID.String(),
@@ -1082,7 +1129,6 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 	log.Info("deleteme all good, returning token")
 	return &segment.SegmentSetupResponseSuccess{
-		MsgId: failedResponse.MsgId,
 		Token: *token,
 	}, nil
 }
@@ -1106,6 +1152,9 @@ func (s *Store) getTokenFromDownstreamAdmission(ctx context.Context, req *segmen
 	}
 	res, err := translate.SetupResponse(pbRes)
 	log.Info("deleteme response after translation", "res", res, "err", err)
+	if err != nil {
+		return nil, serrors.WrapStr("translating response", err)
+	}
 	if suc, ok := res.(*segment.SegmentSetupResponseSuccess); ok {
 		return &suc.Token, nil
 	}
@@ -1124,11 +1173,6 @@ func (s *Store) sendUpstreamForAdmission(ctx context.Context, req *segment.Setup
 		"sendUpstreamForAdmission must only be called for reverse traveling")
 
 	failedResponse := &segment.SegmentSetupResponseFailure{
-		MsgId: base.MsgId{
-			ID:        req.ID,
-			Index:     req.Index,
-			Timestamp: time.Now(),
-		},
 		FailedRequest: req,
 	}
 

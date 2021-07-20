@@ -16,6 +16,7 @@ package translate
 
 import (
 	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -24,10 +25,29 @@ import (
 )
 
 func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
-
 	return &colpb.SegmentSetupRequest{
 		Base:   PBufRequest(&req.Request),
 		Params: PBufSetupRequestParams(req),
+	}
+}
+
+func PBufE2ESetupReq(req *e2e.SetupReq) *colpb.E2ESetupRequest {
+	segs := make([]*colpb.ReservationID, len(req.SegmentRsvs))
+	for i, id := range req.SegmentRsvs {
+		segs[i] = PBufID(&id)
+	}
+	trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(req.AllocationTrail))
+	for i, b := range req.AllocationTrail {
+		trail[i].Maxbw = uint32(b)
+	}
+	return &colpb.E2ESetupRequest{
+		Base:        PBufRequest(&req.Request),
+		RequestedBw: uint32(req.RequestedBW),
+		Params: &colpb.E2ESetupRequest_PathParams{
+			Segments:       segs,
+			CurrentSegment: uint32(req.CurrentSegmentRsvIndex),
+		},
+		Allocationtrail: trail,
 	}
 }
 

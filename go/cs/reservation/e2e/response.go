@@ -15,61 +15,23 @@
 package e2e
 
 import (
-	"time"
-
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
-	"github.com/scionproto/scion/go/lib/serrors"
 )
 
-// Response is the base struct for any type of COLIBRI e2e response.
-type Response struct {
-	ID        reservation.ID          // the ID this request refers to
-	Index     reservation.IndexNumber // the index this request refers to
-	Accepted  bool                    // success or failure type of response
-	FailedHop uint8                   // if accepted is false, the AS that failed it
+type SetupResponse interface {
+	isSegmentSetupResponse_Success_Failure()
 }
 
-// NewResponse contructs the segment Response type.
-func NewResponse(ts time.Time, id *reservation.ID, idx reservation.IndexNumber,
-	accepted bool, failedHop uint8) (*Response, error) {
-
-	if id == nil {
-		return nil, serrors.New("new segment response with nil ID")
-	}
-	return &Response{
-		ID:        *id,
-		Index:     reservation.IndexNumber(idx),
-		Accepted:  accepted,
-		FailedHop: failedHop,
-	}, nil
-}
-
-// IsHopByHop returns false, as all the responses travel directly to the source endhost.
-func (r *Response) IsHopByHop() bool {
-	return false
-}
-
-// ResponseSetupSuccess is the response to a success setup. It's sent on the reverse direction.
-type ResponseSetupSuccess struct {
-	Response
+type SetupResponseSuccess struct {
 	Token reservation.Token
 }
 
-// ResponseSetupFailure is the response to a failed setup. It's sent on the reverse direction.
-// The failed hop is the length of MaxBWs + 1.
-type ResponseSetupFailure struct {
-	Response
-	ErrorCode uint8
-	MaxBWs    []reservation.BWCls // granted by ASes in the path until the failed hop
+func (*SetupResponseSuccess) isSegmentSetupResponse_Success_Failure() {}
+
+type SetupResponseFailure struct {
+	Message    string
+	FailedStep uint8
+	AllocTrail []reservation.BWCls
 }
 
-// ResponseCleanupSuccess is a response to a successful cleanup request.
-type ResponseCleanupSuccess struct {
-	Response
-}
-
-// ResponseCleanupFailure is a failed index cleanup.
-type ResponseCleanupFailure struct {
-	Response
-	ErrorCode uint8
-}
+func (*SetupResponseFailure) isSegmentSetupResponse_Success_Failure() {}

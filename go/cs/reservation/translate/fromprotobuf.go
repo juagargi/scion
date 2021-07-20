@@ -23,6 +23,7 @@ import (
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -114,6 +115,28 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 		}
 	}
 	return res, nil
+}
+
+func E2ESetupResponse(msg *colpb.E2ESetupResponse) (e2e.SetupResponse, error) {
+	if msg.Failure != nil {
+		trail := make([]col.BWCls, len(msg.Failure.Allocationtrail))
+		for i, b := range msg.Failure.Allocationtrail {
+			trail[i] = col.BWCls(b.Maxbw)
+		}
+		return &e2e.SetupResponseFailure{
+			Message:    msg.Failure.Message,
+			FailedStep: uint8(msg.Failure.FailedStep),
+			AllocTrail: trail,
+		}, nil
+	}
+	// success:
+	token, err := reservation.TokenFromRaw(msg.Token)
+	if err != nil {
+		return nil, err
+	}
+	return &e2e.SetupResponseSuccess{
+		Token: *token,
+	}, nil
 }
 
 func Request(msg *colpb.Request) (*base.Request, error) {

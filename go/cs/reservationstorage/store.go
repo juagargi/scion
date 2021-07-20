@@ -42,7 +42,7 @@ type Store interface {
 	TearDownSegmentReservation(ctx context.Context, req *base.Request) (
 		base.Response, error)
 	AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
-		base.Response, error)
+		e2e.SetupResponse, error)
 	CleanupE2EReservation(ctx context.Context, req *base.Request) (
 		base.Response, error)
 

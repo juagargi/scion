@@ -194,9 +194,12 @@ func (p *TransparentPath) Validate() error {
 	if p == nil {
 		return nil
 	}
-	steps := p.Steps
-	if len(steps) < 2 {
-		return serrors.New("wrong number of steps", "count", len(steps))
+	if len(p.Steps) < 2 {
+		return serrors.New("wrong number of steps", "count", len(p.Steps))
+	}
+	if p.CurrentStep >= len(p.Steps) {
+		return serrors.New("current step out of bounds", "curr_step", p.CurrentStep,
+			"count", len(p.Steps))
 	}
 	return nil
 }

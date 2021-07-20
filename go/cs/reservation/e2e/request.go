@@ -23,14 +23,11 @@ import (
 // SetupReq is an e2e setup/renewal request, that has been so far accepted.
 type SetupReq struct {
 	base.Request
-	SegmentRsvs []col.ID
-	// SegmentRsvASCount        []uint8 // how many ASes per segment reservation
-	RequestedBW              col.BWCls
-	AllocationTrail          []col.BWCls
-	FailureInfo              *SetupFailureInfo // or nil if successful
-	totalASCount             int
-	currentASSegmentRsvIndex int // the index in SegmentRsv for the current AS
-	isTransfer               bool
+	SegmentRsvs            []col.ID
+	CurrentSegmentRsvIndex int // the index in SegmentRsv for the current AS
+	RequestedBW            col.BWCls
+	AllocationTrail        []col.BWCls
+	isTransfer             bool
 }
 
 type SetupFailureInfo struct {
@@ -67,55 +64,31 @@ func NewSetupRequest(r *base.Request, segRsvs []col.ID, segRsvCount []uint8,
 			"alloc_trail_len", len(allocTrail), "seg_rsv_count", segRsvCount)
 	}
 	return &SetupReq{
-		Request:     *r,
-		SegmentRsvs: segRsvs,
-		// SegmentRsvASCount:        segRsvCount,
-		RequestedBW:              requestedBW,
-		AllocationTrail:          allocTrail,
-		totalASCount:             totalASCount,
-		currentASSegmentRsvIndex: currASindex,
-		isTransfer:               isTransfer,
+		Request:                *r,
+		SegmentRsvs:            segRsvs,
+		RequestedBW:            requestedBW,
+		AllocationTrail:        allocTrail,
+		CurrentSegmentRsvIndex: currASindex,
+		isTransfer:             isTransfer,
 	}, nil
 }
 
-func (r *SetupReq) Success() bool {
-	return r.FailureInfo == nil
+func (r *SetupReq) Validate() error {
+	if err := r.Request.Validate(); err != nil {
+		return err
+	}
+	if !r.ID.IsE2EID() {
+		return serrors.New("non e2e AS id in request", "asid", r.ID.ASID)
+	}
+	if len(r.SegmentRsvs) == 0 || len(r.SegmentRsvs) > 3 {
+		return serrors.New("invalid number of segment reservations for an e2e request",
+			"count", len(r.SegmentRsvs))
+	}
+	return nil
 }
 
 func (r *SetupReq) Transfer() bool {
 	return r.isTransfer
-}
-
-type PathLocation int
-
-const (
-	Source PathLocation = iota
-	Transit
-	Destination
-)
-
-func (l PathLocation) String() string {
-	switch l {
-	case Source:
-		return "source"
-	case Transit:
-		return "trantit"
-	case Destination:
-		return "destination"
-	}
-	return "unknown path location"
-}
-
-// Location returns the location of this node in the path of the request.
-func (r *SetupReq) Location() PathLocation {
-	switch len(r.AllocationTrail) {
-	case 0:
-		return Source
-	case r.totalASCount:
-		return Destination
-	default:
-		return Transit
-	}
 }
 
 // SegmentRsvIDsForThisAS returns the segment reservation ID this AS belongs to. Iff this
@@ -123,9 +96,9 @@ func (r *SetupReq) Location() PathLocation {
 // order of traversal.
 func (r *SetupReq) SegmentRsvIDsForThisAS() []col.ID {
 	indices := make([]col.ID, 1, 2)
-	indices[0] = r.SegmentRsvs[r.currentASSegmentRsvIndex]
+	indices[0] = r.SegmentRsvs[r.CurrentSegmentRsvIndex]
 	if r.isTransfer {
-		indices = append(indices, r.SegmentRsvs[r.currentASSegmentRsvIndex+1])
+		indices = append(indices, r.SegmentRsvs[r.CurrentSegmentRsvIndex+1])
 	}
 	return indices
 }
