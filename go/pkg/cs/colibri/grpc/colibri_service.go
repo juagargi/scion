@@ -17,11 +17,13 @@ package grpc
 import (
 	"context"
 	"net"
+	"time"
 
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/proto"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/lib/addr"
@@ -31,6 +33,7 @@ import (
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/util"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
@@ -180,36 +183,6 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 	return translate.PBufListResponse(looks), nil
 }
 
-func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListStitchablesRequest) (
-	*colpb.ListStitchablesResponse, error) {
-
-	// To prevent this service from doing anything if the caller is not from the local AS,
-	// we check the peer. We could instantiate the local ColibriService differently.
-	p, ok := peer.FromContext(ctx)
-	if !ok || p == nil {
-		log.Error("deleteme no peer found")
-		return nil, serrors.New("no peer found")
-	}
-	tcpaddr, ok := p.Addr.(*net.TCPAddr)
-	if !ok || tcpaddr == nil {
-		log.Error("deleteme no tcp address found", "type", common.TypeOf(p.Addr))
-		return nil, serrors.New("no valid local tcp address found", "addr", p.Addr,
-			"type", common.TypeOf(p.Addr))
-	}
-
-	dstIA := addr.IAInt(msg.DstIa).IA()
-	log.Info("deleteme ListStitchables called", "dst", dstIA.String())
-	stitchables, err := s.Store.ListStitchableSegments(ctx, dstIA)
-	log.Info("deleteme returned from store", "err", err, "segments", stitchables)
-	if err != nil {
-		log.Error("colibri store while listing stitchables", "err", err)
-		return &colpb.ListStitchablesResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-	return translate.PBufStitchableResponse(stitchables), nil
-}
-
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
 	*colpb.E2ESetupResponse, error) {
 
@@ -247,6 +220,99 @@ func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request
 	return pbRes, nil
 }
 
+func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListStitchablesRequest) (
+	*colpb.ListStitchablesResponse, error) {
+
+	if err := checkLocalCaller(ctx); err != nil {
+		return nil, err
+	}
+
+	dstIA := addr.IAInt(msg.DstIa).IA()
+	log.Info("deleteme ListStitchables called", "dst", dstIA.String())
+	stitchables, err := s.Store.ListStitchableSegments(ctx, dstIA)
+	log.Info("deleteme returned from store", "err", err, "segments", stitchables)
+	if err != nil {
+		log.Error("colibri store while listing stitchables", "err", err)
+		return &colpb.ListStitchablesResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+	return translate.PBufStitchableResponse(stitchables), nil
+}
+
+func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.DaemonSetupRequest) (
+	*colpb.DaemonSetupResponse, error) {
+
+	if err := checkLocalCaller(ctx); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	// build a valid E2E setup request now and query the store with it
+	pbReq := &colpb.E2ESetupRequest{
+		Base: &colpb.Request{
+			Id:        msg.Id,
+			Index:     msg.Index,
+			Timestamp: util.TimeToSecs(now),
+			Path:      nil, // <-----------------------------------------------------------------------------------
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+			// < ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+		},
+		RequestedBw: msg.RequestedBw,
+		Params: &colpb.E2ESetupRequest_PathParams{
+			Segments:       msg.Segments,
+			CurrentSegment: 0,
+		},
+		Allocationtrail: nil,
+	}
+	req, err := translate.E2ESetupRequest(pbReq)
+	if err != nil {
+		log.Error("translating initial E2E setup from daemon to service", "err", err)
+		return nil, err
+	}
+
+	res, err := s.Store.AdmitE2EReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store setting up an e2e reservation", "err", err)
+		var trail []uint32
+		if failure, ok := res.(*e2e.SetupResponseFailure); ok {
+			trail = make([]uint32, len(failure.AllocTrail))
+			for i, b := range failure.AllocTrail {
+				trail[i] = uint32(b)
+			}
+		}
+		return &colpb.DaemonSetupResponse{
+			Failure: &colpb.DaemonSetupResponse_Failure{
+				ErrorMessage: err.Error(),
+				FailedStep:   0,
+				AllocTrail:   trail,
+			},
+		}, nil
+	}
+	pbMsg := &colpb.DaemonSetupResponse{}
+	if failure, ok := res.(*e2e.SetupResponseFailure); ok {
+		trail := make([]uint32, len(failure.AllocTrail))
+		for i, b := range failure.AllocTrail {
+			trail[i] = uint32(b)
+		}
+		pbMsg.Failure = &colpb.DaemonSetupResponse_Failure{
+			ErrorMessage: failure.Message,
+			FailedStep:   uint32(failure.FailedStep),
+			AllocTrail:   trail,
+		}
+	}
+	if success, ok := res.(*e2e.SetupResponseSuccess); ok {
+		pbMsg.Token = success.Token.ToRaw()
+	}
+	return pbMsg, nil
+}
+
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
 func extractPath(ctx context.Context) (base.PacketPath, error) {
 	// TODO(juagargi) move from PacketPath to TransparentPath
@@ -272,4 +338,22 @@ func extractPath(ctx context.Context) (base.PacketPath, error) {
 	usage, ok, err := coliquic.UsageFromContext(ctx)
 	_, _, _ = usage, ok, err
 	return path, err
+}
+
+// checkLocalCaller prevents the service from doing anything if the caller is not from the local AS.
+// We do it by checking the peer. We could instantiate the local ColibriService differently.
+func checkLocalCaller(ctx context.Context) error {
+	// To prevent this service from
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		log.Error("deleteme no peer found")
+		return serrors.New("no peer found")
+	}
+	tcpaddr, ok := p.Addr.(*net.TCPAddr)
+	if !ok || tcpaddr == nil {
+		log.Error("deleteme no tcp address found", "type", common.TypeOf(p.Addr))
+		return serrors.New("no valid local tcp address found", "addr", p.Addr,
+			"type", common.TypeOf(p.Addr))
+	}
+	return nil
 }

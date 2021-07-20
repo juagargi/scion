@@ -40,6 +40,8 @@ service DaemonService {
     rpc DRKeyLvl2(DRKeyLvl2Request) returns (DRKeyLvl2Response) {}
     // Obtain a list of reservation information from the AS towards another one.
     rpc ColibriListRsvs(ColibriListRequest) returns (ColibriListResponse) {}
+    // Setup an E2E reservation.
+    rpc ColibriSetupRsv(ColibriSetupRequest) returns (ColibriSetupResponse) {}
 }
 
 message PathsRequest {
@@ -205,4 +207,12 @@ message ColibriListRequest {
 
 message ColibriListResponse {
     proto.colibri.v1.ListStitchablesResponse base = 1;
+}
+
+message ColibriSetupRequest {
+    proto.colibri.v1.DaemonSetupRequest base = 1;
+}
+
+message ColibriSetupResponse {
+    proto.colibri.v1.DaemonSetupResponse base = 1;
 }

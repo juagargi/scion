@@ -17,6 +17,7 @@ package colibri
 import (
 	"context"
 
+	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/log"
@@ -42,8 +43,27 @@ func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriLi
 	if err != nil {
 		return nil, err
 	}
-	client := colpb.NewColibriClient(conn)
+	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
 	response, err := client.ListStitchables(ctx, req.Base)
 	log.Info("deleteme back from listing", "err", err)
 	return &sdpb.ColibriListResponse{Base: response}, err
+}
+
+// SetupReservation will dial to the intra AS colibri service to setup an e2e reservation.
+func (c *DaemonClient) SetupReservation(ctx context.Context, req *sdpb.ColibriSetupRequest) (
+	*sdpb.ColibriSetupResponse, error) {
+
+	log.Debug("setting up e2e reservation", "id", translate.ID(req.Base.Id))
+	if req == nil {
+		return nil, serrors.New("bad nil request")
+	}
+	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
+	log.Info("deleteme dialed", "err", err)
+	if err != nil {
+		return nil, err
+	}
+	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
+	response, err := client.SetupReservation(ctx, req.Base)
+	log.Info("deleteme back from setup reservation", "err", err)
+	return &sdpb.ColibriSetupResponse{Base: response}, err
 }

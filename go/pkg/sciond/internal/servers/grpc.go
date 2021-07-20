@@ -394,3 +394,9 @@ func (s *DaemonServer) ColibriListRsvs(ctx context.Context, req *sdpb.ColibriLis
 	log.FromCtx(ctx).Info("fetching reservation list", "dst", dstIA.String())
 	return s.Colibri.ListReservations(ctx, req)
 }
+
+func (s *DaemonServer) ColibriSetupRsv(ctx context.Context, req *sdpb.ColibriSetupRequest) (
+	*sdpb.ColibriSetupResponse, error) {
+
+	return s.Colibri.SetupReservation(ctx, req)
+}

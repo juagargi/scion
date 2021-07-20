@@ -21,16 +21,20 @@ package proto.colibri.v1;
 import "google/protobuf/timestamp.proto";
 
 service Colibri {
+    // segment
     rpc SetupSegment(SegmentSetupRequest) returns (SegmentSetupResponse) {}
     rpc ConfirmSegmentIndex(Request) returns (Response) {}
     rpc ActivateSegmentIndex(Request) returns (Response) {}
     rpc TeardownSegment(Request) returns (Response) {}
     rpc CleanupSegmentIndex(Request) returns (Response) {}
-
+    // e2e
     rpc ListReservations(ListRequest) returns (ListResponse) {}
-    rpc ListStitchables(ListStitchablesRequest) returns (ListStitchablesResponse) {}
     rpc SetupE2e(E2eSetupRequest) returns (E2eSetupResponse) {}
     rpc CleanupE2eIndex(Request) returns (Response) {}
+
+    // facing the intra AS scion daemons
+    rpc ListStitchables(ListStitchablesRequest) returns (ListStitchablesResponse) {}
+    rpc SetupReservation(DaemonSetupRequest) returns (DaemonSetupResponse) {}
 }
 
 // /////////////////////////////////////////////////
@@ -143,18 +147,6 @@ message ListResponse {
     repeated ReservationLooks reservations = 2;
 }
 
-message ListStitchablesRequest {
-    uint64 dst_ia = 1;
-}
-
-message ListStitchablesResponse {
-    string error_message = 1;
-    uint64 src_ia = 2;
-    uint64 dst_ia = 3;
-    repeated ListResponse.ReservationLooks up = 4;
-    repeated ListResponse.ReservationLooks core = 5;
-    repeated ListResponse.ReservationLooks down = 6;
-}
 
 message E2eSetupRequest {
     message PathParams {
@@ -175,9 +167,40 @@ message E2eSetupRequest {
 
 message E2eSetupResponse {
     message Failure {
-        string Message = 1;
+        string message = 1;
         uint32 failed_step = 2;
         repeated E2eSetupRequest.E2eSetupBead allocationtrail = 3;
+    }
+    Failure failure = 1; // if present: information about the failure
+    bytes token = 2;
+}
+
+
+message ListStitchablesRequest {
+    uint64 dst_ia = 1;
+}
+
+message ListStitchablesResponse {
+    string error_message = 1;
+    uint64 src_ia = 2;
+    uint64 dst_ia = 3;
+    repeated ListResponse.ReservationLooks up = 4;
+    repeated ListResponse.ReservationLooks core = 5;
+    repeated ListResponse.ReservationLooks down = 6;
+}
+
+message DaemonSetupRequest {
+    ReservationID id = 1;
+    uint32 index = 2;
+    repeated ReservationID segments = 3;
+    uint32 requested_bw = 4;
+}
+
+message DaemonSetupResponse {
+    message Failure {
+        string error_message = 1;
+        uint32 failed_step = 2;
+        repeated uint32 alloc_trail = 3;
     }
     Failure failure = 1; // if present: information about the failure
     bytes token = 2;
