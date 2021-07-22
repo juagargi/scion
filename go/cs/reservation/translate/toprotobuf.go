@@ -72,6 +72,25 @@ func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResp
 	return pbRes
 }
 
+// func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {
+// 	pbRes := &colpb.E2ESetupResponse{}
+// 	switch r := res.(type) {
+// 	case *e2e.SetupResponseSuccess:
+// 		pbRes.Token = r.Token.ToRaw()
+// 	case *e2e.SetupResponseFailure:
+// 		trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(r.AllocTrail))
+// 		for i, b := range r.AllocTrail {
+// 			trail[i].Maxbw = uint32(b)
+// 		}
+// 		pbRes.Failure = &colpb.E2ESetupResponse_Failure{
+// 			Message:         r.Message,
+// 			FailedStep:      uint32(r.FailedStep),
+// 			Allocationtrail: trail,
+// 		}
+// 	}
+// 	return pbRes
+// }
+
 func PBufRequest(req *base.Request) *colpb.Request {
 	return &colpb.Request{
 		Id:        PBufID(&req.ID),

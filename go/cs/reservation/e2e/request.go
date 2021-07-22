@@ -87,6 +87,14 @@ func (r *SetupReq) Validate() error {
 	return nil
 }
 
+// RequestPathNeedsSteps indicates a request that will need to extend its base.Request.Path.
+// This happens everytime the AS is at the end of the path but there are still segments
+// pending to transit.
+func (r *SetupReq) RequestPathNeedsSteps() bool {
+	return len(r.Path.Steps) == 0 ||
+		(r.IsLastAS() && r.CurrentSegmentRsvIndex < len(r.SegmentRsvs)-1)
+}
+
 func (r *SetupReq) Transfer() bool {
 	return r.isTransfer
 }

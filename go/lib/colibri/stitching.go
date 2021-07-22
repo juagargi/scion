@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 
@@ -33,6 +34,14 @@ func (t FullTrip) Validate() error {
 		return serrors.New("bad reservation full trip", "segment_count", len(t))
 	}
 	return nil
+}
+
+func (t FullTrip) Segments() []reservation.ID {
+	ids := make([]reservation.ID, len(t))
+	for i, l := range t {
+		ids[i] = l.Id
+	}
+	return ids
 }
 
 func (t FullTrip) String() string {

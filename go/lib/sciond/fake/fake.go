@@ -201,6 +201,12 @@ func (c connector) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 	panic("not implemented")
 }
 
+func (c connector) ColibriSetupRsv(context.Context, *colibri.E2EReservationSetup) (
+	snet.Path, error) {
+
+	panic("not implemented")
+}
+
 func (c connector) Close(ctx context.Context) error {
 	return nil
 }

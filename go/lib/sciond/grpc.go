@@ -225,6 +225,13 @@ func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 	return stitchable, nil
 }
 
+func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservationSetup) (
+	snet.Path, error) {
+
+	fmt.Println("deleteme calling setup rsv to setup an e2e reservation")
+	return nil, nil
+}
+
 func (c grpcConn) Close(_ context.Context) error {
 	return c.conn.Close()
 }

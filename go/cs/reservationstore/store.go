@@ -753,6 +753,10 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 				"id", req.ID, "seg_id", r.ID)
 		}
 	}
+	// append steps to the request path if necessary
+	if req.RequestPathNeedsSteps() {
+		appendToPath(req, rsv)
+	}
 
 	idx, err := rsv.NewIndex(req.Timestamp)
 	if err != nil {
@@ -1316,6 +1320,12 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	total = sumAllBW(e2es)
 	// the available BW for this e2e rsv is the effective minus the already used
 	return uint64(effectiveE2eTraffic) - total, nil
+}
+
+func appendToPath(req *e2e.SetupReq, rsv *e2e.Reservation) {
+	assert(req.RequestPathNeedsSteps(), "should call the function only when needed")
+	steps := rsv.SegmentReservations[req.CurrentSegmentRsvIndex].PathAtSource.Steps
+	req.Path.Steps = append(req.Path.Steps, steps...)
 }
 
 func reservationsToLooks(rsvs []*segment.Reservation, localIA addr.IA) []*colibri.ReservationLooks {

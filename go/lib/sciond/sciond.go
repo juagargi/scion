@@ -102,6 +102,8 @@ type Connector interface {
 		valTime time.Time) (drkey.Lvl2Key, error)
 	// ColibriListRsvs requests the list of reservations towards dstIA.
 	ColibriListRsvs(ctx context.Context, dstIA addr.IA) (*colibri.StitchableSegments, error)
+	// ColibriSetupRsv requests a COLIBRI E2E reservation stitching up to three segments.
+	ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservationSetup) (snet.Path, error)
 	// Close shuts down the connection to a SCIOND server.
 	Close(ctx context.Context) error
 }

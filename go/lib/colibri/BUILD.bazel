@@ -4,6 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = [
         "colibri.go",
+        "e2e.go",
         "listing.go",
         "stitching.go",
     ],
