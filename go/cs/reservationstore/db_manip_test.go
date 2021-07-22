@@ -85,7 +85,7 @@ func newTestSegmentReservation(t testing.TB, ASID string) *segment.Reservation {
 	r.TrafficSplit = 3
 	r.PathEndProps = reservation.EndLocal | reservation.StartLocal
 	expTime := util.SecsToTime(1)
-	_, err := r.NewIndex(expTime, 1, 3, 2, 5, reservation.CorePath)
+	_, err := r.NewIndex(0, expTime, 1, 3, 2, 5, reservation.CorePath)
 	require.NoError(t, err)
 	err = r.SetIndexConfirmed(0)
 	require.NoError(t, err)

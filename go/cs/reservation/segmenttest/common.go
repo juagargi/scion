@@ -160,13 +160,13 @@ func ConfirmAllIndices() ReservationMod {
 type IndexMod func(*segment.Index)
 
 // AddIndex adds a new index, modified via functional options, to the reservation.
-func AddIndex(mods ...IndexMod) ReservationMod {
+func AddIndex(idx int, mods ...IndexMod) ReservationMod {
 	return func(rsv *segment.Reservation) *segment.Reservation {
 		expTime := util.SecsToTime(0)
 		if rsv.Indices.Len() > 0 {
 			expTime = rsv.Indices.GetExpiration(rsv.Indices.Len() - 1)
 		}
-		idx, err := rsv.NewIndex(expTime, 0, 0, 0, 0, 0)
+		idx, err := rsv.NewIndex(reservation.IndexNumber(idx), expTime, 0, 0, 0, 0, 0)
 		if err != nil {
 			panic(err)
 		}

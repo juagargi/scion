@@ -221,7 +221,8 @@ func (k *keeper) activateIndices(ctx context.Context, rsvs []*segment.Reservatio
 	for i, rsv := range rsvs {
 		index := rsv.NextIndexToActivate()
 		if index == nil {
-			return serrors.New("request to activate, but no index suitable", "id", rsv.ID)
+			return serrors.New("request to activate, but no index suitable", "id", rsv.ID,
+				"indices", rsv.Indices.String())
 		}
 		reqs[i] = &base.Request{
 			MsgId: base.MsgId{

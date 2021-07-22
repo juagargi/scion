@@ -14,6 +14,7 @@ go_library(
         "//go/cs/reservation:go_default_library",
         "//go/cs/reservation/segment:go_default_library",
         "//go/lib/colibri/reservation:go_default_library",
+        "//go/lib/log:go_default_library",
         "//go/lib/serrors:go_default_library",
     ],
 )

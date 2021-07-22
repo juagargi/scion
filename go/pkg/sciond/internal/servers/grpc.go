@@ -391,7 +391,7 @@ func (s *DaemonServer) ColibriListRsvs(ctx context.Context, req *sdpb.ColibriLis
 	*sdpb.ColibriListResponse, error) {
 
 	dstIA := addr.IAInt(req.Base.DstIa).IA()
-	log.FromCtx(ctx).Info("fetching reservation list", "dst", dstIA.String())
+	log.FromCtx(ctx).Debug("fetching reservation list", "dst", dstIA.String())
 	return s.Colibri.ListReservations(ctx, req)
 }
 

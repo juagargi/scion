@@ -56,10 +56,10 @@ func (mr *MockStoreMockRecorder) ActivateSegmentReservation(arg0, arg1 interface
 }
 
 // AdmitE2EReservation mocks base method
-func (m *MockStore) AdmitE2EReservation(arg0 context.Context, arg1 *e2e.SetupReq) (reservation.Response, error) {
+func (m *MockStore) AdmitE2EReservation(arg0 context.Context, arg1 *e2e.SetupReq) (e2e.SetupResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AdmitE2EReservation", arg0, arg1)
-	ret0, _ := ret[0].(reservation.Response)
+	ret0, _ := ret[0].(e2e.SetupResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

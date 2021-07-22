@@ -277,8 +277,12 @@ func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupRe
 				"reverse_traveling", req.ReverseTraveling,
 				"trail", failure.FailedRequest.AllocTrail, "path_steps before", origPath.Steps)
 			if !req.ReverseTraveling {
-				// shorten the path to exclude those nodes the request never transited
-				origPath.Steps = origPath.Steps[:len(failure.FailedRequest.AllocTrail)]
+				if len(failure.FailedRequest.AllocTrail)+1 < len(origPath.Steps) {
+					// shorten the path to exclude those nodes the request never transited.
+					// the last node in allocTrail could (or not) have stored the index and
+					// thus would need cleaning.
+					origPath.Steps = origPath.Steps[:len(failure.FailedRequest.AllocTrail)+1]
+				}
 			}
 			log.Info("deleteme after", "steps", origPath.Steps)
 		}
@@ -408,6 +412,13 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
 			"id", req.ID.String())
 	}
+	//
+	// deleteme
+	if err := rsv.Validate(); err != nil {
+		panic(err)
+	}
+	//
+	//
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID.String())
@@ -470,7 +481,7 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 	}
 	log.Info("deleteme activating 7")
 	if err := rsv.SetIndexActive(req.Index); err != nil {
-		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
+		return failedResponse, s.errWrapStr("cannot set index to active", err,
 			"id", req.ID.String())
 	}
 	log.Info("deleteme activating 8", "path_type", rsv.PathType,
@@ -494,6 +505,13 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 			"path", hex.EncodeToString(rawColibriPath))
 	}
 	log.Info("deleteme activating 11")
+	//
+	// deleteme
+	if err := rsv.Validate(); err != nil {
+		panic(err)
+	}
+	//
+	//
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID.String())
@@ -526,7 +544,7 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 	//
 
 	if req.IsLastAS() {
-		log.Info("deleteme activating 15")
+		log.Info("deleteme activating 15 success (this is the last AS)")
 		return &base.ResponseSuccess{}, nil
 	}
 	log.Info("deleteme activating 16")
@@ -583,6 +601,13 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *base.Request
 		// log error but continue
 		log.Info("error cleaning segment index, continuing anyway", "err", err)
 	}
+	//
+	// deleteme
+	if err := rsv.Validate(); err != nil {
+		panic(err)
+	}
+	//
+	//
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID.String())
@@ -612,12 +637,12 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *base.Request
 func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
-	log.Info("deleteme deleteme 1")
+	log.Info("deleteme teardown 1")
 
 	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
-	log.Info("deleteme deleteme 2")
+	log.Info("deleteme teardown 2")
 
 	failedResponse := s.prepareFailureResp("failed to teardown segment")
 
@@ -625,7 +650,7 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 		failedResponse.Message = "request validation failed: " + s.err(err).Error()
 		return failedResponse, nil
 	}
-	log.Info("deleteme deleteme 3")
+	log.Info("deleteme teardown 3")
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
@@ -633,37 +658,37 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 	}
 	defer tx.Rollback()
 
-	log.Info("deleteme deleteme 4")
+	log.Info("deleteme teardown 4")
 
 	if err := tx.DeleteSegmentRsv(ctx, &req.ID); err != nil {
 		return failedResponse, s.errWrapStr("cannot teardown reservation", err,
 			"id", req.ID.String())
 	}
-	log.Info("deleteme deleteme 5")
+	log.Info("deleteme teardown 5")
 
 	if err := tx.Commit(); err != nil {
 		return failedResponse, s.errWrapStr("cannot commit transaction", err,
 			"id", req.ID.String())
 	}
 
-	log.Info("deleteme deleteme 6")
+	log.Info("deleteme teardown 6")
 
 	if req.IsLastAS() {
-		log.Info("deleteme deleteme 7")
+		log.Info("deleteme teardown 7")
 		return &base.ResponseSuccess{}, nil
 	}
 	// forward to next colibri service
 	client, err := s.operator.ColibriClient(ctx, req.Path)
-	log.Info("deleteme deleteme 8", "err", err)
+	log.Info("deleteme teardown 8", "err", err)
 	if err != nil {
 		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
 	}
-	log.Info("deleteme deleteme 9")
+	log.Info("deleteme teardown 9")
 
 	pbRes, err := client.TeardownSegment(ctx, translate.PBufRequest(req))
-	log.Info("deleteme deleteme 10", "pbres", pbRes)
+	log.Info("deleteme teardown 10", "pbres", pbRes)
 	if err != nil {
-		log.Info("deleteme deleteme 11", "err", err)
+		log.Info("deleteme teardown 11", "err", err)
 		return failedResponse, s.errWrapStr("forwarded request failed", err)
 	}
 	return translate.Response(pbRes), nil
@@ -686,8 +711,11 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 
 	if err := req.Validate(); err != nil {
 		failedResponse.Message = s.errWrapStr("request failed validation", err).Error()
+		log.Debug("e2e request validation failed", "err", err)
 		return failedResponse, nil
 	}
+
+	log.Info("deleteme e2esetup 2", "req", req)
 
 	tx, err := s.db.BeginTransaction(ctx, nil)
 	if err != nil {
@@ -697,13 +725,18 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	}
 	defer tx.Rollback()
 
+	log.Info("deleteme e2esetup 3", "id", req.ID)
+
 	rsv, err := tx.GetE2ERsvFromID(ctx, &req.ID)
+	log.Info("deleteme e2esetup 4", "err", err)
 	if err != nil {
 		err := s.errWrapStr("cannot obtain e2e reservation", err, "id", req.ID.String())
 		failedResponse.Message = err.Error()
+		log.Error("retrieving e2e reservation", "err", err)
 		return failedResponse, err
 	}
 	newSetup := (rsv == nil)
+	log.Info("deleteme e2esetup", "newSetup", newSetup)
 
 	segRsvIDs := req.SegmentRsvIDsForThisAS()
 	if newSetup {
@@ -745,19 +778,28 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 			return failedResponse, nil
 		}
 	}
+	log.Info("deleteme e2esetup 10", "id", req.ID)
 
 	// check the seg. reservations
 	for _, r := range rsv.SegmentReservations {
 		if r.ActiveIndex() == nil {
-			return failedResponse, s.errNew("seg. rsv. for e2e rsv has no active index",
-				"id", req.ID, "seg_id", r.ID)
+			failedResponse.Message = s.errNew("seg. rsv. for e2e rsv has no active index",
+				"id", req.ID, "seg_id", r.ID, "indices", r.Indices.String()).Error()
+			return failedResponse, nil
 		}
 	}
+	log.Info("deleteme e2esetup 11", "path", req.Path)
 	// append steps to the request path if necessary
 	if req.RequestPathNeedsSteps() {
-		appendToPath(req, rsv)
+		log.Info("deleteme e2esetup 12", "id", req.ID)
+		if err := appendToPath(req, rsv); err != nil {
+			log.Error("appending next segment to request path", "err", err)
+			return nil, serrors.WrapStr("appending next segment to request path", err)
+		}
 	}
+	log.Info("deleteme e2esetup 20", "path", req.Path)
 
+	log.Info("deleteme e2esetup 30", "id", req.ID)
 	idx, err := rsv.NewIndex(req.Timestamp)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot create index in e2e admission", err,
@@ -766,12 +808,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	}
 	index := rsv.Index(idx)
 	index.AllocBW = req.RequestedBW
-
-	// if req.Success() {
-	// 	index.Token = &req.(*e2e.SetupReqSuccess).Token
-	// }
-
-	// Commented out because it contains ineffectual assignments:
+	log.Info("deleteme e2esetup 31", "id", req.ID)
 
 	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
 	if err != nil {
@@ -780,26 +817,33 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		return failedResponse, nil
 	}
 	free = free + rsv.AllocResv() // don't count this E2E request in the used BW
+	log.Info("deleteme e2esetup 32", "id", req.ID)
 
-	if req.Transfer() {
+	if req.IsTransfer() {
+		log.Info("deleteme e2esetup 33", "id", req.ID)
 		// this AS must stitch two segment rsvs. according to the request
 		if len(segRsvIDs) != 2 {
+			log.Info("deleteme e2esetup 34", "id", req.ID)
 			failedResponse.Message = s.errNew("e2e setup request with transfer inconsistent",
 				"e2e_id", req.ID, "len_segs", len(segRsvIDs),
 				"trail_len", len(req.AllocationTrail)).Error()
 			return failedResponse, nil
 		}
+		log.Info("deleteme e2esetup 35", "id", req.ID)
 		freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv)
 		if err != nil {
+			log.Info("deleteme e2esetup 36", "id", req.ID)
 			failedResponse.Message = s.errWrapStr("cannot compute transfer", err,
 				"id", req.ID).Error()
 			return failedResponse, nil
 		}
+		log.Info("deleteme e2esetup 37", "id", req.ID)
 		freeOutgoing += rsv.AllocResv() // do not count this rsv's BW
 		if free > freeOutgoing {
 			free = freeOutgoing
 		}
 	}
+	log.Info("deleteme e2esetup 40", "id", req.ID)
 	// always store the computed free BW in the request
 	req.AllocationTrail = append(req.AllocationTrail, reservation.BWClsFromBW(free))
 	admitted := true
@@ -809,6 +853,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 			break
 		}
 	}
+	log.Info("deleteme e2esetup 41", "admitted", admitted)
 
 	// // TODO(juagargi) fix response type
 	// if !req.Success() || req.RequestedBW.ToKbps() > free {
@@ -830,7 +875,13 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	// }
 
 	if admitted {
+		index.Token = &reservation.Token{
+			InfoField: reservation.InfoField{
+				PathType: reservation.E2EPath,
+			},
+		}
 		// TODO(juagargi) update token here
+		log.Info("deleteme e2esetup 42", "id", req.ID)
 		if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
 			return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
 				"id", req.ID.String())
@@ -842,13 +893,19 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		}
 	}
 
+	log.Info("deleteme e2esetup 50", "id", req.ID)
 	if req.IsLastAS() {
+		log.Info("deleteme e2esetup 51", "id", req.ID)
 		// TODO(juagargi): contact the endhost
 		// return the response
 		return &e2e.SetupResponseSuccess{
 			Token: *index.Token,
 		}, nil
 	} else {
+		if req.IsTransfer() {
+			// indicate the next node we are using the next segment:
+			req.CurrentSegmentRsvIndex++
+		}
 		log.Info("deleteme dialing grpc")
 		client, err := s.operator.ColibriClient(ctx, req.Path)
 		if err != nil {
@@ -862,6 +919,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 			return failedResponse, nil
 		}
 		res, err := translate.E2ESetupResponse(pbRes)
+		log.Info("deleteme", "err", err)
 		if err != nil {
 			return nil, serrors.WrapStr("translating response", err)
 		}
@@ -1005,7 +1063,11 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, s.errWrapStr("looking for reservation", err, "id", req.ID.String())
 	}
 
-	log.Info("deleteme 5 admit segment reservation", "req_id", req.ID.String(), "rsv", rsv)
+	log.Info("deleteme 5 admit segment reservation", "req_id", req.ID, "rsv", rsv)
+	if err := rsv.Validate(); err != nil {
+		log.Error("deleteme whaaaaattt!!???", "err", err)
+		panic(err)
+	}
 
 	if rsv != nil { // renewal, ensure index is not used
 		if rsv.Index(req.Index) != nil {
@@ -1057,17 +1119,25 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	log.Info("deleteme 12", "req.Reservation.Pathtype", req.Reservation.PathType,
 		"req.pathtype", req.PathType)
 
-	idx, err := rsv.NewIndex(req.ExpirationTime, req.MinBW, req.MaxBW, allocBW,
+	idx, err := rsv.NewIndex(req.Index, req.ExpirationTime, req.MinBW, req.MaxBW, allocBW,
 		req.RLC, req.Reservation.PathType)
 	if err != nil {
-		failedResponse.Message = "cannot create new index: " + s.err(err).Error()
-		return failedResponse, nil
+		err := s.errWrapStr("cannot create new index", err)
+		failedResponse.Message = err.Error()
+		return failedResponse, err
 	}
 	index := rsv.Index(idx)
 	log.Info("deleteme 13")
 	log.Info("deleteme token inside index", "token", index.Token)
 	log.Info("deleteme", "id", rsv.ID)
 
+	//
+	// deleteme
+	if err := rsv.Validate(); err != nil {
+		panic(err)
+	}
+	//
+	//
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		failedResponse.Message = "cannot persist segment reservation: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("persisting segment reservation", err)
@@ -1088,6 +1158,9 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		if err != nil {
 			failedResponse.Message = s.err(err).Error()
 			return failedResponse, nil
+		}
+		if token.Idx != index.Idx {
+			panic("deleteme")
 		}
 	}
 
@@ -1122,6 +1195,13 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, s.errWrapStr("storing token, cannot create transaction", err)
 	}
 	defer tx.Rollback()
+	//
+	// deleteme
+	if err := rsv.Validate(); err != nil {
+		panic(err)
+	}
+	//
+	//
 	// TODO(juagargi) can we do with one call to PersistSegmentRsv instead of two?
 	if err := tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		failedResponse.Message = "storing token, cannot persist rsv: " + s.err(err).Error()
@@ -1322,10 +1402,52 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	return uint64(effectiveE2eTraffic) - total, nil
 }
 
-func appendToPath(req *e2e.SetupReq, rsv *e2e.Reservation) {
+func appendToPath(req *e2e.SetupReq, rsv *e2e.Reservation) error {
 	assert(req.RequestPathNeedsSteps(), "should call the function only when needed")
-	steps := rsv.SegmentReservations[req.CurrentSegmentRsvIndex].PathAtSource.Steps
+
+	if len(req.Path.Steps) == 0 {
+		// initial node
+		assert(req.IsFirstAS(), "inconsistency: this node should be the initial one")
+		req.Path.Steps = rsv.SegmentReservations[0].PathAtSource.Copy().Steps
+		return nil
+	}
+
+	// because this node is not the first one, and needs steps, it must be transfer
+	assert(!req.IsFirstAS(), "inconsistency: node must not be the first one in the path")
+	assert(req.IsTransfer(), "inconsistency: node must be transfer (stitching)")
+
+	nextSegment := rsv.SegmentReservations[req.CurrentSegmentRsvIndex+1]
+	steps := nextSegment.PathAtSource.Copy().Steps
+	// var steps []base.PathStep
+	// if nextSegment.PathType == reservation.DownPath {
+	// 	p := nextSegment.PathAtSource.Copy()
+	// 	log.Info("deleteme to add these steps:", "", p.String())
+	// 	if err := p.Reverse(); err != nil {
+	// 		return serrors.WrapStr("appending reverted segment to e2e path", err)
+	// 	}
+	// 	steps = p.Steps
+	// 	log.Info("deleteme to add these steps:", "", p.String())
+	// } else {
+	// 	p := nextSegment.PathAtSource.Copy()
+	// 	steps = p.Steps
+	// 	log.Info("deleteme to add these steps:", "", p.String())
+	// }
+
+	// when stitching two segments, one of the steps has to be merged into the previous one.
+	// TODO(juagargi) remove assertions as they assume well intentioned requests
+	l := len(req.Path.Steps)
+	assert(req.Path.Steps[l-1].Egress == 0,
+		fmt.Sprintf("wrong assumption egress not zero but %d", req.Path.Steps[l-1].Egress))
+	assert(steps[0].Ingress == 0,
+		fmt.Sprintf("wrong assumption ingress not zero but %d", steps[0].Ingress))
+	assert(req.Path.Steps[l-1].IA.Equal(steps[0].IA),
+		fmt.Sprintf("wrong assumption, IAs different, first: %s, second: %s",
+			req.Path.Steps[l-1].IA, steps[0].IA))
+	req.Path.Steps[l-1].Egress = steps[0].Egress
+	steps = steps[1:]
+
 	req.Path.Steps = append(req.Path.Steps, steps...)
+	return nil
 }
 
 func reservationsToLooks(rsvs []*segment.Reservation, localIA addr.IA) []*colibri.ReservationLooks {

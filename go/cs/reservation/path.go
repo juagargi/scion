@@ -194,7 +194,8 @@ func (p *TransparentPath) Validate() error {
 	if p == nil {
 		return nil
 	}
-	if len(p.Steps) < 2 {
+	// sometimes we'll have requests with one step only (e.g. teardown after bad setup)
+	if len(p.Steps) < 1 {
 		return serrors.New("wrong number of steps", "count", len(p.Steps))
 	}
 	if p.CurrentStep >= len(p.Steps) {

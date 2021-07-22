@@ -175,6 +175,26 @@ func (mr *MockColibriClientMockRecorder) SetupE2E(arg0, arg1 interface{}, arg2 .
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupE2E", reflect.TypeOf((*MockColibriClient)(nil).SetupE2E), varargs...)
 }
 
+// SetupReservation mocks base method
+func (m *MockColibriClient) SetupReservation(arg0 context.Context, arg1 *colibri.DaemonSetupRequest, arg2 ...grpc.CallOption) (*colibri.DaemonSetupResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "SetupReservation", varargs...)
+	ret0, _ := ret[0].(*colibri.DaemonSetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetupReservation indicates an expected call of SetupReservation
+func (mr *MockColibriClientMockRecorder) SetupReservation(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupReservation", reflect.TypeOf((*MockColibriClient)(nil).SetupReservation), varargs...)
+}
+
 // SetupSegment mocks base method
 func (m *MockColibriClient) SetupSegment(arg0 context.Context, arg1 *colibri.SegmentSetupRequest, arg2 ...grpc.CallOption) (*colibri.SegmentSetupResponse, error) {
 	m.ctrl.T.Helper()
@@ -341,6 +361,21 @@ func (m *MockColibriServer) SetupE2E(arg0 context.Context, arg1 *colibri.E2ESetu
 func (mr *MockColibriServerMockRecorder) SetupE2E(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupE2E", reflect.TypeOf((*MockColibriServer)(nil).SetupE2E), arg0, arg1)
+}
+
+// SetupReservation mocks base method
+func (m *MockColibriServer) SetupReservation(arg0 context.Context, arg1 *colibri.DaemonSetupRequest) (*colibri.DaemonSetupResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetupReservation", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.DaemonSetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetupReservation indicates an expected call of SetupReservation
+func (mr *MockColibriServerMockRecorder) SetupReservation(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupReservation", reflect.TypeOf((*MockColibriServer)(nil).SetupReservation), arg0, arg1)
 }
 
 // SetupSegment mocks base method

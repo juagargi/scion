@@ -73,7 +73,7 @@ func testNewSegmentRsv(ctx context.Context, t *testing.T, newDB func() backend.D
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
 	// at least one index, and change path
-	_, err = r.NewIndex(util.SecsToTime(10), 2, 3, 2, 2, reservation.CorePath)
+	_, err = r.NewIndex(0, util.SecsToTime(10), 2, 3, 2, 2, reservation.CorePath)
 	require.NoError(t, err)
 	r.PathAtSource = test.NewPath(1, "1-ff00:0:1", 2, 1, "1-ff00:0:2", 0)
 	err = db.NewSegmentRsv(ctx, r)
@@ -97,7 +97,8 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, newDB func() backe
 	db := newDB()
 	r := newTestReservation(t)
 	for i := uint32(1); i < 10; i++ {
-		_, err := r.NewIndex(util.SecsToTime(i), 0, 0, 0, 0, reservation.CorePath)
+		_, err := r.NewIndex(reservation.IndexNumber(i), util.SecsToTime(i), 0, 0, 0, 0,
+			reservation.CorePath)
 		require.NoError(t, err)
 	}
 	require.Len(t, r.Indices, 10)
@@ -158,7 +159,7 @@ func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, newDB func() bac
 	require.NoError(t, err)
 	// create new index
 	expTime := util.SecsToTime(1)
-	_, err = r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	_, err = r.NewIndex(1, expTime, 0, 0, 0, 0, reservation.CorePath)
 	require.NoError(t, err)
 	err = db.PersistSegmentRsv(ctx, r)
 	require.NoError(t, err)
@@ -169,8 +170,8 @@ func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, newDB func() bac
 	require.Len(t, r.Indices, 2)
 	for i := 2; i < 16; i++ {
 		expTime = util.SecsToTime(uint32(i))
-		_, err = r.NewIndex(expTime, reservation.BWCls(i), reservation.BWCls(i),
-			reservation.BWCls(i), 0, reservation.CorePath)
+		_, err = r.NewIndex(reservation.IndexNumber(i), expTime, reservation.BWCls(i),
+			reservation.BWCls(i), reservation.BWCls(i), 0, reservation.CorePath)
 		require.NoError(t, err)
 	}
 	require.Len(t, r.Indices, 16)
@@ -467,7 +468,7 @@ func testDeleteExpiredIndices(ctx context.Context, t *testing.T, newDB func() ba
 	require.NoError(t, err)
 	// r3, e3
 	r.Indices[0].Expiration = util.SecsToTime(3)
-	r.NewIndex(util.SecsToTime(6), 1, 3, 2, 5, reservation.CorePath)
+	r.NewIndex(1, util.SecsToTime(6), 1, 3, 2, 5, reservation.CorePath)
 	err = db.NewSegmentRsv(ctx, r) // save r3
 	require.NoError(t, err)
 	segIds = append(segIds, r.ID)
@@ -571,7 +572,7 @@ func testNextExpirationTime(ctx context.Context, t *testing.T, newDB func() back
 	require.True(t, exp.IsZero())
 
 	t1 := util.SecsToTime(111)
-	r := st.NewRsv(st.WithID("ff00:0:1", "00000001"), st.AddIndex(
+	r := st.NewRsv(st.WithID("ff00:0:1", "00000001"), st.AddIndex(0,
 		st.WithExpiration(t1)))
 	err = db.NewSegmentRsv(ctx, r)
 	require.NoError(t, err)
@@ -645,7 +646,8 @@ func testPersistE2ERsv(ctx context.Context, t *testing.T, newDB func() backend.D
 		seg := newTestReservation(t)
 		seg.ID.ASID = xtest.MustParseAS(fmt.Sprintf("ff00:2:%d", i+1))
 		for j := uint32(1); j < 16; j++ {
-			_, err := seg.NewIndex(util.SecsToTime(j), 1, 3, 2, 5, reservation.CorePath)
+			_, err := seg.NewIndex(reservation.IndexNumber(j), util.SecsToTime(j), 1, 3, 2, 5,
+				reservation.CorePath)
 			require.NoError(t, err)
 		}
 		err := db.PersistSegmentRsv(ctx, seg)
@@ -807,7 +809,7 @@ func testGetInterfaceUsage(ctx context.Context, t *testing.T, newDB func() backe
 	testInterfaceUseEgress(ctx, t, db, 1, toKbps(2))
 	testInterfaceUseEgress(ctx, t, db, 2, toKbps(3))
 	// add an index bwcls 9
-	_, err = rsv.NewIndex(util.SecsToTime(2), 1, 9, 9, 1, reservation.CorePath)
+	_, err = rsv.NewIndex(1, util.SecsToTime(2), 1, 9, 9, 1, reservation.CorePath)
 	require.NoError(t, err)
 	err = db.PersistSegmentRsv(ctx, rsv)
 	require.NoError(t, err)
@@ -926,7 +928,7 @@ func newTestReservation(t *testing.T) *segment.Reservation {
 	r.TrafficSplit = 3
 	r.PathEndProps = reservation.EndLocal | reservation.StartLocal
 	expTime := util.SecsToTime(1)
-	_, err := r.NewIndex(expTime, 1, 3, 2, 5, reservation.CorePath)
+	_, err := r.NewIndex(0, expTime, 1, 3, 2, 5, reservation.CorePath)
 	require.NoError(t, err)
 	err = r.SetIndexConfirmed(0)
 	require.NoError(t, err)

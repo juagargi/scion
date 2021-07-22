@@ -75,10 +75,11 @@ func E2ESetupRequest(msg *colpb.E2ESetupRequest) (*e2e.SetupReq, error) {
 		trail[i] = col.BWCls(b.Maxbw)
 	}
 	return &e2e.SetupReq{
-		Request:         *base,
-		SegmentRsvs:     segIds,
-		RequestedBW:     col.BWCls(msg.RequestedBw),
-		AllocationTrail: trail,
+		Request:                *base,
+		SegmentRsvs:            segIds,
+		CurrentSegmentRsvIndex: int(msg.Params.CurrentSegment),
+		RequestedBW:            col.BWCls(msg.RequestedBw),
+		AllocationTrail:        trail,
 	}, nil
 }
 

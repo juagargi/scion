@@ -38,7 +38,9 @@ func PBufE2ESetupReq(req *e2e.SetupReq) *colpb.E2ESetupRequest {
 	}
 	trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(req.AllocationTrail))
 	for i, b := range req.AllocationTrail {
-		trail[i].Maxbw = uint32(b)
+		trail[i] = &colpb.E2ESetupRequest_E2ESetupBead{
+			Maxbw: uint32(b),
+		}
 	}
 	return &colpb.E2ESetupRequest{
 		Base:        PBufRequest(&req.Request),
@@ -70,6 +72,27 @@ func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResp
 		}
 	}
 	return pbRes
+}
+
+func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {
+	msg := &colpb.E2ESetupResponse{}
+	switch t := res.(type) {
+	case *e2e.SetupResponseSuccess:
+		msg.Token = t.Token.ToRaw()
+	case *e2e.SetupResponseFailure:
+		trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(t.AllocTrail))
+		for i, b := range t.AllocTrail {
+			trail[i] = &colpb.E2ESetupRequest_E2ESetupBead{
+				Maxbw: uint32(b),
+			}
+		}
+		msg.Failure = &colpb.E2ESetupResponse_Failure{
+			Message:         t.Message,
+			FailedStep:      uint32(t.FailedStep),
+			Allocationtrail: trail,
+		}
+	}
+	return msg
 }
 
 // func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {

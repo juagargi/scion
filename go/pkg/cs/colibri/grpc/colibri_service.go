@@ -186,6 +186,7 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
 	*colpb.E2ESetupResponse, error) {
 
+	msg.Base.Path.CurrentStep++
 	req, err := translate.E2ESetupRequest(msg)
 	if err != nil {
 		log.Error("translating e2e setup", "err", err)
@@ -194,9 +195,9 @@ func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupReques
 	res, err := s.Store.AdmitE2EReservation(ctx, req)
 	if err != nil {
 		log.Error("admitting e2e", "err", err)
+		return nil, err
 	}
-	_ = res
-	return nil, nil
+	return translate.PBufE2ESetupResponse(res), nil
 }
 
 func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request) (

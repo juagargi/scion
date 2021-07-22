@@ -30,7 +30,7 @@ func TestNewIndex(t *testing.T) {
 	r := segmenttest.NewReservation()
 	require.Len(t, r.Indices, 0)
 	expTime := util.SecsToTime(1)
-	idx, err := r.NewIndex(expTime, 1, 3, 2, 5, reservation.CorePath)
+	idx, err := r.NewIndex(0, expTime, 1, 3, 2, 5, reservation.CorePath)
 	require.NoError(t, err)
 	require.Len(t, r.Indices, 1)
 	require.Equal(t, reservation.IndexNumber(0), idx)
@@ -52,14 +52,14 @@ func TestNewIndex(t *testing.T) {
 	}
 	require.Equal(t, tok, r.Indices[0].Token)
 	// add a second index
-	idx, err = r.NewIndex(expTime, 1, 3, 2, 5, reservation.CorePath)
+	idx, err = r.NewIndex(1, expTime, 1, 3, 2, 5, reservation.CorePath)
 	require.NoError(t, err)
 	require.Len(t, r.Indices, 2)
 	require.Equal(t, reservation.IndexNumber(1), idx)
 	require.Equal(t, idx, r.Indices[1].Idx)
 	// remove first index and add another one
 	r.Indices = r.Indices[1:]
-	idx, err = r.NewIndex(expTime, 1, 3, 2, 5, reservation.CorePath)
+	idx, err = r.NewIndex(2, expTime, 1, 3, 2, 5, reservation.CorePath)
 	require.NoError(t, err)
 	require.Len(t, r.Indices, 2)
 	require.Equal(t, reservation.IndexNumber(2), idx)
@@ -77,8 +77,8 @@ func TestReservationValidate(t *testing.T) {
 	// more than one active index
 	expTime := util.SecsToTime(1)
 	r = segmenttest.NewReservation()
-	r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
-	r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	r.NewIndex(0, expTime, 0, 0, 0, 0, reservation.CorePath)
+	r.NewIndex(1, expTime, 0, 0, 0, 0, reservation.CorePath)
 	require.Len(t, r.Indices, 2)
 	r.Indices[0].SetStateForTesting(segment.IndexActive)
 	r.Indices[1].SetStateForTesting(segment.IndexActive)
@@ -104,9 +104,9 @@ func TestReservationValidate(t *testing.T) {
 func TestIndex(t *testing.T) {
 	r := segmenttest.NewReservation()
 	expTime := util.SecsToTime(1)
-	r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
-	idx, _ := r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
-	r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	r.NewIndex(0, expTime, 0, 0, 0, 0, reservation.CorePath)
+	idx, _ := r.NewIndex(1, expTime, 0, 0, 0, 0, reservation.CorePath)
+	r.NewIndex(2, expTime, 0, 0, 0, 0, reservation.CorePath)
 	require.Len(t, r.Indices, 3)
 	index := r.Index(idx)
 	require.Equal(t, &r.Indices[1], index)
@@ -121,7 +121,7 @@ func TestIndex(t *testing.T) {
 func TestSetIndexConfirmed(t *testing.T) {
 	r := segmenttest.NewReservation()
 	expTime := util.SecsToTime(1)
-	id, _ := r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	id, _ := r.NewIndex(0, expTime, 0, 0, 0, 0, reservation.CorePath)
 	require.Equal(t, segment.IndexTemporary, r.Indices[0].State())
 	err := r.SetIndexConfirmed(id)
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestSetIndexActive(t *testing.T) {
 	expTime := util.SecsToTime(1)
 
 	// index not confirmed
-	idx, _ := r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	idx, _ := r.NewIndex(0, expTime, 0, 0, 0, 0, reservation.CorePath)
 	err := r.SetIndexActive(idx)
 	require.Error(t, err)
 
@@ -154,8 +154,8 @@ func TestSetIndexActive(t *testing.T) {
 	require.NoError(t, err)
 
 	// remove previous indices
-	r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
-	idx, _ = r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	r.NewIndex(1, expTime, 0, 0, 0, 0, reservation.CorePath)
+	idx, _ = r.NewIndex(2, expTime, 0, 0, 0, 0, reservation.CorePath)
 	require.Len(t, r.Indices, 3)
 	require.Equal(t, 0, r.GetActiveIndexForTesting())
 	r.SetIndexConfirmed(idx)
@@ -169,14 +169,14 @@ func TestSetIndexActive(t *testing.T) {
 func TestRemoveIndex(t *testing.T) {
 	r := segmenttest.NewReservation()
 	expTime := util.SecsToTime(1)
-	idx, _ := r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	idx, _ := r.NewIndex(0, expTime, 0, 0, 0, 0, reservation.CorePath)
 	err := r.RemoveIndex(idx)
 	require.NoError(t, err)
 	require.Len(t, r.Indices, 0)
 
 	// remove second index
-	idx, _ = r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
-	idx2, _ := r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	idx, _ = r.NewIndex(1, expTime, 0, 0, 0, 0, reservation.CorePath)
+	idx2, _ := r.NewIndex(2, expTime, 0, 0, 0, 0, reservation.CorePath)
 	err = r.RemoveIndex(idx)
 	require.NoError(t, err)
 	require.Len(t, r.Indices, 1)
@@ -186,9 +186,9 @@ func TestRemoveIndex(t *testing.T) {
 
 	// remove also removes older indices
 	expTime = expTime.Add(time.Second)
-	r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
-	idx, _ = r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
-	idx2, _ = r.NewIndex(expTime, 0, 0, 0, 0, reservation.CorePath)
+	r.NewIndex(3, expTime, 0, 0, 0, 0, reservation.CorePath)
+	idx, _ = r.NewIndex(4, expTime, 0, 0, 0, 0, reservation.CorePath)
+	idx2, _ = r.NewIndex(5, expTime, 0, 0, 0, 0, reservation.CorePath)
 	require.Len(t, r.Indices, 4)
 	err = r.RemoveIndex(idx)
 	require.NoError(t, err)
@@ -202,9 +202,9 @@ func TestMaxBlockedBW(t *testing.T) {
 	r := segmenttest.NewReservation()
 	r.Indices = r.Indices[:0]
 	require.Equal(t, uint64(0), r.MaxBlockedBW())
-	r.NewIndex(util.SecsToTime(1), 1, 1, 1, 1, reservation.CorePath)
+	r.NewIndex(0, util.SecsToTime(1), 1, 1, 1, 1, reservation.CorePath)
 	require.Equal(t, reservation.BWCls(1).ToKbps(), r.MaxBlockedBW())
-	r.NewIndex(util.SecsToTime(1), 1, 1, 1, 1, reservation.CorePath)
+	r.NewIndex(1, util.SecsToTime(1), 1, 1, 1, 1, reservation.CorePath)
 	require.Equal(t, reservation.BWCls(1).ToKbps(), r.MaxBlockedBW())
 	r.Indices[0].AllocBW = 11
 	require.Equal(t, reservation.BWCls(11).ToKbps(), r.MaxBlockedBW())

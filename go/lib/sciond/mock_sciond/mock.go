@@ -86,6 +86,21 @@ func (mr *MockConnectorMockRecorder) ColibriListRsvs(arg0, arg1 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ColibriListRsvs", reflect.TypeOf((*MockConnector)(nil).ColibriListRsvs), arg0, arg1)
 }
 
+// ColibriSetupRsv mocks base method
+func (m *MockConnector) ColibriSetupRsv(arg0 context.Context, arg1 *colibri.E2EReservationSetup) (snet.Path, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ColibriSetupRsv", arg0, arg1)
+	ret0, _ := ret[0].(snet.Path)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ColibriSetupRsv indicates an expected call of ColibriSetupRsv
+func (mr *MockConnectorMockRecorder) ColibriSetupRsv(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ColibriSetupRsv", reflect.TypeOf((*MockConnector)(nil).ColibriSetupRsv), arg0, arg1)
+}
+
 // DRKeyGetLvl2Key mocks base method
 func (m *MockConnector) DRKeyGetLvl2Key(arg0 context.Context, arg1 drkey.Lvl2Meta, arg2 time.Time) (drkey.Lvl2Key, error) {
 	m.ctrl.T.Helper()

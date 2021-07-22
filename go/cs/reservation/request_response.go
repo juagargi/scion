@@ -58,11 +58,13 @@ func (r *Request) Validate() error {
 	if err := r.Path.Validate(); err != nil {
 		return serrors.WrapStr("bad path in request", err)
 	}
+	return r.ValidateIgnorePath()
+}
 
+func (r *Request) ValidateIgnorePath() error {
 	if r.ID.ASID == 0 {
 		return serrors.New("bad AS id in request", "asid", r.ID.ASID)
 	}
-
 	return nil
 }
 

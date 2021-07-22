@@ -15,7 +15,9 @@
 package reservation
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -94,8 +96,12 @@ func FindIndex(indices IndicesInterface, idx reservation.IndexNumber) (int, erro
 	}
 	sliceIndex := int(idx.Sub(firstIdx))
 	if sliceIndex > indices.Len()-1 {
+		existing := make([]string, indices.Len())
+		for i := 0; i < indices.Len(); i++ {
+			existing[i] = fmt.Sprintf("%d", indices.GetIndexNumber(i))
+		}
 		return 0, serrors.New("index not found in this reservation", "index_number", idx,
-			"indices length", indices.Len())
+			"indices length", indices.Len(), "existing", strings.Join(existing, ", "))
 	}
 	return sliceIndex, nil
 }

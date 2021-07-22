@@ -25,11 +25,13 @@ import (
 	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	dkctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/serrors"
+	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/snet/path"
@@ -228,8 +230,45 @@ func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservationSetup) (
 	snet.Path, error) {
 
-	fmt.Println("deleteme calling setup rsv to setup an e2e reservation")
-	return nil, nil
+	pbSegs := make([]*colpb.ReservationID, len(req.Segments))
+	for i, r := range req.Segments {
+		pbSegs[i] = translate.PBufID(&r)
+	}
+	pbReq := &sdpb.ColibriSetupRequest{
+		Base: &colpb.DaemonSetupRequest{
+			Id:          translate.PBufID(&req.Id),
+			Index:       uint32(req.Index),
+			RequestedBw: uint32(req.RequestedBW),
+			Segments:    pbSegs,
+		},
+	}
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	sdRes, err := client.ColibriSetupRsv(ctx, pbReq)
+	if err != nil {
+		return nil, err
+	}
+	if sdRes.Base.Failure != nil {
+		trail := make([]reservation.BWCls, len(sdRes.Base.Failure.AllocTrail))
+		for i, b := range sdRes.Base.Failure.AllocTrail {
+			trail[i] = reservation.BWCls(b)
+		}
+		return nil, &colibri.E2ESetupError{
+			Message:         sdRes.Base.Failure.ErrorMessage,
+			FailedAS:        int(sdRes.Base.Failure.FailedStep),
+			AllocationTrail: trail,
+		}
+	}
+	// adapt the received token to an snet.Path
+	token, err := reservation.TokenFromRaw(sdRes.Base.Token)
+	if err != nil {
+		return nil, err
+	}
+	return &path.Path{
+		SPath: spath.Path{
+			Raw:  token.ToRaw(),
+			Type: colpath.PathType,
+		},
+	}, nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {
