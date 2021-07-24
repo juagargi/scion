@@ -167,11 +167,6 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
 			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
 
-		log.Info("deleteme ____ colibri keeper, reservations by compliance", "ia", dstIA.String(),
-			"i/total", fmt.Sprintf("%d/%d", i+1, len(entries)),
-			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
-			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
-
 		// activation:
 		if err := k.activateIndices(ctx, needActivation); err != nil {
 			errors = append(errors, err)

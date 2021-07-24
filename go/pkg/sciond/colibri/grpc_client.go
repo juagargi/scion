@@ -34,18 +34,15 @@ type DaemonClient struct {
 func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriListRequest) (
 	*sdpb.ColibriListResponse, error) {
 
-	log.Info("deleteme about to dial colibri service", "req", req)
 	if req == nil {
 		return nil, serrors.New("bad nil request")
 	}
 	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
-	log.Info("deleteme dialed", "err", err)
 	if err != nil {
 		return nil, err
 	}
 	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
 	response, err := client.ListStitchables(ctx, req.Base)
-	log.Info("deleteme back from listing", "err", err)
 	return &sdpb.ColibriListResponse{Base: response}, err
 }
 
@@ -58,12 +55,10 @@ func (c *DaemonClient) SetupReservation(ctx context.Context, req *sdpb.ColibriSe
 		return nil, serrors.New("bad nil request")
 	}
 	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
-	log.Info("deleteme dialed", "err", err)
 	if err != nil {
 		return nil, err
 	}
 	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
 	response, err := client.SetupReservation(ctx, req.Base)
-	log.Info("deleteme back from setup reservation", "err", err)
 	return &sdpb.ColibriSetupResponse{Base: response}, err
 }

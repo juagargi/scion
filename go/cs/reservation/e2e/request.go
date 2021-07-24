@@ -19,7 +19,6 @@ import (
 
 	base "github.com/scionproto/scion/go/cs/reservation"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
-	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 
@@ -80,9 +79,6 @@ func (r *SetupReq) IsTransfer() bool {
 		} else {
 			r.isTransfer = false
 		}
-		log.Info("deleteme IsTransfer", "isTransfer", r.isTransfer,
-			"# segments", len(r.SegmentRsvs), "curr_seg", r.CurrentSegmentRsvIndex,
-			"# steps", len(r.Path.Steps), "curr_step", r.Path.CurrentStep)
 	})
 	return r.isTransfer
 }

@@ -133,7 +133,6 @@ func (o *ServiceClientOperator) ColibriClient(ctx context.Context, transp *base.
 		// TODO(juagargi) check if the colibri path is expired, and don't use it in that case
 	}
 
-	log.Info("DELETEME dialing", "addr", rAddr)
 	conn, err := o.connDialer.Dial(ctx, rAddr)
 	if err != nil {
 		log.Debug("error dialing a grpc connection", "addr", rAddr, "err", err)
@@ -194,7 +193,6 @@ func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology)
 				"missing", strings.Join(missing, ","))
 			continue
 		}
-		log.Info("deleteme PERIODIC neighbor find", "found_count", len(newAddrBook))
 		o.neighborsMutex.Lock()
 		o.neighbors = newAddrBook
 		o.neighborsMutex.Unlock()
@@ -226,7 +224,6 @@ func (o *ServiceClientOperator) findNeighbors(addrBook map[uint16]*snet.UDPAddr,
 			missingNeighbors[egress] = ia
 			continue
 		}
-		log.Info("deleteme findNeighbors", "ia", ia.String(), "addr", colAddr.String())
 		addrBook[egress] = colAddr
 	}
 	return missingNeighbors
@@ -286,7 +283,6 @@ func (r *DiscoveryColSrvRes) ResolveColibriService(ctx context.Context, ia *addr
 	*snet.UDPAddr, error) {
 
 	path, err := r.Router.Route(context.Background(), *ia)
-	log.Info("deleteme service resolver used router", "err", err, "path", path)
 	if err != nil || path == nil {
 		return nil, serrors.New("no route to IA", "ia", ia, "err", err, "path", path)
 	}
@@ -298,7 +294,6 @@ func (r *DiscoveryColSrvRes) ResolveColibriService(ctx context.Context, ia *addr
 		SVC:     addr.SvcDS,
 	}
 	conn, err := r.Dialer.Dial(ctx, ds)
-	log.Info("deleteme after Dial", "err", err, "conn", conn)
 	if err != nil {
 		return nil, err
 	}

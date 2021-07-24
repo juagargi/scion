@@ -112,7 +112,6 @@ func (m *manager) Run(ctx context.Context) {
 			return
 		}
 		n, wakeupTime, err := m.store.DeleteExpiredIndices(ctx)
-		logger.Info("deleteme EXPIRER", "n", n, "wakeup", wakeupTime, "err", err)
 		if err != nil {
 			logger.Error("deleting expired indices", "count", n, "err", err)
 		}
@@ -154,8 +153,6 @@ func (m *manager) SetupRequest(ctx context.Context, req *segment.SetupReq) error
 	}
 	rsv := req.Reservation
 	// confirm new index
-	deletemeIndex := rsv.Index(req.Index)
-	log.Info("deleteme confirm", "id", req.ID, "index", req.Index, "index_index", deletemeIndex)
 	confirmReq := &base.Request{
 		MsgId: base.MsgId{
 			ID:        rsv.ID,
