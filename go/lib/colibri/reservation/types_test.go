@@ -146,12 +146,12 @@ func TestBWClsFromBW(t *testing.T) {
 		32 * 1024 * 1024 * 1024: 63,
 	}
 	for bw, cls := range cases {
+		bw, cls := bw, cls
 		name := fmt.Sprintf("case for %d", bw)
 		t.Run(name, func(t *testing.T) {
-			bw := bw
-			cls := cls
 			t.Parallel()
-			require.Equal(t, cls, BWClsFromBW(bw), "BW fails at %d", int(bw))
+			require.Equal(t, cls, BWClsFromBW(bw), "BW fails at %d: expected %d got %d",
+				int(bw), cls, BWClsFromBW(bw))
 		})
 	}
 }
@@ -184,6 +184,27 @@ func TestMinBWCls(t *testing.T) {
 			c := c
 			t.Parallel()
 			require.Equal(t, c.min, MinBWCls(c.a, c.b))
+		})
+	}
+}
+
+func TestSplitForData(t *testing.T) {
+	cases := map[SplitCls]float64{
+		2:  0.5,
+		4:  0.75,
+		6:  0.875,
+		7:  0.91161,
+		8:  0.9375,
+		10: 0.96875,
+		12: 0.984375,
+		16: 0.99609375,
+	}
+	for cls, split := range cases {
+		cls, split := cls, split
+		name := fmt.Sprintf("case for %d", cls)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.InDelta(t, split, cls.SplitForData(), 0.00001)
 		})
 	}
 }

@@ -683,13 +683,16 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	index := rsv.Index(idx)
 	index.AllocBW = req.RequestedBW
 
+	// admission
 	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot compute free bw for e2e admission", err,
 			"e2e_id", rsv.ID).Error()
 		return failedResponse, nil
 	}
-	free = free + rsv.AllocResv() // don't count this E2E request in the used BW
+	if !newSetup {
+		free = free + rsv.AllocResv() // don't count this E2E request in the used BW
+	}
 
 	if req.IsTransfer() {
 		// this AS must stitch two segment rsvs. according to the request
@@ -713,12 +716,16 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	// always store the computed free BW in the request
 	req.AllocationTrail = append(req.AllocationTrail, reservation.BWClsFromBW(free))
 	admitted := true
-	for _, step := range req.AllocationTrail {
-		if step.ToKbps() < req.RequestedBW.ToKbps() {
+	failedStep := -1
+	for i, step := range req.AllocationTrail {
+		if step < req.RequestedBW {
 			admitted = false
+			failedStep = i
 			break
 		}
 	}
+	log.Debug("e2e admission", "requested_cls", req.RequestedBW, "admitted", admitted,
+		"free", free)
 
 	// // TODO(juagargi) fix response type
 	// if !req.Success() || req.RequestedBW.ToKbps() > free {
@@ -759,9 +766,16 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 
 	if req.IsLastAS() {
 		// TODO(juagargi): contact the endhost
-		// return the response
-		return &e2e.SetupResponseSuccess{
-			Token: *index.Token,
+		if admitted {
+			// return the response
+			return &e2e.SetupResponseSuccess{
+				Token: *index.Token,
+			}, nil
+		}
+		return &e2e.SetupResponseFailure{
+			Message:    "not admitted",
+			FailedStep: uint8(failedStep),
+			AllocTrail: req.AllocationTrail,
 		}, nil
 	} else {
 		if req.IsTransfer() {
@@ -1158,9 +1172,9 @@ func freeInSegRsv(ctx context.Context, tx backend.Transaction, segRsv *segment.R
 		return 0, serrors.WrapStr("cannot obtain e2e reservations to compute free bw",
 			err, "segment_id", segRsv.ID)
 	}
-	free := float64(segRsv.ActiveIndex().AllocBW.ToKbps())*float64(segRsv.TrafficSplit) -
-		float64(sumAllBW(rsvs))
-	return uint64(free), nil
+	freeForData := float64(segRsv.ActiveIndex().AllocBW.ToKbps()) * segRsv.TrafficSplit.SplitForData()
+	free := uint64(freeForData) - sumAllBW(rsvs)
+	return free, nil
 }
 
 // max bw in egress interface of the transfer AS

@@ -203,6 +203,14 @@ func MinBWCls(a, b BWCls) BWCls {
 // in control traffic (BW * split) and end to end traffic (BW * (1-s)). 0 <= splitCls <= 256 .
 type SplitCls uint8
 
+func (s SplitCls) SplitForControl() float64 {
+	return math.Sqrt(1. / math.Pow(2., float64(s)))
+}
+
+func (s SplitCls) SplitForData() float64 {
+	return 1. - s.SplitForControl()
+}
+
 // RLC Request Latency Class. latency = 2^rlc miliseconds. 0 <= rlc <= 63
 type RLC uint8
 
