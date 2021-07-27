@@ -107,3 +107,8 @@ func (r *Reservation) AllocResv() uint64 {
 	}
 	return maxBW.ToKbps()
 }
+
+func (r *Reservation) GetLastSegmentPathSteps() []base.PathStep {
+	return append([]base.PathStep{},
+		r.SegmentReservations[len(r.SegmentReservations)-1].PathAtSource.Steps...)
+}

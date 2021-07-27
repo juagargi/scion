@@ -98,6 +98,16 @@ func (s *Store) deletemePrintAllRsvs(ctx context.Context) {
 	}
 }
 
+func (s *Store) deletemePrintAllE2ERsvs(ctx context.Context) {
+	allRsvs, err := s.db.GetAllE2ERsvs(ctx)
+	if err != nil {
+		panic(err)
+	}
+	for _, r := range allRsvs {
+		log.Info("deleteme E2E rsv", "id", r.ID)
+	}
+}
+
 func (s *Store) err(err error) error {
 	if err == nil {
 		return nil
@@ -351,7 +361,10 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
-	failedResponse := s.prepareFailureResp("failed to confirm index")
+	failedResponse := &base.ResponseFailure{
+		Message:    "failed to confirm index",
+		FailedStep: uint8(req.Path.CurrentStep),
+	}
 
 	if err := req.Validate(); err != nil {
 		failedResponse.Message = "request validation failed: " + s.err(err).Error()
@@ -411,7 +424,11 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
-	failedResponse := s.prepareFailureResp("failed to confirm index")
+	failedResponse := &base.ResponseFailure{
+		Message:    "failed to activate index",
+		FailedStep: uint8(req.Path.CurrentStep),
+	}
+
 	if err := req.Validate(); err != nil {
 		failedResponse.Message = "request validation failed: " + s.err(err).Error()
 		return failedResponse, nil
@@ -481,7 +498,10 @@ func (s *Store) CleanupSegmentReservation(ctx context.Context, req *base.Request
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
-	failedResponse := s.prepareFailureResp("failed to cleanup index")
+	failedResponse := &base.ResponseFailure{
+		Message:    "failed to cleanup index",
+		FailedStep: uint8(req.Path.CurrentStep),
+	}
 
 	if err := req.Validate(); err != nil {
 		failedResponse.Message = "request validation failed: " + s.err(err).Error()
@@ -542,7 +562,10 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
-	failedResponse := s.prepareFailureResp("failed to teardown segment")
+	failedResponse := &base.ResponseFailure{
+		Message:    "failed to teardown index",
+		FailedStep: uint8(req.Path.CurrentStep),
+	}
 
 	if err := req.Validate(); err != nil {
 		failedResponse.Message = "request validation failed: " + s.err(err).Error()
@@ -820,13 +843,21 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
+	// deleteme
+	s.deletemePrintAllE2ERsvs(ctx)
+	print(ctx.Err())
+	ctx = context.Background()
+
 	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
 
-	failedResponse := s.prepareFailureResp("failed to confirm index")
+	failedResponse := &base.ResponseFailure{
+		Message:    "failed to cleanup e2e index",
+		FailedStep: uint8(req.Path.CurrentStep),
+	}
 
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateIgnorePath(); err != nil {
 		failedResponse.Message = "request validation failed: " + s.err(err).Error()
 		return failedResponse, nil
 	}
@@ -839,23 +870,36 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 
 	rsv, err := tx.GetE2ERsvFromID(ctx, &req.ID)
 	if err != nil {
-		return failedResponse, s.errWrapStr("cannot obtain e2e reservation", err,
+		return failedResponse, s.errWrapStr("obtaining e2e reservation", err,
 			"id", req.ID.String())
 	}
-	if err := rsv.RemoveIndex(req.Index); err != nil {
-		return failedResponse, s.errWrapStr("cannot delete e2e reservation index", err,
-			"id", req.ID.String(), "index", req.Index)
-	}
-	if len(rsv.Indices) == 0 {
-		if err := tx.DeleteE2ERsv(ctx, &rsv.ID); err != nil {
-			return failedResponse, s.errWrapStr("cannot delete e2e reservation", err, "id", rsv.ID)
+
+	if func() bool {
+		if rsv == nil {
+			return false
 		}
-	} else if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err, "id", req.ID.String())
+		_, err := base.FindIndex(rsv.Indices, req.Index)
+		return err == nil
+	}() {
+		if err := rsv.RemoveIndex(req.Index); err != nil {
+			return failedResponse, s.errWrapStr("cannot delete e2e reservation index", err,
+				"id", req.ID.String(), "index", req.Index)
+		}
+		if len(rsv.Indices) == 0 {
+			if err := tx.DeleteE2ERsv(ctx, &rsv.ID); err != nil {
+				return failedResponse, s.errWrapStr("cannot delete e2e reservation", err, "id", rsv.ID)
+			}
+		} else if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
+			return failedResponse, s.errWrapStr("cannot persist e2e reservation", err, "id", req.ID.String())
+		}
+		if err := tx.Commit(); err != nil {
+			return failedResponse, s.errWrapStr("cannot commit transaction", err,
+				"id", req.ID.String())
+		}
 	}
-	if err := tx.Commit(); err != nil {
-		return failedResponse, s.errWrapStr("cannot commit transaction", err,
-			"id", req.ID.String())
+	if rsv != nil && req.IsLastAS() {
+		// TODO(juagargi) missing setting req.Path
+		req.Path.Steps = stitchTransparentPaths(req.Path.Steps, rsv.GetLastSegmentPathSteps())
 	}
 
 	if req.IsLastAS() {
@@ -888,14 +932,6 @@ func (s *Store) validateAuthenticators(req *base.Request) error {
 	// TODO(juagargi) validate request
 	// DRKey authentication of request (will be left undone for later)
 	return nil
-}
-
-// prepareFailureResp will create a failure response, which
-// is sent in the reverse path that the request had.
-func (s *Store) prepareFailureResp(message string) *base.ResponseFailure {
-	return &base.ResponseFailure{
-		Message: message,
-	}
 }
 
 func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupReq) (
@@ -1226,33 +1262,51 @@ func appendToPath(req *e2e.SetupReq, rsv *e2e.Reservation) error {
 
 	nextSegment := rsv.SegmentReservations[req.CurrentSegmentRsvIndex+1]
 	steps := nextSegment.PathAtSource.Copy().Steps
-	// var steps []base.PathStep
-	// if nextSegment.PathType == reservation.DownPath {
-	// 	p := nextSegment.PathAtSource.Copy()
-	// 	if err := p.Reverse(); err != nil {
-	// 		return serrors.WrapStr("appending reverted segment to e2e path", err)
-	// 	}
-	// 	steps = p.Steps
-	// } else {
-	// 	p := nextSegment.PathAtSource.Copy()
-	// 	steps = p.Steps
-	// }
 
+	// deleteme := stitchTransparentPaths(req.Path.Steps, steps)
+	// // when stitching two segments, one of the steps has to be merged into the previous one.
+	// // TODO(juagargi) remove assertions as they assume well intentioned requests
+	// l := len(req.Path.Steps)
+	// assert(req.Path.Steps[l-1].Egress == 0,
+	// 	fmt.Sprintf("wrong assumption egress not zero but %d", req.Path.Steps[l-1].Egress))
+	// assert(steps[0].Ingress == 0,
+	// 	fmt.Sprintf("wrong assumption ingress not zero but %d", steps[0].Ingress))
+	// assert(req.Path.Steps[l-1].IA.Equal(steps[0].IA),
+	// 	fmt.Sprintf("wrong assumption, IAs different, first: %s, second: %s",
+	// 		req.Path.Steps[l-1].IA, steps[0].IA))
+	// req.Path.Steps[l-1].Egress = steps[0].Egress
+	// steps = steps[1:]
+
+	// req.Path.Steps = append(req.Path.Steps, steps...)
+	// assert(len(req.Path.Steps) == len(deleteme), "deleteme WTF?")
+	// return nil
+	req.Path.Steps = stitchTransparentPaths(req.Path.Steps, steps)
+	return nil
+}
+
+func stitchTransparentPaths(a, b []base.PathStep) []base.PathStep {
+	if len(a) == 0 {
+		return append([]base.PathStep{}, b...)
+	}
 	// when stitching two segments, one of the steps has to be merged into the previous one.
 	// TODO(juagargi) remove assertions as they assume well intentioned requests
-	l := len(req.Path.Steps)
-	assert(req.Path.Steps[l-1].Egress == 0,
-		fmt.Sprintf("wrong assumption egress not zero but %d", req.Path.Steps[l-1].Egress))
-	assert(steps[0].Ingress == 0,
-		fmt.Sprintf("wrong assumption ingress not zero but %d", steps[0].Ingress))
-	assert(req.Path.Steps[l-1].IA.Equal(steps[0].IA),
-		fmt.Sprintf("wrong assumption, IAs different, first: %s, second: %s",
-			req.Path.Steps[l-1].IA, steps[0].IA))
-	req.Path.Steps[l-1].Egress = steps[0].Egress
-	steps = steps[1:]
+	assert(a[len(a)-1].Egress == 0,
+		fmt.Sprintf("wrong assumption egress not zero but %d", a[len(a)-1].Egress))
+	assert(b[0].Ingress == 0,
+		fmt.Sprintf("wrong assumption ingress not zero but %d", b[0].Ingress))
+	assert(a[len(a)-1].IA.Equal(b[0].IA),
+		fmt.Sprintf("wrong assumption, IAs different, a: %s, b: %s", a[len(a)-1].IA, b[0].IA))
 
-	req.Path.Steps = append(req.Path.Steps, steps...)
-	return nil
+	ret := make([]base.PathStep, 0, len(a)+len(b)-1)
+	ret = append(ret, a...)
+
+	// b = append([]base.PathStep{}, b...)
+	// b[0].Ingress = a[len(a)-1].Ingress
+	ret[len(ret)-1].Egress = b[0].Egress
+	ret = append(ret, b[1:]...)
+	return ret
+
+	// return append(append([]base.PathStep{}, a[:len(a)-1]...), b...)
 }
 
 func reservationsToLooks(rsvs []*segment.Reservation, localIA addr.IA) []*colibri.ReservationLooks {

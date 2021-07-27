@@ -47,6 +47,7 @@ func TestDB(t *testing.T, newDB func() backend.DB) {
 		"delete expired indices":                 testDeleteExpiredIndices,
 		"test next expiration time":              testNextExpirationTime,
 		"persist e2e reservation":                testPersistE2ERsv,
+		"get all e2e reservations":               testGetAllE2ERsvs,
 		"get e2e reservation from ID":            testGetE2ERsvFromID,
 		"get e2e reservations from segment ones": testGetE2ERsvsOnSegRsv,
 		"state interface blocked":                testGetInterfaceUsage,
@@ -55,6 +56,7 @@ func TestDB(t *testing.T, newDB func() backend.DB) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
+
 			test(ctx, t, newDB)
 		})
 	}
@@ -673,6 +675,23 @@ func testPersistE2ERsv(ctx context.Context, t *testing.T, newDB func() backend.D
 	require.NoError(t, err)
 	err = db.PersistE2ERsv(ctx, r)
 	require.NoError(t, err)
+}
+
+func testGetAllE2ERsvs(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
+
+	r1 := newTestE2EReservation(t)
+	for _, seg := range r1.SegmentReservations {
+		err := db.PersistSegmentRsv(ctx, seg)
+		require.NoError(t, err)
+	}
+	err := db.PersistE2ERsv(ctx, r1)
+	require.NoError(t, err)
+	// get it back
+	rsvs, err := db.GetAllE2ERsvs(ctx)
+	require.NoError(t, err)
+	require.Len(t, rsvs, 1)
+	require.Equal(t, []*e2e.Reservation{r1}, rsvs)
 }
 
 func testGetE2ERsvFromID(ctx context.Context, t *testing.T, newDB func() backend.DB) {

@@ -152,8 +152,8 @@ func PBufResponse(res base.Response) *colpb.Response {
 		return &colpb.Response{
 			SuccessFailure: &colpb.Response_Failure_{
 				Failure: &colpb.Response_Failure{
-					ErrorCode: r.ErrorCode,
-					Message:   r.Message,
+					Message:    r.Message,
+					FailingHop: uint32(r.FailedStep),
 				},
 			},
 		}

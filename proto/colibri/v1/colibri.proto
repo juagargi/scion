@@ -18,7 +18,6 @@ option go_package = "github.com/scionproto/scion/go/pkg/proto/colibri";
 
 package proto.colibri.v1;
 
-import "google/protobuf/timestamp.proto";
 
 service Colibri {
     // segment
@@ -35,6 +34,7 @@ service Colibri {
     // facing the intra AS scion daemons
     rpc ListStitchables(ListStitchablesRequest) returns (ListStitchablesResponse) {}
     rpc SetupReservation(DaemonSetupRequest) returns (DaemonSetupResponse) {}
+    rpc CleanupReservation(DaemonCleanupRequest) returns (DaemonCleanupResponse) {}
 }
 
 // /////////////////////////////////////////////////
@@ -87,7 +87,7 @@ message Request {
 message Response {
     message Success {}
     message Failure {
-        uint32 error_code = 1;
+        uint32 error_code = 1; // TODO(juagargi) currently unused
         string message = 2;
         uint32 failing_hop = 3;
     }
@@ -204,4 +204,17 @@ message DaemonSetupResponse {
     }
     Failure failure = 1; // if present: information about the failure
     bytes token = 2;
+}
+
+message DaemonCleanupRequest {
+    ReservationID id = 1;
+    uint32 index = 2;
+}
+
+message DaemonCleanupResponse {
+    message Failure {
+        string error_message = 1;
+        uint32 failed_step = 2;
+    }
+    Failure failure = 1; // or nil if all ok
 }

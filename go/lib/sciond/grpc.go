@@ -253,8 +253,10 @@ func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservati
 			trail[i] = reservation.BWCls(b)
 		}
 		return nil, &colibri.E2ESetupError{
-			Message:         sdRes.Base.Failure.ErrorMessage,
-			FailedAS:        int(sdRes.Base.Failure.FailedStep),
+			E2EResponseError: colibri.E2EResponseError{
+				Message:  sdRes.Base.Failure.ErrorMessage,
+				FailedAS: int(sdRes.Base.Failure.FailedStep),
+			},
 			AllocationTrail: trail,
 		}
 	}
@@ -269,6 +271,35 @@ func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservati
 			Type: colpath.PathType,
 		},
 	}, nil
+}
+
+func (c grpcConn) ColibriCleanupRsv(ctx context.Context, id *reservation.ID,
+	idx reservation.IndexNumber) error {
+
+	if id == nil {
+		return serrors.New("invalid nil ID")
+	}
+	if !id.IsE2EID() {
+		return serrors.New("this id is not for an E2E reservation")
+	}
+	pbReq := &sdpb.ColibriCleanupRequest{
+		Base: &colpb.DaemonCleanupRequest{
+			Id:    translate.PBufID(id),
+			Index: uint32(idx),
+		},
+	}
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	sdRes, err := client.ColibriCleanupRsv(ctx, pbReq)
+	if err != nil {
+		return err
+	}
+	if sdRes.Base.Failure != nil {
+		return &colibri.E2EResponseError{
+			Message:  sdRes.Base.Failure.ErrorMessage,
+			FailedAS: int(sdRes.Base.Failure.FailedStep),
+		}
+	}
+	return nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {

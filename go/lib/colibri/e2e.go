@@ -28,12 +28,16 @@ type E2EReservationSetup struct {
 	RequestedBW reservation.BWCls
 }
 
-type E2ESetupError struct {
-	Message         string
-	FailedAS        int
-	AllocationTrail []reservation.BWCls
+type E2EResponseError struct {
+	Message  string
+	FailedAS int
 }
 
-func (e *E2ESetupError) Error() string {
+func (e *E2EResponseError) Error() string {
 	return e.Message
+}
+
+type E2ESetupError struct {
+	E2EResponseError
+	AllocationTrail []reservation.BWCls
 }

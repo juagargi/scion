@@ -360,17 +360,58 @@ func (x *executor) DeleteE2ERsv(ctx context.Context, ID *reservation.ID) error {
 	return deleteE2ERsv(ctx, x.db, ID)
 }
 
+func (x *executor) GetAllE2ERsvs(ctx context.Context) ([]*e2e.Reservation, error) {
+	const query = `SELECT ROWID, reservation_id FROM e2e_reservation`
+	rows, err := x.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rowIDs := make([]int, 0)
+	rsvIDs := make([]reservation.ID, 0)
+	for rows.Next() {
+		var rowID int
+		var rsvID []byte
+		if err := rows.Scan(&rowID, &rsvID); err != nil {
+			return nil, err
+		}
+		rowIDs = append(rowIDs, rowID)
+		ID, err := reservation.IDFromRaw(rsvID)
+		if err != nil {
+			return nil, err
+		}
+		rsvIDs = append(rsvIDs, *ID)
+	}
+	rsvs := make([]*e2e.Reservation, 0, len(rowIDs))
+	for i := range rowIDs {
+		rowID := rowIDs[i]
+		// read indices
+		indices, err := getE2EIndices(ctx, x.db, rowID)
+		if err != nil {
+			return nil, err
+		}
+		// sort indices so they are consecutive modulo 16
+		base.SortIndices(indices)
+		// read assoc segment reservations
+		segRsvs, err := getE2EAssocSegRsvs(ctx, x.db, rowID)
+		if err != nil {
+			return nil, err
+		}
+		rsvs = append(rsvs, &e2e.Reservation{
+			ID:                  rsvIDs[i],
+			Indices:             indices,
+			SegmentReservations: segRsvs,
+		})
+	}
+	return rsvs, nil
+}
+
 // GetE2ERsvFromID finds the end to end resevation given its ID.
 func (x *executor) GetE2ERsvFromID(ctx context.Context, ID *reservation.ID) (
 	*e2e.Reservation, error) {
 
-	var rsv *e2e.Reservation
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		var err error
-		rsv, err = getE2ERsvFromID(ctx, tx, ID)
-		return err
-	})
-	return rsv, err
+	return getE2ERsvFromID(ctx, x.db, ID)
 }
 
 // GetE2ERsvsOnSegRsv returns the e2e reservations running on top of a given segment one.
@@ -843,7 +884,7 @@ func insertNewE2EReservation(ctx context.Context, x *sql.Tx, rsv *e2e.Reservatio
 	return nil
 }
 
-func getE2ERsvFromID(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
+func getE2ERsvFromID(ctx context.Context, x db.Sqler, ID *reservation.ID) (
 	*e2e.Reservation, error) {
 
 	// read reservation

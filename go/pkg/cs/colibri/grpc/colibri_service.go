@@ -212,6 +212,7 @@ func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListSti
 	return translate.PBufStitchableResponse(stitchables), nil
 }
 
+// SetupReservation serves the intra AS clients, setting up or renewing an E2E reservation.
 func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.DaemonSetupRequest) (
 	*colpb.DaemonSetupResponse, error) {
 
@@ -225,10 +226,7 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 			Id:        msg.Id,
 			Index:     msg.Index,
 			Timestamp: util.TimeToSecs(now),
-			Path: &colpb.TransparentPath{
-				CurrentStep: 0,
-				Steps:       nil,
-			},
+			Path:      &colpb.TransparentPath{},
 		},
 		RequestedBw: msg.RequestedBw,
 		Params: &colpb.E2ESetupRequest_PathParams{
@@ -247,16 +245,18 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 	if err != nil {
 		log.Error("colibri store setting up an e2e reservation", "err", err)
 		var trail []uint32
+		var failedStep uint32
 		if failure, ok := res.(*e2e.SetupResponseFailure); ok {
 			trail = make([]uint32, len(failure.AllocTrail))
 			for i, b := range failure.AllocTrail {
 				trail[i] = uint32(b)
 			}
+			failedStep = uint32(failure.FailedStep)
 		}
 		return &colpb.DaemonSetupResponse{
 			Failure: &colpb.DaemonSetupResponse_Failure{
 				ErrorMessage: err.Error(),
-				FailedStep:   0,
+				FailedStep:   failedStep,
 				AllocTrail:   trail,
 			},
 		}, nil
@@ -277,6 +277,37 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 		pbMsg.Token = success.Token.ToRaw()
 	}
 	return pbMsg, nil
+}
+
+// CleanupReservation serves the intra AS clients, cleaning an E2E reservation.
+func (s *ColibriService) CleanupReservation(ctx context.Context, msg *colpb.DaemonCleanupRequest) (
+	*colpb.DaemonCleanupResponse, error) {
+
+	if err := checkLocalCaller(ctx); err != nil {
+		return nil, err
+	}
+	req := &base.Request{
+		MsgId: base.MsgId{
+			ID:        *translate.ID(msg.Id),
+			Index:     reservation.IndexNumber(msg.Index),
+			Timestamp: time.Now(),
+		},
+		Path: &base.TransparentPath{},
+	}
+	res, err := s.Store.CleanupE2EReservation(ctx, req)
+	if err != nil {
+		var failedStep uint32
+		if failure, ok := res.(*base.ResponseFailure); ok {
+			failedStep = uint32(failure.FailedStep)
+		}
+		return &colpb.DaemonCleanupResponse{
+			Failure: &colpb.DaemonCleanupResponse_Failure{
+				ErrorMessage: err.Error(),
+				FailedStep:   uint32(failedStep),
+			},
+		}, nil
+	}
+	return &colpb.DaemonCleanupResponse{}, nil
 }
 
 // extractPath returns the PacketPath, ingress and egress used with this RPC.

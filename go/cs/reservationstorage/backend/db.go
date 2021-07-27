@@ -69,6 +69,8 @@ type ReserverAndTransit interface {
 	// NextExpirationTime returns the nearest moment in time when an index will expire.
 	NextExpirationTime(ctx context.Context) (time.Time, error)
 
+	// GetAllE2ERsvs returns all e2e reservations.
+	GetAllE2ERsvs(ctx context.Context) ([]*e2e.Reservation, error)
 	// GetE2ERsvFromID finds the end to end resevation given its ID.
 	GetE2ERsvFromID(ctx context.Context, ID *reservation.ID) (*e2e.Reservation, error)
 	// GetE2ERsvsOnSegRsv returns the e2e reservations running on top of a given segment one.

@@ -50,10 +50,10 @@ func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriLi
 func (c *DaemonClient) SetupReservation(ctx context.Context, req *sdpb.ColibriSetupRequest) (
 	*sdpb.ColibriSetupResponse, error) {
 
-	log.Debug("setting up e2e reservation", "id", translate.ID(req.Base.Id))
 	if req == nil {
 		return nil, serrors.New("bad nil request")
 	}
+	log.Debug("setting up e2e reservation", "id", translate.ID(req.Base.Id))
 	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
 	if err != nil {
 		return nil, err
@@ -61,4 +61,20 @@ func (c *DaemonClient) SetupReservation(ctx context.Context, req *sdpb.ColibriSe
 	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
 	response, err := client.SetupReservation(ctx, req.Base)
 	return &sdpb.ColibriSetupResponse{Base: response}, err
+}
+
+func (c *DaemonClient) CleanupReservation(ctx context.Context, req *sdpb.ColibriCleanupRequest) (
+	*sdpb.ColibriCleanupResponse, error) {
+
+	if req == nil {
+		return nil, serrors.New("bad nil request")
+	}
+	log.Debug("cleaning up e2e reservation", "id", translate.ID(req.Base.Id))
+	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
+	if err != nil {
+		return nil, err
+	}
+	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
+	response, err := client.CleanupReservation(ctx, req.Base)
+	return &sdpb.ColibriCleanupResponse{Base: response}, err
 }

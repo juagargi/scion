@@ -162,8 +162,8 @@ func Response(msg *colpb.Response) base.Response {
 		return &base.ResponseSuccess{}
 	case *colpb.Response_Failure_:
 		return &base.ResponseFailure{
-			ErrorCode: r.Failure.ErrorCode,
-			Message:   r.Failure.Message,
+			Message:    r.Failure.Message,
+			FailedStep: uint8(r.Failure.FailingHop),
 		}
 	default:
 		panic(fmt.Sprintf("unknown type %s", common.TypeOf(msg.SuccessFailure)))

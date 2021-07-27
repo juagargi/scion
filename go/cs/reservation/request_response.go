@@ -73,7 +73,7 @@ func (r *Request) IsFirstAS() bool {
 }
 
 func (r *Request) IsLastAS() bool { // override the use of the RequestMetadata.path with PathToDst
-	return r.Path.CurrentStep == len(r.Path.Steps)-1
+	return r.Path.CurrentStep >= len(r.Path.Steps)-1
 }
 
 // Ingress returns the ingress interface of this step for this request.
@@ -101,8 +101,8 @@ func (r *ResponseSuccess) isResponse_SuccessFailure() {}
 func (r *ResponseSuccess) Success() bool              { return true }
 
 type ResponseFailure struct {
-	ErrorCode uint32
-	Message   string
+	Message    string
+	FailedStep uint8
 }
 
 func (r *ResponseFailure) isResponse_SuccessFailure() {}

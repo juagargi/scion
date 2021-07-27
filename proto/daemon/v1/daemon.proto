@@ -42,6 +42,8 @@ service DaemonService {
     rpc ColibriListRsvs(ColibriListRequest) returns (ColibriListResponse) {}
     // Setup an E2E reservation.
     rpc ColibriSetupRsv(ColibriSetupRequest) returns (ColibriSetupResponse) {}
+    // Cleans an E2E reservation up.
+    rpc ColibriCleanupRsv(ColibriCleanupRequest) returns (ColibriCleanupResponse) {}
 }
 
 message PathsRequest {
@@ -215,4 +217,12 @@ message ColibriSetupRequest {
 
 message ColibriSetupResponse {
     proto.colibri.v1.DaemonSetupResponse base = 1;
+}
+
+message ColibriCleanupRequest {
+    proto.colibri.v1.DaemonCleanupRequest base = 1;
+}
+
+message ColibriCleanupResponse {
+    proto.colibri.v1.DaemonCleanupResponse base = 1;
 }

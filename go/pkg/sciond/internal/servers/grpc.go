@@ -400,3 +400,9 @@ func (s *DaemonServer) ColibriSetupRsv(ctx context.Context, req *sdpb.ColibriSet
 
 	return s.Colibri.SetupReservation(ctx, req)
 }
+
+func (s *DaemonServer) ColibriCleanupRsv(ctx context.Context, req *sdpb.ColibriCleanupRequest) (
+	*sdpb.ColibriCleanupResponse, error) {
+
+	return s.Colibri.CleanupReservation(ctx, req)
+}
