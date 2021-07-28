@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/scionproto/scion/go/cs/beacon"
-	sqlitebeacondb "github.com/scionproto/scion/go/cs/beacon/beacondbsqlite"
 	sqlitereservation "github.com/scionproto/scion/go/co/reservation/sqlite"
 	"github.com/scionproto/scion/go/co/reservationstorage/backend"
+	"github.com/scionproto/scion/go/cs/beacon"
+	sqlitebeacondb "github.com/scionproto/scion/go/cs/beacon/beacondbsqlite"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/config"
 	"github.com/scionproto/scion/go/lib/drkey"
