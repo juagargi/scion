@@ -15,7 +15,7 @@
 package test
 
 import (
-	base "github.com/scionproto/scion/go/cs/reservation"
+	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	slayerspath "github.com/scionproto/scion/go/lib/slayers/path"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"

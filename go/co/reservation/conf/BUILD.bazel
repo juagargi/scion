@@ -6,10 +6,10 @@ go_library(
         "capacities.go",
         "reservations.go",
     ],
-    importpath = "github.com/scionproto/scion/go/cs/reservation/conf",
+    importpath = "github.com/scionproto/scion/go/co/reservation/conf",
     visibility = ["//visibility:public"],
     deps = [
-        "//go/cs/reservation:go_default_library",
+        "//go/co/reservation:go_default_library",
         "//go/lib/addr:go_default_library",
         "//go/lib/colibri/reservation:go_default_library",
         "//go/lib/serrors:go_default_library",

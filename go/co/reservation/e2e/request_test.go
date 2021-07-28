@@ -19,7 +19,7 @@ package e2e
 
 // 	"github.com/stretchr/testify/require"
 
-// 	"github.com/scionproto/scion/go/cs/reservation/test"
+// 	"github.com/scionproto/scion/go/co/reservation/test"
 // 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 // 	"github.com/scionproto/scion/go/lib/util"
 // 	"github.com/scionproto/scion/go/lib/xtest"

@@ -8,7 +8,7 @@ go_library(
         "request_response.go",
         "types.go",
     ],
-    importpath = "github.com/scionproto/scion/go/cs/reservation",
+    importpath = "github.com/scionproto/scion/go/co/reservation",
     visibility = ["//visibility:public"],
     deps = [
         "//go/lib/addr:go_default_library",

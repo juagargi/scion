@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	base "github.com/scionproto/scion/go/cs/reservation"
+	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/log"

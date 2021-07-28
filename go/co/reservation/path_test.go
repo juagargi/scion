@@ -100,7 +100,7 @@ func TestTransparentToRawFromRaw(t *testing.T) {
 }
 
 func TestReverse(t *testing.T) {
-	// TODO(juagargi) use go/cs/reservation/test.NewPath for the tests
+	// TODO(juagargi) use go/co/reservation/test.NewPath for the tests
 	cases := map[string]struct {
 		original    *TransparentPath
 		reversed    *TransparentPath

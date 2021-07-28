@@ -25,11 +25,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/scionproto/scion/go/cs/reservation/e2e"
-	"github.com/scionproto/scion/go/cs/reservation/segment"
-	st "github.com/scionproto/scion/go/cs/reservation/segmenttest"
-	"github.com/scionproto/scion/go/cs/reservation/test"
-	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
+	"github.com/scionproto/scion/go/co/reservation/e2e"
+	"github.com/scionproto/scion/go/co/reservation/segment"
+	st "github.com/scionproto/scion/go/co/reservation/segmenttest"
+	"github.com/scionproto/scion/go/co/reservation/test"
+	"github.com/scionproto/scion/go/co/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"

@@ -17,8 +17,8 @@ package e2e
 import (
 	"time"
 
-	base "github.com/scionproto/scion/go/cs/reservation"
-	"github.com/scionproto/scion/go/cs/reservation/segment"
+	base "github.com/scionproto/scion/go/co/reservation"
+	"github.com/scionproto/scion/go/co/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"

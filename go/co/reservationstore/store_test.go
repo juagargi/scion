@@ -25,10 +25,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/scionproto/scion/go/cs/reservation/sqlite"
-	"github.com/scionproto/scion/go/cs/reservationstorage"
-	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
-	"github.com/scionproto/scion/go/cs/reservationstore"
+	"github.com/scionproto/scion/go/co/reservation/sqlite"
+	"github.com/scionproto/scion/go/co/reservationstorage"
+	"github.com/scionproto/scion/go/co/reservationstorage/backend"
+	"github.com/scionproto/scion/go/co/reservationstore"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"

@@ -21,10 +21,10 @@ import (
 
 	"google.golang.org/grpc"
 
-	coli_conf "github.com/scionproto/scion/go/cs/reservation/conf"
-	admission "github.com/scionproto/scion/go/cs/reservation/segment/admission/stateless"
-	"github.com/scionproto/scion/go/cs/reservationstorage"
-	"github.com/scionproto/scion/go/cs/reservationstore"
+	coli_conf "github.com/scionproto/scion/go/co/reservation/conf"
+	admission "github.com/scionproto/scion/go/co/reservation/segment/admission/stateless"
+	"github.com/scionproto/scion/go/co/reservationstorage"
+	"github.com/scionproto/scion/go/co/reservationstore"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/fatal"

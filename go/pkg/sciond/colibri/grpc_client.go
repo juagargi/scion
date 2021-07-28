@@ -17,7 +17,7 @@ package colibri
 import (
 	"context"
 
-	"github.com/scionproto/scion/go/cs/reservation/translate"
+	"github.com/scionproto/scion/go/co/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/log"

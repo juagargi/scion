@@ -19,10 +19,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	base "github.com/scionproto/scion/go/cs/reservation"
-	"github.com/scionproto/scion/go/cs/reservation/segment"
-	"github.com/scionproto/scion/go/cs/reservation/segmenttest"
-	"github.com/scionproto/scion/go/cs/reservation/test"
+	base "github.com/scionproto/scion/go/co/reservation"
+	"github.com/scionproto/scion/go/co/reservation/segment"
+	"github.com/scionproto/scion/go/co/reservation/segmenttest"
+	"github.com/scionproto/scion/go/co/reservation/test"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"

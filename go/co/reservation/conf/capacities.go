@@ -19,7 +19,7 @@ import (
 	"io/ioutil"
 	"sort"
 
-	base "github.com/scionproto/scion/go/cs/reservation"
+	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 

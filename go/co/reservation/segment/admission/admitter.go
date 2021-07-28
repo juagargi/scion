@@ -17,9 +17,9 @@ package admission
 import (
 	"context"
 
-	base "github.com/scionproto/scion/go/cs/reservation"
-	"github.com/scionproto/scion/go/cs/reservation/segment"
-	"github.com/scionproto/scion/go/cs/reservationstorage/backend"
+	base "github.com/scionproto/scion/go/co/reservation"
+	"github.com/scionproto/scion/go/co/reservation/segment"
+	"github.com/scionproto/scion/go/co/reservationstorage/backend"
 )
 
 // Admitter specifies what an admission entity has to implement to govern the segment admission.
