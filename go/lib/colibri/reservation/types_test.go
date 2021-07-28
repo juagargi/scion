@@ -83,6 +83,18 @@ func TestE2EIDFromRaw(t *testing.T) {
 	require.True(t, id.IsE2EID())
 }
 
+func TestIDCopy(t *testing.T) {
+	id1 := ID{
+		ASID:   xtest.MustParseAS("ff00:0:111"),
+		Suffix: make([]byte, 10),
+	}
+	id1.Suffix[1] = 1
+	id2 := id1.Copy()
+	id2.Suffix[1] = 2
+	require.Equal(t, uint8(1), id1.Suffix[1])
+	require.Equal(t, uint8(2), id2.Suffix[1])
+}
+
 func TestTickFromTime(t *testing.T) {
 	require.Equal(t, Tick(0), TickFromTime(time.Unix(0, 0)))
 	require.Equal(t, Tick(0), TickFromTime(time.Unix(3, 999999)))
@@ -146,12 +158,12 @@ func TestBWClsFromBW(t *testing.T) {
 		32 * 1024 * 1024 * 1024: 63,
 	}
 	for bw, cls := range cases {
+		bw, cls := bw, cls
 		name := fmt.Sprintf("case for %d", bw)
 		t.Run(name, func(t *testing.T) {
-			bw := bw
-			cls := cls
 			t.Parallel()
-			require.Equal(t, cls, BWClsFromBW(bw), "BW fails at %d", int(bw))
+			require.Equal(t, cls, BWClsFromBW(bw), "BW fails at %d: expected %d got %d",
+				int(bw), cls, BWClsFromBW(bw))
 		})
 	}
 }
@@ -184,6 +196,27 @@ func TestMinBWCls(t *testing.T) {
 			c := c
 			t.Parallel()
 			require.Equal(t, c.min, MinBWCls(c.a, c.b))
+		})
+	}
+}
+
+func TestSplitForData(t *testing.T) {
+	cases := map[SplitCls]float64{
+		2:  0.5,
+		4:  0.75,
+		6:  0.875,
+		7:  0.91161,
+		8:  0.9375,
+		10: 0.96875,
+		12: 0.984375,
+		16: 0.99609375,
+	}
+	for cls, split := range cases {
+		cls, split := cls, split
+		name := fmt.Sprintf("case for %d", cls)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.InDelta(t, split, cls.SplitForData(), 0.00001)
 		})
 	}
 }

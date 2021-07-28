@@ -19,8 +19,11 @@ import (
 	"time"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -38,23 +41,46 @@ func SetupReq(msg *colpb.SegmentSetupRequest) (*segment.SetupReq, error) {
 	if err != nil {
 		return nil, err
 	}
-	expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, err :=
+	expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, revTravel, err :=
 		segmentSetupRequest_Params(msg.Params)
 	if err != nil {
 		return nil, err
 	}
 	req := &segment.SetupReq{
-		Request:        *base,
-		ExpirationTime: expTime,
-		RLC:            rlc,
-		PathType:       pathType,
-		MinBW:          minbw,
-		MaxBW:          maxbw,
-		SplitCls:       splitcls,
-		PathProps:      pathProps,
-		AllocTrail:     allocTrail,
+		Request:          *base,
+		ExpirationTime:   expTime,
+		RLC:              rlc,
+		PathType:         pathType,
+		MinBW:            minbw,
+		MaxBW:            maxbw,
+		SplitCls:         splitcls,
+		PathProps:        pathProps,
+		AllocTrail:       allocTrail,
+		ReverseTraveling: revTravel,
 	}
 	return req, nil
+}
+
+func E2ESetupRequest(msg *colpb.E2ESetupRequest) (*e2e.SetupReq, error) {
+	base, err := Request(msg.Base)
+	if err != nil {
+		return nil, err
+	}
+	segIds := make([]col.ID, len(msg.Params.Segments))
+	for i, s := range msg.Params.Segments {
+		segIds[i] = *ID(s)
+	}
+	trail := make([]col.BWCls, len(msg.Allocationtrail))
+	for i, b := range msg.Allocationtrail {
+		trail[i] = col.BWCls(b.Maxbw)
+	}
+	return &e2e.SetupReq{
+		Request:                *base,
+		SegmentRsvs:            segIds,
+		CurrentSegmentRsvIndex: int(msg.Params.CurrentSegment),
+		RequestedBW:            col.BWCls(msg.RequestedBw),
+		AllocationTrail:        trail,
+	}, nil
 }
 
 func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupResponse, error) {
@@ -69,21 +95,22 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 			Token: *tok,
 		}
 	case *colpb.SegmentSetupResponse_Failure_:
-		expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, err :=
+		expTime, rlc, pathType, minbw, maxbw, splitcls, pathProps, allocTrail, revTravel, err :=
 			segmentSetupRequest_Params(oneof.Failure.Request)
 		if err != nil {
 			return nil, err
 		}
 		res = &segment.SegmentSetupResponseFailure{
 			FailedRequest: &segment.SetupReq{ // without base request
-				ExpirationTime: expTime,
-				RLC:            rlc,
-				PathType:       pathType,
-				MinBW:          minbw,
-				MaxBW:          maxbw,
-				SplitCls:       splitcls,
-				PathProps:      pathProps,
-				AllocTrail:     allocTrail,
+				ExpirationTime:   expTime,
+				RLC:              rlc,
+				PathType:         pathType,
+				MinBW:            minbw,
+				MaxBW:            maxbw,
+				SplitCls:         splitcls,
+				PathProps:        pathProps,
+				AllocTrail:       allocTrail,
+				ReverseTraveling: revTravel,
 			},
 			Message: oneof.Failure.Failure.Message,
 		}
@@ -91,11 +118,29 @@ func SetupResponse(msg *colpb.SegmentSetupResponse) (segment.SegmentSetupRespons
 	return res, nil
 }
 
-func Request(msg *colpb.Request) (*base.Request, error) {
-	ID, err := ID(msg.Id)
+func E2ESetupResponse(msg *colpb.E2ESetupResponse) (e2e.SetupResponse, error) {
+	if msg.Failure != nil {
+		trail := make([]col.BWCls, len(msg.Failure.Allocationtrail))
+		for i, b := range msg.Failure.Allocationtrail {
+			trail[i] = col.BWCls(b.Maxbw)
+		}
+		return &e2e.SetupResponseFailure{
+			Message:    msg.Failure.Message,
+			FailedStep: uint8(msg.Failure.FailedStep),
+			AllocTrail: trail,
+		}, nil
+	}
+	// success:
+	token, err := reservation.TokenFromRaw(msg.Token)
 	if err != nil {
 		return nil, err
 	}
+	return &e2e.SetupResponseSuccess{
+		Token: *token,
+	}, nil
+}
+
+func Request(msg *colpb.Request) (*base.Request, error) {
 	idx, err := Index(msg.Index)
 	if err != nil {
 		return nil, err
@@ -103,7 +148,7 @@ func Request(msg *colpb.Request) (*base.Request, error) {
 	timestamp := util.SecsToTime(msg.Timestamp)
 	return &base.Request{
 		MsgId: base.MsgId{
-			ID:        *ID,
+			ID:        *ID(msg.Id),
 			Index:     idx,
 			Timestamp: timestamp,
 		},
@@ -117,12 +162,53 @@ func Response(msg *colpb.Response) base.Response {
 		return &base.ResponseSuccess{}
 	case *colpb.Response_Failure_:
 		return &base.ResponseFailure{
-			ErrorCode: r.Failure.ErrorCode,
-			Message:   r.Failure.Message,
+			Message:    r.Failure.Message,
+			FailedStep: uint8(r.Failure.FailingHop),
 		}
 	default:
 		panic(fmt.Sprintf("unknown type %s", common.TypeOf(msg.SuccessFailure)))
 	}
+}
+
+func StitchableSegments(msg *colpb.ListStitchablesResponse) (*colibri.StitchableSegments, error) {
+	up, err := ReservationLooks(msg.Up)
+	if err != nil {
+		return nil, err
+	}
+	core, err := ReservationLooks(msg.Core)
+	if err != nil {
+		return nil, err
+	}
+	down, err := ReservationLooks(msg.Down)
+	if err != nil {
+		return nil, err
+	}
+	return &colibri.StitchableSegments{
+		SrcIA: addr.IAInt(msg.SrcIa).IA(),
+		DstIA: addr.IAInt(msg.DstIa).IA(),
+		Up:    up,
+		Core:  core,
+		Down:  down,
+	}, nil
+}
+
+func ListResponse(msg *colpb.ListResponse) ([]*colibri.ReservationLooks, error) {
+	return ReservationLooks(msg.Reservations)
+}
+
+func ReservationLooks(msg []*colpb.ListResponse_ReservationLooks) (
+	[]*colibri.ReservationLooks, error) {
+
+	res := make([]*colibri.ReservationLooks, len(msg))
+	for i, l := range msg {
+		res[i] = &colibri.ReservationLooks{
+			Id:             *ID(l.ID),
+			SrcIA:          addr.IAInt(l.SrcIa).IA(),
+			DstIA:          addr.IAInt(l.DstIa).IA(),
+			ExpirationTime: util.SecsToTime(l.ExpirationTime),
+		}
+	}
+	return res, nil
 }
 
 func Index(msg uint32) (col.IndexNumber, error) {
@@ -165,12 +251,11 @@ func SplitCls(msg uint32) (col.SplitCls, error) {
 	return sc, nil
 }
 
-func ID(msg *colpb.ReservationID) (*col.ID, error) {
-	id := &col.ID{
+func ID(msg *colpb.ReservationID) *col.ID {
+	return &col.ID{
 		ASID:   addr.AS(msg.Asid),
 		Suffix: append([]byte{}, msg.Suffix...),
 	}
-	return id, id.Validate()
 }
 
 func Token(msg *colpb.SegmentSetupResponse_Token) (*col.Token, error) {
@@ -210,7 +295,7 @@ func TransparentPath(msg *colpb.TransparentPath) *base.TransparentPath {
 
 func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (expTime time.Time,
 	rlc col.RLC, pathType col.PathType, minbw col.BWCls, maxbw col.BWCls, splitcls col.SplitCls,
-	pathProps col.PathEndProps, allocTrail col.AllocationBeads, err error) {
+	pathProps col.PathEndProps, allocTrail col.AllocationBeads, revTravel bool, err error) {
 
 	expTime = util.SecsToTime(msg.ExpirationTime)
 	rlc, err = RLC(msg.Rlc)
@@ -239,5 +324,6 @@ func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (expTime 
 		msg.PropsAtEnd.Local,
 		msg.PropsAtEnd.Transfer)
 	allocTrail = AllocTrail(msg.Allocationtrail)
+	revTravel = msg.ReverseTraveling
 	return
 }

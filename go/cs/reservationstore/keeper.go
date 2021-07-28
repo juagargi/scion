@@ -155,6 +155,7 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 
 	now := k.manager.Now()
 	wakeupTime := now.Add(sleepAtMost)
+	errors := make(serrors.List, 0)
 	for i, entry := range entries {
 		// filter reservations
 		atLeastUntil := k.manager.Now().Add(minDuration)
@@ -166,20 +167,17 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
 			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
 
-		log.Info("deleteme ____ colibri keeper, reservations by compliance", "ia", dstIA.String(),
-			"i/total", fmt.Sprintf("%d/%d", i+1, len(entries)),
-			"compliant", printRsvs(compliantRsvs), "need_activation", printRsvs(needActivation),
-			"need_indices", printRsvs(needIndices), "never", printRsvs(notCompliant))
-
 		// activation:
 		if err := k.activateIndices(ctx, needActivation); err != nil {
-			return time.Time{}, err
+			errors = append(errors, err)
+			continue
 		}
 		expirationNewIndices := now.Add(newIndexMinDuration)
 		// new indices:
 		err := k.askNewIndices(ctx, needIndices, dstIA, entry, expirationNewIndices)
 		if err != nil {
-			return time.Time{}, err
+			errors = append(errors, err)
+			continue
 		}
 
 		// totally new reservations:
@@ -191,7 +189,8 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 		_, err = k.askNewReservations(ctx, requestCount,
 			dstIA, entry, paths, expirationNewIndices)
 		if err != nil {
-			return time.Time{}, err
+			errors = append(errors, err)
+			continue
 		}
 
 		// the needIndices and new reservations are good for newIndexMinDuration
@@ -205,6 +204,9 @@ func (k *keeper) setupsPerDestination(ctx context.Context, dstIA addr.IA, entrie
 			}
 		}
 	}
+	if len(errors) > 0 {
+		return time.Time{}, errors.ToError()
+	}
 	return wakeupTime, nil
 }
 
@@ -214,7 +216,8 @@ func (k *keeper) activateIndices(ctx context.Context, rsvs []*segment.Reservatio
 	for i, rsv := range rsvs {
 		index := rsv.NextIndexToActivate()
 		if index == nil {
-			return serrors.New("request to activate, but no index suitable", "id", rsv.ID)
+			return serrors.New("request to activate, but no index suitable", "id", rsv.ID,
+				"indices", rsv.Indices.String())
 		}
 		reqs[i] = &base.Request{
 			MsgId: base.MsgId{

@@ -30,8 +30,9 @@ import (
 // ReserverOnly has the methods available to the AS that starts the reservation.
 type ReserverOnly interface {
 	// GetSegmentRsvsFromSrcDstIA returns all reservations that start at src AS and end in dst AS.
-	GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA) (
-		[]*segment.Reservation, error)
+	// The path type is optional: if not UnknownPath, it will match against it.
+	GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA,
+		pathType reservation.PathType) ([]*segment.Reservation, error)
 
 	// NewSegmentRsv creates a new segment reservation in the DB, with an unused reservation ID.
 	// The created ID is set in the reservation pointer argument. Used by setup req.
@@ -68,12 +69,16 @@ type ReserverAndTransit interface {
 	// NextExpirationTime returns the nearest moment in time when an index will expire.
 	NextExpirationTime(ctx context.Context) (time.Time, error)
 
+	// GetAllE2ERsvs returns all e2e reservations.
+	GetAllE2ERsvs(ctx context.Context) ([]*e2e.Reservation, error)
 	// GetE2ERsvFromID finds the end to end resevation given its ID.
 	GetE2ERsvFromID(ctx context.Context, ID *reservation.ID) (*e2e.Reservation, error)
 	// GetE2ERsvsOnSegRsv returns the e2e reservations running on top of a given segment one.
 	GetE2ERsvsOnSegRsv(ctx context.Context, ID *reservation.ID) ([]*e2e.Reservation, error)
 	// PersistE2ERsv makes the DB reflect the same contents as the rsv parameter.
 	PersistE2ERsv(ctx context.Context, rsv *e2e.Reservation) error
+	// DeleteE2ERsv removes the e2e reservation. Used in CleanupE2EReservation
+	DeleteE2ERsv(ctx context.Context, ID *reservation.ID) error
 }
 
 // OptimizedStore is implemented by all DBs.

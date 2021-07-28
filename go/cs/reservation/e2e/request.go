@@ -15,6 +15,8 @@
 package e2e
 
 import (
+	"sync"
+
 	base "github.com/scionproto/scion/go/cs/reservation"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -23,14 +25,12 @@ import (
 // SetupReq is an e2e setup/renewal request, that has been so far accepted.
 type SetupReq struct {
 	base.Request
-	SegmentRsvs              []col.ID
-	SegmentRsvASCount        []uint8 // how many ASes per segment reservation
-	RequestedBW              col.BWCls
-	AllocationTrail          []col.BWCls
-	FailureInfo              *SetupFailureInfo // or nil if successful
-	totalASCount             int
-	currentASSegmentRsvIndex int // the index in SegmentRsv for the current AS
-	isTransfer               bool
+	SegmentRsvs            []col.ID
+	CurrentSegmentRsvIndex int // index in SegmentRsv above. Transfer nodes use the first segment
+	RequestedBW            col.BWCls
+	AllocationTrail        []col.BWCls
+	isTransferOnce         sync.Once
+	isTransfer             bool
 }
 
 type SetupFailureInfo struct {
@@ -38,84 +38,49 @@ type SetupFailureInfo struct {
 	Message   string
 }
 
-// NewSetupRequest creates and initializes an e2e setup request common for both success and failure.
-func NewSetupRequest(r *base.Request, segRsvs []col.ID, segRsvCount []uint8,
-	requestedBW col.BWCls, allocTrail []col.BWCls) (*SetupReq, error) {
+func (r *SetupReq) Validate() error {
+	var err error
+	if r.RequestPathNeedsSteps() {
+		err = r.Request.ValidateIgnorePath()
+	} else {
+		err = r.Request.Validate()
+	}
+	if err != nil {
+		return err
+	}
 
-	if len(segRsvs) != len(segRsvCount) || len(segRsvs) == 0 {
-		return nil, serrors.New("e2e setup request invalid", "seg_rsv_len", len(segRsvs),
-			"seg_rsv_count_len", len(segRsvCount))
+	if !r.ID.IsE2EID() {
+		return serrors.New("non e2e AS id in request", "asid", r.ID.ASID)
 	}
-	totalASCount := 0
-	currASindex := -1
-	isTransfer := false
-	n := len(allocTrail) - 1
-	for i, c := range segRsvCount {
-		totalASCount += int(c)
-		n -= int(c) - 1
-		if i == len(segRsvCount)-1 {
-			n-- // the last segment spans 1 more AS
-		}
-		if n < 0 && currASindex < 0 {
-			currASindex = i
-			isTransfer = i < len(segRsvCount)-1 && n == -1 // dst AS is no transfer
-		}
+	if len(r.SegmentRsvs) == 0 || len(r.SegmentRsvs) > 3 {
+		return serrors.New("invalid number of segment reservations for an e2e request",
+			"count", len(r.SegmentRsvs))
 	}
-	totalASCount -= len(segRsvCount) - 1
-	if currASindex < 0 {
-		return nil, serrors.New("error initializing e2e request",
-			"alloc_trail_len", len(allocTrail), "seg_rsv_count", segRsvCount)
-	}
-	return &SetupReq{
-		Request:                  *r,
-		SegmentRsvs:              segRsvs,
-		SegmentRsvASCount:        segRsvCount,
-		RequestedBW:              requestedBW,
-		AllocationTrail:          allocTrail,
-		totalASCount:             totalASCount,
-		currentASSegmentRsvIndex: currASindex,
-		isTransfer:               isTransfer,
-	}, nil
+	return nil
 }
 
-func (r *SetupReq) Success() bool {
-	return r.FailureInfo == nil
+// RequestPathNeedsSteps indicates a request that will need to extend its base.Request.Path.
+// This happens everytime the AS is at the end of the path but there are still segments
+// pending to transit.
+func (r *SetupReq) RequestPathNeedsSteps() bool {
+	return len(r.Path.Steps) == 0 ||
+		(r.IsLastAS() && r.CurrentSegmentRsvIndex < len(r.SegmentRsvs)-1)
 }
 
-func (r *SetupReq) Transfer() bool {
+// IsTransfer indicates if the node where this being processed is a transfer node or not.
+// A transfer node is that node that stitches two segment reservations when creating a new
+// E2E reservation. It needs at least two segments and to be present right at the end of
+// the current segment. The first or last node in the full request path is never a transfer node.
+func (r *SetupReq) IsTransfer() bool {
+	r.isTransferOnce.Do(func() {
+		if len(r.SegmentRsvs) > 1 && r.CurrentSegmentRsvIndex < len(r.SegmentRsvs)-1 &&
+			r.Path.CurrentStep > 0 && r.Path.CurrentStep == len(r.Path.Steps)-1 {
+			r.isTransfer = true
+		} else {
+			r.isTransfer = false
+		}
+	})
 	return r.isTransfer
-}
-
-type PathLocation int
-
-const (
-	Source PathLocation = iota
-	Transit
-	Destination
-)
-
-func (l PathLocation) String() string {
-	switch l {
-	case Source:
-		return "source"
-	case Transit:
-		return "trantit"
-	case Destination:
-		return "destination"
-	}
-	return "unknown path location"
-}
-
-// Location returns the location of this node in the path of the request.
-func (r *SetupReq) Location() PathLocation {
-	switch len(r.AllocationTrail) {
-	case 0:
-		return Source
-	case r.totalASCount:
-		return Destination
-	default:
-		return Transit
-	}
 }
 
 // SegmentRsvIDsForThisAS returns the segment reservation ID this AS belongs to. Iff this
@@ -123,9 +88,9 @@ func (r *SetupReq) Location() PathLocation {
 // order of traversal.
 func (r *SetupReq) SegmentRsvIDsForThisAS() []col.ID {
 	indices := make([]col.ID, 1, 2)
-	indices[0] = r.SegmentRsvs[r.currentASSegmentRsvIndex]
-	if r.isTransfer {
-		indices = append(indices, r.SegmentRsvs[r.currentASSegmentRsvIndex+1])
+	indices[0] = r.SegmentRsvs[r.CurrentSegmentRsvIndex]
+	if r.IsTransfer() {
+		indices = append(indices, r.SegmentRsvs[r.CurrentSegmentRsvIndex+1])
 	}
 	return indices
 }

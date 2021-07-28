@@ -17,37 +17,64 @@ package colibri
 import (
 	"context"
 
+	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri/coliquic"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
-	"github.com/scionproto/scion/go/pkg/grpc"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
 )
 
 type DaemonClient struct {
-	Dialer grpc.Dialer
+	Dialer coliquic.GRPCClientDialer
 }
 
+// ListReservations will dial to the intra AS colibri service to get the list of rsvs.
 func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriListRequest) (
 	*sdpb.ColibriListResponse, error) {
 
 	if req == nil {
 		return nil, serrors.New("bad nil request")
 	}
-
 	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
 	if err != nil {
-		return nil, serrors.WrapStr("dialing daemon", err)
+		return nil, err
 	}
-	client := colpb.NewColibriClient(conn)
-	colReq := &colpb.ListRequest{
-		DstIa: req.Base.DstIa,
+	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
+	response, err := client.ListStitchables(ctx, req.Base)
+	return &sdpb.ColibriListResponse{Base: response}, err
+}
+
+// SetupReservation will dial to the intra AS colibri service to setup an e2e reservation.
+func (c *DaemonClient) SetupReservation(ctx context.Context, req *sdpb.ColibriSetupRequest) (
+	*sdpb.ColibriSetupResponse, error) {
+
+	if req == nil {
+		return nil, serrors.New("bad nil request")
 	}
-	colRes, err := client.ListReservations(ctx, colReq)
+	log.Debug("setting up e2e reservation", "id", translate.ID(req.Base.Id))
+	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
 	if err != nil {
-		return nil, serrors.WrapStr("rpc list_reservations", err)
+		return nil, err
 	}
-	return &sdpb.ColibriListResponse{
-		Base: colRes,
-	}, nil
+	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
+	response, err := client.SetupReservation(ctx, req.Base)
+	return &sdpb.ColibriSetupResponse{Base: response}, err
+}
+
+func (c *DaemonClient) CleanupReservation(ctx context.Context, req *sdpb.ColibriCleanupRequest) (
+	*sdpb.ColibriCleanupResponse, error) {
+
+	if req == nil {
+		return nil, serrors.New("bad nil request")
+	}
+	log.Debug("cleaning up e2e reservation", "id", translate.ID(req.Base.Id))
+	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
+	if err != nil {
+		return nil, err
+	}
+	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
+	response, err := client.CleanupReservation(ctx, req.Base)
+	return &sdpb.ColibriCleanupResponse{Base: response}, err
 }

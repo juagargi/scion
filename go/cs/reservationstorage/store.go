@@ -23,10 +23,14 @@ import (
 	sgt "github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
 
 // Store is the interface to interact with the reservation store.
 type Store interface {
+	// ListReservations is used to get segments to other ASes.
+	ListReservations(ctx context.Context, dstIA addr.IA, pt reservation.PathType) (
+		[]*colibri.ReservationLooks, error)
 	AdmitSegmentReservation(ctx context.Context, req *sgt.SetupReq) (
 		sgt.SegmentSetupResponse, error)
 	ConfirmSegmentReservation(ctx context.Context, req *base.Request) (
@@ -38,7 +42,7 @@ type Store interface {
 	TearDownSegmentReservation(ctx context.Context, req *base.Request) (
 		base.Response, error)
 	AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
-		base.Response, error)
+		e2e.SetupResponse, error)
 	CleanupE2EReservation(ctx context.Context, req *base.Request) (
 		base.Response, error)
 
@@ -48,9 +52,12 @@ type Store interface {
 
 	// as the source of reservations:
 
+	// GetReservationsAtSource is used by a reservation manager or keeper to know all
+	// reservations they must keep updated.
 	GetReservationsAtSource(ctx context.Context, dstIA addr.IA) ([]*sgt.Reservation, error)
-	// ListReservations is used by endhost clients.
-	ListReservations(ctx context.Context, dstIA addr.IA) ([]*colibri.ReservationLooks, error)
+	// ListStitchableSegments is used by the endhosts. It will rely on calls to ListReservations
+	// to this AS and other ASes.
+	ListStitchableSegments(ctx context.Context, dst addr.IA) (*colibri.StitchableSegments, error)
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
 }

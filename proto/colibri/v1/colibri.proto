@@ -18,25 +18,23 @@ option go_package = "github.com/scionproto/scion/go/pkg/proto/colibri";
 
 package proto.colibri.v1;
 
-import "google/protobuf/timestamp.proto";
 
 service Colibri {
-    rpc TestPeer(TestingMessage) returns (TestingMessage) {}
+    // segment
     rpc SetupSegment(SegmentSetupRequest) returns (SegmentSetupResponse) {}
     rpc ConfirmSegmentIndex(Request) returns (Response) {}
     rpc ActivateSegmentIndex(Request) returns (Response) {}
     rpc TeardownSegment(Request) returns (Response) {}
     rpc CleanupSegmentIndex(Request) returns (Response) {}
-
+    // e2e
     rpc ListReservations(ListRequest) returns (ListResponse) {}
     rpc SetupE2e(E2eSetupRequest) returns (E2eSetupResponse) {}
     rpc CleanupE2eIndex(Request) returns (Response) {}
-}
 
-message TestingMessage{
-    string message = 1;
-    google.protobuf.Timestamp timestamp = 2;
-    bytes data = 3;
+    // facing the intra AS scion daemons
+    rpc ListStitchables(ListStitchablesRequest) returns (ListStitchablesResponse) {}
+    rpc SetupReservation(DaemonSetupRequest) returns (DaemonSetupResponse) {}
+    rpc CleanupReservation(DaemonCleanupRequest) returns (DaemonCleanupResponse) {}
 }
 
 // /////////////////////////////////////////////////
@@ -89,7 +87,7 @@ message Request {
 message Response {
     message Success {}
     message Failure {
-        uint32 error_code = 1;
+        uint32 error_code = 1; // TODO(juagargi) currently unused
         string message = 2;
         uint32 failing_hop = 3;
     }
@@ -111,6 +109,9 @@ message SegmentSetupRequest {
         PathEndProps props_at_start = 7;
         PathEndProps props_at_end = 8;
         repeated AllocationBead allocationtrail = 9;
+        // when a down rsv., indicates the req. is just traveling to the last AS to be
+        // re-requested from there (admission is done in the direction of the reservation).
+        bool reverse_traveling = 10;
     }
 
     Request base = 1;
@@ -131,47 +132,89 @@ message SegmentSetupResponse {
 
 message ListRequest {
     uint64 dst_ia = 1;
+    uint32 path_type = 2;
 }
 
 message ListResponse {
-    message Reservations {
-        message ReservationLooks {
-            ReservationID ID = 1;
-            uint64 dst_ia = 2;
-            // other properties?
-        }
-        repeated ReservationLooks reservations = 1;
+    message ReservationLooks {
+        ReservationID ID = 1;
+        uint64 src_ia = 2;
+        uint64 dst_ia = 3;
+        uint32 expiration_time = 4;
+        // other properties?
     }
-
-    oneof success_failure {
-        Reservations reservations = 1;
-        string failure_message = 2;
-    }
+    string error_message = 1;
+    repeated ReservationLooks reservations = 2;
 }
+
 
 message E2eSetupRequest {
     message PathParams {
-        ReservationID up = 1;
-        ReservationID core = 2;
-        ReservationID down = 3;
-        uint32 current_segment = 4; // index of the current segment.
+        repeated ReservationID segments = 1;
+        uint32 current_segment = 2; // index of the current segment.
                                     // If the node is transfer, the first segment it belongs to.
     }
     message E2eSetupBead {
         uint32 maxbw = 1;
-        bytes hopfield = 2;
-    }
-    message Failure {
-        uint32 failed_step = 1;
-        string Message = 2;
+        bytes hopfield = 2; // TODO(juagargi) unnecessary?
     }
 
     Request base = 1; // the path here is from src to dst
-    uint32 requestedBw = 2;
-    PathParams params = 3;
-    repeated E2eSetupBead allocationtrail = 4; // even failed nodes will write an entry
-    Failure failure = 5; // if present: info about the failure
+    uint32 requestedBw = 3;
+    PathParams params = 4;
+    repeated E2eSetupBead allocationtrail = 5; // even failed nodes will write an entry
 }
 
 message E2eSetupResponse {
+    message Failure {
+        string message = 1;
+        uint32 failed_step = 2;
+        repeated E2eSetupRequest.E2eSetupBead allocationtrail = 3;
+    }
+    Failure failure = 1; // if present: information about the failure
+    bytes token = 2;
+}
+
+
+message ListStitchablesRequest {
+    uint64 dst_ia = 1;
+}
+
+message ListStitchablesResponse {
+    string error_message = 1;
+    uint64 src_ia = 2;
+    uint64 dst_ia = 3;
+    repeated ListResponse.ReservationLooks up = 4;
+    repeated ListResponse.ReservationLooks core = 5;
+    repeated ListResponse.ReservationLooks down = 6;
+}
+
+message DaemonSetupRequest {
+    ReservationID id = 1;
+    uint32 index = 2;
+    repeated ReservationID segments = 3;
+    uint32 requested_bw = 4;
+}
+
+message DaemonSetupResponse {
+    message Failure {
+        string error_message = 1;
+        uint32 failed_step = 2;
+        repeated uint32 alloc_trail = 3;
+    }
+    Failure failure = 1; // if present: information about the failure
+    bytes token = 2;
+}
+
+message DaemonCleanupRequest {
+    ReservationID id = 1;
+    uint32 index = 2;
+}
+
+message DaemonCleanupResponse {
+    message Failure {
+        string error_message = 1;
+        uint32 failed_step = 2;
+    }
+    Failure failure = 1; // or nil if all ok
 }

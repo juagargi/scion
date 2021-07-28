@@ -16,6 +16,7 @@ package translate
 
 import (
 	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -24,10 +25,31 @@ import (
 )
 
 func PBufSetupReq(req *segment.SetupReq) *colpb.SegmentSetupRequest {
-
 	return &colpb.SegmentSetupRequest{
 		Base:   PBufRequest(&req.Request),
 		Params: PBufSetupRequestParams(req),
+	}
+}
+
+func PBufE2ESetupReq(req *e2e.SetupReq) *colpb.E2ESetupRequest {
+	segs := make([]*colpb.ReservationID, len(req.SegmentRsvs))
+	for i, id := range req.SegmentRsvs {
+		segs[i] = PBufID(&id)
+	}
+	trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(req.AllocationTrail))
+	for i, b := range req.AllocationTrail {
+		trail[i] = &colpb.E2ESetupRequest_E2ESetupBead{
+			Maxbw: uint32(b),
+		}
+	}
+	return &colpb.E2ESetupRequest{
+		Base:        PBufRequest(&req.Request),
+		RequestedBw: uint32(req.RequestedBW),
+		Params: &colpb.E2ESetupRequest_PathParams{
+			Segments:       segs,
+			CurrentSegment: uint32(req.CurrentSegmentRsvIndex),
+		},
+		Allocationtrail: trail,
 	}
 }
 
@@ -51,6 +73,46 @@ func PBufSetupResponse(res segment.SegmentSetupResponse) *colpb.SegmentSetupResp
 	}
 	return pbRes
 }
+
+func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {
+	msg := &colpb.E2ESetupResponse{}
+	switch t := res.(type) {
+	case *e2e.SetupResponseSuccess:
+		msg.Token = t.Token.ToRaw()
+	case *e2e.SetupResponseFailure:
+		trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(t.AllocTrail))
+		for i, b := range t.AllocTrail {
+			trail[i] = &colpb.E2ESetupRequest_E2ESetupBead{
+				Maxbw: uint32(b),
+			}
+		}
+		msg.Failure = &colpb.E2ESetupResponse_Failure{
+			Message:         t.Message,
+			FailedStep:      uint32(t.FailedStep),
+			Allocationtrail: trail,
+		}
+	}
+	return msg
+}
+
+// func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {
+// 	pbRes := &colpb.E2ESetupResponse{}
+// 	switch r := res.(type) {
+// 	case *e2e.SetupResponseSuccess:
+// 		pbRes.Token = r.Token.ToRaw()
+// 	case *e2e.SetupResponseFailure:
+// 		trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(r.AllocTrail))
+// 		for i, b := range r.AllocTrail {
+// 			trail[i].Maxbw = uint32(b)
+// 		}
+// 		pbRes.Failure = &colpb.E2ESetupResponse_Failure{
+// 			Message:         r.Message,
+// 			FailedStep:      uint32(r.FailedStep),
+// 			Allocationtrail: trail,
+// 		}
+// 	}
+// 	return pbRes
+// }
 
 func PBufRequest(req *base.Request) *colpb.Request {
 	return &colpb.Request{
@@ -77,7 +139,8 @@ func PBufSetupRequestParams(req *segment.SetupReq) *colpb.SegmentSetupRequest_Pa
 			Local:    req.PathProps.EndLocal(),
 			Transfer: req.PathProps.EndTransfer(),
 		},
-		Allocationtrail: PBufAllocTrail(req.AllocTrail),
+		Allocationtrail:  PBufAllocTrail(req.AllocTrail),
+		ReverseTraveling: req.ReverseTraveling,
 	}
 }
 
@@ -89,8 +152,8 @@ func PBufResponse(res base.Response) *colpb.Response {
 		return &colpb.Response{
 			SuccessFailure: &colpb.Response_Failure_{
 				Failure: &colpb.Response_Failure{
-					ErrorCode: r.ErrorCode,
-					Message:   r.Message,
+					Message:    r.Message,
+					FailingHop: uint32(r.FailedStep),
 				},
 			},
 		}
@@ -100,20 +163,34 @@ func PBufResponse(res base.Response) *colpb.Response {
 }
 
 func PBufListResponse(res []*colibri.ReservationLooks) *colpb.ListResponse {
-	looks := make([]*colpb.ListResponse_Reservations_ReservationLooks, len(res))
+	return &colpb.ListResponse{
+		Reservations: PBufListReservationLooks(res),
+	}
+}
+
+func PBufStitchableResponse(res *colibri.StitchableSegments) *colpb.ListStitchablesResponse {
+	return &colpb.ListStitchablesResponse{
+		SrcIa: uint64(res.SrcIA.IAInt()),
+		DstIa: uint64(res.DstIA.IAInt()),
+		Up:    PBufListReservationLooks(res.Up),
+		Core:  PBufListReservationLooks(res.Core),
+		Down:  PBufListReservationLooks(res.Down),
+	}
+}
+
+func PBufListReservationLooks(
+	res []*colibri.ReservationLooks) []*colpb.ListResponse_ReservationLooks {
+
+	looks := make([]*colpb.ListResponse_ReservationLooks, len(res))
 	for i, l := range res {
-		looks[i] = &colpb.ListResponse_Reservations_ReservationLooks{
-			ID:    PBufID(&l.Id),
-			DstIa: uint64(l.DstIA.IAInt()),
+		looks[i] = &colpb.ListResponse_ReservationLooks{
+			ID:             PBufID(&l.Id),
+			SrcIa:          uint64(l.SrcIA.IAInt()),
+			DstIa:          uint64(l.DstIA.IAInt()),
+			ExpirationTime: util.TimeToSecs(l.ExpirationTime),
 		}
 	}
-	return &colpb.ListResponse{
-		SuccessFailure: &colpb.ListResponse_Reservations_{
-			Reservations: &colpb.ListResponse_Reservations{
-				Reservations: looks,
-			},
-		},
-	}
+	return looks
 }
 
 func PBufID(id *reservation.ID) *colpb.ReservationID {

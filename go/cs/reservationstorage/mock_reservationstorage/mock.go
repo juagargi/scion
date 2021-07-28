@@ -12,6 +12,7 @@ import (
 	segment "github.com/scionproto/scion/go/cs/reservation/segment"
 	addr "github.com/scionproto/scion/go/lib/addr"
 	colibri "github.com/scionproto/scion/go/lib/colibri"
+	reservation0 "github.com/scionproto/scion/go/lib/colibri/reservation"
 	reflect "reflect"
 	time "time"
 )
@@ -55,10 +56,10 @@ func (mr *MockStoreMockRecorder) ActivateSegmentReservation(arg0, arg1 interface
 }
 
 // AdmitE2EReservation mocks base method
-func (m *MockStore) AdmitE2EReservation(arg0 context.Context, arg1 *e2e.SetupReq) (reservation.Response, error) {
+func (m *MockStore) AdmitE2EReservation(arg0 context.Context, arg1 *e2e.SetupReq) (e2e.SetupResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AdmitE2EReservation", arg0, arg1)
-	ret0, _ := ret[0].(reservation.Response)
+	ret0, _ := ret[0].(e2e.SetupResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -175,18 +176,33 @@ func (mr *MockStoreMockRecorder) InitSegmentReservation(arg0, arg1 interface{}) 
 }
 
 // ListReservations mocks base method
-func (m *MockStore) ListReservations(arg0 context.Context, arg1 addr.IA) ([]*colibri.ReservationLooks, error) {
+func (m *MockStore) ListReservations(arg0 context.Context, arg1 addr.IA, arg2 reservation0.PathType) ([]*colibri.ReservationLooks, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListReservations", arg0, arg1)
+	ret := m.ctrl.Call(m, "ListReservations", arg0, arg1, arg2)
 	ret0, _ := ret[0].([]*colibri.ReservationLooks)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListReservations indicates an expected call of ListReservations
-func (mr *MockStoreMockRecorder) ListReservations(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) ListReservations(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockStore)(nil).ListReservations), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockStore)(nil).ListReservations), arg0, arg1, arg2)
+}
+
+// ListStitchableSegments mocks base method
+func (m *MockStore) ListStitchableSegments(arg0 context.Context, arg1 addr.IA) (*colibri.StitchableSegments, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListStitchableSegments", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.StitchableSegments)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListStitchableSegments indicates an expected call of ListStitchableSegments
+func (mr *MockStoreMockRecorder) ListStitchableSegments(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStitchableSegments", reflect.TypeOf((*MockStore)(nil).ListStitchableSegments), arg0, arg1)
 }
 
 // TearDownSegmentReservation mocks base method

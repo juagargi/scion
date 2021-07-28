@@ -391,6 +391,18 @@ func (s *DaemonServer) ColibriListRsvs(ctx context.Context, req *sdpb.ColibriLis
 	*sdpb.ColibriListResponse, error) {
 
 	dstIA := addr.IAInt(req.Base.DstIa).IA()
-	log.FromCtx(ctx).Info("fetching reservation list", "dst", dstIA.String())
+	log.FromCtx(ctx).Debug("fetching reservation list", "dst", dstIA.String())
 	return s.Colibri.ListReservations(ctx, req)
+}
+
+func (s *DaemonServer) ColibriSetupRsv(ctx context.Context, req *sdpb.ColibriSetupRequest) (
+	*sdpb.ColibriSetupResponse, error) {
+
+	return s.Colibri.SetupReservation(ctx, req)
+}
+
+func (s *DaemonServer) ColibriCleanupRsv(ctx context.Context, req *sdpb.ColibriCleanupRequest) (
+	*sdpb.ColibriCleanupResponse, error) {
+
+	return s.Colibri.CleanupReservation(ctx, req)
 }

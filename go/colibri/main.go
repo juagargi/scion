@@ -164,7 +164,7 @@ func setupColibri(cfg *config.Config, cfgObjs *cfgObjs) (*periodic.Runner, error
 	go func() {
 		defer log.HandlePanic()
 		lis := cfgObjs.stack.QUICListener
-		log.Info("DELETEME %%%%%%%%% colibri grpc server listening", "addr", lis.Addr())
+		log.Debug("colibri grpc server listening quic", "addr", lis.Addr())
 		if err := colServer.Serve(lis); err != nil {
 			fatal.Fatal(err)
 		}
@@ -172,7 +172,7 @@ func setupColibri(cfg *config.Config, cfgObjs *cfgObjs) (*periodic.Runner, error
 	go func() {
 		defer log.HandlePanic()
 		tcpListener := cfgObjs.stack.TCPListener
-		log.Info("DELETEME %%%%%%%%% colibri TCP grpc server listening", "tcp_addr", tcpListener.Addr())
+		log.Debug("colibri grpc server listening tcp", "tcp_addr", tcpListener.Addr())
 		if err := tcpColServer.Serve(tcpListener); err != nil {
 			fatal.Fatal(err)
 		}

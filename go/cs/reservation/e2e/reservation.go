@@ -20,6 +20,7 @@ import (
 	base "github.com/scionproto/scion/go/cs/reservation"
 	"github.com/scionproto/scion/go/cs/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
 
@@ -106,4 +107,13 @@ func (r *Reservation) AllocResv() uint64 {
 			r.Indices[len(r.Indices)-2].AllocBW)
 	}
 	return maxBW.ToKbps()
+}
+
+// GetLastSegmentPathSteps returns the path steps for the last segment in use by this e2e rsv.
+func (r *Reservation) GetLastSegmentPathSteps() []base.PathStep {
+	seg := r.SegmentReservations[len(r.SegmentReservations)-1]
+	steps := append([]base.PathStep{}, seg.PathAtSource.Steps...)
+	log.Info("deleteme last segment path", "count", len(r.SegmentReservations), "seg", seg.ID,
+		"dir", seg.PathType, "path", seg.PathAtSource)
+	return steps
 }

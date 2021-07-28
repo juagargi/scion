@@ -27,16 +27,17 @@ import (
 type SetupReq struct {
 	base.Request
 
-	ExpirationTime time.Time
-	RLC            reservation.RLC
-	PathType       reservation.PathType
-	MinBW          reservation.BWCls
-	MaxBW          reservation.BWCls
-	SplitCls       reservation.SplitCls
-	PathProps      reservation.PathEndProps
-	AllocTrail     reservation.AllocationBeads
-	PathAtSource   *base.TransparentPath // requested path (maybe different than transport)
-	Reservation    *Reservation          // nil if no reservation yet
+	ExpirationTime   time.Time
+	RLC              reservation.RLC
+	PathType         reservation.PathType
+	MinBW            reservation.BWCls
+	MaxBW            reservation.BWCls
+	SplitCls         reservation.SplitCls
+	PathProps        reservation.PathEndProps
+	AllocTrail       reservation.AllocationBeads
+	PathAtSource     *base.TransparentPath // requested path (maybe different than transport)
+	ReverseTraveling bool                  // a down rsv traveling to the core to be re-requested
+	Reservation      *Reservation          // nil if no reservation yet
 }
 
 func (r *SetupReq) Validate() error {

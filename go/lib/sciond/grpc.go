@@ -25,11 +25,13 @@ import (
 	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	dkctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
 	"github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
 	"github.com/scionproto/scion/go/lib/drkey"
 	"github.com/scionproto/scion/go/lib/serrors"
+	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/slayers/path/scion"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/snet/path"
@@ -202,36 +204,102 @@ func (c grpcConn) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 }
 
 func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
-	[]*colibri.ReservationLooks, error) {
+	*colibri.StitchableSegments, error) {
 
 	req := &sdpb.ColibriListRequest{
-		Base: &colpb.ListRequest{
+		Base: &colpb.ListStitchablesRequest{
 			DstIa: uint64(dstIA.IAInt()),
 		},
 	}
-	fmt.Println("---- deleteme 1")
 	client := sdpb.NewDaemonServiceClient(c.conn)
-	fmt.Println("---- deleteme 2")
 	sdRes, err := client.ColibriListRsvs(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("---- deleteme 3")
-	if failure, ok := sdRes.Base.SuccessFailure.(*colpb.ListResponse_FailureMessage); ok {
-		return nil, fmt.Errorf(failure.FailureMessage)
-	}
-	list := sdRes.Base.SuccessFailure.(*colpb.ListResponse_Reservations_).Reservations.Reservations
-	res := make([]*colibri.ReservationLooks, len(list))
-	for i, r := range list {
-		res[i].DstIA = addr.IAInt(r.DstIa).IA()
-		id, err := translate.ID(r.ID)
-		if err != nil {
-			return nil, serrors.WrapStr("traslating list of reservations", err)
-		}
-		res[i].Id = *id
+	if sdRes.Base.ErrorMessage != "" {
+		return nil, fmt.Errorf(sdRes.Base.ErrorMessage)
 	}
 
-	return res, nil
+	stitchable, err := translate.StitchableSegments(sdRes.Base)
+	if err != nil {
+		return nil, err
+	}
+	return stitchable, nil
+}
+
+func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservationSetup) (
+	snet.Path, error) {
+
+	pbSegs := make([]*colpb.ReservationID, len(req.Segments))
+	for i, r := range req.Segments {
+		pbSegs[i] = translate.PBufID(&r)
+	}
+	pbReq := &sdpb.ColibriSetupRequest{
+		Base: &colpb.DaemonSetupRequest{
+			Id:          translate.PBufID(&req.Id),
+			Index:       uint32(req.Index),
+			RequestedBw: uint32(req.RequestedBW),
+			Segments:    pbSegs,
+		},
+	}
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	sdRes, err := client.ColibriSetupRsv(ctx, pbReq)
+	if err != nil {
+		return nil, err
+	}
+	if sdRes.Base.Failure != nil {
+		trail := make([]reservation.BWCls, len(sdRes.Base.Failure.AllocTrail))
+		for i, b := range sdRes.Base.Failure.AllocTrail {
+			trail[i] = reservation.BWCls(b)
+		}
+		return nil, &colibri.E2ESetupError{
+			E2EResponseError: colibri.E2EResponseError{
+				Message:  sdRes.Base.Failure.ErrorMessage,
+				FailedAS: int(sdRes.Base.Failure.FailedStep),
+			},
+			AllocationTrail: trail,
+		}
+	}
+	// adapt the received token to an snet.Path
+	token, err := reservation.TokenFromRaw(sdRes.Base.Token)
+	if err != nil {
+		return nil, err
+	}
+	return &path.Path{
+		SPath: spath.Path{
+			Raw:  token.ToRaw(),
+			Type: colpath.PathType,
+		},
+	}, nil
+}
+
+func (c grpcConn) ColibriCleanupRsv(ctx context.Context, id *reservation.ID,
+	idx reservation.IndexNumber) error {
+
+	if id == nil {
+		return serrors.New("invalid nil ID")
+	}
+	if !id.IsE2EID() {
+		return serrors.New("this id is not for an E2E reservation")
+	}
+	pbReq := &sdpb.ColibriCleanupRequest{
+		Base: &colpb.DaemonCleanupRequest{
+			Id:    translate.PBufID(id),
+			Index: uint32(idx),
+		},
+	}
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	sdRes, err := client.ColibriCleanupRsv(ctx, pbReq)
+	if err != nil {
+		return err
+	}
+	if sdRes.Base.Failure != nil {
+		return &colibri.E2EResponseError{
+			Message:  sdRes.Base.Failure.ErrorMessage,
+			FailedAS: int(sdRes.Base.Failure.FailedStep),
+		}
+	}
+	return nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {

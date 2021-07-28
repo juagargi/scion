@@ -48,9 +48,9 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: reservation.BWCls(5).ToKbps(),
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "01234567", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err := rsv.NewIndex(11, util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(12, util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
 				return []*segment.Reservation{rsv}
 			},
@@ -60,9 +60,9 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: 0,
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err := rsv.NewIndex(11, util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(12, util.SecsToTime(3), 1, 1, 1, 1, reservation.CorePath)
 				require.NoError(t, err)
 				return []*segment.Reservation{rsv}
 			},
@@ -72,20 +72,20 @@ func TestSumMaxBlockedBW(t *testing.T) {
 			blockedBW: 309, // 181 + 128
 			rsvsFcn: func() []*segment.Reservation {
 				rsv := testNewRsv(t, "ff00:1:1", "beefcafe", 1, 2, 5, 5, 5)
-				_, err := rsv.NewIndex(util.SecsToTime(3), 1, 17, 7, 1,
+				_, err := rsv.NewIndex(11, util.SecsToTime(3), 1, 17, 7, 1,
 					reservation.CorePath)
 				require.NoError(t, err)
 				rsvs := []*segment.Reservation{rsv}
 
 				rsv = testNewRsv(t, "ff00:1:1", "01234567", 1, 2, 5, 5, 5)
-				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 8, 8, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(11, util.SecsToTime(3), 1, 8, 8, 1, reservation.CorePath)
 				require.NoError(t, err)
-				_, err = rsv.NewIndex(util.SecsToTime(3), 1, 7, 7, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(12, util.SecsToTime(3), 1, 7, 7, 1, reservation.CorePath)
 				require.NoError(t, err)
 				rsvs = append(rsvs, rsv)
 
 				rsv = testNewRsv(t, "ff00:1:2", "01234567", 1, 2, 5, 5, 5)
-				_, err = rsv.NewIndex(util.SecsToTime(2), 1, 7, 7, 1, reservation.CorePath)
+				_, err = rsv.NewIndex(11, util.SecsToTime(2), 1, 7, 7, 1, reservation.CorePath)
 				require.NoError(t, err)
 				rsvs = append(rsvs, rsv)
 

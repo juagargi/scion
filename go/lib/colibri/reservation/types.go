@@ -69,6 +69,13 @@ func IDFromRaw(raw []byte) (*ID, error) {
 	return IDFromRawBuffers(raw[:6], raw[6:])
 }
 
+func (id *ID) SetSegmentSuffix(suffix int) {
+	if id.Suffix == nil {
+		id.Suffix = make([]byte, 4)
+	}
+	binary.BigEndian.PutUint32(id.Suffix, uint32(suffix))
+}
+
 // Len returns the length of this ID in bytes.
 func (id *ID) Len() int {
 	return 6 + len(id.Suffix)
@@ -122,7 +129,7 @@ func (id *ID) ToRaw() []byte {
 	return buf
 }
 
-func (id *ID) String() string {
+func (id ID) String() string {
 	return fmt.Sprintf("%s-%x", id.ASID, id.Suffix)
 }
 
@@ -196,6 +203,14 @@ func MinBWCls(a, b BWCls) BWCls {
 // in control traffic (BW * split) and end to end traffic (BW * (1-s)). 0 <= splitCls <= 256 .
 type SplitCls uint8
 
+func (s SplitCls) SplitForControl() float64 {
+	return math.Sqrt(1. / math.Pow(2., float64(s)))
+}
+
+func (s SplitCls) SplitForData() float64 {
+	return 1. - s.SplitForControl()
+}
+
 // RLC Request Latency Class. latency = 2^rlc miliseconds. 0 <= rlc <= 63
 type RLC uint8
 
@@ -249,25 +264,27 @@ func (pt PathType) Validate() error {
 	return nil
 }
 
-func (pt PathType) MarshalJSON() ([]byte, error) {
-	var text string
+func (pt PathType) String() string {
 	switch pt {
 	case CorePath:
-		text = "core"
+		return "core"
 	case DownPath:
-		text = "down"
+		return "down"
 	case UpPath:
-		text = "up"
+		return "up"
 	case PeeringDownPath:
-		text = "peer_down"
+		return "peer_down"
 	case PeeringUpPath:
-		text = "peer_up"
+		return "peer_up"
 	case E2EPath:
-		text = "e2e"
+		return "e2e"
 	default:
-		return nil, serrors.New("unknown path_type", "path_type", pt)
+		return fmt.Sprintf("unknown path_type %d", pt)
 	}
-	return json.Marshal(text)
+}
+
+func (pt PathType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(pt.String())
 }
 
 func (pt *PathType) UnmarshalJSON(b []byte) error {

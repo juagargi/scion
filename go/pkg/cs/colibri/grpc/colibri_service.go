@@ -16,19 +16,24 @@ package grpc
 
 import (
 	"context"
-	"fmt"
+	"net"
+	"time"
 
 	"google.golang.org/grpc/peer"
-	"google.golang.org/protobuf/proto"
+	// "google.golang.org/protobuf/proto"
 
 	base "github.com/scionproto/scion/go/cs/reservation"
+	"github.com/scionproto/scion/go/cs/reservation/e2e"
 	"github.com/scionproto/scion/go/cs/reservation/translate"
 	"github.com/scionproto/scion/go/cs/reservationstorage"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/util"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
@@ -38,38 +43,10 @@ type ColibriService struct {
 
 var _ colpb.ColibriServer = (*ColibriService)(nil)
 
-func (s *ColibriService) TestPeer(ctx context.Context, msg *colpb.TestingMessage) (
-	*colpb.TestingMessage, error) {
-
-	log.Info("DELETEME received call on TestPeer()")
-	p, ok := peer.FromContext(ctx)
-	if !ok || p == nil {
-		log.Info("DELETEME weird, no peer", "peer", p)
-		return nil, serrors.New("no peer found")
-	}
-	raddr, ok := p.Addr.(*snet.UDPAddr)
-	if !ok || raddr == nil {
-		log.Info("DELETEME weird error, raddr is what?", "raddr", raddr, "ok", ok)
-		return nil, serrors.New("no valid raddr found")
-	}
-	// require.IsType(t, &snet.UDPAddr{}, p.Addr)
-	// require.Equal(t, colibri.PathType, p.Addr.(*snet.UDPAddr).Path.Type)
-	log.Info("DELETEME so far so good", "path_type", raddr.Path.Type)
-	usage, ok, err := coliquic.UsageFromContext(ctx)
-	_, _, _ = usage, ok, err
-	return &colpb.TestingMessage{
-		Message: fmt.Sprintf("answering your message: %s", msg.Message),
-		Data:    p.Addr.(*snet.UDPAddr).Path.Raw,
-	}, nil
-}
-
 func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSetupRequest) (
 	*colpb.SegmentSetupResponse, error) {
 
 	msg.Base.Path.CurrentStep++
-	sizeeeeeeeeeeee := proto.Size(msg)
-	log.Info("DELETEME received call on SetupSegment()", "size", sizeeeeeeeeeeee, "setup_path", msg.Base.Path)
-
 	// path, err := extractPath(ctx)
 	// if err != nil {
 	// 	log.Error("setup segment", "err", err)
@@ -81,16 +58,13 @@ func (s *ColibriService) SetupSegment(ctx context.Context, msg *colpb.SegmentSet
 		// should send a message?
 		return nil, err
 	}
-	log.Info("deleteme path after translation", "path", req.Path)
 	res, err := s.Store.AdmitSegmentReservation(ctx, req)
 	if err != nil {
 		log.Error("colibri store returned an error", "err", err)
 		// should send a message?
 		return nil, err
 	}
-	log.Info("deleteme after store", "res", res)
 	pbRes := translate.PBufSetupResponse(res)
-	log.Info("deleteme", "pbres", pbRes)
 	return pbRes, nil
 }
 
@@ -103,14 +77,12 @@ func (s *ColibriService) ConfirmSegmentIndex(ctx context.Context, msg *colpb.Req
 		log.Error("error unmarshalling", "err", err)
 		return nil, err
 	}
-	log.Info("deleteme path after translation", "path", req.Path)
 	res, err := s.Store.ConfirmSegmentReservation(ctx, req)
 	if err != nil {
 		log.Error("colibri store returned an error", "err", err)
 		return nil, err
 	}
 	pbRes := translate.PBufResponse(res)
-	log.Info("deleteme", "pbres", pbRes)
 
 	return pbRes, nil
 }
@@ -124,14 +96,12 @@ func (s *ColibriService) ActivateSegmentIndex(ctx context.Context, msg *colpb.Re
 		log.Error("error unmarshalling", "err", err)
 		return nil, err
 	}
-	log.Info("deleteme path after translation", "path", req.Path)
 	res, err := s.Store.ActivateSegmentReservation(ctx, req)
 	if err != nil {
 		log.Error("colibri store returned an error", "err", err)
 		return nil, err
 	}
 	pbRes := translate.PBufResponse(res)
-	log.Info("deleteme", "pbres", pbRes)
 
 	return pbRes, nil
 }
@@ -139,21 +109,18 @@ func (s *ColibriService) ActivateSegmentIndex(ctx context.Context, msg *colpb.Re
 func (s *ColibriService) TeardownSegment(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	log.Info("DELETEME received call on TeardownSegment()")
 	msg.Path.CurrentStep++
 	req, err := translate.Request(msg)
 	if err != nil {
 		log.Error("error unmarshalling", "err", err)
 		return nil, err
 	}
-	log.Info("deleteme path after translation", "path", req.Path)
 	res, err := s.Store.TearDownSegmentReservation(ctx, req)
 	if err != nil {
 		log.Error("colibri store returned an error", "err", err)
 		return nil, err
 	}
 	pbRes := translate.PBufResponse(res)
-	log.Info("deleteme", "pbres", pbRes)
 
 	return pbRes, nil
 }
@@ -167,14 +134,12 @@ func (s *ColibriService) CleanupSegmentIndex(ctx context.Context, msg *colpb.Req
 		log.Error("error unmarshalling", "err", err)
 		return nil, err
 	}
-	log.Info("deleteme path after translation", "path", req.Path)
 	res, err := s.Store.CleanupSegmentReservation(ctx, req)
 	if err != nil {
 		log.Error("colibri store returned an error", "err", err)
 		return nil, err
 	}
 	pbRes := translate.PBufResponse(res)
-	log.Info("deleteme", "pbres", pbRes)
 
 	return pbRes, nil
 }
@@ -183,13 +148,11 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 	*colpb.ListResponse, error) {
 
 	dstIA := addr.IAInt(msg.DstIa).IA()
-	looks, err := s.Store.ListReservations(ctx, dstIA)
+	looks, err := s.Store.ListReservations(ctx, dstIA, reservation.PathType(msg.PathType))
 	if err != nil {
 		log.Error("colibri store while listing rsvs", "err", err)
 		return &colpb.ListResponse{
-			SuccessFailure: &colpb.ListResponse_FailureMessage{
-				FailureMessage: err.Error(),
-			},
+			ErrorMessage: err.Error(),
 		}, nil
 	}
 	return translate.PBufListResponse(looks), nil
@@ -198,13 +161,153 @@ func (s *ColibriService) ListReservations(ctx context.Context, msg *colpb.ListRe
 func (s *ColibriService) SetupE2E(ctx context.Context, msg *colpb.E2ESetupRequest) (
 	*colpb.E2ESetupResponse, error) {
 
-	return nil, nil
+	msg.Base.Path.CurrentStep++
+	req, err := translate.E2ESetupRequest(msg)
+	if err != nil {
+		log.Error("translating e2e setup", "err", err)
+		return nil, serrors.WrapStr("translating e2e setup", err)
+	}
+	res, err := s.Store.AdmitE2EReservation(ctx, req)
+	if err != nil {
+		log.Error("admitting e2e", "err", err)
+		return nil, err
+	}
+	return translate.PBufE2ESetupResponse(res), nil
 }
 
 func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request) (
 	*colpb.Response, error) {
 
-	return nil, nil
+	msg.Path.CurrentStep++
+	req, err := translate.Request(msg)
+	if err != nil {
+		log.Error("error unmarshalling", "err", err)
+		return nil, err
+	}
+	res, err := s.Store.CleanupE2EReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store returned an error", "err", err)
+		return nil, err
+	}
+	pbRes := translate.PBufResponse(res)
+
+	return pbRes, nil
+}
+
+func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListStitchablesRequest) (
+	*colpb.ListStitchablesResponse, error) {
+
+	if err := checkLocalCaller(ctx); err != nil {
+		return nil, err
+	}
+
+	dstIA := addr.IAInt(msg.DstIa).IA()
+	stitchables, err := s.Store.ListStitchableSegments(ctx, dstIA)
+	if err != nil {
+		log.Error("colibri store while listing stitchables", "err", err)
+		return &colpb.ListStitchablesResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+	return translate.PBufStitchableResponse(stitchables), nil
+}
+
+// SetupReservation serves the intra AS clients, setting up or renewing an E2E reservation.
+func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.DaemonSetupRequest) (
+	*colpb.DaemonSetupResponse, error) {
+
+	if err := checkLocalCaller(ctx); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	// build a valid E2E setup request now and query the store with it
+	pbReq := &colpb.E2ESetupRequest{
+		Base: &colpb.Request{
+			Id:        msg.Id,
+			Index:     msg.Index,
+			Timestamp: util.TimeToSecs(now),
+			Path:      &colpb.TransparentPath{},
+		},
+		RequestedBw: msg.RequestedBw,
+		Params: &colpb.E2ESetupRequest_PathParams{
+			Segments:       msg.Segments,
+			CurrentSegment: 0,
+		},
+		Allocationtrail: nil,
+	}
+	req, err := translate.E2ESetupRequest(pbReq)
+	if err != nil {
+		log.Error("translating initial E2E setup from daemon to service", "err", err)
+		return nil, err
+	}
+
+	res, err := s.Store.AdmitE2EReservation(ctx, req)
+	if err != nil {
+		log.Error("colibri store setting up an e2e reservation", "err", err)
+		var trail []uint32
+		var failedStep uint32
+		if failure, ok := res.(*e2e.SetupResponseFailure); ok {
+			trail = make([]uint32, len(failure.AllocTrail))
+			for i, b := range failure.AllocTrail {
+				trail[i] = uint32(b)
+			}
+			failedStep = uint32(failure.FailedStep)
+		}
+		return &colpb.DaemonSetupResponse{
+			Failure: &colpb.DaemonSetupResponse_Failure{
+				ErrorMessage: err.Error(),
+				FailedStep:   failedStep,
+				AllocTrail:   trail,
+			},
+		}, nil
+	}
+	pbMsg := &colpb.DaemonSetupResponse{}
+	if failure, ok := res.(*e2e.SetupResponseFailure); ok {
+		trail := make([]uint32, len(failure.AllocTrail))
+		for i, b := range failure.AllocTrail {
+			trail[i] = uint32(b)
+		}
+		pbMsg.Failure = &colpb.DaemonSetupResponse_Failure{
+			ErrorMessage: failure.Message,
+			FailedStep:   uint32(failure.FailedStep),
+			AllocTrail:   trail,
+		}
+	}
+	if success, ok := res.(*e2e.SetupResponseSuccess); ok {
+		pbMsg.Token = success.Token.ToRaw()
+	}
+	return pbMsg, nil
+}
+
+// CleanupReservation serves the intra AS clients, cleaning an E2E reservation.
+func (s *ColibriService) CleanupReservation(ctx context.Context, msg *colpb.DaemonCleanupRequest) (
+	*colpb.DaemonCleanupResponse, error) {
+
+	if err := checkLocalCaller(ctx); err != nil {
+		return nil, err
+	}
+	req := &base.Request{
+		MsgId: base.MsgId{
+			ID:        *translate.ID(msg.Id),
+			Index:     reservation.IndexNumber(msg.Index),
+			Timestamp: time.Now(),
+		},
+		Path: &base.TransparentPath{},
+	}
+	res, err := s.Store.CleanupE2EReservation(ctx, req)
+	if err != nil {
+		var failedStep uint32
+		if failure, ok := res.(*base.ResponseFailure); ok {
+			failedStep = uint32(failure.FailedStep)
+		}
+		return &colpb.DaemonCleanupResponse{
+			Failure: &colpb.DaemonCleanupResponse_Failure{
+				ErrorMessage: err.Error(),
+				FailedStep:   uint32(failedStep),
+			},
+		}, nil
+	}
+	return &colpb.DaemonCleanupResponse{}, nil
 }
 
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
@@ -214,20 +317,33 @@ func extractPath(ctx context.Context) (base.PacketPath, error) {
 	// of base.Request.Path if the transport path is of colibri type.
 	p, ok := peer.FromContext(ctx)
 	if !ok || p == nil {
-		log.Error("deleteme no peer found")
 		return nil, serrors.New("no peer found")
 	}
 	raddr, ok := p.Addr.(*snet.UDPAddr)
 	if !ok || raddr == nil {
-		log.Error("deleteme no scion address found")
 		return nil, serrors.New("no valid scion address found", "addr", p.Addr)
 	}
-	log.Info("deleteme scion address", "addr", raddr)
 	path, err := base.NewPacketPath(raddr.Path)
 	if err != nil {
 		return path, err
 	}
-	log.Info("deleteme path and interfaces", "path_type", raddr.Path.Type,
-		"packet_path", path)
+	usage, ok, err := coliquic.UsageFromContext(ctx)
+	_, _, _ = usage, ok, err
 	return path, err
+}
+
+// checkLocalCaller prevents the service from doing anything if the caller is not from the local AS.
+// We do it by checking the peer. We could instantiate the local ColibriService differently.
+func checkLocalCaller(ctx context.Context) error {
+	// To prevent this service from
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		return serrors.New("no peer found")
+	}
+	tcpaddr, ok := p.Addr.(*net.TCPAddr)
+	if !ok || tcpaddr == nil {
+		return serrors.New("no valid local tcp address found", "addr", p.Addr,
+			"type", common.TypeOf(p.Addr))
+	}
+	return nil
 }

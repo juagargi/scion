@@ -194,11 +194,31 @@ func (p *TransparentPath) Validate() error {
 	if p == nil {
 		return nil
 	}
-	steps := p.Steps
-	if len(steps) < 2 {
-		return serrors.New("wrong number of steps", "count", len(steps))
+	// sometimes we'll have requests with one step only (e.g. teardown after bad setup)
+	if len(p.Steps) < 1 {
+		return serrors.New("wrong number of steps", "count", len(p.Steps))
+	}
+	if p.CurrentStep >= len(p.Steps) {
+		return serrors.New("current step out of bounds", "curr_step", p.CurrentStep,
+			"count", len(p.Steps))
 	}
 	return nil
+}
+
+func (p *TransparentPath) Reverse() error {
+	if p == nil {
+		return nil
+	}
+	rev := make([]PathStep, len(p.Steps))
+	for i, s := range p.Steps {
+		s.Ingress, s.Egress = s.Egress, s.Ingress
+		rev[len(rev)-i-1] = s
+	}
+	p.Steps = rev
+	if p.CurrentStep < len(rev) { // if curr step is past the last item, leave it as is.
+		p.CurrentStep = len(rev) - p.CurrentStep - 1
+	}
+	return p.Spath.Reverse()
 }
 
 // PathStep is one hop of the TransparentPath.

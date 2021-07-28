@@ -81,6 +81,9 @@ func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
 
 // Validate will return an error for invalid values.
 func (r *Reservation) Validate() error {
+	if r == nil {
+		return nil
+	}
 	if r.ID.ASID == 0 {
 		return serrors.New("Reservation ID not set")
 	}
@@ -124,13 +127,14 @@ func (r *Reservation) ActiveIndex() *Index {
 // NewIndex creates a new index. The associated token is created from the arguments, and
 // automatically linked to the index.
 // The expiration times must always be greater or equal than those in previous indices.
-func (r *Reservation) NewIndex(expTime time.Time, minBW, maxBW, allocBW reservation.BWCls,
+func (r *Reservation) NewIndex(idx reservation.IndexNumber,
+	expTime time.Time, minBW, maxBW, allocBW reservation.BWCls,
 	rlc reservation.RLC, pathType reservation.PathType) (reservation.IndexNumber, error) {
 
-	idx := reservation.IndexNumber(0)
-	if len(r.Indices) > 0 {
-		idx = r.Indices[len(r.Indices)-1].Idx.Add(1)
-	}
+	// idx := reservation.IndexNumber(0)
+	// if len(r.Indices) > 0 {
+	// 	idx = r.Indices[len(r.Indices)-1].Idx.Add(1)
+	// }
 	tok := &reservation.Token{
 		InfoField: reservation.InfoField{
 			Idx:            idx,
@@ -173,15 +177,13 @@ func (r *Reservation) NextIndexToRenew() reservation.IndexNumber {
 }
 
 func (r *Reservation) NextIndexToActivate() *Index {
-	if len(r.Indices) == 0 {
+	switch {
+	case len(r.Indices) == 0:
 		return nil
-	}
-	i := 0
-	if r.activeIndex >= 0 {
-		i = r.activeIndex
-	}
-	if i+1 < len(r.Indices) {
-		return &r.Indices[i+1]
+	case r.activeIndex < 0:
+		return &r.Indices[len(r.Indices)-1]
+	case r.activeIndex+1 < len(r.Indices):
+		return &r.Indices[r.activeIndex+1]
 	}
 	return nil
 }

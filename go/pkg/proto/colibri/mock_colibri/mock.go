@@ -135,6 +135,26 @@ func (mr *MockColibriClientMockRecorder) ListReservations(arg0, arg1 interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockColibriClient)(nil).ListReservations), varargs...)
 }
 
+// ListStitchables mocks base method
+func (m *MockColibriClient) ListStitchables(arg0 context.Context, arg1 *colibri.ListStitchablesRequest, arg2 ...grpc.CallOption) (*colibri.ListStitchablesResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ListStitchables", varargs...)
+	ret0, _ := ret[0].(*colibri.ListStitchablesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListStitchables indicates an expected call of ListStitchables
+func (mr *MockColibriClientMockRecorder) ListStitchables(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStitchables", reflect.TypeOf((*MockColibriClient)(nil).ListStitchables), varargs...)
+}
+
 // SetupE2E mocks base method
 func (m *MockColibriClient) SetupE2E(arg0 context.Context, arg1 *colibri.E2ESetupRequest, arg2 ...grpc.CallOption) (*colibri.E2ESetupResponse, error) {
 	m.ctrl.T.Helper()
@@ -153,6 +173,26 @@ func (mr *MockColibriClientMockRecorder) SetupE2E(arg0, arg1 interface{}, arg2 .
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupE2E", reflect.TypeOf((*MockColibriClient)(nil).SetupE2E), varargs...)
+}
+
+// SetupReservation mocks base method
+func (m *MockColibriClient) SetupReservation(arg0 context.Context, arg1 *colibri.DaemonSetupRequest, arg2 ...grpc.CallOption) (*colibri.DaemonSetupResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "SetupReservation", varargs...)
+	ret0, _ := ret[0].(*colibri.DaemonSetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetupReservation indicates an expected call of SetupReservation
+func (mr *MockColibriClientMockRecorder) SetupReservation(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupReservation", reflect.TypeOf((*MockColibriClient)(nil).SetupReservation), varargs...)
 }
 
 // SetupSegment mocks base method
@@ -193,26 +233,6 @@ func (mr *MockColibriClientMockRecorder) TeardownSegment(arg0, arg1 interface{},
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownSegment", reflect.TypeOf((*MockColibriClient)(nil).TeardownSegment), varargs...)
-}
-
-// TestPeer mocks base method
-func (m *MockColibriClient) TestPeer(arg0 context.Context, arg1 *colibri.TestingMessage, arg2 ...grpc.CallOption) (*colibri.TestingMessage, error) {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{arg0, arg1}
-	for _, a := range arg2 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "TestPeer", varargs...)
-	ret0, _ := ret[0].(*colibri.TestingMessage)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// TestPeer indicates an expected call of TestPeer
-func (mr *MockColibriClientMockRecorder) TestPeer(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{arg0, arg1}, arg2...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TestPeer", reflect.TypeOf((*MockColibriClient)(nil).TestPeer), varargs...)
 }
 
 // MockColibriServer is a mock of ColibriServer interface
@@ -313,6 +333,21 @@ func (mr *MockColibriServerMockRecorder) ListReservations(arg0, arg1 interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReservations", reflect.TypeOf((*MockColibriServer)(nil).ListReservations), arg0, arg1)
 }
 
+// ListStitchables mocks base method
+func (m *MockColibriServer) ListStitchables(arg0 context.Context, arg1 *colibri.ListStitchablesRequest) (*colibri.ListStitchablesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListStitchables", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.ListStitchablesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListStitchables indicates an expected call of ListStitchables
+func (mr *MockColibriServerMockRecorder) ListStitchables(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStitchables", reflect.TypeOf((*MockColibriServer)(nil).ListStitchables), arg0, arg1)
+}
+
 // SetupE2E mocks base method
 func (m *MockColibriServer) SetupE2E(arg0 context.Context, arg1 *colibri.E2ESetupRequest) (*colibri.E2ESetupResponse, error) {
 	m.ctrl.T.Helper()
@@ -326,6 +361,21 @@ func (m *MockColibriServer) SetupE2E(arg0 context.Context, arg1 *colibri.E2ESetu
 func (mr *MockColibriServerMockRecorder) SetupE2E(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupE2E", reflect.TypeOf((*MockColibriServer)(nil).SetupE2E), arg0, arg1)
+}
+
+// SetupReservation mocks base method
+func (m *MockColibriServer) SetupReservation(arg0 context.Context, arg1 *colibri.DaemonSetupRequest) (*colibri.DaemonSetupResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetupReservation", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.DaemonSetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetupReservation indicates an expected call of SetupReservation
+func (mr *MockColibriServerMockRecorder) SetupReservation(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupReservation", reflect.TypeOf((*MockColibriServer)(nil).SetupReservation), arg0, arg1)
 }
 
 // SetupSegment mocks base method
@@ -356,19 +406,4 @@ func (m *MockColibriServer) TeardownSegment(arg0 context.Context, arg1 *colibri.
 func (mr *MockColibriServerMockRecorder) TeardownSegment(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownSegment", reflect.TypeOf((*MockColibriServer)(nil).TeardownSegment), arg0, arg1)
-}
-
-// TestPeer mocks base method
-func (m *MockColibriServer) TestPeer(arg0 context.Context, arg1 *colibri.TestingMessage) (*colibri.TestingMessage, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TestPeer", arg0, arg1)
-	ret0, _ := ret[0].(*colibri.TestingMessage)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// TestPeer indicates an expected call of TestPeer
-func (mr *MockColibriServerMockRecorder) TestPeer(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TestPeer", reflect.TypeOf((*MockColibriServer)(nil).TestPeer), arg0, arg1)
 }

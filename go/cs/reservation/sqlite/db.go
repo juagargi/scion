@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -129,7 +130,7 @@ func (x *executor) GetSegmentRsvFromID(ctx context.Context, ID *reservation.ID) 
 		ID.ASID,
 		binary.BigEndian.Uint32(ID.Suffix),
 	}
-	rsvs, err := getSegReservations(ctx, x.db, "WHERE id_as = ? AND id_suffix = ?", params)
+	rsvs, err := getSegReservations(ctx, x.db, "WHERE id_as = ? AND id_suffix = ?", params...)
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +147,9 @@ func (x *executor) GetSegmentRsvFromID(ctx context.Context, ID *reservation.ID) 
 
 // GetSegmentRsvsFromSrcDstIA returns all reservations that start at src AS and end in dst AS.
 // Both srcIA and dstIA can use wildcards: 1-0, 0-ff00:1:1, or 0-0 are valid.
-func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA) (
-	[]*segment.Reservation, error) {
+// The path type argument is ignored if it equals UnknownPath, or used to match against otherwise.
+func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA addr.IA,
+	pathType reservation.PathType) ([]*segment.Reservation, error) {
 
 	conditions := make([]string, 0, 2)
 	params := make([]interface{}, 0, 2)
@@ -156,13 +158,17 @@ func (x *executor) GetSegmentRsvsFromSrcDstIA(ctx context.Context, srcIA, dstIA 
 	if len(conditions) == 0 {
 		return nil, serrors.New("no src or dst ia provided")
 	}
+	if pathType != reservation.UnknownPath {
+		conditions = append(conditions, "path_type = ?")
+		params = append(params, pathType)
+	}
 	condition := fmt.Sprintf("WHERE %s", strings.Join(conditions, " AND "))
-	return getSegReservations(ctx, x.db, condition, params)
+	return getSegReservations(ctx, x.db, condition, params...)
 }
 
 // GetAllSegmentRsvs returns all segment reservations.
 func (x *executor) GetAllSegmentRsvs(ctx context.Context) ([]*segment.Reservation, error) {
-	return getSegReservations(ctx, x.db, "", nil)
+	return getSegReservations(ctx, x.db, "")
 }
 
 // GetSegmentRsvsFromIFPair returns all segment reservations that enter this AS at
@@ -184,7 +190,7 @@ func (x *executor) GetSegmentRsvsFromIFPair(ctx context.Context, ingress, egress
 		return nil, serrors.New("no ingress or egress provided")
 	}
 	condition := fmt.Sprintf("WHERE %s", strings.Join(conditions, " AND "))
-	return getSegReservations(ctx, x.db, condition, params)
+	return getSegReservations(ctx, x.db, condition, params...)
 }
 
 // NewSegmentRsv creates a new segment reservation in the DB, with an unused reservation ID.
@@ -267,7 +273,7 @@ func (x *executor) DeleteExpiredIndices(ctx context.Context, now time.Time) (int
 		}
 		if len(rowIDs) > 0 {
 			cond := fmt.Sprintf("WHERE ROWID IN (?%s)", strings.Repeat(",?", len(rsvRowIDs)-1))
-			affectedSegRsvs, err := getSegReservations(ctx, tx, cond, rsvRowIDs)
+			affectedSegRsvs, err := getSegReservations(ctx, tx, cond, rsvRowIDs...)
 			if err != nil {
 				return err
 			}
@@ -282,7 +288,7 @@ func (x *executor) DeleteExpiredIndices(ctx context.Context, now time.Time) (int
 			}
 			deletedIndices += n
 			// update state of interfaces (used bandwidth may have changed)
-			affectedSegRsvs, err = getSegReservations(ctx, tx, cond, rsvRowIDs)
+			affectedSegRsvs, err = getSegReservations(ctx, tx, cond, rsvRowIDs...)
 			if err != nil {
 				return err
 			}
@@ -332,8 +338,14 @@ func (x *executor) NextExpirationTime(ctx context.Context) (time.Time, error) {
 		return time.Time{}, err
 	}
 	expiration := expE2E
-	if expSeg < expiration {
+	if expiration == uint32(math.MaxUint32) || expSeg < expiration {
 		expiration = expSeg
+	}
+	if expiration == uint32(math.MaxUint32) {
+		expiration = 0
+	}
+	if expiration == 0 {
+		return time.Time{}, nil
 	}
 	return util.SecsToTime(expiration), nil
 }
@@ -343,30 +355,70 @@ func (x *executor) DeleteSegmentRsv(ctx context.Context, ID *reservation.ID) err
 	return deleteSegmentRsv(ctx, x.db, ID)
 }
 
+// DeleteE2ERsv removes the e2e reservation
+func (x *executor) DeleteE2ERsv(ctx context.Context, ID *reservation.ID) error {
+	return deleteE2ERsv(ctx, x.db, ID)
+}
+
+func (x *executor) GetAllE2ERsvs(ctx context.Context) ([]*e2e.Reservation, error) {
+	const query = `SELECT ROWID, reservation_id FROM e2e_reservation`
+	rows, err := x.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rowIDs := make([]int, 0)
+	rsvIDs := make([]reservation.ID, 0)
+	for rows.Next() {
+		var rowID int
+		var rsvID []byte
+		if err := rows.Scan(&rowID, &rsvID); err != nil {
+			return nil, err
+		}
+		rowIDs = append(rowIDs, rowID)
+		ID, err := reservation.IDFromRaw(rsvID)
+		if err != nil {
+			return nil, err
+		}
+		rsvIDs = append(rsvIDs, *ID)
+	}
+	rsvs := make([]*e2e.Reservation, 0, len(rowIDs))
+	for i := range rowIDs {
+		rowID := rowIDs[i]
+		// read indices
+		indices, err := getE2EIndices(ctx, x.db, rowID)
+		if err != nil {
+			return nil, err
+		}
+		// sort indices so they are consecutive modulo 16
+		base.SortIndices(indices)
+		// read assoc segment reservations
+		segRsvs, err := getE2EAssocSegRsvs(ctx, x.db, rowID)
+		if err != nil {
+			return nil, err
+		}
+		rsvs = append(rsvs, &e2e.Reservation{
+			ID:                  rsvIDs[i],
+			Indices:             indices,
+			SegmentReservations: segRsvs,
+		})
+	}
+	return rsvs, nil
+}
+
 // GetE2ERsvFromID finds the end to end resevation given its ID.
 func (x *executor) GetE2ERsvFromID(ctx context.Context, ID *reservation.ID) (
 	*e2e.Reservation, error) {
 
-	var rsv *e2e.Reservation
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		var err error
-		rsv, err = getE2ERsvFromID(ctx, tx, ID)
-		return err
-	})
-	return rsv, err
+	return getE2ERsvFromID(ctx, x.db, ID)
 }
 
 // GetE2ERsvsOnSegRsv returns the e2e reservations running on top of a given segment one.
 func (x *executor) GetE2ERsvsOnSegRsv(ctx context.Context, ID *reservation.ID) (
 	[]*e2e.Reservation, error) {
 
-	var rsvs []*e2e.Reservation
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		var err error
-		rsvs, err = getE2ERsvsFromSegment(ctx, tx, ID)
-		return err
-	})
-	return rsvs, err
+	return getE2ERsvsFromSegment(ctx, x.db, ID)
 }
 
 func (x *executor) PersistE2ERsv(ctx context.Context, rsv *e2e.Reservation) error {
@@ -576,7 +628,7 @@ func insertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reserv
 	}
 	p := rsv.PathAtSource
 	const query = `INSERT INTO seg_reservation (id_as, id_suffix, ingress, egress, path_type,
-		path, end_props, traffic_split, src_ia, dst_ia,active_index)
+		path, end_props, traffic_split, src_ia, dst_ia, active_index)
 		VALUES (?, ?,?,?,?,?,?,?,?,?,?)`
 	res, err := x.ExecContext(ctx, query, rsv.ID.ASID, suffix,
 		rsv.Ingress, rsv.Egress, rsv.PathType, p.ToRaw(), rsv.PathEndProps, rsv.TrafficSplit,
@@ -627,7 +679,7 @@ type rsvFields struct {
 	ActiveIndex  int
 }
 
-func getSegReservations(ctx context.Context, x db.Sqler, condition string, params []interface{}) (
+func getSegReservations(ctx context.Context, x db.Sqler, condition string, params ...interface{}) (
 	[]*segment.Reservation, error) {
 
 	const queryTmpl = `SELECT ROWID,id_as,id_suffix,ingress,egress,path_type,path,
@@ -736,7 +788,7 @@ func deleteSegmentRsv(ctx context.Context, x db.Sqler, rsvID *reservation.ID) er
 		rsvID.ASID,
 		binary.BigEndian.Uint32(rsvID.Suffix),
 	}
-	rsvs, err := getSegReservations(ctx, x, "WHERE id_as = ? AND id_suffix = ?", params)
+	rsvs, err := getSegReservations(ctx, x, "WHERE id_as = ? AND id_suffix = ?", params...)
 	if err != nil {
 		return err
 	}
@@ -797,19 +849,17 @@ func insertNewE2EReservation(ctx context.Context, x *sql.Tx, rsv *e2e.Reservatio
 		}
 	}
 	if len(rsv.SegmentReservations) > 0 {
-		const valuesPlaceholder = `(id_as = ? AND id_suffix = ?)`
-		const queryTmpl = `INSERT INTO e2e_to_seg (e2e, seg)
-		SELECT ?, ROWID FROM seg_reservation WHERE `
-		params := make([]interface{}, 1, 1+2*len(rsv.SegmentReservations))
-		params[0] = rowID
-		for _, segRsv := range rsv.SegmentReservations {
-			if len(segRsv.ID.Suffix) < 4 {
-				return serrors.New("wrong suffix", "suffix", hex.EncodeToString(segRsv.ID.Suffix))
-			}
-			params = append(params, segRsv.ID.ASID, binary.BigEndian.Uint32(segRsv.ID.Suffix))
+		const queryIns = "INSERT INTO e2e_to_seg (e2e, seg, ordr)\n"
+		const segQuery = `SELECT ?, ROWID, ? FROM seg_reservation WHERE id_as = ? AND id_suffix = ?`
+
+		query := queryIns + segQuery +
+			strings.Repeat("\nUNION\n"+segQuery, len(rsv.SegmentReservations)-1)
+
+		params := make([]interface{}, 0, 4*len(rsv.SegmentReservations))
+		for i, segRsv := range rsv.SegmentReservations {
+			params = append(params, rowID, i,
+				segRsv.ID.ASID, binary.BigEndian.Uint32(segRsv.ID.Suffix))
 		}
-		query := queryTmpl + valuesPlaceholder +
-			strings.Repeat(" OR "+valuesPlaceholder, len(rsv.SegmentReservations)-1)
 		res, err := x.ExecContext(ctx, query, params...)
 		if err != nil {
 			return err
@@ -826,7 +876,7 @@ func insertNewE2EReservation(ctx context.Context, x *sql.Tx, rsv *e2e.Reservatio
 	return nil
 }
 
-func getE2ERsvFromID(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
+func getE2ERsvFromID(ctx context.Context, x db.Sqler, ID *reservation.ID) (
 	*e2e.Reservation, error) {
 
 	// read reservation
@@ -859,7 +909,7 @@ func getE2ERsvFromID(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
 	return rsv, nil
 }
 
-func getE2ERsvsFromSegment(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
+func getE2ERsvsFromSegment(ctx context.Context, x db.Sqler, ID *reservation.ID) (
 	[]*e2e.Reservation, error) {
 
 	if len(ID.Suffix) < 4 {
@@ -945,8 +995,9 @@ func getE2EIndices(ctx context.Context, x db.Sqler, rowID int) (e2e.Indices, err
 func getE2EAssocSegRsvs(ctx context.Context, x db.Sqler, rowID int) (
 	[]*segment.Reservation, error) {
 
-	condition := "WHERE rowID IN (SELECT seg FROM e2e_to_seg WHERE e2e = ?)"
-	return getSegReservations(ctx, x, condition, []interface{}{rowID})
+	condition := `JOIN e2e_to_seg ON e2e_to_seg.seg=ROWID WHERE e2e_to_seg.e2e=?
+		ORDER BY e2e_to_seg.ordr ASC`
+	return getSegReservations(ctx, x, condition, rowID)
 }
 
 // returns the rowIDs of the indices and their associated segment reservation rowID
