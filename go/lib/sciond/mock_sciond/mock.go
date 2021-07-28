@@ -9,6 +9,7 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	addr "github.com/scionproto/scion/go/lib/addr"
 	colibri "github.com/scionproto/scion/go/lib/colibri"
+	reservation "github.com/scionproto/scion/go/lib/colibri/reservation"
 	common "github.com/scionproto/scion/go/lib/common"
 	path_mgmt "github.com/scionproto/scion/go/lib/ctrl/path_mgmt"
 	drkey "github.com/scionproto/scion/go/lib/drkey"
@@ -69,6 +70,20 @@ func (m *MockConnector) Close(arg0 context.Context) error {
 func (mr *MockConnectorMockRecorder) Close(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockConnector)(nil).Close), arg0)
+}
+
+// ColibriCleanupRsv mocks base method
+func (m *MockConnector) ColibriCleanupRsv(arg0 context.Context, arg1 *reservation.ID, arg2 reservation.IndexNumber) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ColibriCleanupRsv", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ColibriCleanupRsv indicates an expected call of ColibriCleanupRsv
+func (mr *MockConnectorMockRecorder) ColibriCleanupRsv(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ColibriCleanupRsv", reflect.TypeOf((*MockConnector)(nil).ColibriCleanupRsv), arg0, arg1, arg2)
 }
 
 // ColibriListRsvs mocks base method

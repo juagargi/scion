@@ -1,0 +1,13 @@
+load("//lint:go.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["admitter.go"],
+    importpath = "github.com/scionproto/scion/go/co/reservation/segment/admission",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//go/co/reservation:go_default_library",
+        "//go/co/reservation/segment:go_default_library",
+        "//go/co/reservationstorage/backend:go_default_library",
+    ],
+)

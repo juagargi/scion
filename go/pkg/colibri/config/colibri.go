@@ -17,7 +17,7 @@ package config
 import (
 	"io"
 
-	colconf "github.com/scionproto/scion/go/cs/reservation/conf"
+	colconf "github.com/scionproto/scion/go/co/reservation/conf"
 	"github.com/scionproto/scion/go/lib/config"
 	"github.com/scionproto/scion/go/pkg/storage"
 )

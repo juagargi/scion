@@ -75,6 +75,26 @@ func (mr *MockColibriClientMockRecorder) CleanupE2EIndex(arg0, arg1 interface{},
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupE2EIndex", reflect.TypeOf((*MockColibriClient)(nil).CleanupE2EIndex), varargs...)
 }
 
+// CleanupReservation mocks base method
+func (m *MockColibriClient) CleanupReservation(arg0 context.Context, arg1 *colibri.DaemonCleanupRequest, arg2 ...grpc.CallOption) (*colibri.DaemonCleanupResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "CleanupReservation", varargs...)
+	ret0, _ := ret[0].(*colibri.DaemonCleanupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupReservation indicates an expected call of CleanupReservation
+func (mr *MockColibriClientMockRecorder) CleanupReservation(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupReservation", reflect.TypeOf((*MockColibriClient)(nil).CleanupReservation), varargs...)
+}
+
 // CleanupSegmentIndex mocks base method
 func (m *MockColibriClient) CleanupSegmentIndex(arg0 context.Context, arg1 *colibri.Request, arg2 ...grpc.CallOption) (*colibri.Response, error) {
 	m.ctrl.T.Helper()
@@ -286,6 +306,21 @@ func (m *MockColibriServer) CleanupE2EIndex(arg0 context.Context, arg1 *colibri.
 func (mr *MockColibriServerMockRecorder) CleanupE2EIndex(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupE2EIndex", reflect.TypeOf((*MockColibriServer)(nil).CleanupE2EIndex), arg0, arg1)
+}
+
+// CleanupReservation mocks base method
+func (m *MockColibriServer) CleanupReservation(arg0 context.Context, arg1 *colibri.DaemonCleanupRequest) (*colibri.DaemonCleanupResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupReservation", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.DaemonCleanupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupReservation indicates an expected call of CleanupReservation
+func (mr *MockColibriServerMockRecorder) CleanupReservation(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupReservation", reflect.TypeOf((*MockColibriServer)(nil).CleanupReservation), arg0, arg1)
 }
 
 // CleanupSegmentIndex mocks base method
