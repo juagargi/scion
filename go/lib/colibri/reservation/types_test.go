@@ -83,6 +83,18 @@ func TestE2EIDFromRaw(t *testing.T) {
 	require.True(t, id.IsE2EID())
 }
 
+func TestIDCopy(t *testing.T) {
+	id1 := ID{
+		ASID:   xtest.MustParseAS("ff00:0:111"),
+		Suffix: make([]byte, 10),
+	}
+	id1.Suffix[1] = 1
+	id2 := id1.Copy()
+	id2.Suffix[1] = 2
+	require.Equal(t, uint8(1), id1.Suffix[1])
+	require.Equal(t, uint8(2), id2.Suffix[1])
+}
+
 func TestTickFromTime(t *testing.T) {
 	require.Equal(t, Tick(0), TickFromTime(time.Unix(0, 0)))
 	require.Equal(t, Tick(0), TickFromTime(time.Unix(3, 999999)))

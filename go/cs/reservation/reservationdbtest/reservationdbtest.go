@@ -16,6 +16,7 @@ package reservationdbtest
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -770,6 +771,15 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, newDB func() backend
 	rsv, err = db.GetE2ERsvFromID(ctx, ID)
 	require.NoError(t, err)
 	require.Nil(t, rsv)
+
+	require.Len(t, r.ID.Suffix, 10)
+	rand.Read(r.ID.Suffix)
+	t.Logf("Retrieving ID %s", r.ID)
+	err = db.PersistE2ERsv(ctx, r)
+	require.NoError(t, err)
+	r2, err := db.GetE2ERsvFromID(ctx, &r.ID)
+	require.NoError(t, err)
+	require.Equal(t, r, r2)
 }
 
 func testGetE2ERsvsOnSegRsv(ctx context.Context, t *testing.T, newDB func() backend.DB) {

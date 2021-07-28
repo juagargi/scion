@@ -418,13 +418,7 @@ func (x *executor) GetE2ERsvFromID(ctx context.Context, ID *reservation.ID) (
 func (x *executor) GetE2ERsvsOnSegRsv(ctx context.Context, ID *reservation.ID) (
 	[]*e2e.Reservation, error) {
 
-	var rsvs []*e2e.Reservation
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		var err error
-		rsvs, err = getE2ERsvsFromSegment(ctx, tx, ID)
-		return err
-	})
-	return rsvs, err
+	return getE2ERsvsFromSegment(ctx, x.db, ID)
 }
 
 func (x *executor) PersistE2ERsv(ctx context.Context, rsv *e2e.Reservation) error {
@@ -917,7 +911,7 @@ func getE2ERsvFromID(ctx context.Context, x db.Sqler, ID *reservation.ID) (
 	return rsv, nil
 }
 
-func getE2ERsvsFromSegment(ctx context.Context, x *sql.Tx, ID *reservation.ID) (
+func getE2ERsvsFromSegment(ctx context.Context, x db.Sqler, ID *reservation.ID) (
 	[]*e2e.Reservation, error) {
 
 	if len(ID.Suffix) < 4 {

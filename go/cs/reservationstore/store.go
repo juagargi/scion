@@ -843,10 +843,10 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
 
-	// deleteme
-	s.deletemePrintAllE2ERsvs(ctx)
-	print(ctx.Err())
-	ctx = context.Background()
+	// // deleteme
+	// s.deletemePrintAllE2ERsvs(ctx)
+	// print(ctx.Err())
+	// ctx = context.Background()
 
 	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
