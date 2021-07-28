@@ -94,7 +94,8 @@ func (s *Store) deletemePrintAllRsvs(ctx context.Context) {
 		log.Info("deleteme FOUND reservation", "id", r.ID.String(),
 			"spath_type", r.PathAtSource.Spath.Type,
 			"direction", r.PathType,
-			"src", r.PathAtSource.SrcIA(), "dst", r.PathAtSource.DstIA())
+			"src", r.PathAtSource.SrcIA(), "dst", r.PathAtSource.DstIA(),
+			"path", r.PathAtSource.String())
 	}
 }
 
@@ -105,6 +106,14 @@ func (s *Store) deletemePrintAllE2ERsvs(ctx context.Context) {
 	}
 	for _, r := range allRsvs {
 		log.Info("deleteme E2E rsv", "id", r.ID)
+	}
+}
+
+func (s *Store) deletemeCheckPath(rsv *segment.Reservation) {
+	assert(len(rsv.PathAtSource.Steps) > 0, "bad path %s", rsv.PathAtSource)
+	log.Info("deleteme path for rsv", "id", rsv.ID, "dir", rsv.PathType, "path", rsv.PathAtSource)
+	if s.isCore && rsv.PathType == reservation.DownPath {
+		assert(rsv.PathAtSource.CurrentStep == 0, "bad path %s", rsv.PathAtSource)
 	}
 }
 
@@ -131,7 +140,7 @@ func (s *Store) GetReservationsAtSource(ctx context.Context, dstIA addr.IA) (
 
 func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA,
 	pathType reservation.PathType) ([]*colibri.ReservationLooks, error) {
-	log.Info("---------------------- vvvvv ------------")
+	log.Info("---------------------- vvvvv ------------ list reservations")
 	s.deletemePrintAllRsvs(ctx)
 	log.Info("---------------------- ^^^^^ ------------")
 	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA, pathType)
@@ -390,6 +399,7 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
 			"id", req.ID.String())
 	}
+	s.deletemeCheckPath(rsv)
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID.String())
@@ -452,7 +462,6 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 			"id", req.ID.String())
 	}
 
-	// if req.IsFirstAS() {
 	if isFirstASInReservation(rsv, req) {
 		colibriPath := rsv.DeriveColibriPathAtSource()
 		rawColibriPath := make([]byte, colibriPath.Len())
@@ -608,6 +617,10 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	e2e.SetupResponse, error) {
 
+	log.Info("---------------------- vvvvv ------------ E2E admission")
+	s.deletemePrintAllRsvs(ctx)
+	log.Info("---------------------- ^^^^^ ------------")
+
 	if err := s.validateAuthenticators(&req.Request); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
@@ -747,8 +760,9 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 			break
 		}
 	}
+
 	log.Debug("e2e admission", "requested_cls", req.RequestedBW, "admitted", admitted,
-		"free", free)
+		"free", free, "segs", deletemePrintSegRsvs(req.SegmentRsvs))
 
 	// // TODO(juagargi) fix response type
 	// if !req.Success() || req.RequestedBW.ToKbps() > free {
@@ -898,7 +912,6 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 		}
 	}
 	if rsv != nil && req.IsLastAS() {
-		// TODO(juagargi) missing setting req.Path
 		req.Path.Steps = stitchTransparentPaths(req.Path.Steps, rsv.GetLastSegmentPathSteps())
 	}
 
@@ -1249,38 +1262,18 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 func appendToPath(req *e2e.SetupReq, rsv *e2e.Reservation) error {
 	assert(req.RequestPathNeedsSteps(), "should call the function only when needed")
 
+	var seg *segment.Reservation
 	if len(req.Path.Steps) == 0 {
 		// initial node
 		assert(req.IsFirstAS(), "inconsistency: this node should be the initial one")
-		req.Path.Steps = rsv.SegmentReservations[0].PathAtSource.Copy().Steps
-		return nil
+		seg = rsv.SegmentReservations[0]
+	} else {
+		// because this node is not the first one, and needs steps, it must be transfer
+		assert(!req.IsFirstAS(), "inconsistency: node must not be the first one in the path")
+		assert(req.IsTransfer(), "inconsistency: node must be transfer (stitching)")
+		seg = rsv.SegmentReservations[req.CurrentSegmentRsvIndex+1]
 	}
-
-	// because this node is not the first one, and needs steps, it must be transfer
-	assert(!req.IsFirstAS(), "inconsistency: node must not be the first one in the path")
-	assert(req.IsTransfer(), "inconsistency: node must be transfer (stitching)")
-
-	nextSegment := rsv.SegmentReservations[req.CurrentSegmentRsvIndex+1]
-	steps := nextSegment.PathAtSource.Copy().Steps
-
-	// deleteme := stitchTransparentPaths(req.Path.Steps, steps)
-	// // when stitching two segments, one of the steps has to be merged into the previous one.
-	// // TODO(juagargi) remove assertions as they assume well intentioned requests
-	// l := len(req.Path.Steps)
-	// assert(req.Path.Steps[l-1].Egress == 0,
-	// 	fmt.Sprintf("wrong assumption egress not zero but %d", req.Path.Steps[l-1].Egress))
-	// assert(steps[0].Ingress == 0,
-	// 	fmt.Sprintf("wrong assumption ingress not zero but %d", steps[0].Ingress))
-	// assert(req.Path.Steps[l-1].IA.Equal(steps[0].IA),
-	// 	fmt.Sprintf("wrong assumption, IAs different, first: %s, second: %s",
-	// 		req.Path.Steps[l-1].IA, steps[0].IA))
-	// req.Path.Steps[l-1].Egress = steps[0].Egress
-	// steps = steps[1:]
-
-	// req.Path.Steps = append(req.Path.Steps, steps...)
-	// assert(len(req.Path.Steps) == len(deleteme), "deleteme WTF?")
-	// return nil
-	req.Path.Steps = stitchTransparentPaths(req.Path.Steps, steps)
+	req.Path.Steps = stitchTransparentPaths(req.Path.Steps, seg.PathAtSource.Steps)
 	return nil
 }
 
@@ -1341,9 +1334,17 @@ func isFirstASInReservation(rsv *segment.Reservation, req *base.Request) bool {
 	}
 }
 
+func deletemePrintSegRsvs(segs []reservation.ID) string {
+	strs := make([]string, len(segs))
+	for i, s := range segs {
+		strs[i] = s.String()
+	}
+	return strings.Join(strs, ", ")
+}
+
 // assert performs an assertion on an invariant. An assertion is part of the documentation.
-func assert(cond bool, msg string) {
+func assert(cond bool, msg string, params ...interface{}) {
 	if !cond {
-		panic(msg)
+		panic(fmt.Sprintf(msg, params...))
 	}
 }
