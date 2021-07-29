@@ -813,12 +813,12 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		Ingress: currStep.Ingress,
 		Egress:  currStep.Egress,
 	}}, token.HopFields...)
-	err = s.computeMACBackwards(rsv.ID.Suffix, index.Token, req.ID.ASID, req.ID.ASID)
+	err = s.computeMACBackwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
 		return failedResponse, err
 	}
-	index.Token = token // TODO(juagargi) unnecessary, check also in seg. admission
+	index.Token = token
 
 	if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
