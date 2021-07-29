@@ -81,9 +81,9 @@ func TestComputeMAC(t *testing.T) {
 		},
 		HopFields: []reservation.HopField{{Egress: 41}},
 	}
-	storeMAC, err := store.ComputeMAC(infF.ResIdSuffix, tok, srcAS, addr.AS(0))
+	err = store.ComputeMACBackwards(infF.ResIdSuffix, tok, srcAS, addr.AS(0))
 	require.NoError(t, err)
-	require.Equal(t, mac, storeMAC)
+	require.Equal(t, mac, tok.HopFields[0].Mac[:])
 }
 
 type performanceTestCase struct {

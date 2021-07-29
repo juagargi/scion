@@ -121,7 +121,7 @@ func (s *Store) err(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf(fmt.Sprintf("@%s: ", s.localIA) + err.Error())
+	return fmt.Errorf("@%s: %s", s.localIA, err)
 }
 
 func (s *Store) errNew(msg string, params ...interface{}) error {
@@ -709,6 +709,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 			return nil, serrors.WrapStr("appending next segment to request path", err)
 		}
 	}
+	// now the request has correct steps (current step is sure to exist)
 
 	idx, err := rsv.NewIndex(req.Timestamp, req.RequestedBW)
 	if err != nil {
@@ -717,7 +718,6 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		return failedResponse, nil
 	}
 	index := rsv.Index(idx)
-	// index.AllocBW = req.RequestedBW
 
 	// admission
 	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
@@ -765,9 +765,17 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		"free", free, "segs", deletemePrintSegRsvs(req.SegmentRsvs))
 
 	if admitted {
-		// rsv.GetLastSegmentPathSteps()
-		// s.computeMAC(rsv.ID.Suffix,index.Token,req.ID.ASID,req.)
-		// TODO(juagargi) update token here
+		currStep := req.Path.Steps[req.Path.CurrentStep]
+		index.Token.HopFields = append(index.Token.HopFields, reservation.HopField{
+			Ingress: currStep.Ingress,
+			Egress:  currStep.Egress,
+		})
+		err = s.computeMACForwards(rsv.ID.Suffix, index.Token, req.ID.ASID, req.ID.ASID)
+		if err != nil {
+			failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
+			return failedResponse, err
+		}
+
 		if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
 			return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
 				"id", req.ID.String())
@@ -1030,19 +1038,26 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		}
 	}
 
-	// update token
+	// update token with new hop field
 	currStep := req.Path.Steps[req.Path.CurrentStep]
-	token.HopFields = append([]reservation.HopField{{
-		Ingress: currStep.Ingress,
-		Egress:  currStep.Egress,
-	}}, token.HopFields...)
-
-	mac, err := s.computeMAC(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
-	if err != nil {
-		failedResponse.Message = "cannot compute MAC: " + s.err(err).Error()
-		return failedResponse, s.errWrapStr("cannot compute MAC", err)
+	if req.PathType == reservation.DownPath {
+		token.HopFields = append(token.HopFields, reservation.HopField{
+			Ingress: currStep.Ingress,
+			Egress:  currStep.Egress,
+		})
+		err = s.computeMACForwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
+	} else {
+		token.HopFields = append([]reservation.HopField{{
+			Ingress: currStep.Ingress,
+			Egress:  currStep.Egress,
+		}}, token.HopFields...)
+		err = s.computeMACBackwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
 	}
-	copy(token.HopFields[0].Mac[:], mac)
+	if err != nil {
+		failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
+		return failedResponse, err
+	}
+
 	// store token and colibri path inside reservation
 	index.Token = token
 	index.AllocBW = token.BWCls // could have been admitted for less downstream
@@ -1137,17 +1152,35 @@ func (s *Store) sendUpstreamForAdmission(ctx context.Context, req *segment.Setup
 
 }
 
-func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS addr.AS) (
-	[]byte, error) {
+// computeMACForwards is used when adding hop fields to the token in the direction of the
+// reservation, e.g. E2E admission or down-path segment reservation.
+func (s *Store) computeMACForwards(suffix []byte, tok *reservation.Token,
+	srcAS, dstAS addr.AS) error {
+
+	return computeMAC(s.colibriKey, suffix, tok, &tok.HopFields[len(tok.HopFields)-1], srcAS, dstAS)
+}
+
+// computeMACBackwards is used when adding hop fields to the token in the reverse direction
+// of the reservation, e.g. up-path or core segment reservation.
+func (s *Store) computeMACBackwards(suffix []byte, tok *reservation.Token,
+	srcAS, dstAS addr.AS) error {
+
+	return computeMAC(s.colibriKey, suffix, tok, &tok.HopFields[0], srcAS, dstAS)
+}
+
+func computeMAC(key, suffix []byte, tok *reservation.Token, hf *reservation.HopField,
+	srcAS, dstAS addr.AS) error {
 
 	buff := make([]byte, colibri.LengthInputDataRound16)
-	hf := tok.HopFields[0]
+	// hf := tok.HopFields[0]
 	err := colibri.MACInput(buff, suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls, tok.RLC,
 		true, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return colibri.StaticMAC(s.colibriKey, buff)
+	mac, err := colibri.StaticMAC(key, buff)
+	copy(hf.Mac[:], mac)
+	return err
 }
 
 // obtainRsvs will query the local DB if the src is local, or dial the corresponding col service.
