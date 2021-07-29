@@ -478,18 +478,21 @@ func testDeleteExpiredIndices(ctx context.Context, t *testing.T, newDB func() ba
 	e.ID.ASID = xtest.MustParseAS("ff00:0:3")
 	e.SegmentReservations = []*segment.Reservation{r}
 	e.Indices[0].Expiration = util.SecsToTime(4)
-	_, err = e.NewIndex(util.SecsToTime(5))
+	e.Indices[0].Token.ExpirationTick = reservation.TickFromTime(e.Indices[0].Expiration)
+	_, err = e.NewIndex(util.SecsToTime(5), 5)
 	require.NoError(t, err)
 	err = db.PersistE2ERsv(ctx, e) // save e3
 	require.NoError(t, err)
 	// r4, e4
 	r.Indices = r.Indices[:1]
 	r.Indices[0].Expiration = util.SecsToTime(6)
+	e.Indices[0].Token.ExpirationTick = reservation.TickFromTime(e.Indices[0].Expiration)
 	err = db.NewSegmentRsv(ctx, r) // save r4
 	require.NoError(t, err)
 	segIds = append(segIds, r.ID)
 	e.Indices = e.Indices[:1]
 	e.Indices[0].Expiration = util.SecsToTime(5)
+	e.Indices[0].Token.ExpirationTick = reservation.TickFromTime(e.Indices[0].Expiration)
 	e.ID.ASID = xtest.MustParseAS("ff00:0:4")
 	e.SegmentReservations = []*segment.Reservation{r}
 	err = db.PersistE2ERsv(ctx, e) // save e4
@@ -498,6 +501,7 @@ func testDeleteExpiredIndices(ctx context.Context, t *testing.T, newDB func() ba
 	e.ID.ASID = xtest.MustParseAS("ff00:0:5")
 	e.SegmentReservations = []*segment.Reservation{r}
 	e.Indices[0].Expiration = util.SecsToTime(1000)
+	e.Indices[0].Token.ExpirationTick = reservation.TickFromTime(e.Indices[0].Expiration)
 	err = db.PersistE2ERsv(ctx, e) // save e5
 	require.NoError(t, err)
 
@@ -593,7 +597,7 @@ func testNextExpirationTime(ctx context.Context, t *testing.T, newDB func() back
 		SegmentReservations: []*segment.Reservation{r},
 	}
 	t2 := t1.Add(time.Second)
-	_, err = re2e.NewIndex(t2)
+	_, err = re2e.NewIndex(t2, 5)
 	require.NoError(t, err)
 	err = db.PersistE2ERsv(ctx, re2e)
 	require.NoError(t, err)
@@ -613,7 +617,7 @@ func testNextExpirationTime(ctx context.Context, t *testing.T, newDB func() back
 		SegmentReservations: []*segment.Reservation{r},
 	}
 	t3 := t1.Add(-time.Second)
-	_, err = re2e.NewIndex(t3)
+	_, err = re2e.NewIndex(t3, 5)
 	require.NoError(t, err)
 	err = db.PersistE2ERsv(ctx, re2e)
 	require.NoError(t, err)
@@ -642,7 +646,7 @@ func testPersistE2ERsv(ctx context.Context, t *testing.T, newDB func() backend.D
 		r2.ID.Suffix[i] = byte(i)
 	}
 	for i := uint32(2); i < 16; i++ { // add 14 more indices
-		_, err = r2.NewIndex(util.SecsToTime(i))
+		_, err = r2.NewIndex(util.SecsToTime(i), 5)
 		require.NoError(t, err)
 	}
 	for i := 0; i < 2; i++ {
@@ -739,12 +743,12 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, newDB func() backend
 	r := newTestE2EReservation(t)
 	r.Indices = e2e.Indices{}
 	for i := uint32(2); i < 18; i++ {
-		_, err := r.NewIndex(util.SecsToTime(i / 2))
+		_, err := r.NewIndex(util.SecsToTime(i/2), 5)
 		require.NoError(t, err)
 	}
 	r.Indices = r.Indices[14:]
 	for i := uint32(18); i < 20; i++ {
-		_, err := r.NewIndex(util.SecsToTime(i / 2))
+		_, err := r.NewIndex(util.SecsToTime(i/2), 5)
 		require.NoError(t, err)
 	}
 	err := db.PersistE2ERsv(ctx, r)
@@ -755,7 +759,7 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, newDB func() backend
 	// 16 indices
 	require.Len(t, r.Indices, 4)
 	for i := uint32(20); i < 32; i++ {
-		_, err := r.NewIndex(util.SecsToTime(i / 2))
+		_, err := r.NewIndex(util.SecsToTime(i/2), 5)
 		require.NoError(t, err)
 	}
 	require.Len(t, r.Indices, 16)
@@ -975,7 +979,7 @@ func newTestE2EReservation(t *testing.T) *e2e.Reservation {
 		},
 	}
 	expTime := util.SecsToTime(1)
-	_, err := rsv.NewIndex(expTime)
+	_, err := rsv.NewIndex(expTime, 5)
 	require.NoError(t, err)
 	return rsv
 }

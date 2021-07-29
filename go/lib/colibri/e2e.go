@@ -17,12 +17,15 @@
 package colibri
 
 import (
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
 
 // E2EReservationSetup has the necessary data for an endhost to setup/renew an e2e reservation.
 type E2EReservationSetup struct {
 	Id          reservation.ID
+	SrcIA       addr.IA
+	DstIA       addr.IA
 	Index       reservation.IndexNumber
 	Segments    []reservation.ID
 	RequestedBW reservation.BWCls

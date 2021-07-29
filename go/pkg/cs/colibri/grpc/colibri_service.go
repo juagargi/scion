@@ -232,6 +232,8 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 		Params: &colpb.E2ESetupRequest_PathParams{
 			Segments:       msg.Segments,
 			CurrentSegment: 0,
+			SrcIa:          msg.SrcIa,
+			DstIa:          msg.DstIa,
 		},
 		Allocationtrail: nil,
 	}
