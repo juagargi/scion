@@ -22,6 +22,7 @@ import (
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
+	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
 )
 
 // Reservation represents an E2E reservation.
@@ -119,6 +120,38 @@ func (r *Reservation) AllocResv() uint64 {
 			r.Indices[len(r.Indices)-2].AllocBW)
 	}
 	return maxBW.ToKbps()
+}
+
+// DeriveColibriPathAtSource builds a valid colibi path (or nil if no indices) based
+// on the values of this reservation.
+func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
+	if len(r.Indices) == 0 {
+		return nil
+	}
+	index := r.Indices[len(r.Indices)-1]
+	p := &colpath.ColibriPath{
+		InfoField: &colpath.InfoField{
+			C:           false,
+			S:           false,
+			R:           false,
+			Ver:         uint8(index.Idx),
+			HFCount:     uint8(len(index.Token.HopFields)),
+			ResIdSuffix: make([]byte, 12),
+			ExpTick:     uint32(index.Token.ExpirationTick),
+			BwCls:       uint8(index.AllocBW),
+			Rlc:         uint8(index.Token.RLC),
+		},
+		HopFields: make([]*colpath.HopField, len(index.Token.HopFields)),
+	}
+	copy(p.InfoField.ResIdSuffix, r.ID.Suffix)
+	for i, hf := range index.Token.HopFields {
+		p.HopFields[i] = &colpath.HopField{
+			IngressId: hf.Ingress,
+			EgressId:  hf.Egress,
+			Mac:       append([]byte{}, hf.Mac[:]...),
+		}
+	}
+	return p
 }
 
 // GetLastSegmentPathSteps returns the path steps for the last segment in use by this e2e rsv.

@@ -790,9 +790,15 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	if req.IsLastAS() {
 		// TODO(juagargi): contact the endhost
 		if admitted {
-			// return the response
+			// return the path
+			colibriPath := rsv.DeriveColibriPathAtSource()
+			rawColibriPath := make([]byte, colibriPath.Len())
+			if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
+				log.Debug("error obtaining colibri path from reservation", "err", err)
+				return nil, s.errWrapStr("error obtaining colibri path from reservation", err)
+			}
 			return &e2e.SetupResponseSuccess{
-				Token: *index.Token,
+				Spath: rawColibriPath,
 			}, nil
 		}
 		return &e2e.SetupResponseFailure{
@@ -820,23 +826,8 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		if err != nil {
 			return nil, serrors.WrapStr("translating response", err)
 		}
-		// TODO(juagargi) add something to the token?
 		return res, nil
 	}
-	// var msg base.MessageWithPath
-	// if req.Location() == e2e.Destination {
-	// 	asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
-	// 	msg = &e2e.ResponseSetupSuccess{
-	// 		Response: *morphE2EResponseToSuccess(&asAResponse.Response),
-	// 		Token:    *index.Token,
-	// 	}
-	// } else {
-	// 	msg = &e2e.SetupReqSuccess{
-	// 		SetupReq: *req,
-	// 		Token:    *index.Token,
-	// 	}
-	// }
-	// return msg, nil
 }
 
 // CleanupE2EReservation will remove an index from an e2e reservation.
@@ -1291,7 +1282,7 @@ func stitchTransparentPaths(a, b []base.PathStep) []base.PathStep {
 		return append([]base.PathStep{}, b...)
 	}
 	// when stitching two segments, one of the steps has to be merged into the previous one.
-	// TODO(juagargi) remove assertions as they assume well intentioned requests
+	// TODO(juagargi) remove assertions and ensure validation catches these cases.
 	assert(a[len(a)-1].Egress == 0,
 		fmt.Sprintf("wrong assumption egress not zero but %d", a[len(a)-1].Egress))
 	assert(b[0].Ingress == 0,
@@ -1307,8 +1298,6 @@ func stitchTransparentPaths(a, b []base.PathStep) []base.PathStep {
 	ret[len(ret)-1].Egress = b[0].Egress
 	ret = append(ret, b[1:]...)
 	return ret
-
-	// return append(append([]base.PathStep{}, a[:len(a)-1]...), b...)
 }
 
 func reservationsToLooks(rsvs []*segment.Reservation, localIA addr.IA) []*colibri.ReservationLooks {

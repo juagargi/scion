@@ -262,14 +262,9 @@ func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservati
 			AllocationTrail: trail,
 		}
 	}
-	// adapt the received token to an snet.Path
-	token, err := reservation.TokenFromRaw(sdRes.Base.Token)
-	if err != nil {
-		return nil, err
-	}
 	return &path.Path{
 		SPath: spath.Path{
-			Raw:  token.ToRaw(),
+			Raw:  sdRes.Base.Success.Spath,
 			Type: colpath.PathType,
 		},
 	}, nil

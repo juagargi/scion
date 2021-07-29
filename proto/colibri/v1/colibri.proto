@@ -174,7 +174,7 @@ message E2eSetupResponse {
         repeated E2eSetupRequest.E2eSetupBead allocationtrail = 3;
     }
     Failure failure = 1; // if present: information about the failure
-    bytes token = 2;
+    bytes spath = 2;
 }
 
 
@@ -206,8 +206,11 @@ message DaemonSetupResponse {
         uint32 failed_step = 2;
         repeated uint32 alloc_trail = 3;
     }
+    message Success {
+        bytes spath = 1;
+    }
     Failure failure = 1; // if present: information about the failure
-    bytes token = 2;
+    Success success = 2; // should be present if failure == nil
 }
 
 message DaemonCleanupRequest {
