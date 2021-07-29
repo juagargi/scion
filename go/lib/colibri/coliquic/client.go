@@ -81,7 +81,6 @@ func (o *ServiceClientOperator) DialSvcCOL(ctx context.Context, dst *addr.IA) (
 	o.colServicesMutex.Lock()
 	defer o.colServicesMutex.Unlock()
 
-	// TODO(juagargi) the map of service addresses must be re-queried constantly (or emptied)
 	addr, ok := o.colServices[*dst]
 	if !ok {
 		var err error
@@ -162,6 +161,10 @@ func (o *ServiceClientOperator) initialize(topo topology.Topology) {
 			defer log.HandlePanic()
 			o.periodicResolveNeighbors(topo)
 		}()
+		go func() {
+			defer log.HandlePanic()
+			o.periodicDiscoverServices()
+		}()
 	}()
 }
 
@@ -184,6 +187,7 @@ func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology)
 				"total", len(neighbors), "missing", len(remainingIAs))
 		}
 		if len(remainingIAs) > 0 {
+			// oops, we couldn't deal with all neighbors. Do not touch the existing addressbook
 			missing := make([]string, 0, len(remainingIAs))
 			for id, ia := range remainingIAs {
 				missing = append(missing, fmt.Sprintf("%s on ifid %d", ia, id))
@@ -191,11 +195,42 @@ func (o *ServiceClientOperator) periodicResolveNeighbors(topo topology.Topology)
 			log.Error("periodic resolve neighbors: neighbors without address",
 				"missing_count", len(remainingIAs), "total", len(neighbors),
 				"missing", strings.Join(missing, ","))
-			continue
+		} else {
+			o.neighborsMutex.Lock()
+			o.neighbors = newAddrBook
+			o.neighborsMutex.Unlock()
 		}
-		o.neighborsMutex.Lock()
-		o.neighbors = newAddrBook
-		o.neighborsMutex.Unlock()
+	}
+}
+
+func (o *ServiceClientOperator) periodicDiscoverServices() {
+	for {
+		time.Sleep(15 * time.Minute)
+		// get all existing destinations and re-query them
+		o.colServicesMutex.Lock()
+		ias := make([]addr.IA, 0, len(o.colServices))
+		for ia := range o.colServices {
+			ias = append(ias, ia)
+		}
+		// re-querying could take some time, free the lock
+		o.colServicesMutex.Unlock()
+		addrBook := make(map[addr.IA]*snet.UDPAddr)
+		failed := 0
+		for _, ia := range ias {
+			ctx, cancelF := context.WithTimeout(context.Background(), 10*time.Second)
+			addr, err := o.srvResolver.ResolveColibriService(ctx, &ia)
+			cancelF()
+			if err == nil {
+				addrBook[ia] = addr
+			} else {
+				failed++
+			}
+		}
+		log.Debug("periodic discover colibri services", "failed", failed, "found", len(addrBook))
+		// quickly set the new address book
+		o.colServicesMutex.Lock()
+		o.colServices = addrBook
+		o.colServicesMutex.Unlock()
 	}
 }
 

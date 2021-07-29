@@ -22,6 +22,7 @@ import (
 )
 
 const PathType path.Type = 4
+
 const LenMinColibri int = 8 + LenInfoField + 2*LenHopField
 
 func RegisterPath() {

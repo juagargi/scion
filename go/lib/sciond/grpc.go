@@ -237,6 +237,8 @@ func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservati
 	pbReq := &sdpb.ColibriSetupRequest{
 		Base: &colpb.DaemonSetupRequest{
 			Id:          translate.PBufID(&req.Id),
+			SrcIa:       uint64(req.SrcIA.IAInt()),
+			DstIa:       uint64(req.DstIA.IAInt()),
 			Index:       uint32(req.Index),
 			RequestedBw: uint32(req.RequestedBW),
 			Segments:    pbSegs,
@@ -260,14 +262,9 @@ func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservati
 			AllocationTrail: trail,
 		}
 	}
-	// adapt the received token to an snet.Path
-	token, err := reservation.TokenFromRaw(sdRes.Base.Token)
-	if err != nil {
-		return nil, err
-	}
 	return &path.Path{
 		SPath: spath.Path{
-			Raw:  token.ToRaw(),
+			Raw:  sdRes.Base.Success.Spath,
 			Type: colpath.PathType,
 		},
 	}, nil

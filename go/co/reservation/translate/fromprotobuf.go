@@ -23,7 +23,6 @@ import (
 	"github.com/scionproto/scion/go/co/reservation/segment"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri"
-	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -76,6 +75,8 @@ func E2ESetupRequest(msg *colpb.E2ESetupRequest) (*e2e.SetupReq, error) {
 	}
 	return &e2e.SetupReq{
 		Request:                *base,
+		SrcIA:                  addr.IAInt(msg.Params.SrcIa).IA(),
+		DstIA:                  addr.IAInt(msg.Params.DstIa).IA(),
 		SegmentRsvs:            segIds,
 		CurrentSegmentRsvIndex: int(msg.Params.CurrentSegment),
 		RequestedBW:            col.BWCls(msg.RequestedBw),
@@ -131,12 +132,8 @@ func E2ESetupResponse(msg *colpb.E2ESetupResponse) (e2e.SetupResponse, error) {
 		}, nil
 	}
 	// success:
-	token, err := reservation.TokenFromRaw(msg.Token)
-	if err != nil {
-		return nil, err
-	}
 	return &e2e.SetupResponseSuccess{
-		Token: *token,
+		Token: msg.Token,
 	}, nil
 }
 

@@ -121,7 +121,7 @@ func (s *Store) err(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf(fmt.Sprintf("@%s: ", s.localIA) + err.Error())
+	return fmt.Errorf("@%s: %s", s.localIA, err)
 }
 
 func (s *Store) errNew(msg string, params ...interface{}) error {
@@ -709,15 +709,15 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 			return nil, serrors.WrapStr("appending next segment to request path", err)
 		}
 	}
+	// now the request has correct steps (current step is sure to exist)
 
-	idx, err := rsv.NewIndex(req.Timestamp)
+	idx, err := rsv.NewIndex(req.Timestamp, req.RequestedBW)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot create index in e2e admission", err,
 			"e2e_id", req.ID).Error()
 		return failedResponse, nil
 	}
 	index := rsv.Index(idx)
-	index.AllocBW = req.RequestedBW
 
 	// admission
 	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
@@ -764,56 +764,17 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	log.Debug("e2e admission", "requested_cls", req.RequestedBW, "admitted", admitted,
 		"free", free, "segs", deletemePrintSegRsvs(req.SegmentRsvs))
 
-	// // TODO(juagargi) fix response type
-	// if !req.Success() || req.RequestedBW.ToKbps() > free {
-	// 	maxWillingToAlloc := reservation.BWClsFromBW(free)
-	// 	if req.Location() == e2e.Destination {
-	// 		asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
-	// 		asAResponse.MaxBWs = append(asAResponse.MaxBWs, maxWillingToAlloc)
-	// 	} else {
-	// 		asARequest := &e2e.SetupReqFailure{
-	// 			SetupReq:  *req,
-	// 			ErrorCode: 1,
-	// 		}
-	// 		asARequest.AllocationTrail = append(asARequest.AllocationTrail,
-	// 			maxWillingToAlloc)
-	// 		failedResponse = asARequest
-	// 	}
-	// 	return failedResponse, s.errWrapStr("e2e not admitted", err, "id", req.ID.String(),
-	// 		"index", req.Index)
-	// }
-
-	if admitted {
-		index.Token = &reservation.Token{
-			InfoField: reservation.InfoField{
-				PathType: reservation.E2EPath,
-			},
-		}
-		// TODO(juagargi) update token here
-		if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-			return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
-				"id", req.ID.String())
-		}
-
-		if err := tx.Commit(); err != nil {
-			return failedResponse, s.errWrapStr("cannot commit transaction", err,
-				"id", req.ID.String())
-		}
-	}
-
+	var token *reservation.Token
 	if req.IsLastAS() {
 		// TODO(juagargi): contact the endhost
-		if admitted {
-			// return the response
-			return &e2e.SetupResponseSuccess{
-				Token: *index.Token,
+		if !admitted {
+			return &e2e.SetupResponseFailure{
+				Message:    "not admitted",
+				FailedStep: uint8(failedStep),
+				AllocTrail: req.AllocationTrail,
 			}, nil
 		}
-		return &e2e.SetupResponseFailure{
-			Message:    "not admitted",
-			FailedStep: uint8(failedStep),
-			AllocTrail: req.AllocationTrail,
-		}, nil
+		token = index.Token
 	} else {
 		if req.IsTransfer() {
 			// indicate the next node we are using the next segment:
@@ -834,23 +795,43 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		if err != nil {
 			return nil, serrors.WrapStr("translating response", err)
 		}
-		// TODO(juagargi) add something to the token?
-		return res, nil
+		success, ok := res.(*e2e.SetupResponseSuccess)
+		if !ok {
+			// not admitted
+			return res, nil
+		}
+		token, err = reservation.TokenFromRaw(success.Token)
+		if err != nil {
+			failedResponse.Message = s.errWrapStr("decoding token from node ahead", err).Error()
+			return failedResponse, nil
+		}
 	}
-	// var msg base.MessageWithPath
-	// if req.Location() == e2e.Destination {
-	// 	asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
-	// 	msg = &e2e.ResponseSetupSuccess{
-	// 		Response: *morphE2EResponseToSuccess(&asAResponse.Response),
-	// 		Token:    *index.Token,
-	// 	}
-	// } else {
-	// 	msg = &e2e.SetupReqSuccess{
-	// 		SetupReq: *req,
-	// 		Token:    *index.Token,
-	// 	}
-	// }
-	// return msg, nil
+	// here the request was admitted and returning back from the down stream admission
+
+	currStep := req.Path.Steps[req.Path.CurrentStep]
+	token.HopFields = append([]reservation.HopField{{
+		Ingress: currStep.Ingress,
+		Egress:  currStep.Egress,
+	}}, token.HopFields...)
+	err = s.computeMACBackwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
+	if err != nil {
+		failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
+		return failedResponse, err
+	}
+	index.Token = token
+
+	if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
+		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
+			"id", req.ID.String())
+	}
+	if err := tx.Commit(); err != nil {
+		return failedResponse, s.errWrapStr("cannot commit transaction", err,
+			"id", req.ID.String())
+	}
+	// return the token upstream
+	return &e2e.SetupResponseSuccess{
+		Token: token.ToRaw(),
+	}, nil
 }
 
 // CleanupE2EReservation will remove an index from an e2e reservation.
@@ -1052,20 +1033,26 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		}
 	}
 
-	// update token
+	// update token with new hop field
 	currStep := req.Path.Steps[req.Path.CurrentStep]
-	// TODO(juagargi) compute MAC for token
-	token.HopFields = append([]reservation.HopField{{
-		Ingress: currStep.Ingress,
-		Egress:  currStep.Egress,
-	}}, token.HopFields...)
-
-	mac, err := s.computeMAC(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
-	if err != nil {
-		failedResponse.Message = "cannot compute MAC: " + s.err(err).Error()
-		return failedResponse, s.errWrapStr("cannot compute MAC", err)
+	if req.PathType == reservation.DownPath {
+		token.HopFields = append(token.HopFields, reservation.HopField{
+			Ingress: currStep.Ingress,
+			Egress:  currStep.Egress,
+		})
+		err = s.computeMACForwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
+	} else {
+		token.HopFields = append([]reservation.HopField{{
+			Ingress: currStep.Ingress,
+			Egress:  currStep.Egress,
+		}}, token.HopFields...)
+		err = s.computeMACBackwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
 	}
-	copy(token.HopFields[0].Mac[:], mac)
+	if err != nil {
+		failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
+		return failedResponse, err
+	}
+
 	// store token and colibri path inside reservation
 	index.Token = token
 	index.AllocBW = token.BWCls // could have been admitted for less downstream
@@ -1160,18 +1147,35 @@ func (s *Store) sendUpstreamForAdmission(ctx context.Context, req *segment.Setup
 
 }
 
-// func (s *Store) computeMAC(id reservation.SegmentID, expTick uint32) ([]byte, error) {
-func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS addr.AS) (
-	[]byte, error) {
+// computeMACForwards is used when adding hop fields to the token in the direction of the
+// reservation, e.g. down-path segment reservation.
+func (s *Store) computeMACForwards(suffix []byte, tok *reservation.Token,
+	srcAS, dstAS addr.AS) error {
+
+	return computeMAC(s.colibriKey, suffix, tok, &tok.HopFields[len(tok.HopFields)-1], srcAS, dstAS)
+}
+
+// computeMACBackwards is used when adding hop fields to the token in the reverse direction
+// of the reservation, e.g. E2E admission, up-path or core segment reservation.
+func (s *Store) computeMACBackwards(suffix []byte, tok *reservation.Token,
+	srcAS, dstAS addr.AS) error {
+
+	return computeMAC(s.colibriKey, suffix, tok, &tok.HopFields[0], srcAS, dstAS)
+}
+
+func computeMAC(key, suffix []byte, tok *reservation.Token, hf *reservation.HopField,
+	srcAS, dstAS addr.AS) error {
 
 	buff := make([]byte, colibri.LengthInputDataRound16)
-	hf := tok.HopFields[0]
+	// hf := tok.HopFields[0]
 	err := colibri.MACInput(buff, suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls, tok.RLC,
 		true, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return colibri.StaticMAC(s.colibriKey, buff)
+	mac, err := colibri.StaticMAC(key, buff)
+	copy(hf.Mac[:], mac)
+	return err
 }
 
 // obtainRsvs will query the local DB if the src is local, or dial the corresponding col service.
@@ -1282,7 +1286,7 @@ func stitchTransparentPaths(a, b []base.PathStep) []base.PathStep {
 		return append([]base.PathStep{}, b...)
 	}
 	// when stitching two segments, one of the steps has to be merged into the previous one.
-	// TODO(juagargi) remove assertions as they assume well intentioned requests
+	// TODO(juagargi) remove assertions and ensure validation catches these cases.
 	assert(a[len(a)-1].Egress == 0,
 		fmt.Sprintf("wrong assumption egress not zero but %d", a[len(a)-1].Egress))
 	assert(b[0].Ingress == 0,
@@ -1298,8 +1302,6 @@ func stitchTransparentPaths(a, b []base.PathStep) []base.PathStep {
 	ret[len(ret)-1].Egress = b[0].Egress
 	ret = append(ret, b[1:]...)
 	return ret
-
-	// return append(append([]base.PathStep{}, a[:len(a)-1]...), b...)
 }
 
 func reservationsToLooks(rsvs []*segment.Reservation, localIA addr.IA) []*colibri.ReservationLooks {

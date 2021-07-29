@@ -67,11 +67,11 @@ func TestValidate(t *testing.T) {
 func TestNewIndex(t *testing.T) {
 	r := newReservation()
 	expTime := util.SecsToTime(1)
-	index, err := r.NewIndex(expTime)
+	index, err := r.NewIndex(expTime, 1)
 	require.NoError(t, err)
 	require.Len(t, r.Indices, 1)
 	require.Equal(t, r.Indices[0].Idx, index)
-	index, err = r.NewIndex(expTime)
+	index, err = r.NewIndex(expTime, 2)
 	require.NoError(t, err)
 	require.Len(t, r.Indices, 2)
 	require.Equal(t, r.Indices[1].Idx, index)
@@ -80,7 +80,7 @@ func TestNewIndex(t *testing.T) {
 func TestRemoveIndex(t *testing.T) {
 	r := newReservation()
 	expTime := util.SecsToTime(1)
-	idx, _ := r.NewIndex(expTime)
+	idx, _ := r.NewIndex(expTime, 0)
 	err := r.RemoveIndex(idx)
 	require.NoError(t, err)
 	require.Len(t, r.Indices, 0)
@@ -89,16 +89,13 @@ func TestRemoveIndex(t *testing.T) {
 func TestAllocResv(t *testing.T) {
 	r := newReservation()
 	// 1 index
-	r.NewIndex(util.SecsToTime(1))
-	r.Index(0).AllocBW = 5
+	r.NewIndex(util.SecsToTime(1), 5)
 	require.Equal(t, uint64(64), r.AllocResv())
 	// 2 indices
-	r.NewIndex(util.SecsToTime(2))
-	r.Index(1).AllocBW = 3
+	r.NewIndex(util.SecsToTime(2), 3)
 	require.Equal(t, uint64(64), r.AllocResv())
 	// 3 indices
-	r.NewIndex(util.SecsToTime(2))
-	r.Index(2).AllocBW = 3
+	r.NewIndex(util.SecsToTime(2), 3)
 	require.Equal(t, uint64(32), r.AllocResv())
 }
 

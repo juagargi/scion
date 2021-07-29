@@ -232,6 +232,8 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 		Params: &colpb.E2ESetupRequest_PathParams{
 			Segments:       msg.Segments,
 			CurrentSegment: 0,
+			SrcIa:          msg.SrcIa,
+			DstIa:          msg.DstIa,
 		},
 		Allocationtrail: nil,
 	}
@@ -262,19 +264,31 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 		}, nil
 	}
 	pbMsg := &colpb.DaemonSetupResponse{}
-	if failure, ok := res.(*e2e.SetupResponseFailure); ok {
-		trail := make([]uint32, len(failure.AllocTrail))
-		for i, b := range failure.AllocTrail {
+	switch res := res.(type) {
+	case *e2e.SetupResponseFailure:
+		trail := make([]uint32, len(res.AllocTrail))
+		for i, b := range res.AllocTrail {
 			trail[i] = uint32(b)
 		}
 		pbMsg.Failure = &colpb.DaemonSetupResponse_Failure{
-			ErrorMessage: failure.Message,
-			FailedStep:   uint32(failure.FailedStep),
+			ErrorMessage: res.Message,
+			FailedStep:   uint32(res.FailedStep),
 			AllocTrail:   trail,
 		}
-	}
-	if success, ok := res.(*e2e.SetupResponseSuccess); ok {
-		pbMsg.Token = success.Token.ToRaw()
+	case *e2e.SetupResponseSuccess:
+		token, err := reservation.TokenFromRaw(res.Token)
+		if err != nil {
+			return nil, serrors.WrapStr("decoding token in colibri service", err)
+		}
+		path := e2e.DeriveColibriPath(&req.ID, token)
+		rawPath := make([]byte, path.Len())
+		err = path.SerializeTo(rawPath)
+		if err != nil {
+			return nil, serrors.WrapStr("serializing a colibri path in colibri service", err)
+		}
+		pbMsg.Success = &colpb.DaemonSetupResponse_Success{
+			Spath: rawPath,
+		}
 	}
 	return pbMsg, nil
 }

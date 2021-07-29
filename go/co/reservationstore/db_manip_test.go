@@ -106,7 +106,7 @@ func newTestE2EReservation(t testing.TB, ASID string) *e2e.Reservation {
 			newTestSegmentReservation(t, ASID),
 		},
 	}
-	_, err := rsv.NewIndex(util.SecsToTime(1))
+	_, err := rsv.NewIndex(util.SecsToTime(1), 5)
 	require.NoError(t, err)
 	return rsv
 }

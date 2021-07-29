@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	base "github.com/scionproto/scion/go/co/reservation"
+	"github.com/scionproto/scion/go/lib/addr"
 	col "github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 )
@@ -25,6 +26,8 @@ import (
 // SetupReq is an e2e setup/renewal request, that has been so far accepted.
 type SetupReq struct {
 	base.Request
+	SrcIA                  addr.IA // necessary to compute the MACs during admission
+	DstIA                  addr.IA
 	SegmentRsvs            []col.ID
 	CurrentSegmentRsvIndex int // index in SegmentRsv above. Transfer nodes use the first segment
 	RequestedBW            col.BWCls

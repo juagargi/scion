@@ -48,6 +48,8 @@ func PBufE2ESetupReq(req *e2e.SetupReq) *colpb.E2ESetupRequest {
 		Params: &colpb.E2ESetupRequest_PathParams{
 			Segments:       segs,
 			CurrentSegment: uint32(req.CurrentSegmentRsvIndex),
+			SrcIa:          uint64(req.SrcIA.IAInt()),
+			DstIa:          uint64(req.DstIA.IAInt()),
 		},
 		Allocationtrail: trail,
 	}
@@ -78,7 +80,7 @@ func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {
 	msg := &colpb.E2ESetupResponse{}
 	switch t := res.(type) {
 	case *e2e.SetupResponseSuccess:
-		msg.Token = t.Token.ToRaw()
+		msg.Token = t.Token
 	case *e2e.SetupResponseFailure:
 		trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(t.AllocTrail))
 		for i, b := range t.AllocTrail {
