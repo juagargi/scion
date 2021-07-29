@@ -55,7 +55,9 @@ func (r *Reservation) Validate() error {
 }
 
 // NewIndex creates a new index in this reservation. The token needs to be created manually.
-func (r *Reservation) NewIndex(expTime time.Time) (reservation.IndexNumber, error) {
+func (r *Reservation) NewIndex(expTime time.Time, bw reservation.BWCls) (
+	reservation.IndexNumber, error) {
+
 	idx := reservation.IndexNumber(0)
 	if len(r.Indices) > 0 {
 		idx = r.Indices[len(r.Indices)-1].Idx.Add(1)
@@ -65,6 +67,16 @@ func (r *Reservation) NewIndex(expTime time.Time) (reservation.IndexNumber, erro
 	newIndices[len(newIndices)-1] = Index{
 		Expiration: expTime,
 		Idx:        idx,
+		AllocBW:    bw,
+		Token: &reservation.Token{
+			InfoField: reservation.InfoField{
+				Idx:            idx,
+				ExpirationTick: reservation.TickFromTime(expTime),
+				BWCls:          bw,
+				RLC:            0,
+				PathType:       reservation.E2EPath,
+			},
+		},
 	}
 	if err := base.ValidateIndices(newIndices); err != nil {
 		return 0, err

@@ -744,7 +744,10 @@ func (p *scionPacketProcessor) processCOLIBRI() (processResult, error) {
 		origPacket: p.origPacket,
 		buffer:     p.buffer,
 	}
-	return c.process()
+	// return c.process()
+	res, err := c.process()
+	log.Info("deleteme process", "err", err)
+	return res, err
 }
 
 // scionPacketProcessor processes packets. It contains pre-allocated per-packet

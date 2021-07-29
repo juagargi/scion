@@ -710,14 +710,14 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		}
 	}
 
-	idx, err := rsv.NewIndex(req.Timestamp)
+	idx, err := rsv.NewIndex(req.Timestamp, req.RequestedBW)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot create index in e2e admission", err,
 			"e2e_id", req.ID).Error()
 		return failedResponse, nil
 	}
 	index := rsv.Index(idx)
-	index.AllocBW = req.RequestedBW
+	// index.AllocBW = req.RequestedBW
 
 	// admission
 	free, err := freeInSegRsv(ctx, tx, rsv.SegmentReservations[0])
@@ -764,31 +764,9 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	log.Debug("e2e admission", "requested_cls", req.RequestedBW, "admitted", admitted,
 		"free", free, "segs", deletemePrintSegRsvs(req.SegmentRsvs))
 
-	// // TODO(juagargi) fix response type
-	// if !req.Success() || req.RequestedBW.ToKbps() > free {
-	// 	maxWillingToAlloc := reservation.BWClsFromBW(free)
-	// 	if req.Location() == e2e.Destination {
-	// 		asAResponse := failedResponse.(*e2e.ResponseSetupFailure)
-	// 		asAResponse.MaxBWs = append(asAResponse.MaxBWs, maxWillingToAlloc)
-	// 	} else {
-	// 		asARequest := &e2e.SetupReqFailure{
-	// 			SetupReq:  *req,
-	// 			ErrorCode: 1,
-	// 		}
-	// 		asARequest.AllocationTrail = append(asARequest.AllocationTrail,
-	// 			maxWillingToAlloc)
-	// 		failedResponse = asARequest
-	// 	}
-	// 	return failedResponse, s.errWrapStr("e2e not admitted", err, "id", req.ID.String(),
-	// 		"index", req.Index)
-	// }
-
 	if admitted {
-		index.Token = &reservation.Token{
-			InfoField: reservation.InfoField{
-				PathType: reservation.E2EPath,
-			},
-		}
+		// rsv.GetLastSegmentPathSteps()
+		// s.computeMAC(rsv.ID.Suffix,index.Token,req.ID.ASID,req.)
 		// TODO(juagargi) update token here
 		if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
 			return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
@@ -1054,7 +1032,6 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 
 	// update token
 	currStep := req.Path.Steps[req.Path.CurrentStep]
-	// TODO(juagargi) compute MAC for token
 	token.HopFields = append([]reservation.HopField{{
 		Ingress: currStep.Ingress,
 		Egress:  currStep.Egress,
@@ -1160,7 +1137,6 @@ func (s *Store) sendUpstreamForAdmission(ctx context.Context, req *segment.Setup
 
 }
 
-// func (s *Store) computeMAC(id reservation.SegmentID, expTick uint32) ([]byte, error) {
 func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS addr.AS) (
 	[]byte, error) {
 

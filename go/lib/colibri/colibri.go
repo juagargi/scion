@@ -377,6 +377,8 @@ func prepareInputData(srcAS addr.AS, inf *colibri.InfoField,
 	return nil
 }
 
+var zeroesBuff [12]byte
+
 // MACInput prepares the buffer using the passed parameters to be used as input for the
 // MAC computation.
 // buffer is expected to be at least `LengthInputData` bytes long.
@@ -388,9 +390,8 @@ func MACInput(buffer []byte, suffix []byte, expTick uint32,
 	if len(buffer) < LengthInputData {
 		return serrors.New("buffer too small", "actual", len(buffer), "expected", LengthInputData)
 	}
-	if copy(buffer[:12], suffix) > 12 {
-		return serrors.New("wrong suffix length", "len", len(suffix))
-	}
+	copy(buffer[:12], zeroesBuff[:])
+	copy(buffer[:12], suffix)
 	binary.BigEndian.PutUint32(buffer[12:16], expTick)
 	buffer[16] = uint8(bwCls)
 	buffer[17] = uint8(rlc)
