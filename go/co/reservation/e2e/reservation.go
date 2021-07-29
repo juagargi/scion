@@ -122,38 +122,6 @@ func (r *Reservation) AllocResv() uint64 {
 	return maxBW.ToKbps()
 }
 
-// DeriveColibriPathAtSource builds a valid colibi path (or nil if no indices) based
-// on the values of this reservation.
-func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
-	if len(r.Indices) == 0 {
-		return nil
-	}
-	index := r.Indices[len(r.Indices)-1]
-	p := &colpath.ColibriPath{
-		InfoField: &colpath.InfoField{
-			C:           false,
-			S:           false,
-			R:           false,
-			Ver:         uint8(index.Idx),
-			HFCount:     uint8(len(index.Token.HopFields)),
-			ResIdSuffix: make([]byte, 12),
-			ExpTick:     uint32(index.Token.ExpirationTick),
-			BwCls:       uint8(index.AllocBW),
-			Rlc:         uint8(index.Token.RLC),
-		},
-		HopFields: make([]*colpath.HopField, len(index.Token.HopFields)),
-	}
-	copy(p.InfoField.ResIdSuffix, r.ID.Suffix)
-	for i, hf := range index.Token.HopFields {
-		p.HopFields[i] = &colpath.HopField{
-			IngressId: hf.Ingress,
-			EgressId:  hf.Egress,
-			Mac:       append([]byte{}, hf.Mac[:]...),
-		}
-	}
-	return p
-}
-
 // GetLastSegmentPathSteps returns the path steps for the last segment in use by this e2e rsv.
 func (r *Reservation) GetLastSegmentPathSteps() []base.PathStep {
 	seg := r.SegmentReservations[len(r.SegmentReservations)-1]
@@ -161,4 +129,31 @@ func (r *Reservation) GetLastSegmentPathSteps() []base.PathStep {
 	log.Info("deleteme last segment path", "count", len(r.SegmentReservations), "seg", seg.ID,
 		"dir", seg.PathType, "path", seg.PathAtSource)
 	return steps
+}
+
+// DeriveColibriPath builds a valid colibi path based on the arguments.
+func DeriveColibriPath(id *reservation.ID, tok *reservation.Token) *colpath.ColibriPath {
+	p := &colpath.ColibriPath{
+		InfoField: &colpath.InfoField{
+			C:           false,
+			S:           false,
+			R:           false,
+			Ver:         uint8(tok.Idx),
+			HFCount:     uint8(len(tok.HopFields)),
+			ResIdSuffix: make([]byte, 12),
+			ExpTick:     uint32(tok.ExpirationTick),
+			BwCls:       uint8(tok.BWCls),
+			Rlc:         uint8(tok.RLC),
+		},
+		HopFields: make([]*colpath.HopField, len(tok.HopFields)),
+	}
+	copy(p.InfoField.ResIdSuffix, id.Suffix)
+	for i, hf := range tok.HopFields {
+		p.HopFields[i] = &colpath.HopField{
+			IngressId: hf.Ingress,
+			EgressId:  hf.Egress,
+			Mac:       append([]byte{}, hf.Mac[:]...),
+		}
+	}
+	return p
 }

@@ -764,48 +764,17 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	log.Debug("e2e admission", "requested_cls", req.RequestedBW, "admitted", admitted,
 		"free", free, "segs", deletemePrintSegRsvs(req.SegmentRsvs))
 
-	if admitted {
-		currStep := req.Path.Steps[req.Path.CurrentStep]
-		index.Token.HopFields = append(index.Token.HopFields, reservation.HopField{
-			Ingress: currStep.Ingress,
-			Egress:  currStep.Egress,
-		})
-		err = s.computeMACForwards(rsv.ID.Suffix, index.Token, req.ID.ASID, req.ID.ASID)
-		if err != nil {
-			failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
-			return failedResponse, err
-		}
-
-		if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
-			return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
-				"id", req.ID.String())
-		}
-
-		if err := tx.Commit(); err != nil {
-			return failedResponse, s.errWrapStr("cannot commit transaction", err,
-				"id", req.ID.String())
-		}
-	}
-
+	var token *reservation.Token
 	if req.IsLastAS() {
 		// TODO(juagargi): contact the endhost
-		if admitted {
-			// return the path
-			colibriPath := rsv.DeriveColibriPathAtSource()
-			rawColibriPath := make([]byte, colibriPath.Len())
-			if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
-				log.Debug("error obtaining colibri path from reservation", "err", err)
-				return nil, s.errWrapStr("error obtaining colibri path from reservation", err)
-			}
-			return &e2e.SetupResponseSuccess{
-				Spath: rawColibriPath,
+		if !admitted {
+			return &e2e.SetupResponseFailure{
+				Message:    "not admitted",
+				FailedStep: uint8(failedStep),
+				AllocTrail: req.AllocationTrail,
 			}, nil
 		}
-		return &e2e.SetupResponseFailure{
-			Message:    "not admitted",
-			FailedStep: uint8(failedStep),
-			AllocTrail: req.AllocationTrail,
-		}, nil
+		token = index.Token
 	} else {
 		if req.IsTransfer() {
 			// indicate the next node we are using the next segment:
@@ -826,8 +795,43 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		if err != nil {
 			return nil, serrors.WrapStr("translating response", err)
 		}
-		return res, nil
+		success, ok := res.(*e2e.SetupResponseSuccess)
+		if !ok {
+			// not admitted
+			return res, nil
+		}
+		token, err = reservation.TokenFromRaw(success.Token)
+		if err != nil {
+			failedResponse.Message = s.errWrapStr("decoding token from node ahead", err).Error()
+			return failedResponse, nil
+		}
 	}
+	// here the request was admitted and returning back from the down stream admission
+
+	currStep := req.Path.Steps[req.Path.CurrentStep]
+	token.HopFields = append([]reservation.HopField{{
+		Ingress: currStep.Ingress,
+		Egress:  currStep.Egress,
+	}}, token.HopFields...)
+	err = s.computeMACBackwards(rsv.ID.Suffix, index.Token, req.ID.ASID, req.ID.ASID)
+	if err != nil {
+		failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
+		return failedResponse, err
+	}
+	index.Token = token // TODO(juagargi) unnecessary, check also in seg. admission
+
+	if err := tx.PersistE2ERsv(ctx, rsv); err != nil {
+		return failedResponse, s.errWrapStr("cannot persist e2e reservation", err,
+			"id", req.ID.String())
+	}
+	if err := tx.Commit(); err != nil {
+		return failedResponse, s.errWrapStr("cannot commit transaction", err,
+			"id", req.ID.String())
+	}
+	// return the token upstream
+	return &e2e.SetupResponseSuccess{
+		Token: token.ToRaw(),
+	}, nil
 }
 
 // CleanupE2EReservation will remove an index from an e2e reservation.
@@ -1144,7 +1148,7 @@ func (s *Store) sendUpstreamForAdmission(ctx context.Context, req *segment.Setup
 }
 
 // computeMACForwards is used when adding hop fields to the token in the direction of the
-// reservation, e.g. E2E admission or down-path segment reservation.
+// reservation, e.g. down-path segment reservation.
 func (s *Store) computeMACForwards(suffix []byte, tok *reservation.Token,
 	srcAS, dstAS addr.AS) error {
 
@@ -1152,7 +1156,7 @@ func (s *Store) computeMACForwards(suffix []byte, tok *reservation.Token,
 }
 
 // computeMACBackwards is used when adding hop fields to the token in the reverse direction
-// of the reservation, e.g. up-path or core segment reservation.
+// of the reservation, e.g. E2E admission, up-path or core segment reservation.
 func (s *Store) computeMACBackwards(suffix []byte, tok *reservation.Token,
 	srcAS, dstAS addr.AS) error {
 

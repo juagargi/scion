@@ -23,7 +23,7 @@ type SetupResponse interface {
 }
 
 type SetupResponseSuccess struct {
-	Spath []byte
+	Token []byte
 }
 
 func (*SetupResponseSuccess) isSegmentSetupResponse_Success_Failure() {}

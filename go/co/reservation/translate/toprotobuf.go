@@ -80,7 +80,7 @@ func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {
 	msg := &colpb.E2ESetupResponse{}
 	switch t := res.(type) {
 	case *e2e.SetupResponseSuccess:
-		msg.Spath = t.Spath
+		msg.Token = t.Token
 	case *e2e.SetupResponseFailure:
 		trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(t.AllocTrail))
 		for i, b := range t.AllocTrail {

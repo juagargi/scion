@@ -276,8 +276,18 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 			AllocTrail:   trail,
 		}
 	case *e2e.SetupResponseSuccess:
+		token, err := reservation.TokenFromRaw(res.Token)
+		if err != nil {
+			return nil, serrors.WrapStr("decoding token in colibri service", err)
+		}
+		path := e2e.DeriveColibriPath(&req.ID, token)
+		rawPath := make([]byte, path.Len())
+		err = path.SerializeTo(rawPath)
+		if err != nil {
+			return nil, serrors.WrapStr("serializing a colibri path in colibri service", err)
+		}
 		pbMsg.Success = &colpb.DaemonSetupResponse_Success{
-			Spath: res.Spath,
+			Spath: rawPath,
 		}
 	}
 	return pbMsg, nil

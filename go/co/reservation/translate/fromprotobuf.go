@@ -133,7 +133,7 @@ func E2ESetupResponse(msg *colpb.E2ESetupResponse) (e2e.SetupResponse, error) {
 	}
 	// success:
 	return &e2e.SetupResponseSuccess{
-		Spath: msg.Spath,
+		Token: msg.Token,
 	}, nil
 }
 

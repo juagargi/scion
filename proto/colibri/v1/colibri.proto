@@ -174,7 +174,7 @@ message E2eSetupResponse {
         repeated E2eSetupRequest.E2eSetupBead allocationtrail = 3;
     }
     Failure failure = 1; // if present: information about the failure
-    bytes spath = 2;
+    bytes token = 2;
 }
 
 
