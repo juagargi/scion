@@ -70,6 +70,9 @@ func (c *ColibriPath) SerializeTo(b []byte) error {
 	if c.InfoField == nil {
 		return serrors.New("the info field must not be nil")
 	}
+	if len(c.HopFields) < 2 {
+		return serrors.New("a colibri path must have at least two hop fields")
+	}
 	if len(b) < c.Len() {
 		return serrors.New("buffer for ColibriPath too short", "is:", len(b),
 			"needs:", c.Len())
