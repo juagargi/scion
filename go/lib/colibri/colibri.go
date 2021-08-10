@@ -36,7 +36,8 @@ const (
 	// packetLifetimeMs denotes the maximal lifetime of a packet in milliseconds
 	packetLifetimeMs uint16 = 2000
 	// clockSkewMs denotes the maximal clock skew in milliseconds
-	clockSkewMs uint16 = 1000
+	clockSkewMs   uint16 = 1000
+	clockSkewNano uint64 = uint64(clockSkewMs) * 1000000
 	// LengthInputData denotes the length of InputData in bytes
 	LengthInputData = 30
 	// LengthInputDataRound16 denotes the LengthInputData rounded to the next multiple of 16
@@ -133,15 +134,18 @@ func VerifyExpirationTick(expirationTick uint32) bool {
 // a possible clock drift between the packet source and the verifier of up to one second into
 // account.
 func VerifyTimestamp(expirationTick uint32, packetTimestamp uint64) bool {
-	tsRel, _, _ := ParseColibriTimestamp(packetTimestamp)
-	timestampNano := (4*uint64(expirationTick) - 16) * uint64(math.Pow10(9))
-	timestampSenderNano := timestampNano + (1+uint64(tsRel))*4
+	nowNano := uint64(time.Now().UnixNano())
+	timestampNano := (4*uint64(expirationTick) - 16) * 1000000000
 
-	nowMs := uint64(time.Now().UnixNano() / 1000000)
-	tsSenderMs := timestampSenderNano / 1000000
-
-	if (nowMs < tsSenderMs-uint64(clockSkewMs)) ||
-		(nowMs > tsSenderMs+uint64(packetLifetimeMs)+uint64(clockSkewMs)) {
+	// TODO(juagargi) re-enable the proper check once we have a timestamping mechanism
+	// tsRel, _, _ := ParseColibriTimestamp(packetTimestamp)
+	// timestampSenderNano := timestampNano + (1+uint64(tsRel))*4
+	// nowMs := nowNano / 1000000
+	// tsSenderMs := timestampSenderNano / 1000000
+	// if (nowMs < tsSenderMs-uint64(clockSkewMs)) ||
+	// 	(nowMs > tsSenderMs+uint64(packetLifetimeMs)+uint64(clockSkewMs)) {
+	// 	return false
+	if nowNano < timestampNano-clockSkewNano {
 		return false
 	} else {
 		return true
@@ -159,18 +163,18 @@ func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField
 	switch inf.C {
 	case true:
 		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s.SrcIA.A)
-		if err != nil {
-			return err
-		}
 	case false:
-		auth, err := CalculateColibriMacSigma(privateKey, inf, currHop, s)
-		if err != nil {
-			return err
-		}
-		mac, err = CalculateColibriMacPacket(auth, packetTimestamp, inf, s)
-		if err != nil {
-			return err
-		}
+		// TODO(juagargi) we will use the defined MAC computation once we start timestamping
+		// the E2E colibri packets. For now do as if C=true. Toggle comments below.
+		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s.SrcIA.A)
+		// mac, err = CalculateColibriMacSigma(privateKey, inf, currHop, s)
+		// if err != nil {
+		// 	return err
+		// }
+		// mac, err = CalculateColibriMacPacket(mac, packetTimestamp, inf, s)
+	}
+	if err != nil {
+		return err
 	}
 
 	if !bytes.Equal(mac[:4], currHop.Mac[:4]) {
@@ -259,6 +263,43 @@ func CalculateColibriMacPacket(auth []byte, packetTimestamp uint64,
 	mac := make([]byte, len(input))
 	f.CryptBlocks(mac, input)
 	return mac[len(mac)-16 : len(mac)-12], nil
+}
+
+var zeroesBuff [12]byte
+
+// MACInput prepares the buffer using the passed parameters to be used as input for the
+// MAC computation.
+// buffer is expected to be at least `LengthInputData` bytes long.
+// suffix is expected to be at most 12 byte long.
+func MACInput(buffer []byte, suffix []byte, expTick uint32,
+	bwCls reservation.BWCls, rlc reservation.RLC, controlFlag, reverseFlag bool,
+	idx reservation.IndexNumber, srcAS, dstAS addr.AS, ingress, egress uint16) error {
+
+	if len(buffer) < LengthInputData {
+		return serrors.New("buffer too small", "actual", len(buffer), "expected", LengthInputData)
+	}
+	copy(buffer[:12], zeroesBuff[:])
+	copy(buffer[:12], suffix)
+	binary.BigEndian.PutUint32(buffer[12:16], expTick)
+	buffer[16] = uint8(bwCls)
+	buffer[17] = uint8(rlc)
+	buffer[18] = 0 // TODO(juagargi) shouldn't it be HFCount?
+
+	// Version | C | 0
+	var flags uint8
+	if controlFlag {
+		flags = uint8(1) << 3
+	}
+	flags += uint8(idx) << 4
+	buffer[19] = flags
+	if reverseFlag {
+		binary.BigEndian.PutUint64(buffer[22:30], uint64(dstAS))
+	} else {
+		binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
+	}
+	binary.BigEndian.PutUint16(buffer[20:22], ingress)
+	binary.BigEndian.PutUint16(buffer[22:24], egress)
+	return nil
 }
 
 func initColibriMac(key []byte) (cipher.BlockMode, error) {
@@ -374,43 +415,6 @@ func prepareInputData(srcAS addr.AS, inf *colibri.InfoField,
 	binary.BigEndian.PutUint16(buffer[20:22], hop.IngressId)
 	binary.BigEndian.PutUint16(buffer[22:24], hop.EgressId)
 
-	return nil
-}
-
-var zeroesBuff [12]byte
-
-// MACInput prepares the buffer using the passed parameters to be used as input for the
-// MAC computation.
-// buffer is expected to be at least `LengthInputData` bytes long.
-// suffix is expected to be at most 12 byte long.
-func MACInput(buffer []byte, suffix []byte, expTick uint32,
-	bwCls reservation.BWCls, rlc reservation.RLC, controlFlag, reverseFlag bool,
-	idx reservation.IndexNumber, srcAS, dstAS addr.AS, ingress, egress uint16) error {
-
-	if len(buffer) < LengthInputData {
-		return serrors.New("buffer too small", "actual", len(buffer), "expected", LengthInputData)
-	}
-	copy(buffer[:12], zeroesBuff[:])
-	copy(buffer[:12], suffix)
-	binary.BigEndian.PutUint32(buffer[12:16], expTick)
-	buffer[16] = uint8(bwCls)
-	buffer[17] = uint8(rlc)
-	buffer[18] = 0 // TODO(juagargi) shouldn't it be HFCount?
-
-	// Version | C | 0
-	var flags uint8
-	if controlFlag {
-		flags = uint8(1) << 3
-	}
-	flags += uint8(idx) << 4
-	buffer[19] = flags
-	if reverseFlag {
-		binary.BigEndian.PutUint64(buffer[22:30], uint64(dstAS))
-	} else {
-		binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
-	}
-	binary.BigEndian.PutUint16(buffer[20:22], ingress)
-	binary.BigEndian.PutUint16(buffer[22:24], egress)
 	return nil
 }
 

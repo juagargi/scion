@@ -29,7 +29,6 @@ import (
 	"github.com/scionproto/scion/go/co/reservationstorage"
 	"github.com/scionproto/scion/go/co/reservationstorage/backend"
 	"github.com/scionproto/scion/go/co/reservationstore"
-	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	collayer "github.com/scionproto/scion/go/lib/slayers/path/colibri"
@@ -56,34 +55,63 @@ func TestDebugAdmitE2EReservation(t *testing.T) {
 	// timeAdmitE2EReservationManySegments(t, 1)
 }
 
+// TestComputeMAC tests that the MAC computation functions in the BR and the store are consistent.
 func TestComputeMAC(t *testing.T) {
 	privateKey := xtest.MustParseHexString("5b56986be02a37d30110c854b5f25959")
-	rawInfoField := xtest.MustParseHexString("a0000003000000010000000000000000182d91b60d0004b8")
-	rawCurrHopField := xtest.MustParseHexString("00000029bb05ea35")
 	srcAS := xtest.MustParseAS("ff00:0:111")
-	infF := &collayer.InfoField{}
-	err := infF.DecodeFromBytes(rawInfoField)
-	require.NoError(t, err)
-	currHF := &collayer.HopField{}
-	err = currHF.DecodeFromBytes(rawCurrHopField)
-	require.NoError(t, err)
-	mac, err := colibri.CalculateColibriMacStatic(privateKey, infF, currHF, srcAS)
-	require.NoError(t, err)
 
-	store := &reservationstore.Store{}
-	store.SetColibriKey(privateKey)
-	tok := &reservation.Token{
-		InfoField: reservation.InfoField{
-			Idx:            reservation.IndexNumber(infF.Ver),
-			ExpirationTick: reservation.Tick(infF.ExpTick),
-			BWCls:          reservation.BWCls(infF.BwCls),
-			RLC:            reservation.RLC(infF.Rlc),
+	cases := map[string]struct {
+		inf      collayer.InfoField  // used to compute MAC in the BR
+		hfs      []collayer.HopField // used in the BR and the store
+		pathType reservation.PathType
+	}{
+		"segment first hopfield": {
+			inf: collayer.InfoField{
+				S:           true,
+				R:           false,
+				C:           true,
+				Ver:         1,
+				CurrHF:      0,
+				ResIdSuffix: xtest.MustParseHexString("000000000000000000000001"),
+				BwCls:       9,
+				Rlc:         7,
+				OrigPayLen:  1234,
+				HFCount:     2,
+				ExpTick:     1122334455,
+			},
+			hfs: []collayer.HopField{
+				{IngressId: 0, EgressId: 41},
+				{},
+			},
+			pathType: reservation.UpPath,
 		},
-		HopFields: []reservation.HopField{{Egress: 41}},
 	}
-	err = store.ComputeMACBackwards(infF.ResIdSuffix, tok, srcAS, addr.AS(0))
-	require.NoError(t, err)
-	require.Equal(t, mac, tok.HopFields[0].Mac[:])
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			macBR, err := colibri.CalculateColibriMacStatic(privateKey, &tc.inf,
+				&tc.hfs[tc.inf.CurrHF], srcAS)
+			require.NoError(t, err)
+
+			store := &reservationstore.Store{}
+			store.SetColibriKey(privateKey)
+			tok := &reservation.Token{
+				InfoField: reservation.InfoField{
+					PathType:       tc.pathType,
+					Idx:            reservation.IndexNumber(tc.inf.Ver),
+					ExpirationTick: reservation.Tick(tc.inf.ExpTick),
+					BWCls:          reservation.BWCls(tc.inf.BwCls),
+					RLC:            reservation.RLC(tc.inf.Rlc),
+				},
+				HopFields: make([]reservation.HopField, len(tc.hfs)-1),
+			}
+			hf := tc.hfs[tc.inf.CurrHF]
+			err = store.ComputeMAC(tc.inf.ResIdSuffix, tok, srcAS, 0, hf.IngressId, hf.EgressId)
+			require.NoError(t, err)
+			require.Equal(t, macBR, tok.HopFields[0].Mac[:])
+		})
+	}
 }
 
 type performanceTestCase struct {

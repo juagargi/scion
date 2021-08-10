@@ -711,7 +711,8 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	}
 	// now the request has correct steps (current step is sure to exist)
 
-	idx, err := rsv.NewIndex(req.Timestamp, req.RequestedBW)
+	// TODO(juagargi) we want to indicate the validity period in the request
+	idx, err := rsv.NewIndex(req.Timestamp.Add(16*time.Second), req.RequestedBW)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot create index in e2e admission", err,
 			"e2e_id", req.ID).Error()
@@ -808,12 +809,8 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	}
 	// here the request was admitted and returning back from the down stream admission
 
-	currStep := req.Path.Steps[req.Path.CurrentStep]
-	token.HopFields = append([]reservation.HopField{{
-		Ingress: currStep.Ingress,
-		Egress:  currStep.Egress,
-	}}, token.HopFields...)
-	err = s.computeMACBackwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
+	step := req.Path.Steps[req.Path.CurrentStep]
+	err = s.computeMAC(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID, step.Ingress, step.Egress)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
 		return failedResponse, err
@@ -1034,20 +1031,8 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 
 	// update token with new hop field
-	currStep := req.Path.Steps[req.Path.CurrentStep]
-	if req.PathType == reservation.DownPath {
-		token.HopFields = append(token.HopFields, reservation.HopField{
-			Ingress: currStep.Ingress,
-			Egress:  currStep.Egress,
-		})
-		err = s.computeMACForwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
-	} else {
-		token.HopFields = append([]reservation.HopField{{
-			Ingress: currStep.Ingress,
-			Egress:  currStep.Egress,
-		}}, token.HopFields...)
-		err = s.computeMACBackwards(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID)
-	}
+	step := req.Path.Steps[req.Path.CurrentStep]
+	err = s.computeMAC(rsv.ID.Suffix, token, req.ID.ASID, req.ID.ASID, step.Ingress, step.Egress)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot compute MAC", err).Error()
 		return failedResponse, err
@@ -1147,35 +1132,40 @@ func (s *Store) sendUpstreamForAdmission(ctx context.Context, req *segment.Setup
 
 }
 
-// computeMACForwards is used when adding hop fields to the token in the direction of the
-// reservation, e.g. down-path segment reservation.
-func (s *Store) computeMACForwards(suffix []byte, tok *reservation.Token,
-	srcAS, dstAS addr.AS) error {
+func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS addr.AS,
+	ingress, egress uint16) error {
 
-	return computeMAC(s.colibriKey, suffix, tok, &tok.HopFields[len(tok.HopFields)-1], srcAS, dstAS)
-}
-
-// computeMACBackwards is used when adding hop fields to the token in the reverse direction
-// of the reservation, e.g. E2E admission, up-path or core segment reservation.
-func (s *Store) computeMACBackwards(suffix []byte, tok *reservation.Token,
-	srcAS, dstAS addr.AS) error {
-
-	return computeMAC(s.colibriKey, suffix, tok, &tok.HopFields[0], srcAS, dstAS)
+	hf := &reservation.HopField{
+		Ingress: ingress,
+		Egress:  egress,
+	}
+	isE2E := false
+	switch tok.InfoField.PathType {
+	case reservation.DownPath:
+		tok.HopFields = append(tok.HopFields, *hf)
+		hf = &tok.HopFields[len(tok.HopFields)-1]
+	case reservation.E2EPath:
+		isE2E = true
+		fallthrough
+	case reservation.UpPath, reservation.CorePath:
+		tok.HopFields = append([]reservation.HopField{*hf}, tok.HopFields...)
+		hf = &tok.HopFields[0]
+	}
+	mac, err := computeMAC(s.colibriKey, suffix, tok, hf, srcAS, dstAS, isE2E)
+	copy(hf.Mac[:], mac)
+	return err
 }
 
 func computeMAC(key, suffix []byte, tok *reservation.Token, hf *reservation.HopField,
-	srcAS, dstAS addr.AS) error {
+	srcAS, dstAS addr.AS, isE2E bool) ([]byte, error) {
 
 	buff := make([]byte, colibri.LengthInputDataRound16)
-	// hf := tok.HopFields[0]
 	err := colibri.MACInput(buff, suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls, tok.RLC,
-		true, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
+		!isE2E, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	mac, err := colibri.StaticMAC(key, buff)
-	copy(hf.Mac[:], mac)
-	return err
+	return colibri.StaticMAC(key, buff)
 }
 
 // obtainRsvs will query the local DB if the src is local, or dial the corresponding col service.

@@ -19,10 +19,9 @@ import (
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
 
-func (s *Store) ComputeMACBackwards(suffix []byte, tok *reservation.Token,
-	srcAS, dstAS addr.AS) error {
-
-	return s.computeMACBackwards(suffix, tok, srcAS, dstAS)
+func (s *Store) ComputeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS addr.AS,
+	ingress, egress uint16) error {
+	return s.computeMAC(suffix, tok, srcAS, dstAS, ingress, egress)
 }
 
 func (s *Store) SetColibriKey(key []byte) {
