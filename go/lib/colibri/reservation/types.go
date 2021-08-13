@@ -32,18 +32,23 @@ import (
 
 // ID identifies a COLIBRI segment or E2E reservation. The suffix differentiates
 // reservations for the same AS.
-// A segment ID has a 4 byte long suffix. The suffix is 10 byte long for an E2E reservation.
+// A segment ID has a 4 byte long suffix. The suffix is 12 byte long for an E2E reservation.
 type ID struct {
 	ASID   addr.AS
 	Suffix []byte
 }
 
+const (
+	IDSegLen = 4
+	IDE2ELen = 12
+)
+
 var _ io.Reader = (*ID)(nil)
 
 // NewID returns a new ID
 func NewID(AS addr.AS, suffix []byte) (*ID, error) {
-	if len(suffix) != 4 && len(suffix) != 10 {
-		return nil, serrors.New("wrong suffix length, should be 4 or 10", "actual_len", len(suffix))
+	if len(suffix) != IDSegLen && len(suffix) != IDE2ELen {
+		return nil, serrors.New("wrong suffix length, should be 4 or 12", "actual_len", len(suffix))
 	}
 	id := ID{
 		ASID:   AS,
@@ -103,11 +108,11 @@ func (id *ID) Copy() *ID {
 }
 
 func (id *ID) IsSegmentID() bool {
-	return len(id.Suffix) == 4
+	return len(id.Suffix) == IDSegLen
 }
 
 func (id *ID) IsE2EID() bool {
-	return len(id.Suffix) == 10
+	return len(id.Suffix) == IDE2ELen
 }
 
 // Read serializes this ID into the buffer.

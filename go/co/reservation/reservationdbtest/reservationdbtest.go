@@ -592,7 +592,7 @@ func testNextExpirationTime(ctx context.Context, t *testing.T, newDB func() back
 	re2e := &e2e.Reservation{
 		ID: reservation.ID{
 			ASID:   xtest.MustParseAS("ff00:0:1"),
-			Suffix: make([]byte, 10),
+			Suffix: make([]byte, reservation.IDE2ELen),
 		},
 		SegmentReservations: []*segment.Reservation{r},
 	}
@@ -612,7 +612,7 @@ func testNextExpirationTime(ctx context.Context, t *testing.T, newDB func() back
 	re2e = &e2e.Reservation{
 		ID: reservation.ID{
 			ASID:   xtest.MustParseAS("ff00:0:1"),
-			Suffix: make([]byte, 10),
+			Suffix: make([]byte, reservation.IDE2ELen),
 		},
 		SegmentReservations: []*segment.Reservation{r},
 	}
@@ -770,13 +770,13 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, newDB func() backend
 	require.Equal(t, r, rsv)
 	// not present in DB
 	ID, err := reservation.NewID(xtest.MustParseAS("ff00:2222:3333"),
-		xtest.MustParseHexString("0123456789abcdef0123"))
+		xtest.MustParseHexString("0123456789abcdef01234567"))
 	require.NoError(t, err)
 	rsv, err = db.GetE2ERsvFromID(ctx, ID)
 	require.NoError(t, err)
 	require.Nil(t, rsv)
 
-	require.Len(t, r.ID.Suffix, 10)
+	require.Len(t, r.ID.Suffix, reservation.IDE2ELen)
 	rand.Read(r.ID.Suffix)
 	t.Logf("Retrieving ID %s", r.ID)
 	err = db.PersistE2ERsv(ctx, r)
@@ -972,7 +972,7 @@ func newTestE2EReservation(t *testing.T) *e2e.Reservation {
 	rsv := &e2e.Reservation{
 		ID: reservation.ID{
 			ASID:   xtest.MustParseAS("ff00:0:1"),
-			Suffix: make([]byte, 10),
+			Suffix: make([]byte, 12),
 		},
 		SegmentReservations: []*segment.Reservation{
 			newTestReservation(t),
