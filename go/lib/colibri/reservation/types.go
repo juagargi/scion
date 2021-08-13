@@ -146,16 +146,33 @@ func (id *ID) IsEmpty() bool {
 	return id.ASID == 0 && id.IsEmptySuffix()
 }
 
+const SecsPerTick = 4
+const DurationPerTick = SecsPerTick * time.Second
+
+const TicksInSegmentRsv = 80
+const TicksInE2ERsv = 4
+
 // Tick represents a slice of time of 4 seconds.
 type Tick uint32
 
 // TickFromTime returns the tick for a given time.
 func TickFromTime(t time.Time) Tick {
-	return Tick(util.TimeToSecs(t) / 4)
+	return Tick(util.TimeToSecs(t) / SecsPerTick)
+}
+
+// TicksFromDuration returns duration as ticks.
+func TicksFromDuration(dur time.Duration) Tick {
+	secsDur := (dur + DurationPerTick - 1).Truncate(DurationPerTick)
+	seconds := secsDur.Milliseconds() / 1e3
+	return Tick(seconds / SecsPerTick)
 }
 
 func (t Tick) ToTime() time.Time {
-	return util.SecsToTime(uint32(t) * 4)
+	return util.SecsToTime(uint32(t) * SecsPerTick)
+}
+
+func (t Tick) ToDuration() time.Duration {
+	return time.Duration(t) * DurationPerTick
 }
 
 // BWCls is the bandwidth class. bandwidth = 16 * sqrt(2^(BWCls - 1)). 0 <= bwcls <= 63 kbps.
@@ -229,6 +246,10 @@ func (c RLC) Validate() error {
 
 // IndexNumber is a 4 bit index for a reservation.
 type IndexNumber uint8
+
+func NewIndexNumber(value int) IndexNumber {
+	return IndexNumber(value % 16)
+}
 
 // Validate will return an error for invalid values.
 func (i IndexNumber) Validate() error {

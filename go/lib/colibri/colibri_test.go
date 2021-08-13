@@ -137,7 +137,7 @@ func TestTimestampVerification(t *testing.T) {
 
 	for tsRel, want := range testCases {
 		packetTimestamp := libcolibri.CreateColibriTimestamp(tsRel, 0, 0)
-		assert.Equal(t, libcolibri.VerifyTimestamp(expTick, packetTimestamp), want)
+		assert.Equal(t, want, libcolibri.VerifyTimestamp(expTick, packetTimestamp))
 	}
 }
 

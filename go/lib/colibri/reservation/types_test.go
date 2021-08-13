@@ -109,6 +109,38 @@ func TestTickToTime(t *testing.T) {
 	require.Equal(t, time.Unix(4, 0), TickFromTime(time.Unix(4, 0)).ToTime())
 }
 
+func TestTickFromDuration(t *testing.T) {
+	cases := map[time.Duration]Tick{
+		0:                                       0,
+		1:                                       1,
+		time.Duration(3300 * time.Millisecond):  1,
+		time.Duration(4 * time.Second):          1,
+		time.Duration(4*time.Second + 1):        2,
+		time.Duration(8001 * time.Millisecond):  3,
+		time.Duration(11999 * time.Millisecond): 3,
+	}
+	for dur, tick := range cases {
+		t.Run(dur.String(), func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tick, TicksFromDuration(dur))
+		})
+	}
+}
+
+func TestTickToDuration(t *testing.T) {
+	cases := map[Tick]time.Duration{
+		0: 0,
+		1: time.Duration(4 * time.Second),
+	}
+	for tick, dur := range cases {
+		name := fmt.Sprintf("%d", tick)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, dur, tick.ToDuration())
+		})
+	}
+}
+
 func TestValidateBWCls(t *testing.T) {
 	for i := 0; i < 64; i++ {
 		c := BWCls(i)
