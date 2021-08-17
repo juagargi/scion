@@ -39,6 +39,7 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
+	"github.com/scionproto/scion/go/lib/util"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
@@ -695,11 +696,15 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	}
 
 	// check the seg. reservations
+	expTime := util.MaxFutureTime()
 	for _, r := range rsv.SegmentReservations {
 		if r.ActiveIndex() == nil {
 			failedResponse.Message = s.errNew("seg. rsv. for e2e rsv has no active index",
 				"id", req.ID, "seg_id", r.ID, "indices", r.Indices.String()).Error()
 			return failedResponse, nil
+		}
+		if expTime.After(r.ActiveIndex().Expiration) {
+			expTime = r.ActiveIndex().Expiration
 		}
 	}
 	// append steps to the request path if necessary
@@ -712,7 +717,12 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	// now the request has correct steps (current step is sure to exist)
 
 	// TODO(juagargi) we want to indicate the validity period in the request
-	idx, err := rsv.NewIndex(req.Timestamp.Add(16*time.Second), req.RequestedBW)
+	maxExpTime := time.Now().Add(reservation.E2ERsvDuration)
+	if maxExpTime.Before(expTime) {
+		expTime = maxExpTime
+	}
+	// idx, err := rsv.NewIndex(req.Timestamp.Add(16*time.Second), req.RequestedBW)
+	idx, err := rsv.NewIndex(expTime, req.RequestedBW)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot create index in e2e admission", err,
 			"e2e_id", req.ID).Error()
@@ -912,7 +922,7 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 func (s *Store) DeleteExpiredIndices(ctx context.Context) (int, time.Time, error) {
 	n, err := s.db.DeleteExpiredIndices(ctx, time.Now())
 	if err != nil {
-		return 0, time.Time{}, err
+		return 0, time.Time{}, serrors.WrapStr("deleting expired indices", err)
 	}
 	exp, err := s.db.NextExpirationTime(ctx)
 	return n, exp, err

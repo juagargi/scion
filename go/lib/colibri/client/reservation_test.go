@@ -26,9 +26,12 @@ import (
 	"github.com/scionproto/scion/go/lib/colibri/client/sorting"
 	ct "github.com/scionproto/scion/go/lib/colibri/coltest"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/mocks/net/mock_net"
+	"github.com/scionproto/scion/go/lib/sciond"
 	"github.com/scionproto/scion/go/lib/sciond/mock_sciond"
 	"github.com/scionproto/scion/go/lib/snet"
 	snetpath "github.com/scionproto/scion/go/lib/snet/path"
+	"github.com/scionproto/scion/go/lib/sock/reliable/mock_reliable"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/xtest"
 )
@@ -37,7 +40,7 @@ func TestNewReservation(t *testing.T) {
 
 }
 
-func TestReservationStartReservation(t *testing.T) {
+func TestReservationOpen(t *testing.T) {
 	// modify the global task duration for the test
 	e2eRenewalTaskDuration = reservation.TicksInE2ERsv * 4 * time.Millisecond / 2 // 16 millisecs
 
@@ -46,17 +49,30 @@ func TestReservationStartReservation(t *testing.T) {
 	ctx, cancelF := context.WithTimeout(context.Background(), time.Second)
 	defer cancelF()
 
+	dispatcher := mock_reliable.NewMockDispatcher(ctrl)
 	daemon := mock_sciond.NewMockConnector(ctrl)
-	srcIA := xtest.MustParseIA("1-ff00:0:111")
-	dstIA := xtest.MustParseIA("1-ff00:0:112")
-	daemon.EXPECT().LocalIA(gomock.Any()).Return(srcIA, nil)
-	daemon.EXPECT().ColibriListRsvs(gomock.Any(), dstIA).Return(
+	srcAddr := &snet.UDPAddr{
+		IA:   xtest.MustParseIA("1-ff00:0:111"),
+		Host: xtest.MustParseUDPAddr(t, "127.0.0.1:12346"),
+	}
+	dstAddr := &snet.UDPAddr{
+		IA:   xtest.MustParseIA("1-ff00:0:112"),
+		Host: xtest.MustParseUDPAddr(t, "127.0.0.1:12345"),
+	}
+
+	mockConn := mock_net.NewMockPacketConn(ctrl)
+	mockConn.EXPECT().Close()
+	dispatcher.EXPECT().Register(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		mockConn, uint16(0), nil)
+	daemon.EXPECT().ColibriListRsvs(gomock.Any(), dstAddr.IA).Return(
 		ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 			ct.WithUpSegs(1),
 			ct.WithDownSegs(0),
 		),
 		nil)
-	rsv, err := NewReservation(ctx, daemon, dstIA, 11, 0, sorting.ByExpiration)
+
+	network := snet.NewNetwork(srcAddr.IA, dispatcher, sciond.RevHandler{Connector: daemon})
+	rsv, err := NewReservation(ctx, network, daemon, dstAddr, 11, 0, sorting.ByExpiration)
 	require.NoError(t, err)
 	require.True(t, rsv.request.Id.IsE2EID())
 
@@ -79,7 +95,7 @@ func TestReservationStartReservation(t *testing.T) {
 			timesCalled++
 			return p, nil
 		})
-	err = rsv.StartReservation(ctx, func(r *Reservation, err error) {
+	err = rsv.Open(ctx, srcAddr.Host, func(r *Reservation, err error) {
 		require.Fail(t, "should not fail")
 	})
 	require.NoError(t, err)
@@ -99,7 +115,7 @@ func TestReservationStartReservation(t *testing.T) {
 			require.Equal(t, reservation.NewIndexNumber(timesCalled-1), idx)
 			return nil
 		})
-	err = rsv.StopReservation(ctx)
+	err = rsv.Close(ctx)
 	require.NoError(t, err)
 	require.Nil(t, rsv.runner)
 }

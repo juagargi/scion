@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	durationpb "github.com/golang/protobuf/ptypes/duration"
@@ -398,7 +399,24 @@ func (s *DaemonServer) ColibriListRsvs(ctx context.Context, req *sdpb.ColibriLis
 func (s *DaemonServer) ColibriSetupRsv(ctx context.Context, req *sdpb.ColibriSetupRequest) (
 	*sdpb.ColibriSetupResponse, error) {
 
-	return s.Colibri.SetupReservation(ctx, req)
+	res, err := s.Colibri.SetupReservation(ctx, req)
+	if err != nil {
+		return res, err
+	}
+	if res.Base.Success != nil {
+		egress, err := strconv.Atoi(res.Base.Success.NextHop)
+		if err != nil {
+			return nil, serrors.WrapStr("obtaining next hop from egress", err,
+				"egress", res.Base.Success.NextHop)
+		}
+		addr, ok := s.TopoProvider.Get().UnderlayNextHop(common.IFIDType(egress))
+		if !ok {
+			return nil, serrors.New("obtaining next hop from egress id, egress not present",
+				"egress", egress)
+		}
+		res.Base.Success.NextHop = addr.String()
+	}
+	return res, nil
 }
 
 func (s *DaemonServer) ColibriCleanupRsv(ctx context.Context, req *sdpb.ColibriCleanupRequest) (

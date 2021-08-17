@@ -262,11 +262,16 @@ func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservati
 			AllocationTrail: trail,
 		}
 	}
+	nextHop, err := net.ResolveUDPAddr("udp", sdRes.Base.Success.NextHop)
+	if err != nil {
+		return nil, serrors.WrapStr("parsing next hop", err)
+	}
 	return &path.Path{
 		SPath: spath.Path{
 			Raw:  sdRes.Base.Success.Spath,
 			Type: colpath.PathType,
 		},
+		NextHop: nextHop,
 	}, nil
 }
 
