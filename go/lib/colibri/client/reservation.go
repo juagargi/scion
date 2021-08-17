@@ -167,8 +167,7 @@ func (r *Reservation) Read(buff []byte) (int, error) {
 func (r *Reservation) Write(buffer []byte) (int, error) {
 	fmt.Printf("deleteme writing with extended API, path type: %s, next hop:%s\n",
 		&r.dstAddr.Path.Type, r.dstAddr.NextHop)
-	return r.connection.Write(buffer)
-	// return r.connection.WriteTo(buffer, r.dstAddr)
+	return r.connection.WriteTo(buffer, r.dstAddr)
 }
 
 type renewalTask struct {
