@@ -118,6 +118,7 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, newDB func() backe
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
+	require.Len(t, rsv.Indices, 9)
 	// change ID
 	r.ID.ASID = xtest.MustParseAS("ff00:1:12")
 	copy(r.ID.Suffix, xtest.MustParseHexString("beefcafe"))
@@ -153,6 +154,16 @@ func testPersistSegmentRsv(ctx context.Context, t *testing.T, newDB func() backe
 	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
 	require.NoError(t, err)
 	require.Equal(t, r, rsv)
+	require.Len(t, rsv.Indices, 1)
+	// remove the last index
+	err = r.RemoveIndex(9)
+	require.NoError(t, err)
+	err = db.PersistSegmentRsv(ctx, r)
+	require.NoError(t, err)
+	rsv, err = db.GetSegmentRsvFromID(ctx, &r.ID)
+	require.NoError(t, err)
+	require.Equal(t, r, rsv)
+	require.Len(t, rsv.Indices, 0)
 }
 
 func testGetSegmentRsvFromID(ctx context.Context, t *testing.T, newDB func() backend.DB) {

@@ -113,7 +113,7 @@ func (m *manager) Run(ctx context.Context) {
 		}
 		n, wakeupTime, err := m.store.DeleteExpiredIndices(ctx)
 		if err != nil {
-			logger.Error("deleting expired indices", "count", n, "err", err)
+			logger.Error("deleting expired indices", "deleted_count", n, "err", err)
 		}
 		if wakeupTime.IsZero() {
 			wakeupTime = now.Add(2 * time.Second)
