@@ -95,7 +95,7 @@ class SupervisorGenerator(object):
         for k, v in topo.get("colibri_service", {}).items():
             if k.endswith("-1"):
                 conf = os.path.join(base, "%s.toml" % k)
-                prog = self._common_entry(k, ["bin/colibri", "--config", conf])
+                prog = self._common_entry(k, ["bin/co", "--config", conf])
                 entries.append((k, prog))
         return entries
 
