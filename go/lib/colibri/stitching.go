@@ -19,10 +19,12 @@ package colibri
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
+	"github.com/scionproto/scion/go/lib/util"
 )
 
 // FullTrip is a set of stitched segment reservations that would allow to setup an E2E rsv.
@@ -42,6 +44,16 @@ func (t FullTrip) Segments() []reservation.ID {
 		ids[i] = l.Id
 	}
 	return ids
+}
+
+func (t FullTrip) ExpirationTime() time.Time {
+	minExp := util.MaxFutureTime()
+	for _, l := range t {
+		if exp := l.ExpirationTime; exp.Before(minExp) {
+			minExp = exp
+		}
+	}
+	return minExp
 }
 
 func (t FullTrip) String() string {

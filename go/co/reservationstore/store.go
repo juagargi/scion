@@ -39,6 +39,7 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
+	"github.com/scionproto/scion/go/lib/util"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
@@ -695,11 +696,15 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	}
 
 	// check the seg. reservations
+	expTime := util.MaxFutureTime()
 	for _, r := range rsv.SegmentReservations {
 		if r.ActiveIndex() == nil {
 			failedResponse.Message = s.errNew("seg. rsv. for e2e rsv has no active index",
 				"id", req.ID, "seg_id", r.ID, "indices", r.Indices.String()).Error()
 			return failedResponse, nil
+		}
+		if expTime.After(r.ActiveIndex().Expiration) {
+			expTime = r.ActiveIndex().Expiration
 		}
 	}
 	// append steps to the request path if necessary
@@ -712,7 +717,12 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	// now the request has correct steps (current step is sure to exist)
 
 	// TODO(juagargi) we want to indicate the validity period in the request
-	idx, err := rsv.NewIndex(req.Timestamp.Add(16*time.Second), req.RequestedBW)
+	maxExpTime := time.Now().Add(reservation.E2ERsvDuration)
+	if maxExpTime.Before(expTime) {
+		expTime = maxExpTime
+	}
+	// idx, err := rsv.NewIndex(req.Timestamp.Add(16*time.Second), req.RequestedBW)
+	idx, err := rsv.NewIndex(expTime, req.RequestedBW)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot create index in e2e admission", err,
 			"e2e_id", req.ID).Error()
@@ -739,13 +749,12 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 				"trail_len", len(req.AllocationTrail)).Error()
 			return failedResponse, nil
 		}
-		freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv)
+		freeOutgoing, err := freeAfterTransfer(ctx, tx, rsv, !newSetup)
 		if err != nil {
 			failedResponse.Message = s.errWrapStr("cannot compute transfer", err,
 				"id", req.ID).Error()
 			return failedResponse, nil
 		}
-		freeOutgoing += rsv.AllocResv() // do not count this rsv's BW
 		if free > freeOutgoing {
 			free = freeOutgoing
 		}
@@ -762,8 +771,8 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		}
 	}
 
-	log.Debug("e2e admission", "requested_cls", req.RequestedBW, "admitted", admitted,
-		"free", free, "segs", deletemePrintSegRsvs(req.SegmentRsvs))
+	log.Debug("e2e admission", "requested_cls", req.RequestedBW,
+		"requested", req.RequestedBW.ToKbps(), "admitted", admitted, "free", free)
 
 	var token *reservation.Token
 	if req.IsLastAS() {
@@ -834,11 +843,6 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 // CleanupE2EReservation will remove an index from an e2e reservation.
 func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 	base.Response, error) {
-
-	// // deleteme
-	// s.deletemePrintAllE2ERsvs(ctx)
-	// print(ctx.Err())
-	// ctx = context.Background()
 
 	if err := s.validateAuthenticators(req); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
@@ -912,7 +916,7 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 func (s *Store) DeleteExpiredIndices(ctx context.Context) (int, time.Time, error) {
 	n, err := s.db.DeleteExpiredIndices(ctx, time.Now())
 	if err != nil {
-		return 0, time.Time{}, err
+		return 0, time.Time{}, serrors.WrapStr("deleting expired indices", err)
 	}
 	exp, err := s.db.NextExpirationTime(ctx)
 	return n, exp, err
@@ -1221,8 +1225,8 @@ func freeInSegRsv(ctx context.Context, tx backend.Transaction, segRsv *segment.R
 }
 
 // max bw in egress interface of the transfer AS
-func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Reservation) (
-	uint64, error) {
+func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Reservation,
+	renewal bool) (uint64, error) {
 
 	seg1 := rsv.SegmentReservations[0]
 	seg2 := rsv.SegmentReservations[1]
@@ -1235,7 +1239,7 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	if err != nil {
 		return 0, err
 	}
-	var total uint64
+	var total uint64 // all BW that ends up in this AS
 	for _, r := range rsvs {
 		if r.Egress == 0 && r.PathEndProps&reservation.EndTransfer != 0 {
 			total += r.ActiveIndex().AllocBW.ToKbps()
@@ -1244,13 +1248,24 @@ func freeAfterTransfer(ctx context.Context, tx backend.Transaction, rsv *e2e.Res
 	ratio := float64(seg1.ActiveIndex().AllocBW.ToKbps()) / float64(total)
 	// effectiveE2eTraffic is the minimum BW that e2e rsvs can use
 	effectiveE2eTraffic := float64(seg2.ActiveIndex().AllocBW.ToKbps()) * ratio
+
 	e2es, err := tx.GetE2ERsvsOnSegRsv(ctx, &seg2.ID)
 	if err != nil {
 		return 0, err
 	}
-	total = sumAllBW(e2es)
+	alreadyUsed := int64(sumAllBW(e2es))
+	if renewal {
+		alreadyUsed -= int64(rsv.AllocResv()) // do not count this rsv's BW
+	}
 	// the available BW for this e2e rsv is the effective minus the already used
-	return uint64(effectiveE2eTraffic) - total, nil
+	avail := int64(effectiveE2eTraffic) - alreadyUsed
+	if avail < 0 {
+		log.Error("internal error: negative result in free after transfer",
+			"ratio", ratio, "effective", effectiveE2eTraffic, "renewal", renewal,
+			"already_used", alreadyUsed, "this_rsv_alloc", rsv.AllocResv())
+		avail = 0
+	}
+	return uint64(avail), nil
 }
 
 func appendToPath(req *e2e.SetupReq, rsv *e2e.Reservation) error {

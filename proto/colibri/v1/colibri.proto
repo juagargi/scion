@@ -208,6 +208,7 @@ message DaemonSetupResponse {
     }
     message Success {
         bytes spath = 1;
+        string next_hop = 2;
     }
     Failure failure = 1; // if present: information about the failure
     Success success = 2; // should be present if failure == nil

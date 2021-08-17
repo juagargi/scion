@@ -37,21 +37,21 @@ func TestIDRead(t *testing.T) {
 		ASID: xtest.MustParseAS("ffaa:0:1101"),
 	}
 	reference.Suffix = xtest.MustParseHexString("facecafe")
-	raw := make([]byte, 6+4)
+	raw := make([]byte, 6+IDSegLen)
 	n, err := reference.Read(raw)
 	require.NoError(t, err)
-	require.Equal(t, 6+4, n)
+	require.Equal(t, 6+IDSegLen, n)
 	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafe"), raw)
 	require.True(t, reference.IsSegmentID())
 	require.Equal(t, n, reference.Len())
 
 	// E2E
-	reference.Suffix = xtest.MustParseHexString("facecafedeadbeeff00d")
-	raw = make([]byte, 6+10)
+	reference.Suffix = xtest.MustParseHexString("facecafedeadbeeff00dcafe")
+	raw = make([]byte, 6+IDE2ELen)
 	n, err = reference.Read(raw)
 	require.NoError(t, err)
-	require.Equal(t, 6+10, n)
-	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00d"), raw)
+	require.Equal(t, 6+IDE2ELen, n)
+	require.Equal(t, xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00dcafe"), raw)
 	require.True(t, reference.IsE2EID())
 	require.Equal(t, n, reference.Len())
 }
@@ -75,18 +75,18 @@ func TestIDString(t *testing.T) {
 }
 
 func TestE2EIDFromRaw(t *testing.T) {
-	raw := xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00d")
+	raw := xtest.MustParseHexString("ffaa00001101facecafedeadbeeff00dcafe")
 	id, err := IDFromRaw(raw)
 	require.NoError(t, err)
 	require.Equal(t, xtest.MustParseAS("ffaa:0:1101"), id.ASID)
-	require.Equal(t, xtest.MustParseHexString("facecafedeadbeeff00d"), id.Suffix)
+	require.Equal(t, xtest.MustParseHexString("facecafedeadbeeff00dcafe"), id.Suffix)
 	require.True(t, id.IsE2EID())
 }
 
 func TestIDCopy(t *testing.T) {
 	id1 := ID{
 		ASID:   xtest.MustParseAS("ff00:0:111"),
-		Suffix: make([]byte, 10),
+		Suffix: make([]byte, IDE2ELen),
 	}
 	id1.Suffix[1] = 1
 	id2 := id1.Copy()
@@ -107,6 +107,38 @@ func TestTickToTime(t *testing.T) {
 	require.Equal(t, time.Unix(0, 0), TickFromTime(time.Unix(0, 0)).ToTime())
 	require.Equal(t, time.Unix(0, 0), TickFromTime(time.Unix(3, 999999)).ToTime())
 	require.Equal(t, time.Unix(4, 0), TickFromTime(time.Unix(4, 0)).ToTime())
+}
+
+func TestTickFromDuration(t *testing.T) {
+	cases := map[time.Duration]Tick{
+		0:                                       0,
+		1:                                       1,
+		time.Duration(3300 * time.Millisecond):  1,
+		time.Duration(4 * time.Second):          1,
+		time.Duration(4*time.Second + 1):        2,
+		time.Duration(8001 * time.Millisecond):  3,
+		time.Duration(11999 * time.Millisecond): 3,
+	}
+	for dur, tick := range cases {
+		t.Run(dur.String(), func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tick, TicksFromDuration(dur))
+		})
+	}
+}
+
+func TestTickToDuration(t *testing.T) {
+	cases := map[Tick]time.Duration{
+		0: 0,
+		1: time.Duration(4 * time.Second),
+	}
+	for tick, dur := range cases {
+		name := fmt.Sprintf("%d", tick)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, dur, tick.ToDuration())
+		})
+	}
 }
 
 func TestValidateBWCls(t *testing.T) {

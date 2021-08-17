@@ -16,7 +16,6 @@ package sqlite
 
 import (
 	"context"
-	"database/sql"
 	"sync"
 	"testing"
 
@@ -156,19 +155,6 @@ func isSuffixInDB(t *testing.T, b *Backend, asid addr.AS, suffix uint32) bool {
 	err := b.db.QueryRowContext(ctx, query, asid, suffix).Scan(&count)
 	require.NoError(t, err)
 	return count > 0
-}
-
-func testInsertNewSegReservation(ctx context.Context, t *testing.T, db *sql.DB,
-	rsv *segment.Reservation, suffix uint32) error {
-
-	tx, err := db.BeginTx(ctx, nil)
-	require.NoError(t, err)
-	defer tx.Rollback()
-	err = insertNewSegReservation(ctx, tx, rsv, suffix)
-	if err != nil {
-		return err
-	}
-	return tx.Commit()
 }
 
 func benchmarkNewSuffix(b *testing.B, entries uint32) {
