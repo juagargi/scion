@@ -48,7 +48,6 @@ type TasksConfig struct {
 	Public          *net.UDPAddr
 	Intfs           *ifstate.Interfaces
 	OneHopConn      snet.PacketConn
-	Router          snet.Router
 	TrustDB         trust.DB
 	PathDB          pathdb.PathDB
 	RevCache        revcache.RevCache
