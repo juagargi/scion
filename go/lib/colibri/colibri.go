@@ -30,14 +30,14 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
+	"github.com/scionproto/scion/go/lib/util"
 )
 
 const (
-	// packetLifetimeMs denotes the maximal lifetime of a packet in milliseconds
-	packetLifetimeMs uint16 = 2000
-	// clockSkewMs denotes the maximal clock skew in milliseconds
-	clockSkewMs   uint16 = 1000
-	clockSkewNano uint64 = uint64(clockSkewMs) * 1000000
+	// packetLifetime denotes the maximal lifetime of a packet
+	packetLifetime = 2 * time.Second
+	// clockSkew denotes the maximal clock skew
+	clockSkew = time.Second
 	// LengthInputData denotes the length of InputData in bytes
 	LengthInputData = 30
 	// LengthInputDataRound16 denotes the LengthInputData rounded to the next multiple of 16
@@ -54,7 +54,7 @@ func CreateColibriTimestamp(tsRel uint32, coreID uint8,
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 	// |    CoreID     |                  CoreCounter                  |
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	b := make([]byte, 8)
+	b := [8]byte{}
 	binary.BigEndian.PutUint32(b[4:8], coreCounter)
 	binary.BigEndian.PutUint16(b[3:5], uint16(coreID))
 	binary.BigEndian.PutUint32(b[:4], tsRel)
@@ -71,7 +71,7 @@ func CreateColibriTimestampCustom(tsRel uint32, pckId uint32) (packetTimestamp u
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 	// |                             PckId                             |
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	b := make([]byte, 8)
+	b := [8]byte{}
 	binary.BigEndian.PutUint32(b[:4], tsRel)
 	binary.BigEndian.PutUint32(b[4:8], pckId)
 	packetTimestamp = binary.BigEndian.Uint64(b[:8])
@@ -82,20 +82,19 @@ func CreateColibriTimestampCustom(tsRel uint32, pckId uint32) (packetTimestamp u
 func ParseColibriTimestamp(packetTimestamp uint64) (tsRel uint32, coreID uint8,
 	coreCounter uint32) {
 
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b[:8], packetTimestamp)
-	tsRel = binary.BigEndian.Uint32(b[:4])
-	coreID = uint8(binary.BigEndian.Uint16(b[3:5]))
-	coreCounter = binary.BigEndian.Uint32(b[4:8]) % (1 << 24)
-	return tsRel, coreID, coreCounter
+	var pktId uint32
+	tsRel, pktId = ParseColibriTimestampCustom(packetTimestamp)
+	coreID = uint8(pktId >> 24)
+	coreCounter = pktId & 0x00ffffff
+	return
 }
 
 // ParseColibriTimestampCustom reads tsRel and pckId from the packetTimestamp.
-func ParseColibriTimestampCustom(packetTimestamp uint64) (tsRel uint32, pckId uint32) {
-	b := make([]byte, 8)
+func ParseColibriTimestampCustom(packetTimestamp uint64) (tsRel uint32, pktId uint32) {
+	b := [8]byte{}
 	binary.BigEndian.PutUint64(b[:8], packetTimestamp)
 	tsRel = binary.BigEndian.Uint32(b[:4])
-	pckId = binary.BigEndian.Uint32(b[4:8])
+	pktId = binary.BigEndian.Uint32(b[4:8])
 	return
 }
 
@@ -105,20 +104,20 @@ func ParseColibriTimestampCustom(packetTimestamp uint64) (tsRel uint32, pckId ui
 // If the current time is not between the expiration time minus 16 seconds and the expiration time,
 // an error is returned.
 func CreateTsRel(expirationTick uint32) (uint32, error) {
-	expirationNano := 4 * uint64(expirationTick) * uint64(math.Pow10(9))
-	timestampNano := (4*uint64(expirationTick) - 16) * uint64(math.Pow10(9))
-	nowNano := uint64(time.Now().UnixNano())
-	if nowNano > expirationNano {
+	expiration := util.SecsToTime(expirationTick * 4)
+	timestamp := expiration.Add(-16 * time.Second)
+	now := time.Now()
+	if now.After(expiration) {
 		return 0, serrors.New("provided packet expiration time is in the past",
-			"expiration", expirationNano, "now", nowNano)
+			"expiration", expiration, "now", now)
 	}
-	if nowNano < timestampNano {
+	if now.Before(timestamp) {
 		return 0, serrors.New("provided packet expiration time is too far in the future",
-			"timestampNano", timestampNano, "now", nowNano)
+			"timestamp", timestamp, "now", now)
 	}
-	diff := nowNano - timestampNano
-	tsRel := max(0, (diff/4)-1)
-	return uint32(tsRel), nil
+	diff := now.Sub(timestamp)
+	tsRel := max(0, uint32(diff)/4-1)
+	return tsRel, nil
 }
 
 // VerifyExpirationTick returns whether the expiration time has not been reached yet.
@@ -134,10 +133,9 @@ func VerifyExpirationTick(expirationTick uint32) bool {
 // a possible clock drift between the packet source and the verifier of up to one second into
 // account.
 func VerifyTimestamp(expirationTick uint32, packetTimestamp uint64) bool {
-	nowNano := uint64(time.Now().UnixNano())
-	timestampNano := (4*uint64(expirationTick) - 16) * 1000000000
-
 	// TODO(juagargi) re-enable the proper check once we have a timestamping mechanism
+	// nowNano := uint64(time.Now().UnixNano())
+	// timestampNano := (4*uint64(expirationTick) - 16) * 1000000000
 	// tsRel, _, _ := ParseColibriTimestamp(packetTimestamp)
 	// timestampSenderNano := timestampNano + (1+uint64(tsRel))*4
 	// nowMs := nowNano / 1000000
@@ -145,7 +143,8 @@ func VerifyTimestamp(expirationTick uint32, packetTimestamp uint64) bool {
 	// if (nowMs < tsSenderMs-uint64(clockSkewMs)) ||
 	// 	(nowMs > tsSenderMs+uint64(packetLifetimeMs)+uint64(clockSkewMs)) {
 	// 	return false
-	if nowNano < timestampNano-clockSkewNano {
+	timestamp := util.SecsToTime(4*expirationTick - 16).Add(-clockSkew)
+	if time.Now().Before(timestamp) {
 		return false
 	} else {
 		return true
@@ -418,7 +417,7 @@ func prepareInputData(srcAS addr.AS, inf *colibri.InfoField,
 	return nil
 }
 
-func max(x, y uint64) uint64 {
+func max(x, y uint32) uint32 {
 	if x < y {
 		return y
 	}

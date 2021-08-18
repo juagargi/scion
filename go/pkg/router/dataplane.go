@@ -97,7 +97,7 @@ type DataPlane struct {
 	internalNextHops  map[uint16]*net.UDPAddr
 	svc               *services
 	macFactory        func() hash.Hash
-	ColibriKey        []byte
+	colibriKey        []byte
 	bfdSessions       map[uint16]bfdSession
 	localIA           addr.IA
 	mtx               sync.Mutex
@@ -182,11 +182,11 @@ func (d *DataPlane) SetColibriKey(key []byte) error {
 	if len(key) == 0 {
 		return emptyValue
 	}
-	if len(d.ColibriKey) != 0 {
+	if len(d.colibriKey) != 0 {
 		return alreadySet
 	}
 
-	d.ColibriKey = key
+	d.colibriKey = key
 	return nil
 }
 

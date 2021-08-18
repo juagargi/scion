@@ -87,6 +87,7 @@ func TestTimestamp(t *testing.T) {
 
 	for _, want := range testCases {
 		tsRel, coreID, coreCounter := libcolibri.ParseColibriTimestamp(want)
+		t.Logf("tsRel: %x coreID: %x coreCounter: %x", tsRel, coreID, coreCounter)
 		got := libcolibri.CreateColibriTimestamp(tsRel, coreID, coreCounter)
 		assert.Equal(t, want, got)
 	}

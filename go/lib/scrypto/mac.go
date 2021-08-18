@@ -33,7 +33,7 @@ const (
 
 var (
 	hfMacSalt   = []byte("Derive OF Key")
-	ColibriSalt = []byte("Derive Colibri Key")
+	colibriSalt = []byte("Derive Colibri Key")
 )
 
 func InitMac(key []byte) (hash.Hash, error) {
@@ -76,5 +76,5 @@ func DeriveHFMacKey(key []byte) ([]byte, error) {
 func DeriveColibriMacKey(key []byte) ([]byte, error) {
 	// This uses 16B keys with 1000 hash iterations, which is the same as the
 	// defaults used by pycrypto.
-	return pbkdf2.Key(key, ColibriSalt, 1000, 16, sha256.New), nil
+	return pbkdf2.Key(key, colibriSalt, 1000, 16, sha256.New), nil
 }

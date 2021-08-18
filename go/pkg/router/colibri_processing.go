@@ -136,7 +136,7 @@ func (c *colibriPacketProcessor) basicValidation() (processResult, error) {
 }
 
 func (c *colibriPacketProcessor) cryptographicValidation() (processResult, error) {
-	privateKey := c.d.ColibriKey
+	privateKey := c.d.colibriKey
 	colHeader := c.colibriPathMinimal
 	err := libcolibri.VerifyMAC(privateKey, colHeader.PacketTimestamp, colHeader.InfoField,
 		colHeader.CurrHopField, &c.scionLayer)
