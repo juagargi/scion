@@ -24,7 +24,6 @@ import (
 
 	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/common"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
@@ -272,41 +271,6 @@ func (o *ServiceClientOperator) resolveAddr(ia *addr.IA) (*snet.UDPAddr, error) 
 
 type ColSrvResolver interface {
 	ResolveColibriService(ctx context.Context, ia *addr.IA) (*snet.UDPAddr, error)
-}
-
-type AnycastColSrvRes struct {
-	Router snet.Router
-	Arw    libgrpc.AddressRewriter
-}
-
-func (r *AnycastColSrvRes) ResolveColibriService(ctx context.Context, ia *addr.IA) (
-	*snet.UDPAddr, error) {
-
-	path, err := r.Router.Route(context.Background(), *ia)
-	if err != nil || path == nil {
-		return nil, serrors.New("no route to IA", "ia", ia, "err", err, "path", path)
-	}
-
-	svcAddr := &snet.SVCAddr{
-		IA:      *ia,
-		Path:    path.Path(),
-		NextHop: path.UnderlayNextHop(),
-		SVC:     addr.SvcCOL,
-	}
-	quicAddr, ok, err := r.Arw.RedirectToQUIC(ctx, svcAddr)
-	if !ok || err != nil {
-		return nil, serrors.New("cannot resolve service", "svc", svcAddr.SVC, "err", err)
-	}
-	if _, ok := quicAddr.(*snet.UDPAddr); !ok {
-		return nil, serrors.New("resolved address is not snet.UDPAddr", "addr", quicAddr,
-			"type", common.TypeOf(quicAddr))
-	}
-	return &snet.UDPAddr{
-		IA:      *ia,
-		Path:    path.Path(),
-		NextHop: path.UnderlayNextHop(),
-		Host:    quicAddr.(*snet.UDPAddr).Host,
-	}, nil
 }
 
 type DiscoveryColSrvRes struct {

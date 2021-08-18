@@ -17,9 +17,9 @@
 package colibri
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/subtle"
 	"encoding/binary"
 	"encoding/hex"
 	"math"
@@ -166,7 +166,7 @@ func VerifyMAC(privateKey []byte, ts colibri.Timestamp, inf *colibri.InfoField,
 		return err
 	}
 
-	if !bytes.Equal(mac[:4], currHop.Mac[:4]) {
+	if subtle.ConstantTimeCompare(mac[:4], currHop.Mac[:4]) != 1 {
 		return serrors.New("colibri mac verification failed",
 			"calculated", hex.EncodeToString(mac[:4]),
 			"packet", hex.EncodeToString(currHop.Mac[:4]))
@@ -184,7 +184,7 @@ func StaticMAC(key []byte, input []byte) ([]byte, error) {
 	// Calculate CBC-MAC = first 4 bytes of the last CBC block
 	mac := make([]byte, len(input))
 	f.CryptBlocks(mac, input)
-	return mac[len(mac)-16 : len(mac)-12], nil
+	return mac[len(mac)-aes.BlockSize : len(mac)-aes.BlockSize+4], nil
 }
 
 // CalculateColibriMacStatic calculates the static colibri MAC.
@@ -202,14 +202,10 @@ func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
 	if err != nil {
 		return nil, err
 	}
-	if len(input) < 16 || len(input)%16 != 0 {
-		return nil, serrors.New("colibri static mac input has invalid length", "expected", 16,
-			"is", len(input))
-	}
 	// Calculate CBC-MAC = first 4 bytes of the last CBC block
 	mac := make([]byte, len(input))
 	f.CryptBlocks(mac, input)
-	return mac[len(mac)-16 : len(mac)-12], nil
+	return mac[len(mac)-aes.BlockSize : len(mac)-aes.BlockSize+4], nil
 }
 
 // CalculateColibriMacSigma calculates the "sigma" authenticator.
@@ -230,7 +226,7 @@ func CalculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
 	// Calculate CBC-MAC = last CBC block
 	mac := make([]byte, len(input))
 	f.CryptBlocks(mac, input)
-	return mac[len(mac)-16:], nil
+	return mac[len(mac)-aes.BlockSize:], nil
 }
 
 // CalculateColibriMacPacket calculates the per-packet colibri MAC.
@@ -251,7 +247,7 @@ func CalculateColibriMacPacket(auth []byte, ts colibri.Timestamp,
 	// Calculate CBC-MAC = first 4 bytes of the last CBC block
 	mac := make([]byte, len(input))
 	f.CryptBlocks(mac, input)
-	return mac[len(mac)-16 : len(mac)-12], nil
+	return mac[len(mac)-aes.BlockSize : len(mac)-12], nil
 }
 
 var zeroesBuff [12]byte
@@ -298,7 +294,7 @@ func initColibriMac(key []byte) (cipher.BlockMode, error) {
 	}
 
 	// Zero initialization vector
-	zeroInitVector := make([]byte, 16)
+	zeroInitVector := make([]byte, aes.BlockSize)
 	// CBC-MAC = CBC-Encryption with zero initialization vector
 	mode := cipher.NewCBCEncrypter(block, zeroInitVector)
 	return mode, nil
@@ -334,10 +330,10 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 		uint8(s.SrcAddrType&0x3)<<2 | uint8(s.SrcAddrLen&0x3)
 
 	// The MAC input consists of the InputData plus the host addresses and the flags, rounded
-	// up to the next multiple of 16 bytes
+	// up to the next multiple of aes.BlockSize bytes
 	bufLen := LengthInputData + 1 + srcLen + dstLen
-	nrBlocks := uint8(math.Ceil(float64(bufLen) / 16))
-	buffer := make([]byte, 16*nrBlocks)
+	nrBlocks := uint8(math.Ceil(float64(bufLen) / aes.BlockSize))
+	buffer := make([]byte, aes.BlockSize*nrBlocks)
 
 	err := prepareInputData(s.SrcIA.A, inf, hop, buffer)
 	if err != nil {
@@ -357,7 +353,7 @@ func prepareMacInputPacket(ts colibri.Timestamp, inf *colibri.InfoField,
 		return nil, serrors.New("invalid input")
 	}
 
-	input := make([]byte, 16)
+	input := make([]byte, aes.BlockSize)
 	copy(input[:8], ts[:])
 
 	baseHdrLen := uint64(slayers.CmnHdrLen + s.AddrHdrLen())
