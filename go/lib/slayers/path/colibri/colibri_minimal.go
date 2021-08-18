@@ -15,8 +15,6 @@
 package colibri
 
 import (
-	"encoding/binary"
-
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path"
 )
@@ -42,7 +40,7 @@ func RegisterPath() {
 // the current hop field is parsed, the border router does not need the other ones.
 type ColibriPathMinimal struct {
 	// PacketTimestamp denotes the high-precision timestamp.
-	PacketTimestamp uint64
+	PacketTimestamp Timestamp
 	// InfoField denotes the COLIBRI info field.
 	InfoField *InfoField
 	// CurrHopField denotes the current COLIBRI hop field.
@@ -61,7 +59,7 @@ func (c *ColibriPathMinimal) DecodeFromBytes(b []byte) error {
 			"needs:", LenMinColibri)
 	}
 
-	c.PacketTimestamp = binary.BigEndian.Uint64(b[:8])
+	copy(c.PacketTimestamp[:], b[:8])
 	if c.InfoField == nil {
 		c.InfoField = &InfoField{}
 	}
@@ -110,7 +108,7 @@ func (c *ColibriPathMinimal) SerializeToInternal() error {
 		return serrors.New("internal Raw buffer for ColibriPath too short", "is:", len(c.Raw),
 			"needs:", c.Len())
 	}
-	binary.BigEndian.PutUint64(c.Raw[0:8], c.PacketTimestamp)
+	copy(c.Raw[:8], c.PacketTimestamp[:])
 	if err := c.InfoField.SerializeTo(c.Raw[8 : 8+LenInfoField]); err != nil {
 		return err
 	}

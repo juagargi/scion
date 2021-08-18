@@ -44,9 +44,8 @@ const (
 	LengthInputDataRound16 = ((LengthInputData-1)/16 + 1) * 16
 )
 
-// CreateColibriTimestamp creates the COLIBRI packetTimestamp from tsRel, coreID, and coreCounter.
-func CreateColibriTimestamp(tsRel uint32, coreID uint8,
-	coreCounter uint32) (packetTimestamp uint64) {
+// CreateColibriTimestamp creates the COLIBRI Timestamp from tsRel, coreID, and coreCounter.
+func CreateColibriTimestamp(tsRel uint32, coreID uint8, coreCounter uint32) colibri.Timestamp {
 	// 0                   1                   2                   3
 	// 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -54,16 +53,12 @@ func CreateColibriTimestamp(tsRel uint32, coreID uint8,
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 	// |    CoreID     |                  CoreCounter                  |
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	b := [8]byte{}
-	binary.BigEndian.PutUint32(b[4:8], coreCounter)
-	binary.BigEndian.PutUint16(b[3:5], uint16(coreID))
-	binary.BigEndian.PutUint32(b[:4], tsRel)
-	packetTimestamp = binary.BigEndian.Uint64(b[:8])
-	return
+	pktId := (uint32(coreID) << 24) | uint32(coreCounter)
+	return CreateColibriTimestampCustom(tsRel, pktId)
 }
 
-// CreateColibriTimestampCustom creates the COLIBRI packetTimestamp from tsRel and pckId.
-func CreateColibriTimestampCustom(tsRel uint32, pckId uint32) (packetTimestamp uint64) {
+// CreateColibriTimestampCustom creates the COLIBRI Timestamp from tsRel and pckId.
+func CreateColibriTimestampCustom(tsRel uint32, pktId uint32) colibri.Timestamp {
 	// 0                   1                   2                   3
 	// 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -71,30 +66,25 @@ func CreateColibriTimestampCustom(tsRel uint32, pckId uint32) (packetTimestamp u
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 	// |                             PckId                             |
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	b := [8]byte{}
-	binary.BigEndian.PutUint32(b[:4], tsRel)
-	binary.BigEndian.PutUint32(b[4:8], pckId)
-	packetTimestamp = binary.BigEndian.Uint64(b[:8])
-	return
+	ts := colibri.Timestamp{}
+	binary.BigEndian.PutUint64(ts[:], (uint64(tsRel)<<32)|uint64(pktId))
+	return ts
 }
 
-// ParseColibriTimestamp reads tsRel, coreID, and coreCounter from the packetTimestamp.
-func ParseColibriTimestamp(packetTimestamp uint64) (tsRel uint32, coreID uint8,
-	coreCounter uint32) {
-
+// ParseColibriTimestamp reads tsRel, coreID, and coreCounter from the Timestamp.
+func ParseColibriTimestamp(ts colibri.Timestamp) (tsRel uint32, coreID uint8, coreCounter uint32) {
 	var pktId uint32
-	tsRel, pktId = ParseColibriTimestampCustom(packetTimestamp)
+	tsRel, pktId = ParseColibriTimestampCustom(ts)
 	coreID = uint8(pktId >> 24)
 	coreCounter = pktId & 0x00ffffff
 	return
 }
 
-// ParseColibriTimestampCustom reads tsRel and pckId from the packetTimestamp.
-func ParseColibriTimestampCustom(packetTimestamp uint64) (tsRel uint32, pktId uint32) {
-	b := [8]byte{}
-	binary.BigEndian.PutUint64(b[:8], packetTimestamp)
-	tsRel = binary.BigEndian.Uint32(b[:4])
-	pktId = binary.BigEndian.Uint32(b[4:8])
+// ParseColibriTimestampCustom reads tsRel and pckId from the Timestamp.
+func ParseColibriTimestampCustom(ts colibri.Timestamp) (tsRel uint32, pktId uint32) {
+	bothParts := binary.BigEndian.Uint64(ts[:])
+	tsRel = uint32(bothParts >> 32)
+	pktId = uint32(bothParts & 0x00000000ffffffff)
 	return
 }
 
@@ -128,15 +118,15 @@ func VerifyExpirationTick(expirationTick uint32) bool {
 }
 
 // VerifyTimestamp checks whether a COLIBRI packet is fresh. This means that the time the packet
-// was sent from the source host, which is encoded by the expiration tick and the packetTimestamp,
+// was sent from the source host, which is encoded by the expiration tick and the Timestamp,
 // does not date back more than the maximal packet lifetime of two seconds. The function also takes
 // a possible clock drift between the packet source and the verifier of up to one second into
 // account.
-func VerifyTimestamp(expirationTick uint32, packetTimestamp uint64) bool {
+func VerifyTimestamp(expirationTick uint32, ts colibri.Timestamp) bool {
 	// TODO(juagargi) re-enable the proper check once we have a timestamping mechanism
 	// nowNano := uint64(time.Now().UnixNano())
 	// timestampNano := (4*uint64(expirationTick) - 16) * 1000000000
-	// tsRel, _, _ := ParseColibriTimestamp(packetTimestamp)
+	// tsRel, _, _ := ParseColibriTimestamp(ts)
 	// timestampSenderNano := timestampNano + (1+uint64(tsRel))*4
 	// nowMs := nowNano / 1000000
 	// tsSenderMs := timestampSenderNano / 1000000
@@ -153,7 +143,7 @@ func VerifyTimestamp(expirationTick uint32, packetTimestamp uint64) bool {
 
 // VerifyMAC verifies the authenticity of the MAC in the colibri hop field. If the MAC is correct,
 // nil is returned, otherwise VerifyMAC returns an error.
-func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField,
+func VerifyMAC(privateKey []byte, ts colibri.Timestamp, inf *colibri.InfoField,
 	currHop *colibri.HopField, s *slayers.SCION) error {
 
 	var mac []byte
@@ -170,7 +160,7 @@ func VerifyMAC(privateKey []byte, packetTimestamp uint64, inf *colibri.InfoField
 		// if err != nil {
 		// 	return err
 		// }
-		// mac, err = CalculateColibriMacPacket(mac, packetTimestamp, inf, s)
+		// mac, err = CalculateColibriMacPacket(mac, ts, inf, s)
 	}
 	if err != nil {
 		return err
@@ -244,7 +234,7 @@ func CalculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
 }
 
 // CalculateColibriMacPacket calculates the per-packet colibri MAC.
-func CalculateColibriMacPacket(auth []byte, packetTimestamp uint64,
+func CalculateColibriMacPacket(auth []byte, ts colibri.Timestamp,
 	inf *colibri.InfoField, s *slayers.SCION) ([]byte, error) {
 
 	// Initialize cryptographic MAC function
@@ -253,7 +243,7 @@ func CalculateColibriMacPacket(auth []byte, packetTimestamp uint64,
 		return nil, err
 	}
 	// Prepare the input for the MAC function
-	input, err := prepareMacInputPacket(packetTimestamp, inf, s)
+	input, err := prepareMacInputPacket(ts, inf, s)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +350,7 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 	return buffer, nil
 }
 
-func prepareMacInputPacket(packetTimestamp uint64, inf *colibri.InfoField,
+func prepareMacInputPacket(ts colibri.Timestamp, inf *colibri.InfoField,
 	s *slayers.SCION) ([]byte, error) {
 
 	if inf == nil {
@@ -368,7 +358,7 @@ func prepareMacInputPacket(packetTimestamp uint64, inf *colibri.InfoField,
 	}
 
 	input := make([]byte, 16)
-	binary.BigEndian.PutUint64(input[0:8], packetTimestamp)
+	copy(input[:8], ts[:])
 
 	baseHdrLen := uint64(slayers.CmnHdrLen + s.AddrHdrLen())
 	hfcount := uint64(inf.HFCount)

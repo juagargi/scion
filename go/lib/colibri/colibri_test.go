@@ -15,6 +15,7 @@
 package colibri_test
 
 import (
+	"encoding/binary"
 	"math"
 	"net"
 	"testing"
@@ -81,9 +82,21 @@ func TestPacketMacInputGeneration(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+func TestCreateColibriTimeStamp(t *testing.T) {
+
+}
+
 func TestTimestamp(t *testing.T) {
-	testCases := []uint64{0, 1, uint64(4041796896134235295), uint64(12590502804441994123),
-		uint64(2265056923175922768), uint64(9648491470230957773), math.MaxInt32}
+	testCases := []colibri.Timestamp{
+		timestampFromNumber(0),
+		timestampFromNumber(1),
+		timestampFromNumber(4041796896134235295),
+		timestampFromNumber(12590502804441994123),
+		timestampFromNumber(2265056923175922768),
+		timestampFromNumber(9648491470230957773),
+		timestampFromNumber(math.MaxInt32),
+		timestampFromNumber(0xbbbbbbbbff123456),
+	}
 
 	for _, want := range testCases {
 		tsRel, coreID, coreCounter := libcolibri.ParseColibriTimestamp(want)
@@ -236,4 +249,10 @@ func createColibriPath() *colibri.ColibriPath {
 	}
 	colibripath.HopFields = hopfields
 	return colibripath
+}
+
+func timestampFromNumber(n uint64) colibri.Timestamp {
+	ts := colibri.Timestamp{}
+	binary.BigEndian.PutUint64(ts[:], n)
+	return ts
 }

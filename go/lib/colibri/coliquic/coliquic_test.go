@@ -304,7 +304,7 @@ func mockScionAddress(t *testing.T, ia string, host *net.UDPAddr) net.Addr {
 func mockColibriAddress(t *testing.T, ia string, host *net.UDPAddr) net.Addr {
 	t.Helper()
 	path := colibri.ColibriPath{
-		PacketTimestamp: 1,
+		PacketTimestamp: colibri.Timestamp{1},
 		InfoField: &colibri.InfoField{
 			C:           true,
 			R:           false,

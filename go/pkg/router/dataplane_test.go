@@ -1943,7 +1943,7 @@ func computeFullMAC(t *testing.T, key []byte, info *path.InfoField, hf *path.Hop
 }
 
 func computeColibriMac(t *testing.T, c bool, key []byte, cpath *colibri.ColibriPath,
-	spkt *slayers.SCION, hopIndex uint8, packetTimestamp uint64) []byte {
+	spkt *slayers.SCION, hopIndex uint8, packetTimestamp colibri.Timestamp) []byte {
 
 	var mac []byte
 	var err error

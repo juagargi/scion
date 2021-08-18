@@ -15,15 +15,15 @@
 package colibri
 
 import (
-	"encoding/binary"
-
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path"
 )
 
+type Timestamp [8]byte
+
 type ColibriPath struct {
 	// PacketTimestamp denotes the high-precision timestamp.
-	PacketTimestamp uint64
+	PacketTimestamp Timestamp
 	// InfoField denotes the COLIBRI info field.
 	InfoField *InfoField
 	// HopFields denote the COLIBRI hop fields.
@@ -39,7 +39,7 @@ func (c *ColibriPath) DecodeFromBytes(b []byte) error {
 			"needs:", LenMinColibri)
 	}
 
-	c.PacketTimestamp = binary.BigEndian.Uint64(b[:8])
+	copy(c.PacketTimestamp[:], b[:8])
 	if c.InfoField == nil {
 		c.InfoField = &InfoField{}
 	}
@@ -78,7 +78,7 @@ func (c *ColibriPath) SerializeTo(b []byte) error {
 			"needs:", c.Len())
 	}
 
-	binary.BigEndian.PutUint64(b[0:8], c.PacketTimestamp)
+	copy(b[:8], c.PacketTimestamp[:])
 	if err := c.InfoField.SerializeTo(b[8 : 8+LenInfoField]); err != nil {
 		return err
 	}
