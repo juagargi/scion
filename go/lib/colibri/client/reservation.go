@@ -31,6 +31,7 @@ import (
 	"github.com/scionproto/scion/go/lib/sciond"
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/spath"
 )
 
 type Reservation struct {
@@ -44,6 +45,8 @@ type Reservation struct {
 	colibriPath snet.Path
 	onError     func(rsv *Reservation, err error)
 }
+
+var _ snet.Path = (*Reservation)(nil)
 
 // NewReservation
 // The list of less functions is used to sort the full trips. The i+1 function
@@ -136,14 +139,6 @@ func (r *Reservation) Open(ctx context.Context, localAddr *net.UDPAddr,
 	return nil
 }
 
-func (r *Reservation) DeletemeGetPath() snet.Path {
-	return r.colibriPath
-}
-
-func (r *Reservation) DeletemeSetNextHop(addr *net.UDPAddr) {
-	r.dstAddr.NextHop = addr
-}
-
 func (r *Reservation) Close(ctx context.Context) error {
 	if r.runner == nil {
 		return nil
@@ -170,6 +165,27 @@ func (r *Reservation) Write(buffer []byte) (int, error) {
 	return r.connection.WriteTo(buffer, r.dstAddr)
 }
 
+func (r *Reservation) UnderlayNextHop() *net.UDPAddr {
+	return r.colibriPath.UnderlayNextHop()
+}
+
+func (r *Reservation) Path() spath.Path {
+	return r.colibriPath.Path()
+}
+
+func (r *Reservation) Destination() addr.IA {
+	return r.colibriPath.Destination()
+}
+
+func (r *Reservation) Metadata() *snet.PathMetadata {
+	return r.colibriPath.Metadata()
+}
+
+// Copy is disallowed for a Reservation.
+func (r *Reservation) Copy() snet.Path {
+	panic("only one copy of a reservation must exist")
+}
+
 type renewalTask struct {
 	reservation *Reservation
 }
@@ -179,7 +195,7 @@ func (t *renewalTask) Name() string {
 }
 
 func (t *renewalTask) Run(ctx context.Context) {
-	fmt.Println("deleteme renew 1")
+	fmt.Println("\ndeleteme renew 1")
 	t.reservation.request.Index = t.reservation.request.Index.Add(1)
 	fmt.Println("deleteme renew 2")
 	colibriPath, err := t.reservation.daemon.ColibriSetupRsv(ctx, t.reservation.request)
