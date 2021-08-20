@@ -17,8 +17,6 @@ package client
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"net"
 	"sort"
 	"time"
@@ -35,7 +33,8 @@ import (
 )
 
 type Reservation struct {
-	runner *periodic.Runner
+	runner                 *periodic.Runner
+	e2eRenewalTaskDuration time.Duration // tests modify this value
 
 	network     *snet.SCIONNetwork
 	daemon      sciond.Connector
@@ -43,7 +42,7 @@ type Reservation struct {
 	request     *colibri.E2EReservationSetup
 	connection  *snet.Conn
 	colibriPath snet.Path
-	onError     func(rsv *Reservation, err error)
+	onError     func(rsv *Reservation, err error) *colibri.FullTrip
 }
 
 var _ snet.Path = (*Reservation)(nil)
@@ -61,15 +60,10 @@ func NewReservation(ctx context.Context, network *snet.SCIONNetwork, daemon scio
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("deleteme Got stitchable segments: %s\n", stitchable)
 	// 2. stitch segments according to lessFcn
 	trips := colibri.CombineAll(stitchable)
 	if len(trips) == 0 {
 		return nil, serrors.New("no available stitched reservation to dst")
-	}
-	fmt.Printf("deleteme got %d full trips:\n", len(trips))
-	for i, t := range trips {
-		fmt.Printf("deleteme [%3d]: %s\n", i, t)
 	}
 
 	// sort using the functions in their reverse order (0th is most important, then 1st, etc)
@@ -96,21 +90,20 @@ func NewReservation(ctx context.Context, network *snet.SCIONNetwork, daemon scio
 	return &Reservation{
 		network: network,
 		daemon:  daemon,
-		dstAddr: dstAddr,
+		dstAddr: dstAddr.Copy(),
 		request: setupReq,
+		// e2eRenewalTaskDuration is only a convenient way to modify the task duration at tests.
+		// Since it's not exported, the compiler should see it's not reassigned via SSA, and just
+		// treat it as a constant when not running a test.
+		e2eRenewalTaskDuration: reservation.TicksInE2ERsv * reservation.DurationPerTick / 2,
 	}, nil
 }
 
-// e2eRenewalTaskDuration is only a convenient way to modify the task duration for the tests.
-// Since it's not exported, the compiler should see it's not reassigned via SSA, and just
-// treat it as a constant when not running a test.
-var e2eRenewalTaskDuration time.Duration = reservation.TicksInE2ERsv *
-	reservation.DurationPerTick / 2
-
 // Open periodically sets up/renews the reservation. Returns error iff the setup failed.
-// On renewal error, it runs the callback and stops the periodic renewal.
+// On renewal error, it runs the callback and stops the periodic renewal if said
+// function returns nil. If it returns a FullTrip, it is used to try to setup a new reservation.
 func (r *Reservation) Open(ctx context.Context, localAddr *net.UDPAddr,
-	onError func(rsv *Reservation, err error)) error {
+	fallbackFcn func(rsv *Reservation, err error) *colibri.FullTrip) error {
 
 	if r.runner != nil {
 		return nil
@@ -124,18 +117,16 @@ func (r *Reservation) Open(ctx context.Context, localAddr *net.UDPAddr,
 	r.dstAddr.NextHop = r.colibriPath.UnderlayNextHop()
 	// replace the path in the destination address
 	r.dstAddr.Path = r.colibriPath.Path()
-	fmt.Printf("deleteme 2 path type %s, raw: %s\n", r.dstAddr.Path.Type, hex.EncodeToString(r.dstAddr.Path.Raw))
-	fmt.Printf("deleteme next hop: %s\n", r.dstAddr.NextHop)
 
 	r.connection, err = r.network.Dial(ctx, "udp", localAddr, r.dstAddr, addr.SvcNone)
 	if err != nil {
 		return err
 	}
 
-	r.onError = onError
+	r.onError = fallbackFcn
 	r.runner = periodic.Start(&renewalTask{
 		reservation: r,
-	}, e2eRenewalTaskDuration, e2eRenewalTaskDuration)
+	}, r.e2eRenewalTaskDuration, r.e2eRenewalTaskDuration)
 	return nil
 }
 
@@ -160,8 +151,6 @@ func (r *Reservation) Read(buff []byte) (int, error) {
 }
 
 func (r *Reservation) Write(buffer []byte) (int, error) {
-	fmt.Printf("deleteme writing with extended API, path type: %s, next hop:%s\n",
-		&r.dstAddr.Path.Type, r.dstAddr.NextHop)
 	return r.connection.WriteTo(buffer, r.dstAddr)
 }
 
@@ -195,26 +184,27 @@ func (t *renewalTask) Name() string {
 }
 
 func (t *renewalTask) Run(ctx context.Context) {
-	fmt.Println("\ndeleteme renew 1")
 	t.reservation.request.Index = t.reservation.request.Index.Add(1)
-	fmt.Println("deleteme renew 2")
-	colibriPath, err := t.reservation.daemon.ColibriSetupRsv(ctx, t.reservation.request)
-	fmt.Println("deleteme renew 3")
-	if err == nil {
-		fmt.Println("deleteme renew 4")
-		t.reservation.colibriPath = colibriPath
-		// replace the path in the destination address
-		t.reservation.dstAddr.Path = colibriPath.Path()
-		fmt.Println("deleteme renew 5")
-		return
+	for {
+		colibriPath, err := t.reservation.daemon.ColibriSetupRsv(ctx, t.reservation.request)
+		if err == nil {
+			t.reservation.colibriPath = colibriPath
+			// replace the path in the destination address
+			t.reservation.dstAddr.Path = colibriPath.Path()
+			return
+		}
+		trip := t.reservation.onError(t.reservation, err)
+		if trip == nil {
+			break // no fallback
+		}
+		t.reservation.request.Segments = trip.Segments()
 	}
-	fmt.Printf("deleteme renew 7, err=%s, on error fcn = %p\n", err, t.reservation.onError)
-	t.reservation.onError(t.reservation, err)
-	fmt.Println("deleteme renew 8")
 	// because it failed, stop the task (ourselves). Different routine for it (or deadlock)
 	go func() {
 		defer log.HandlePanic()
 		t.reservation.runner.Stop() // blocks until the task exits. The task is this Run function
+		t.reservation.runner = nil
 	}()
-	fmt.Println("deleteme renew 10")
+	_ = t.reservation.connection.Close() // ignore errors
+	t.reservation.connection = nil
 }
