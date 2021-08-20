@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"google.golang.org/grpc/peer"
-	// "google.golang.org/protobuf/proto"
 
 	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/co/reservation/e2e"

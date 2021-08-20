@@ -203,6 +203,10 @@ func ReservationLooks(msg []*colpb.ListResponse_ReservationLooks) (
 			SrcIA:          addr.IAInt(l.SrcIa).IA(),
 			DstIA:          addr.IAInt(l.DstIa).IA(),
 			ExpirationTime: util.SecsToTime(l.ExpirationTime),
+			MinBW:          col.BWCls(l.Minbw),
+			MaxBW:          col.BWCls(l.Maxbw),
+			AllocBW:        col.BWCls(l.Allocbw),
+			Split:          col.SplitCls(l.Splitcls),
 		}
 	}
 	return res, nil

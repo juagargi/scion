@@ -190,6 +190,10 @@ func PBufListReservationLooks(
 			SrcIa:          uint64(l.SrcIA.IAInt()),
 			DstIa:          uint64(l.DstIA.IAInt()),
 			ExpirationTime: util.TimeToSecs(l.ExpirationTime),
+			Minbw:          uint32(l.MinBW),
+			Maxbw:          uint32(l.MaxBW),
+			Allocbw:        uint32(l.AllocBW),
+			Splitcls:       uint32(l.Split),
 		}
 	}
 	return looks

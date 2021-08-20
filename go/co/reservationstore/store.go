@@ -1312,15 +1312,17 @@ func stitchTransparentPaths(a, b []base.PathStep) []base.PathStep {
 func reservationsToLooks(rsvs []*segment.Reservation, localIA addr.IA) []*colibri.ReservationLooks {
 	looks := make([]*colibri.ReservationLooks, len(rsvs))
 	for i, r := range rsvs {
-		var expTime time.Time
-		if r.ActiveIndex() != nil {
-			expTime = r.ActiveIndex().Expiration
-		}
 		looks[i] = &colibri.ReservationLooks{
-			Id:             r.ID,
-			SrcIA:          localIA,
-			DstIA:          r.PathAtSource.DstIA(),
-			ExpirationTime: expTime,
+			Id:    r.ID,
+			SrcIA: localIA,
+			DstIA: r.PathAtSource.DstIA(),
+			Split: r.TrafficSplit,
+		}
+		if r.ActiveIndex() != nil {
+			looks[i].ExpirationTime = r.ActiveIndex().Expiration
+			looks[i].MinBW = r.ActiveIndex().MinBW
+			looks[i].MaxBW = r.ActiveIndex().MaxBW
+			looks[i].AllocBW = r.ActiveIndex().AllocBW
 		}
 	}
 	return looks
