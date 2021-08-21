@@ -74,6 +74,61 @@ func NewStitchableSegments(src, dst string, mods ...StitchableMod) *colibri.Stit
 	return stitchable
 }
 
+type segTypeSelector int
+
+const (
+	Up segTypeSelector = iota
+	Core
+	Down
+)
+
+type bwselector int
+
+const (
+	Minbw bwselector = iota
+	Maxbw
+	Allocbw
+)
+
+func WithBW(segType segTypeSelector, idx int, selector bwselector,
+	bw reservation.BWCls) StitchableMod {
+
+	return func(generator *stitchableGenerator) {
+		var l *colibri.ReservationLooks
+		switch segType {
+		case Up:
+			l = generator.stitchable.Up[idx]
+		case Core:
+			l = generator.stitchable.Core[idx]
+		case Down:
+			l = generator.stitchable.Down[idx]
+		}
+		switch selector {
+		case Minbw:
+			l.MinBW = bw
+		case Maxbw:
+			l.MaxBW = bw
+		case Allocbw:
+			l.AllocBW = bw
+		}
+	}
+}
+
+func WithSplit(segType segTypeSelector, idx int, split reservation.SplitCls) StitchableMod {
+	return func(generator *stitchableGenerator) {
+		var l *colibri.ReservationLooks
+		switch segType {
+		case Up:
+			l = generator.stitchable.Up[idx]
+		case Core:
+			l = generator.stitchable.Core[idx]
+		case Down:
+			l = generator.stitchable.Down[idx]
+		}
+		l.Split = split
+	}
+}
+
 func WithCoreASes(cores ...string) StitchableMod {
 	ASes := make([]addr.IA, len(cores))
 	for i, core := range cores {
@@ -84,8 +139,10 @@ func WithCoreASes(cores ...string) StitchableMod {
 	}
 }
 
-// WithUpSegs is called like: WithUpSegs(2,2,3,6)
-// meaning to create up segments to indices 2 (twice), 3 and 6
+// WithUpSegs is called like: WithUpSegs(2,2,3,6).
+// meaning to create up segments to indices 2 (twice), 3 and 6.
+// When using an index N in WithUpSegs(N), if N=0 it refers to the src, N=1 to dst,
+// and N>1 to the (N-2)th core (e.g. N=5 refers to the 5-2= 3rd core AS).
 func WithUpSegs(idxs ...int) StitchableMod {
 	return func(generator *stitchableGenerator) {
 		for _, idx := range idxs {
@@ -108,6 +165,10 @@ func WithUpSegs(idxs ...int) StitchableMod {
 	}
 }
 
+// WithDownSegs is called like: WithDownSegs(2,2,3,6).
+// meaning to create up segments to indices 2 (twice), 3 and 6.
+// When using an index N in WithDownSegs(N), if N=0 it refers to the src, N=1 to dst,
+// and N>1 to the (N-2)th core (e.g. N=5 refers to the 5-2= 3rd core AS).
 func WithDownSegs(idxs ...int) StitchableMod {
 	return func(generator *stitchableGenerator) {
 		for _, idx := range idxs {
@@ -126,6 +187,29 @@ func WithDownSegs(idxs ...int) StitchableMod {
 				Id:    generator.newDownID(),
 			}
 			generator.stitchable.Down = append(generator.stitchable.Down, l)
+		}
+	}
+}
+
+// GetSegmentID finds the IDs of all the segments and writes their pointer to the slice.
+// The pointers to slice can be nil, meaning the function won't return IDs for that specific
+// segment type.
+func GetSegmentIDs(upIDs, coreIDs, downIDs *[]*reservation.ID) StitchableMod {
+	return func(generator *stitchableGenerator) {
+		if upIDs != nil {
+			for _, l := range generator.stitchable.Up {
+				*upIDs = append(*upIDs, &l.Id)
+			}
+		}
+		if coreIDs != nil {
+			for _, l := range generator.stitchable.Core {
+				*coreIDs = append(*coreIDs, &l.Id)
+			}
+		}
+		if downIDs != nil {
+			for _, l := range generator.stitchable.Down {
+				*downIDs = append(*downIDs, &l.Id)
+			}
 		}
 	}
 }
@@ -182,8 +266,7 @@ func WithCoreSegs(pairs ...[2]int) StitchableMod {
 	}
 }
 
-//
-//
+// FullTrip generator and mods:
 
 type fullTripGenerator struct {
 	trips                      []*colibri.FullTrip

@@ -23,6 +23,7 @@ import (
 
 	"github.com/scionproto/scion/go/lib/colibri"
 	ct "github.com/scionproto/scion/go/lib/colibri/coltest"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
 
 func TestCombineAll(t *testing.T) {
@@ -63,4 +64,37 @@ func TestCombineAll(t *testing.T) {
 	require.NoError(t, nil)
 }
 
-//////// Test helper functions, TODO(juagargi) move them to their own test package
+func TestBW(t *testing.T) {
+	// XXX(juagargi): test expects to find only one full trip after the full combination
+	cases := map[string]struct {
+		stitchables *colibri.StitchableSegments
+		expectedBW  uint64
+	}{
+		"all_the_same": {
+			stitchables: ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
+				ct.WithUpSegs(1),
+				ct.WithBW(ct.Up, 0, ct.Allocbw, 13),
+				ct.WithSplit(ct.Up, 0, 7),
+
+				ct.WithDownSegs(0),
+				ct.WithBW(ct.Down, 0, ct.Allocbw, 13),
+				ct.WithSplit(ct.Up, 0, 7),
+			),
+			expectedBW: bw(13, 7),
+		},
+	}
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			trips := colibri.CombineAll(tc.stitchables)
+			require.Len(t, trips, 1) // expect to always find one and only one trip in this test
+
+			require.Equal(t, tc.expectedBW, trips[0].BW())
+		})
+	}
+}
+
+func bw(bwCls reservation.BWCls, splitCls reservation.SplitCls) uint64 {
+	return uint64(float64(bwCls.ToKbps()) * splitCls.SplitForData())
+}
