@@ -1317,6 +1317,7 @@ func reservationsToLooks(rsvs []*segment.Reservation, localIA addr.IA) []*colibr
 			SrcIA: localIA,
 			DstIA: r.PathAtSource.DstIA(),
 			Split: r.TrafficSplit,
+			Path:  r.PathAtSource.Steps,
 		}
 		if r.ActiveIndex() != nil {
 			looks[i].ExpirationTime = r.ActiveIndex().Expiration

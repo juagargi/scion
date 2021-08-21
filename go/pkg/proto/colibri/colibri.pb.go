@@ -1609,6 +1609,7 @@ type ListResponse_ReservationLooks struct {
 	Maxbw          uint32         `protobuf:"varint,6,opt,name=maxbw,proto3" json:"maxbw,omitempty"`
 	Allocbw        uint32         `protobuf:"varint,7,opt,name=allocbw,proto3" json:"allocbw,omitempty"`
 	Splitcls       uint32         `protobuf:"varint,8,opt,name=splitcls,proto3" json:"splitcls,omitempty"`
+	Path           []*PathStep    `protobuf:"bytes,9,rep,name=path,proto3" json:"path,omitempty"`
 }
 
 func (x *ListResponse_ReservationLooks) Reset() {
@@ -1697,6 +1698,13 @@ func (x *ListResponse_ReservationLooks) GetSplitcls() uint32 {
 		return x.Splitcls
 	}
 	return 0
+}
+
+func (x *ListResponse_ReservationLooks) GetPath() []*PathStep {
+	if x != nil {
+		return x.Path
+	}
+	return nil
 }
 
 type E2ESetupRequest_PathParams struct {
@@ -2186,7 +2194,7 @@ var file_proto_colibri_v1_colibri_proto_rawDesc = []byte{
 	0x12, 0x15, 0x0a, 0x06, 0x64, 0x73, 0x74, 0x5f, 0x69, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04,
 	0x52, 0x05, 0x64, 0x73, 0x74, 0x49, 0x61, 0x12, 0x1b, 0x0a, 0x09, 0x70, 0x61, 0x74, 0x68, 0x5f,
 	0x74, 0x79, 0x70, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x08, 0x70, 0x61, 0x74, 0x68,
-	0x54, 0x79, 0x70, 0x65, 0x22, 0x87, 0x03, 0x0a, 0x0c, 0x4c, 0x69, 0x73, 0x74, 0x52, 0x65, 0x73,
+	0x54, 0x79, 0x70, 0x65, 0x22, 0xb7, 0x03, 0x0a, 0x0c, 0x4c, 0x69, 0x73, 0x74, 0x52, 0x65, 0x73,
 	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x23, 0x0a, 0x0d, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x5f, 0x6d,
 	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x65, 0x72,
 	0x72, 0x6f, 0x72, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x53, 0x0a, 0x0c, 0x72, 0x65,
@@ -2195,7 +2203,7 @@ var file_proto_colibri_v1_colibri_proto_rawDesc = []byte{
 	0x2e, 0x76, 0x31, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
 	0x2e, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x4c, 0x6f, 0x6f, 0x6b,
 	0x73, 0x52, 0x0c, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x1a,
-	0xfc, 0x01, 0x0a, 0x10, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x4c,
+	0xac, 0x02, 0x0a, 0x10, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x4c,
 	0x6f, 0x6f, 0x6b, 0x73, 0x12, 0x2f, 0x0a, 0x02, 0x49, 0x44, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
 	0x32, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69,
 	0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x49,
@@ -2210,7 +2218,10 @@ var file_proto_colibri_v1_colibri_proto_rawDesc = []byte{
 	0x0d, 0x52, 0x05, 0x6d, 0x61, 0x78, 0x62, 0x77, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x6c, 0x6c, 0x6f,
 	0x63, 0x62, 0x77, 0x18, 0x07, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x07, 0x61, 0x6c, 0x6c, 0x6f, 0x63,
 	0x62, 0x77, 0x12, 0x1a, 0x0a, 0x08, 0x73, 0x70, 0x6c, 0x69, 0x74, 0x63, 0x6c, 0x73, 0x18, 0x08,
-	0x20, 0x01, 0x28, 0x0d, 0x52, 0x08, 0x73, 0x70, 0x6c, 0x69, 0x74, 0x63, 0x6c, 0x73, 0x22, 0xe7,
+	0x20, 0x01, 0x28, 0x0d, 0x52, 0x08, 0x73, 0x70, 0x6c, 0x69, 0x74, 0x63, 0x6c, 0x73, 0x12, 0x2e,
+	0x0a, 0x04, 0x70, 0x61, 0x74, 0x68, 0x18, 0x09, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69, 0x2e, 0x76, 0x31, 0x2e,
+	0x50, 0x61, 0x74, 0x68, 0x53, 0x74, 0x65, 0x70, 0x52, 0x04, 0x70, 0x61, 0x74, 0x68, 0x22, 0xe7,
 	0x03, 0x0a, 0x0f, 0x45, 0x32, 0x65, 0x53, 0x65, 0x74, 0x75, 0x70, 0x52, 0x65, 0x71, 0x75, 0x65,
 	0x73, 0x74, 0x12, 0x2d, 0x0a, 0x04, 0x62, 0x61, 0x73, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
 	0x32, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6c, 0x69, 0x62, 0x72, 0x69,
@@ -2480,35 +2491,36 @@ var file_proto_colibri_v1_colibri_proto_depIdxs = []int32{
 	22, // 26: proto.colibri.v1.SegmentSetupResponse.Failure.failure:type_name -> proto.colibri.v1.Response.Failure
 	23, // 27: proto.colibri.v1.SegmentSetupResponse.Failure.request:type_name -> proto.colibri.v1.SegmentSetupRequest.Params
 	1,  // 28: proto.colibri.v1.ListResponse.ReservationLooks.ID:type_name -> proto.colibri.v1.ReservationID
-	1,  // 29: proto.colibri.v1.E2eSetupRequest.PathParams.segments:type_name -> proto.colibri.v1.ReservationID
-	27, // 30: proto.colibri.v1.E2eSetupResponse.Failure.allocationtrail:type_name -> proto.colibri.v1.E2eSetupRequest.E2eSetupBead
-	9,  // 31: proto.colibri.v1.Colibri.SetupSegment:input_type -> proto.colibri.v1.SegmentSetupRequest
-	7,  // 32: proto.colibri.v1.Colibri.ConfirmSegmentIndex:input_type -> proto.colibri.v1.Request
-	7,  // 33: proto.colibri.v1.Colibri.ActivateSegmentIndex:input_type -> proto.colibri.v1.Request
-	7,  // 34: proto.colibri.v1.Colibri.TeardownSegment:input_type -> proto.colibri.v1.Request
-	7,  // 35: proto.colibri.v1.Colibri.CleanupSegmentIndex:input_type -> proto.colibri.v1.Request
-	11, // 36: proto.colibri.v1.Colibri.ListReservations:input_type -> proto.colibri.v1.ListRequest
-	13, // 37: proto.colibri.v1.Colibri.SetupE2e:input_type -> proto.colibri.v1.E2eSetupRequest
-	7,  // 38: proto.colibri.v1.Colibri.CleanupE2eIndex:input_type -> proto.colibri.v1.Request
-	15, // 39: proto.colibri.v1.Colibri.ListStitchables:input_type -> proto.colibri.v1.ListStitchablesRequest
-	17, // 40: proto.colibri.v1.Colibri.SetupReservation:input_type -> proto.colibri.v1.DaemonSetupRequest
-	19, // 41: proto.colibri.v1.Colibri.CleanupReservation:input_type -> proto.colibri.v1.DaemonCleanupRequest
-	10, // 42: proto.colibri.v1.Colibri.SetupSegment:output_type -> proto.colibri.v1.SegmentSetupResponse
-	8,  // 43: proto.colibri.v1.Colibri.ConfirmSegmentIndex:output_type -> proto.colibri.v1.Response
-	8,  // 44: proto.colibri.v1.Colibri.ActivateSegmentIndex:output_type -> proto.colibri.v1.Response
-	8,  // 45: proto.colibri.v1.Colibri.TeardownSegment:output_type -> proto.colibri.v1.Response
-	8,  // 46: proto.colibri.v1.Colibri.CleanupSegmentIndex:output_type -> proto.colibri.v1.Response
-	12, // 47: proto.colibri.v1.Colibri.ListReservations:output_type -> proto.colibri.v1.ListResponse
-	14, // 48: proto.colibri.v1.Colibri.SetupE2e:output_type -> proto.colibri.v1.E2eSetupResponse
-	8,  // 49: proto.colibri.v1.Colibri.CleanupE2eIndex:output_type -> proto.colibri.v1.Response
-	16, // 50: proto.colibri.v1.Colibri.ListStitchables:output_type -> proto.colibri.v1.ListStitchablesResponse
-	18, // 51: proto.colibri.v1.Colibri.SetupReservation:output_type -> proto.colibri.v1.DaemonSetupResponse
-	20, // 52: proto.colibri.v1.Colibri.CleanupReservation:output_type -> proto.colibri.v1.DaemonCleanupResponse
-	42, // [42:53] is the sub-list for method output_type
-	31, // [31:42] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	5,  // 29: proto.colibri.v1.ListResponse.ReservationLooks.path:type_name -> proto.colibri.v1.PathStep
+	1,  // 30: proto.colibri.v1.E2eSetupRequest.PathParams.segments:type_name -> proto.colibri.v1.ReservationID
+	27, // 31: proto.colibri.v1.E2eSetupResponse.Failure.allocationtrail:type_name -> proto.colibri.v1.E2eSetupRequest.E2eSetupBead
+	9,  // 32: proto.colibri.v1.Colibri.SetupSegment:input_type -> proto.colibri.v1.SegmentSetupRequest
+	7,  // 33: proto.colibri.v1.Colibri.ConfirmSegmentIndex:input_type -> proto.colibri.v1.Request
+	7,  // 34: proto.colibri.v1.Colibri.ActivateSegmentIndex:input_type -> proto.colibri.v1.Request
+	7,  // 35: proto.colibri.v1.Colibri.TeardownSegment:input_type -> proto.colibri.v1.Request
+	7,  // 36: proto.colibri.v1.Colibri.CleanupSegmentIndex:input_type -> proto.colibri.v1.Request
+	11, // 37: proto.colibri.v1.Colibri.ListReservations:input_type -> proto.colibri.v1.ListRequest
+	13, // 38: proto.colibri.v1.Colibri.SetupE2e:input_type -> proto.colibri.v1.E2eSetupRequest
+	7,  // 39: proto.colibri.v1.Colibri.CleanupE2eIndex:input_type -> proto.colibri.v1.Request
+	15, // 40: proto.colibri.v1.Colibri.ListStitchables:input_type -> proto.colibri.v1.ListStitchablesRequest
+	17, // 41: proto.colibri.v1.Colibri.SetupReservation:input_type -> proto.colibri.v1.DaemonSetupRequest
+	19, // 42: proto.colibri.v1.Colibri.CleanupReservation:input_type -> proto.colibri.v1.DaemonCleanupRequest
+	10, // 43: proto.colibri.v1.Colibri.SetupSegment:output_type -> proto.colibri.v1.SegmentSetupResponse
+	8,  // 44: proto.colibri.v1.Colibri.ConfirmSegmentIndex:output_type -> proto.colibri.v1.Response
+	8,  // 45: proto.colibri.v1.Colibri.ActivateSegmentIndex:output_type -> proto.colibri.v1.Response
+	8,  // 46: proto.colibri.v1.Colibri.TeardownSegment:output_type -> proto.colibri.v1.Response
+	8,  // 47: proto.colibri.v1.Colibri.CleanupSegmentIndex:output_type -> proto.colibri.v1.Response
+	12, // 48: proto.colibri.v1.Colibri.ListReservations:output_type -> proto.colibri.v1.ListResponse
+	14, // 49: proto.colibri.v1.Colibri.SetupE2e:output_type -> proto.colibri.v1.E2eSetupResponse
+	8,  // 50: proto.colibri.v1.Colibri.CleanupE2eIndex:output_type -> proto.colibri.v1.Response
+	16, // 51: proto.colibri.v1.Colibri.ListStitchables:output_type -> proto.colibri.v1.ListStitchablesResponse
+	18, // 52: proto.colibri.v1.Colibri.SetupReservation:output_type -> proto.colibri.v1.DaemonSetupResponse
+	20, // 53: proto.colibri.v1.Colibri.CleanupReservation:output_type -> proto.colibri.v1.DaemonCleanupResponse
+	43, // [43:54] is the sub-list for method output_type
+	32, // [32:43] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_proto_colibri_v1_colibri_proto_init() }

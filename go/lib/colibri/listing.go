@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
@@ -34,6 +35,7 @@ type ReservationLooks struct {
 	MaxBW          reservation.BWCls
 	AllocBW        reservation.BWCls
 	Split          reservation.SplitCls
+	Path           []base.PathStep
 }
 
 func (l *ReservationLooks) Copy() *ReservationLooks {
