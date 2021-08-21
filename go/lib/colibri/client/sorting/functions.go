@@ -25,6 +25,11 @@ func ByBW(a, b colibri.FullTrip) bool {
 	return a.BW() > b.BW()
 }
 
+// ByNumberOfASes is the sort function that prefers less number of ASes.
+func ByNumberOfASes(a, b colibri.FullTrip) bool {
+	return a.NumberOfASes() < b.NumberOfASes()
+}
+
 // ByExpiration is the less function to sort reservations by expiration time.
 func ByExpiration(a, b colibri.FullTrip) bool {
 	return a.ExpirationTime().Before(b.ExpirationTime())

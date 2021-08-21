@@ -19,6 +19,7 @@ package coltest
 import (
 	"fmt"
 
+	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -94,15 +95,7 @@ func WithBW(segType segTypeSelector, idx int, selector bwselector,
 	bw reservation.BWCls) StitchableMod {
 
 	return func(generator *stitchableGenerator) {
-		var l *colibri.ReservationLooks
-		switch segType {
-		case Up:
-			l = generator.stitchable.Up[idx]
-		case Core:
-			l = generator.stitchable.Core[idx]
-		case Down:
-			l = generator.stitchable.Down[idx]
-		}
+		l := findInGenerator(generator, segType, idx)
 		switch selector {
 		case Minbw:
 			l.MinBW = bw
@@ -116,16 +109,13 @@ func WithBW(segType segTypeSelector, idx int, selector bwselector,
 
 func WithSplit(segType segTypeSelector, idx int, split reservation.SplitCls) StitchableMod {
 	return func(generator *stitchableGenerator) {
-		var l *colibri.ReservationLooks
-		switch segType {
-		case Up:
-			l = generator.stitchable.Up[idx]
-		case Core:
-			l = generator.stitchable.Core[idx]
-		case Down:
-			l = generator.stitchable.Down[idx]
-		}
-		l.Split = split
+		findInGenerator(generator, segType, idx).Split = split
+	}
+}
+
+func WithPath(segType segTypeSelector, idx int, path *base.TransparentPath) StitchableMod {
+	return func(generator *stitchableGenerator) {
+		findInGenerator(generator, segType, idx).Path = path.Steps
 	}
 }
 
@@ -416,4 +406,17 @@ func WithTrips(trips ...[]trip) FullTripMod {
 			generator.trips = append(generator.trips, &newtrip)
 		}
 	}
+}
+func findInGenerator(generator *stitchableGenerator, segType segTypeSelector,
+	idx int) *colibri.ReservationLooks {
+
+	switch segType {
+	case Up:
+		return generator.stitchable.Up[idx]
+	case Core:
+		return generator.stitchable.Core[idx]
+	case Down:
+		return generator.stitchable.Down[idx]
+	}
+	panic("bad parameters in test")
 }

@@ -18,6 +18,7 @@ import (
 	"sort"
 	"testing"
 
+	rt "github.com/scionproto/scion/go/co/reservation/test"
 	"github.com/scionproto/scion/go/lib/colibri"
 	ct "github.com/scionproto/scion/go/lib/colibri/coltest"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -46,6 +47,25 @@ func TestByBW(t *testing.T) {
 	require.Equal(t, bw(12, 7), trips[0].BW())
 	require.Equal(t, bw(11, 7), trips[1].BW())
 	require.Equal(t, bw(11, 3), trips[2].BW())
+}
+
+func TestByNumberOfASes(t *testing.T) {
+	stitchables := ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
+		ct.WithCoreASes("1-ff00:0:110"),
+
+		ct.WithUpSegs(1, 2),
+		ct.WithPath(ct.Up, 0, rt.NewPath(0, "1-ff00:0:111", 1, 2, "1-ff00:0:112", 0)),
+		ct.WithPath(ct.Up, 1, rt.NewPath(0, "1-ff00:0:111", 1, 1, "1-ff00:0:110", 0)),
+
+		ct.WithDownSegs(2),
+		ct.WithPath(ct.Down, 0, rt.NewPath(0, "1-ff00:0:110", 2, 1, "1-ff00:0:112", 0)),
+	)
+
+	trips := colibri.CombineAll(stitchables)
+	require.Len(t, trips, 2)
+	sort.SliceStable(trips, indexSort(trips, ByNumberOfASes))
+	require.Equal(t, 2, trips[0].NumberOfASes())
+	require.Equal(t, 3, trips[1].NumberOfASes())
 }
 
 func TestByMinBW(t *testing.T) {

@@ -130,6 +130,15 @@ func (t FullTrip) BW() uint64 {
 	return uint64(bw)
 }
 
+func (t FullTrip) NumberOfASes() int {
+	num := 0
+	for _, l := range t {
+		num += len(l.Path)
+	}
+	num -= len(t) - 1 // don't double count stitching points
+	return num
+}
+
 func (t FullTrip) String() string {
 	stitches := make([]string, len(t))
 	for i, s := range t {
