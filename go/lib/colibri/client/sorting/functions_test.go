@@ -34,10 +34,6 @@ func TestByBW(t *testing.T) {
 		ct.WithSplit(ct.Up, 1, 7),
 		ct.WithBW(ct.Up, 2, ct.Allocbw, 11), // idx 2
 		ct.WithSplit(ct.Up, 2, 3),
-
-		ct.WithDownSegs(0), // one down segment
-		ct.WithBW(ct.Down, 0, ct.Allocbw, 15),
-		ct.WithSplit(ct.Down, 0, 3),
 	)
 
 	trips := colibri.CombineAll(stitchables)
@@ -73,9 +69,7 @@ func TestByMinBW(t *testing.T) {
 		ct.WithUpSegs(1, 1),
 		ct.WithBW(ct.Up, 0, ct.Minbw, 1),
 		ct.WithBW(ct.Up, 1, ct.Minbw, 2),
-
-		ct.WithDownSegs(0),
-		ct.WithBW(ct.Down, 0, ct.Minbw, 1))
+	)
 
 	trips := colibri.CombineAll(stitchables)
 	require.Len(t, trips, 2)
@@ -99,9 +93,7 @@ func TestByMaxBW(t *testing.T) {
 		ct.WithUpSegs(1, 1),
 		ct.WithBW(ct.Up, 0, ct.Maxbw, 11),
 		ct.WithBW(ct.Up, 1, ct.Maxbw, 12),
-
-		ct.WithDownSegs(0),
-		ct.WithBW(ct.Down, 0, ct.Maxbw, 15))
+	)
 
 	trips := colibri.CombineAll(stitchables)
 	require.Len(t, trips, 2)
@@ -115,9 +107,7 @@ func TestByAllocBW(t *testing.T) {
 		ct.WithUpSegs(1, 1),
 		ct.WithBW(ct.Up, 0, ct.Allocbw, 11),
 		ct.WithBW(ct.Up, 1, ct.Allocbw, 12),
-
-		ct.WithDownSegs(0),
-		ct.WithBW(ct.Down, 0, ct.Allocbw, 15))
+	)
 
 	trips := colibri.CombineAll(stitchables)
 	require.Len(t, trips, 2)

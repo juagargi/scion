@@ -54,7 +54,6 @@ func TestNewReservation(t *testing.T) {
 	ctrl, network, daemon := mockNetwork(t, srcAddr.IA,
 		ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 			ct.WithUpSegs(1),
-			ct.WithDownSegs(0),
 		), false)
 	defer ctrl.Finish()
 
@@ -87,7 +86,6 @@ func TestReservationOpen(t *testing.T) {
 	ctrl, network, daemon := mockNetwork(t, srcAddr.IA,
 		ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 			ct.WithUpSegs(1),
-			ct.WithDownSegs(0),
 		), true)
 	defer ctrl.Finish()
 
@@ -155,8 +153,7 @@ func TestReservationFailOnRenewal(t *testing.T) {
 		Host: xtest.MustParseUDPAddr(t, "127.0.0.1:12345"),
 	}
 	stitchables := ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
-		ct.WithUpSegs(1, 1),   // two up
-		ct.WithDownSegs(0, 0), // two down
+		ct.WithUpSegs(1, 1), // two up
 	)
 	ctrl, network, daemon := mockNetwork(t, srcAddr.IA, stitchables, true)
 	defer ctrl.Finish()

@@ -75,10 +75,6 @@ func TestBW(t *testing.T) {
 				ct.WithUpSegs(1),
 				ct.WithBW(ct.Up, 0, ct.Allocbw, 13),
 				ct.WithSplit(ct.Up, 0, 7),
-
-				ct.WithDownSegs(0),
-				ct.WithBW(ct.Down, 0, ct.Allocbw, 13),
-				ct.WithSplit(ct.Up, 0, 7),
 			),
 			expectedBW: bw(13, 7),
 		},

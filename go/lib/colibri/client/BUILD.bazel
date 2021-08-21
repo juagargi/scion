@@ -28,7 +28,6 @@ go_test(
         "//go/lib/colibri/client/sorting:go_default_library",
         "//go/lib/colibri/coltest:go_default_library",
         "//go/lib/colibri/reservation:go_default_library",
-        "//go/lib/common:go_default_library",
         "//go/lib/mocks/net/mock_net:go_default_library",
         "//go/lib/sciond:go_default_library",
         "//go/lib/sciond/mock_sciond:go_default_library",
