@@ -71,7 +71,7 @@ func TestCaptureTrips(t *testing.T) {
 	require.Equal(t, fullTrips, capturedTrips)
 }
 
-func TestFallbackToNext(t *testing.T) {
+func TestToNext(t *testing.T) {
 	stitchables := ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 		// 1 direct trip, + 2 thru core
 		ct.WithCoreASes("1-ff00:0:110", "1-ff00:0:100"),
@@ -82,12 +82,12 @@ func TestFallbackToNext(t *testing.T) {
 	)
 	capturedTrips := colibri.CombineAll(stitchables)
 
-	fallbackFcn := FallbackToNext(capturedTrips)
+	fallbackFcn := ToNext(capturedTrips)
 	require.Equal(t, capturedTrips[1], fallbackFcn(nil, nil))
 	require.Equal(t, capturedTrips[2], fallbackFcn(nil, nil))
 }
 
-func TestFallbackSkipInterface(t *testing.T) {
+func TestSkipInterface(t *testing.T) {
 	stitchables := ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 		ct.WithCoreASes("1-ff00:0:110", "1-ff00:0:100"),
 
@@ -107,7 +107,7 @@ func TestFallbackSkipInterface(t *testing.T) {
 	require.Len(t, *capturedTrips[1], 2)
 	require.Len(t, *capturedTrips[2], 2)
 
-	fallbackFcn := FallbackSkipInterface(capturedTrips)
+	fallbackFcn := SkipInterface(capturedTrips)
 	rsv := client.NewReservationForTesting(nil, time.Hour, nil, nil, nil, nil,
 		capturedTrips[0], nil, nil, nil)
 	admissionFailure := &colibri.E2ESetupError{

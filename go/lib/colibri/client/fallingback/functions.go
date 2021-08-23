@@ -37,9 +37,9 @@ func CaptureTrips(fullTripsStorage *[]*colibri.FullTrip) client.LessFunction {
 	}
 }
 
-// FallbackToNext returns a fallback that will simply retry with the next available full trip,
+// ToNext returns a fallback that will simply retry with the next available full trip,
 // as they were sorted initially.
-func FallbackToNext(trips []*colibri.FullTrip) client.RenewalError {
+func ToNext(trips []*colibri.FullTrip) client.RenewalError {
 	current := 0
 	return func(r *client.Reservation, err error) *colibri.FullTrip {
 		current++
@@ -50,11 +50,11 @@ func FallbackToNext(trips []*colibri.FullTrip) client.RenewalError {
 	}
 }
 
-// FallbackSkipInterface returns a fallback that will attempt to avoid a failing interface, if
+// SkipInterface returns a fallback that will attempt to avoid a failing interface, if
 // the error was an admission error (the most common).
 // This is useful because skipping failing interfaces will probably yield a different result
 // than the admission failure we observe in the error.
-func FallbackSkipInterface(trips []*colibri.FullTrip) client.RenewalError {
+func SkipInterface(trips []*colibri.FullTrip) client.RenewalError {
 	return func(r *client.Reservation, err error) *colibri.FullTrip {
 		failure, ok := err.(*colibri.E2ESetupError)
 		if !ok {
