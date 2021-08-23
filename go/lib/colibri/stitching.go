@@ -18,6 +18,7 @@ package colibri
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -47,6 +48,9 @@ func (t FullTrip) Segments() []reservation.ID {
 }
 
 func (t FullTrip) ExpirationTime() time.Time {
+	if len(t) == 0 {
+		return time.Time{}
+	}
 	minExp := util.MaxFutureTime()
 	for _, l := range t {
 		if exp := l.ExpirationTime; exp.Before(minExp) {
@@ -54,6 +58,85 @@ func (t FullTrip) ExpirationTime() time.Time {
 		}
 	}
 	return minExp
+}
+
+// MinBW returns the lowest minimum BW of all segments in this trip.
+func (t FullTrip) MinBW() reservation.BWCls {
+	if len(t) == 0 {
+		return 0
+	}
+	minBW := reservation.BWCls(255)
+	for _, l := range t {
+		if l.MinBW < minBW {
+			minBW = l.MinBW
+		}
+	}
+	return minBW
+}
+
+// MaxBW returns the lowest maximum BW of all segments in this trip.
+func (t FullTrip) MaxBW() reservation.BWCls {
+	if len(t) == 0 {
+		return 0
+	}
+	maxBW := reservation.BWCls(255)
+	for _, l := range t {
+		if l.MaxBW < maxBW {
+			maxBW = l.MaxBW
+		}
+	}
+	return maxBW
+}
+
+// AllocBW returns the lowest allocated BW of all segments in this trip.
+func (t FullTrip) AllocBW() reservation.BWCls {
+	if len(t) == 0 {
+		return 0
+	}
+	allocBW := reservation.BWCls(255)
+	for _, l := range t {
+		if l.AllocBW < allocBW {
+			allocBW = l.AllocBW
+		}
+	}
+	return allocBW
+}
+
+// Split returns the minimum split (for data) found along the trip.
+func (t FullTrip) Split() float64 {
+	split := 1.
+	for _, l := range t {
+		if l.Split.SplitForData() < split {
+			split = l.Split.SplitForData()
+		}
+	}
+	return split
+}
+
+// BW simply returns the widest bandwidth usable by e2e reservations along this trip.
+// This is effectively the smallest computed bw*ratio (kbps) found in the trip.
+// The bandwidth is computed using the allocated BW and the split of each segment.
+func (t FullTrip) BW() uint64 {
+	if len(t) == 0 {
+		return 0
+	}
+	bw := math.MaxFloat64
+	for _, l := range t {
+		segBW := l.Split.SplitForData() * float64(l.AllocBW.ToKbps())
+		if segBW < bw {
+			bw = segBW
+		}
+	}
+	return uint64(bw)
+}
+
+func (t FullTrip) NumberOfASes() int {
+	num := 0
+	for _, l := range t {
+		num += len(l.Path)
+	}
+	num -= len(t) - 1 // don't double count stitching points
+	return num
 }
 
 func (t FullTrip) String() string {
@@ -81,11 +164,7 @@ func (t FullTrip) Copy() *FullTrip {
 // an up, core and down slices of reservations.
 func CombineAll(stitchable *StitchableSegments) []*FullTrip {
 	fullTrips := combineAll(stitchable)
-	for _, t := range fullTrips {
-		fmt.Println(t.String())
-	}
 	for i, t := range fullTrips {
-		fmt.Printf("src1: %s, src2: %s\n", stitchable.SrcIA, t.SrcIA())
 		assert(t.SrcIA() == stitchable.SrcIA,
 			fmt.Sprintf("src AS not valid at trip %d / %d", i, len(fullTrips)))
 		assert(t.DstIA() == stitchable.DstIA,

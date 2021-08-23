@@ -97,25 +97,6 @@ func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {
 	return msg
 }
 
-// func PBufE2ESetupResponse(res e2e.SetupResponse) *colpb.E2ESetupResponse {
-// 	pbRes := &colpb.E2ESetupResponse{}
-// 	switch r := res.(type) {
-// 	case *e2e.SetupResponseSuccess:
-// 		pbRes.Token = r.Token.ToRaw()
-// 	case *e2e.SetupResponseFailure:
-// 		trail := make([]*colpb.E2ESetupRequest_E2ESetupBead, len(r.AllocTrail))
-// 		for i, b := range r.AllocTrail {
-// 			trail[i].Maxbw = uint32(b)
-// 		}
-// 		pbRes.Failure = &colpb.E2ESetupResponse_Failure{
-// 			Message:         r.Message,
-// 			FailedStep:      uint32(r.FailedStep),
-// 			Allocationtrail: trail,
-// 		}
-// 	}
-// 	return pbRes
-// }
-
 func PBufRequest(req *base.Request) *colpb.Request {
 	return &colpb.Request{
 		Id:        PBufID(&req.ID),
@@ -190,6 +171,11 @@ func PBufListReservationLooks(
 			SrcIa:          uint64(l.SrcIA.IAInt()),
 			DstIa:          uint64(l.DstIA.IAInt()),
 			ExpirationTime: util.TimeToSecs(l.ExpirationTime),
+			Minbw:          uint32(l.MinBW),
+			Maxbw:          uint32(l.MaxBW),
+			Allocbw:        uint32(l.AllocBW),
+			Splitcls:       uint32(l.Split),
+			Path:           PBufSteps(l.Path),
 		}
 	}
 	return looks
@@ -219,19 +205,22 @@ func PBufPath(transp *base.TransparentPath) *colpb.TransparentPath {
 			Steps: []*colpb.PathStep{},
 		}
 	}
-	steps := make([]*colpb.PathStep, len(transp.Steps))
-	for i, step := range transp.Steps {
-		steps[i] = &colpb.PathStep{
+	return &colpb.TransparentPath{
+		CurrentStep: uint32(transp.CurrentStep),
+		Steps:       PBufSteps(transp.Steps),
+		SpathType:   uint32(transp.Spath.Type),
+		SpathRaw:    transp.Spath.Raw,
+	}
+}
+
+func PBufSteps(steps []base.PathStep) []*colpb.PathStep {
+	ret := make([]*colpb.PathStep, len(steps))
+	for i, step := range steps {
+		ret[i] = &colpb.PathStep{
 			Ia:      uint64(step.IA.IAInt()),
 			Ingress: uint32(step.Ingress),
 			Egress:  uint32(step.Egress),
 		}
 	}
-	return &colpb.TransparentPath{
-		CurrentStep: uint32(transp.CurrentStep),
-		Steps:       steps,
-		SpathType:   uint32(transp.Spath.Type),
-		SpathRaw:    transp.Spath.Raw,
-	}
-
+	return ret
 }

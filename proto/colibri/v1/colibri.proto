@@ -141,7 +141,11 @@ message ListResponse {
         uint64 src_ia = 2;
         uint64 dst_ia = 3;
         uint32 expiration_time = 4;
-        // other properties?
+        uint32 minbw = 5;
+        uint32 maxbw = 6;
+        uint32 allocbw = 7;
+        uint32 splitcls = 8;
+        repeated PathStep path = 9;
     }
     string error_message = 1;
     repeated ReservationLooks reservations = 2;

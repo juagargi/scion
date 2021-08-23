@@ -203,6 +203,11 @@ func ReservationLooks(msg []*colpb.ListResponse_ReservationLooks) (
 			SrcIA:          addr.IAInt(l.SrcIa).IA(),
 			DstIA:          addr.IAInt(l.DstIa).IA(),
 			ExpirationTime: util.SecsToTime(l.ExpirationTime),
+			MinBW:          col.BWCls(l.Minbw),
+			MaxBW:          col.BWCls(l.Maxbw),
+			AllocBW:        col.BWCls(l.Allocbw),
+			Split:          col.SplitCls(l.Splitcls),
+			Path:           TransparentPathSteps(l.Path),
 		}
 	}
 	return res, nil
@@ -274,20 +279,24 @@ func TransparentPath(msg *colpb.TransparentPath) *base.TransparentPath {
 	if msg == nil {
 		return nil
 	}
-	transp := &base.TransparentPath{
+	return &base.TransparentPath{
 		CurrentStep: int(msg.CurrentStep),
-		Steps:       make([]base.PathStep, len(msg.Steps)),
+		Steps:       TransparentPathSteps(msg.Steps),
 		Spath: spath.Path{
 			Type: path.Type(msg.SpathType),
 			Raw:  msg.SpathRaw,
 		},
 	}
-	for i, step := range msg.Steps {
-		transp.Steps[i].IA = addr.IAInt(step.Ia).IA()
-		transp.Steps[i].Ingress = uint16(step.Ingress)
-		transp.Steps[i].Egress = uint16(step.Egress)
+}
+
+func TransparentPathSteps(msg []*colpb.PathStep) []base.PathStep {
+	steps := make([]base.PathStep, len(msg))
+	for i, step := range msg {
+		steps[i].IA = addr.IAInt(step.Ia).IA()
+		steps[i].Ingress = uint16(step.Ingress)
+		steps[i].Egress = uint16(step.Egress)
 	}
-	return transp
+	return steps
 }
 
 func segmentSetupRequest_Params(msg *colpb.SegmentSetupRequest_Params) (expTime time.Time,

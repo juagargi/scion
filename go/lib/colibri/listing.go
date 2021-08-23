@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
@@ -30,6 +31,11 @@ type ReservationLooks struct {
 	SrcIA          addr.IA // might be different than the Id.ASID if the segment is e.g. down
 	DstIA          addr.IA
 	ExpirationTime time.Time
+	MinBW          reservation.BWCls
+	MaxBW          reservation.BWCls
+	AllocBW        reservation.BWCls
+	Split          reservation.SplitCls
+	Path           []base.PathStep
 }
 
 func (l *ReservationLooks) Copy() *ReservationLooks {
@@ -49,8 +55,8 @@ func (s *StitchableSegments) String() string {
 	printSegments := func(dir string, segments []*ReservationLooks) []string {
 		strs := make([]string, len(segments))
 		for i, s := range segments {
-			strs[i] = fmt.Sprintf("[%3d] %6s %s: %s -> %s (until %s)",
-				i, dir, s.Id, s.SrcIA, s.DstIA, s.ExpirationTime)
+			strs[i] = fmt.Sprintf("[%3d] %6s %s: %s -> %s (until %s, [max,min,alloc]=[%d,%d,%d])",
+				i, dir, s.Id, s.SrcIA, s.DstIA, s.ExpirationTime, s.MaxBW, s.MinBW, s.AllocBW)
 		}
 		return strs
 	}
