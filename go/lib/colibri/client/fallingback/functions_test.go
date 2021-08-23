@@ -26,11 +26,7 @@ import (
 	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/client"
 	ct "github.com/scionproto/scion/go/lib/colibri/coltest"
-	"github.com/scionproto/scion/go/lib/mocks/net/mock_net"
-	"github.com/scionproto/scion/go/lib/sciond"
 	"github.com/scionproto/scion/go/lib/sciond/mock_sciond"
-	"github.com/scionproto/scion/go/lib/snet"
-	"github.com/scionproto/scion/go/lib/sock/reliable/mock_reliable"
 	"github.com/scionproto/scion/go/lib/xtest"
 	"github.com/stretchr/testify/require"
 )
@@ -39,14 +35,8 @@ func TestCaptureTrips(t *testing.T) {
 	ctx, cancelF := context.WithTimeout(context.Background(), time.Second)
 	defer cancelF()
 
-	srcAddr := &snet.UDPAddr{
-		IA:   xtest.MustParseIA("1-ff00:0:111"),
-		Host: xtest.MustParseUDPAddr(t, "127.0.0.1:12346"),
-	}
-	dstAddr := &snet.UDPAddr{
-		IA:   xtest.MustParseIA("1-ff00:0:112"),
-		Host: xtest.MustParseUDPAddr(t, "127.0.0.1:12345"),
-	}
+	srclIA := xtest.MustParseIA("1-ff00:0:111")
+	dstIA := xtest.MustParseIA("1-ff00:0:112")
 	stitchables := ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 		// 1 direct trip, + 2 thru core
 		ct.WithCoreASes("1-ff00:0:110", "1-ff00:0:100"),
@@ -55,11 +45,13 @@ func TestCaptureTrips(t *testing.T) {
 
 		ct.WithDownSegs(2, 3),
 	)
-	ctrl, network, daemon := mockNetwork(t, srcAddr.IA, stitchables, false)
+	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
+	daemon := mock_sciond.NewMockConnector(ctrl)
+	daemon.EXPECT().ColibriListRsvs(gomock.Any(), gomock.Any()).Return(stitchables, nil)
 
 	capturedTrips := make([]*colibri.FullTrip, 0)
-	_, err := client.NewReservation(ctx, network, daemon, dstAddr, 11, 0,
+	_, err := client.NewReservation(ctx, daemon, srclIA, dstIA, 11, 0,
 		CaptureTrips(&capturedTrips))
 	require.NoError(t, err)
 	require.Len(t, capturedTrips, 3) // three trips?
@@ -108,8 +100,8 @@ func TestSkipInterface(t *testing.T) {
 	require.Len(t, *capturedTrips[2], 2)
 
 	fallbackFcn := SkipInterface(capturedTrips)
-	rsv := client.NewReservationForTesting(nil, time.Hour, nil, nil, nil, nil,
-		capturedTrips[0], nil, nil, nil)
+	rsv := client.NewReservationForTesting(nil, time.Hour, nil, addr.IA{},
+		nil, capturedTrips[0], nil, nil, nil)
 	admissionFailure := &colibri.E2ESetupError{
 		E2EResponseError: colibri.E2EResponseError{
 			Message:  "mock",
@@ -118,27 +110,4 @@ func TestSkipInterface(t *testing.T) {
 	}
 	nextTrip := fallbackFcn(rsv, admissionFailure)
 	require.Equal(t, capturedTrips[2], nextTrip)
-}
-
-func mockNetwork(t *testing.T, srcIA addr.IA, stitchables *colibri.StitchableSegments,
-	willOpenConnection bool) (
-	*gomock.Controller, *snet.SCIONNetwork, *mock_sciond.MockConnector) {
-
-	t.Helper()
-
-	ctrl := gomock.NewController(t)
-
-	dispatcher := mock_reliable.NewMockDispatcher(ctrl)
-	daemon := mock_sciond.NewMockConnector(ctrl)
-
-	if willOpenConnection {
-		mockConn := mock_net.NewMockPacketConn(ctrl)
-		mockConn.EXPECT().Close()
-		dispatcher.EXPECT().Register(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(
-			mockConn, uint16(0), nil)
-	}
-	daemon.EXPECT().ColibriListRsvs(gomock.Any(), gomock.Any()).Return(stitchables, nil)
-	network := snet.NewNetwork(srcIA, dispatcher, sciond.RevHandler{Connector: daemon})
-
-	return ctrl, network, daemon
 }
