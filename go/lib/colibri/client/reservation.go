@@ -40,10 +40,19 @@ type Reservation struct {
 	daemon      sciond.Connector
 	dstAddr     *snet.UDPAddr
 	request     *colibri.E2EReservationSetup
+	currentTrip *colibri.FullTrip // current trip for current setup
 	connection  *snet.Conn
 	colibriPath snet.Path
-	onError     func(rsv *Reservation, err error) *colibri.FullTrip
+	onError     RenewalError
 }
+
+// LessFunction is used to sort full trips. The function should return true if
+// a is preferred over b; false otherwise.
+type LessFunction func(a, b colibri.FullTrip) bool
+
+// RenewalError is a function that is called whenever there is an error during renewal.
+// If it returns a FullTrip, the Reservation will try a new setup with it.
+type RenewalError func(*Reservation, error) *colibri.FullTrip
 
 var _ snet.Path = (*Reservation)(nil)
 
@@ -53,7 +62,7 @@ var _ snet.Path = (*Reservation)(nil)
 // "more important" to the sorting).
 func NewReservation(ctx context.Context, network *snet.SCIONNetwork, daemon sciond.Connector,
 	dstAddr *snet.UDPAddr, bw reservation.BWCls, index reservation.IndexNumber,
-	lessFcns ...func(a, b colibri.FullTrip) bool) (*Reservation, error) {
+	lessFcns ...LessFunction) (*Reservation, error) {
 
 	// 1. list segments from sciond
 	stitchable, err := daemon.ColibriListRsvs(ctx, dstAddr.IA)
@@ -88,10 +97,11 @@ func NewReservation(ctx context.Context, network *snet.SCIONNetwork, daemon scio
 	}
 	rand.Read(setupReq.Id.Suffix) // random suffix
 	return &Reservation{
-		network: network,
-		daemon:  daemon,
-		dstAddr: dstAddr.Copy(),
-		request: setupReq,
+		network:     network,
+		daemon:      daemon,
+		dstAddr:     dstAddr.Copy(),
+		request:     setupReq,
+		currentTrip: trip,
 		// e2eRenewalTaskDuration is only a convenient way to modify the task duration at tests.
 		// Since it's not exported, the compiler should see it's not reassigned via SSA, and just
 		// treat it as a constant when not running a test.
@@ -103,7 +113,7 @@ func NewReservation(ctx context.Context, network *snet.SCIONNetwork, daemon scio
 // On renewal error, it runs the callback and stops the periodic renewal if said
 // function returns nil. If it returns a FullTrip, it is used to try to setup a new reservation.
 func (r *Reservation) Open(ctx context.Context, localAddr *net.UDPAddr,
-	fallbackFcn func(rsv *Reservation, err error) *colibri.FullTrip) error {
+	fallbackFcn RenewalError) error {
 
 	if r.runner != nil {
 		return nil
@@ -141,6 +151,10 @@ func (r *Reservation) Close(ctx context.Context) error {
 	r.runner = nil
 
 	return r.daemon.ColibriCleanupRsv(ctx, &r.request.Id, r.request.Index)
+}
+
+func (r *Reservation) CurrentTrip() colibri.FullTrip {
+	return *r.currentTrip.Copy()
 }
 
 // Read allows reading from the connection associated to the reservation.
@@ -207,4 +221,30 @@ func (t *renewalTask) Run(ctx context.Context) {
 	}()
 	_ = t.reservation.connection.Close() // ignore errors
 	t.reservation.connection = nil
+}
+
+func NewReservationForTesting(
+	runner *periodic.Runner,
+	e2eRenewalTaskDuration time.Duration,
+	network *snet.SCIONNetwork,
+	daemon sciond.Connector,
+	dstAddr *snet.UDPAddr,
+	request *colibri.E2EReservationSetup,
+	currentTrip *colibri.FullTrip,
+	connection *snet.Conn,
+	colibriPath snet.Path,
+	onError RenewalError) *Reservation {
+
+	return &Reservation{
+		runner:                 runner,
+		e2eRenewalTaskDuration: e2eRenewalTaskDuration,
+		network:                network,
+		daemon:                 daemon,
+		dstAddr:                dstAddr,
+		request:                request,
+		currentTrip:            currentTrip,
+		connection:             connection,
+		colibriPath:            colibriPath,
+		onError:                onError,
+	}
 }

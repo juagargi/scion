@@ -49,7 +49,7 @@ func TestByNumberOfASes(t *testing.T) {
 	stitchables := ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 		ct.WithCoreASes("1-ff00:0:110"),
 
-		ct.WithUpSegs(1, 2),
+		ct.WithUpSegs(1, 2), // direct trip + thru core
 		ct.WithPath(ct.Up, 0, rt.NewPath(0, "1-ff00:0:111", 1, 2, "1-ff00:0:112", 0)),
 		ct.WithPath(ct.Up, 1, rt.NewPath(0, "1-ff00:0:111", 1, 1, "1-ff00:0:110", 0)),
 
