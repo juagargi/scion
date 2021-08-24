@@ -399,7 +399,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 				MsgId: base.MsgId{
 					ID: reservation.ID{
 						ASID:   localAS,
-						Suffix: make([]byte, 4),
+						Suffix: make([]byte, reservation.IDSegLen),
 					},
 					Timestamp: now,
 				},

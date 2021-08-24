@@ -94,7 +94,7 @@ func NewReservation(ctx context.Context,
 	setupReq := &colibri.E2EReservationSetup{
 		Id: reservation.ID{
 			ASID:   localIA.A,
-			Suffix: make([]byte, 12), // TODO(juagargi) FIXME deleteme suffixes are 12 bytes long now!!! check everywhere
+			Suffix: make([]byte, reservation.IDE2ELen),
 		},
 		SrcIA:       localIA,
 		DstIA:       dstIA,

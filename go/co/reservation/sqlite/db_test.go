@@ -33,20 +33,20 @@ func TestReservationDBSuite(t *testing.T) {
 	reservationdbtest.TestDB(t, func() backend.DB { return newDB(t) })
 }
 
-func TestNewSuffix(t *testing.T) {
+func TestNewSegSuffix(t *testing.T) {
 	ctx := context.Background()
 	asid := xtest.MustParseAS("ff00:0:1")
 	db := newDB(t)
-	suffix, err := newSuffix(ctx, db.db, asid)
+	suffix, err := newSegSuffix(ctx, db.db, asid)
 	require.NoError(t, err)
 	require.Equal(t, uint32(1), suffix)
 	// add reservations
 	addSegRsvRows(t, db, asid, 3, 5)
-	suffix, err = newSuffix(ctx, db.db, asid)
+	suffix, err = newSegSuffix(ctx, db.db, asid)
 	require.NoError(t, err)
 	require.False(t, isSuffixInDB(t, db, asid, suffix))
 	addSegRsvRows(t, db, asid, 1, 2)
-	suffix, err = newSuffix(ctx, db.db, asid)
+	suffix, err = newSegSuffix(ctx, db.db, asid)
 	require.NoError(t, err)
 	require.False(t, isSuffixInDB(t, db, asid, suffix))
 }
@@ -165,7 +165,7 @@ func benchmarkNewSuffix(b *testing.B, entries uint32) {
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		suffix, err := newSuffix(ctx, db.db, asid)
+		suffix, err := newSegSuffix(ctx, db.db, asid)
 		require.NoError(b, err)
 		require.Equal(b, entries+1, suffix)
 	}

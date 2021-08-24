@@ -941,7 +941,6 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 		return failedResponse, nil
 	}
 
-	// if req.ID.IsEmptySuffix() && !req.IsFirstAS() {
 	if req.ID.IsEmptySuffix() {
 		failedResponse.Message = s.errNew("empty suffix not allowed").Error()
 		return failedResponse, nil

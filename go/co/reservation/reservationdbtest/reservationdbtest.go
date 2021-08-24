@@ -716,7 +716,7 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, newDB func() backend
 	checkThisRsvs := map[int]*e2e.Reservation{1: nil, 16: nil, 50: nil, 100: nil}
 	for i := 1; i <= 100; i++ {
 		r := newTestE2EReservation(t)
-		r.ID.Suffix = make([]byte, 4)
+		r.ID.Suffix = make([]byte, reservation.IDSegLen)
 		binary.BigEndian.PutUint32(r.ID.Suffix, uint32(i))
 		_, found := checkThisRsvs[i]
 		if found {
@@ -743,7 +743,7 @@ func testGetE2ERsvFromID(ctx context.Context, t *testing.T, newDB func() backend
 	for i, r := range checkThisRsvs {
 		ID := reservation.ID{
 			ASID:   xtest.MustParseAS("ff00:0:1"),
-			Suffix: make([]byte, 4),
+			Suffix: make([]byte, reservation.IDSegLen),
 		}
 		binary.BigEndian.PutUint32(ID.Suffix, uint32(i))
 		rsv, err := db.GetE2ERsvFromID(ctx, &ID)
@@ -983,7 +983,7 @@ func newTestE2EReservation(t *testing.T) *e2e.Reservation {
 	rsv := &e2e.Reservation{
 		ID: reservation.ID{
 			ASID:   xtest.MustParseAS("ff00:0:1"),
-			Suffix: make([]byte, 12),
+			Suffix: make([]byte, reservation.IDE2ELen),
 		},
 		SegmentReservations: []*segment.Reservation{
 			newTestReservation(t),
