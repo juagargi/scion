@@ -54,7 +54,7 @@ func AddE2EReservation(t testing.TB, db backend.DB, ASID string, count int) {
 
 		auxBuff := make([]byte, 8)
 		binary.BigEndian.PutUint64(auxBuff, uint64(i+1))
-		copy(r.ID.Suffix[2:], auxBuff)
+		copy(r.ID.Suffix[len(r.ID.Suffix)-8:], auxBuff)
 		for _, seg := range r.SegmentReservations {
 			err := db.PersistSegmentRsv(ctx, seg)
 			require.NoError(t, err)
@@ -101,7 +101,7 @@ func newTestE2EReservation(t testing.TB, ASID string) *e2e.Reservation {
 	t.Helper()
 
 	rsv := &e2e.Reservation{
-		ID: *e2eIDFromRaw(t, ASID, "00000000000000000001"),
+		ID: *e2eIDFromRaw(t, ASID, "000000000000000000000001"),
 		SegmentReservations: []*segment.Reservation{
 			newTestSegmentReservation(t, ASID),
 		},
@@ -115,5 +115,6 @@ func e2eIDFromRaw(t testing.TB, ASID, suffix string) *reservation.ID {
 	t.Helper()
 	ID, err := reservation.NewID(xtest.MustParseAS(ASID), xtest.MustParseHexString(suffix))
 	require.NoError(t, err)
+	require.True(t, ID.IsE2EID())
 	return ID
 }

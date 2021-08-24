@@ -98,22 +98,24 @@ func TestKeepOneShot(t *testing.T) {
 			reservations: map[addr.IA][]*segment.Reservation{
 				xtest.MustParseIA("1-ff00:0:2"): modOneRsv(
 					st.NewRsvs(2, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:2", 0),
-						st.AddIndex(0, st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
+						st.AddIndex(0, st.WithBW(12, 42, 0),
+							st.WithExpiration(tomorrow)),
 						st.AddIndex(1, st.WithBW(12, 24, 0),
 							st.WithExpiration(tomorrow.Add(24*time.Hour))),
 						st.WithActiveIndex(0),
 						st.WithTrafficSplit(2),
 						st.WithEndProps(endProps1)),
-					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0 to could be compliant
+					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0 to could_be_compliant
 				xtest.MustParseIA("1-ff00:0:3"): modOneRsv(
 					st.NewRsvs(2, st.WithPath(0, "1-ff00:0:1", 1, 1, "1-ff00:0:3", 0),
-						st.AddIndex(0, st.WithBW(12, 42, 0), st.WithExpiration(tomorrow)),
+						st.AddIndex(0, st.WithBW(12, 42, 0),
+							st.WithExpiration(tomorrow)),
 						st.AddIndex(1, st.WithBW(12, 24, 0),
 							st.WithExpiration(tomorrow.Add(24*time.Hour))),
 						st.WithActiveIndex(0),
 						st.WithTrafficSplit(2),
 						st.WithEndProps(endProps1)),
-					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0 to could be compliant
+					0, st.ModIndex(0, st.WithBW(3, 0, 0))), // change rsv 0 to could_be_compliant
 			},
 			expectedRequestsCalls: 2,
 			expectedWakeupTime:    now.Add(sleepAtMost),

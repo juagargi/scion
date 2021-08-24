@@ -16,6 +16,9 @@ package reservationstore
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,14 +49,16 @@ type Manager interface {
 
 // manager takes care of the health of the segment reservations.
 type manager struct {
-	now           func() time.Time // replace in tests
-	wakeupTime    time.Time        // no need to do anything until this time
-	wakeupExpirer time.Time        // wake up the colibri reservation expire routine
-	wakeupKeeper  time.Time        // wake up the keeper (new rsvs/indices)
-	keeper        *keeper          // handles new rsvs/indices
-	localIA       addr.IA
-	store         reservationstorage.Store
-	router        snet.Router
+	now            func() time.Time // replace in tests
+	wakeupTime     time.Time        // no need to do anything until this time
+	wakeupExpirer  time.Time        // wake up the colibri reservation expire routine
+	wakeupKeeper   time.Time        // wake up the keeper (new rsvs/indices)
+	wakeupListE2Es time.Time
+	wakeupListSegs time.Time
+	keeper         *keeper // handles new rsvs/indices
+	localIA        addr.IA
+	store          reservationstorage.Store
+	router         snet.Router
 }
 
 func NewColibriManager(localIA addr.IA, router snet.Router, store reservationstorage.Store,
@@ -87,7 +92,71 @@ func (m *manager) Run(ctx context.Context) {
 		return
 	}
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(4)
+	go func() {
+		defer log.HandlePanic()
+		defer wg.Done()
+		defer func() {
+			m.wakeupListSegs = time.Now().Add(10 * time.Minute)
+		}()
+		// list segments
+		rsvs, err := m.store.ReportSegmentReservationsInDB(ctx)
+		if err != nil {
+			log.Error("reporting segment reservations in db", "err", err)
+			return
+		}
+		table := make([]string, 0, len(rsvs)+1)
+		table = append(table, fmt.Sprintf("%24s %4s %15s %15s %11s %s",
+			"id", "dir", "src", "dst", "spath_type", "path"))
+		for _, r := range rsvs {
+			table = append(table, fmt.Sprintf("%24s %4s %15s %15s %11s %s",
+				r.ID.String(),
+				r.PathType,
+				r.PathAtSource.SrcIA(),
+				r.PathAtSource.DstIA(),
+				r.PathAtSource.Spath.Type,
+				r.PathAtSource.String()))
+		}
+		if len(rsvs) > 0 {
+			log.Debug("----------- colibri segments ------------\n" + strings.Join(table, "\n"))
+		}
+	}()
+	go func() {
+		defer log.HandlePanic()
+		defer wg.Done()
+		defer func() {
+			m.wakeupListE2Es = time.Now().Add(5 * time.Minute)
+		}()
+		// list e2e reservations
+		rsvs, err := m.store.ReportE2EReservationsInDB(ctx)
+		if err != nil {
+			log.Error("reporting e2e reservations in db", "err", err)
+			return
+		}
+		table := make([]string, 0, len(rsvs)+1)
+		table = append(table, fmt.Sprintf("%32s %8s %3s %3s %12s",
+			"id", "alloc", "idx", "bw", "exptime"))
+		for _, r := range rsvs {
+			args := []interface{}{
+				r.ID.String(),
+				r.AllocResv(),
+			}
+			if len(r.Indices) > 0 {
+				index := r.Indices[len(r.Indices)-1]
+				args = append(args,
+					strconv.Itoa(int(index.Idx)),
+					strconv.Itoa(int(index.AllocBW)),
+					index.Expiration.Format(time.StampMilli),
+				)
+			} else {
+				args = append(args, "--", "---", "-------")
+			}
+			table = append(table, fmt.Sprintf("%32s %8d %3s %3s %12s", args...))
+		}
+		if len(rsvs) > 0 {
+			log.Debug("___________ colibri e2e's now ___________\n" + strings.Join(table, "\n"))
+		}
+	}()
 	go func() {
 		defer log.HandlePanic()
 		defer wg.Done()
@@ -104,7 +173,6 @@ func (m *manager) Run(ctx context.Context) {
 		logger.Info("will wait until the specified time", "wakeup_time", wakeupTime)
 		m.wakeupKeeper = wakeupTime
 	}()
-
 	go func() {
 		defer log.HandlePanic()
 		defer wg.Done()
@@ -121,10 +189,16 @@ func (m *manager) Run(ctx context.Context) {
 		m.wakeupExpirer = wakeupTime
 	}()
 	wg.Wait()
-	if m.wakeupKeeper.Before(m.wakeupExpirer) {
-		m.wakeupTime = m.wakeupKeeper
-	} else {
+
+	m.wakeupTime = m.wakeupKeeper
+	if m.wakeupExpirer.Before(m.wakeupTime) {
 		m.wakeupTime = m.wakeupExpirer
+	}
+	if m.wakeupListSegs.Before(m.wakeupTime) {
+		m.wakeupTime = m.wakeupListSegs
+	}
+	if m.wakeupListE2Es.Before(m.wakeupTime) {
+		m.wakeupTime = m.wakeupListE2Es
 	}
 }
 

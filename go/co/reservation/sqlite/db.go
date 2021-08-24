@@ -123,7 +123,7 @@ type executor struct {
 func (x *executor) GetSegmentRsvFromID(ctx context.Context, ID *reservation.ID) (
 	*segment.Reservation, error) {
 
-	if len(ID.Suffix) < 4 {
+	if !ID.IsSegmentID() {
 		return nil, serrors.New("wrong suffix", "suffix", hex.EncodeToString(ID.Suffix))
 	}
 	params := []interface{}{
@@ -200,7 +200,7 @@ func (x *executor) NewSegmentRsv(ctx context.Context, rsv *segment.Reservation) 
 	var err error
 	for retries := 0; retries < 3; retries++ {
 		err = db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-			suffix, err := newSuffix(ctx, tx, rsv.ID.ASID)
+			suffix, err := newSegSuffix(ctx, tx, rsv.ID.ASID)
 			if err != nil {
 				return err
 			}
@@ -224,7 +224,7 @@ func (x *executor) NewSegmentRsv(ctx context.Context, rsv *segment.Reservation) 
 }
 
 func (x *executor) PersistSegmentRsv(ctx context.Context, rsv *segment.Reservation) error {
-	if len(rsv.ID.Suffix) < 4 {
+	if !rsv.ID.IsSegmentID() {
 		return serrors.New("wrong suffix", "suffix", hex.EncodeToString(rsv.ID.Suffix))
 	}
 
@@ -598,9 +598,9 @@ func (x *executor) DebugCountE2ERsvs(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// newSuffix finds a segment reservation ID suffix not being used at the moment. Should be called
+// newSegSuffix finds a segment reservation ID suffix not being used at the moment. Should be called
 // inside a transaction so the suffix is not used in the meantime, or fail.
-func newSuffix(ctx context.Context, x db.Sqler, ASID addr.AS) (uint32, error) {
+func newSegSuffix(ctx context.Context, x db.Sqler, ASID addr.AS) (uint32, error) {
 	const query = `SELECT COALESCE(MAX(id_suffix), 0) + 1
 		FROM	seg_reservation sr
 		WHERE	sr.id_as = ?`
@@ -937,7 +937,7 @@ func getE2ERsvFromID(ctx context.Context, x db.Sqler, ID *reservation.ID) (
 func getE2ERsvsFromSegment(ctx context.Context, x db.Sqler, ID *reservation.ID) (
 	[]*e2e.Reservation, error) {
 
-	if len(ID.Suffix) < 4 {
+	if !ID.IsSegmentID() {
 		return nil, serrors.New("wrong suffix", "suffix", hex.EncodeToString(ID.Suffix))
 	}
 	rowID2e2eIDs := make(map[int]*reservation.ID)

@@ -37,7 +37,6 @@ import (
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
-// deleteme move this file from cs to co
 type ColibriService struct {
 	Store reservationstorage.Store
 }

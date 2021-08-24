@@ -52,8 +52,7 @@ import (
 // if it's called very frequently.
 const sleepAtLeast = 4 * time.Second
 
-// const sleepAtMost = 5 * time.Minute
-const sleepAtMost = 10 * time.Second // deleteme
+const sleepAtMost = 5 * time.Minute
 
 // min validity in the future for the reservations when checking their compliance,
 // the bigger the value, the more probable it is not to break continuity.
@@ -65,8 +64,8 @@ const minDuration = 2 * sleepAtMost
 // can be used. Too big a value could produce errors in the admission for some ASes.
 // This value would typically be equal to twice minDuration.
 // const newIndexMinDuration = 10 * time.Minute
-const newIndexMinDuration = 40 * time.Second // TODO(juagargi) remove after debugging is finished
-// const newIndexMinDuration = 2 * minDuration
+// const newIndexMinDuration = 40 * time.Second // TODO(juagargi) remove after debugging is finished
+const newIndexMinDuration = 2 * minDuration
 
 type keeper struct {
 	sleepUntil time.Time // nothing to do in the keeper until this time
@@ -97,10 +96,10 @@ func NewKeeper(manager Manager, conf *conf.Reservations) (
 // nothing to do.
 func (k *keeper) OneShot(ctx context.Context) (time.Time, error) {
 	wg := sync.WaitGroup{}
+	wg.Add(len(k.entries))
 	wakeupTimes := make(chan time.Time, len(k.entries))
 	for dst, entries := range k.entries {
 		dst, entries := dst, entries
-		wg.Add(1)
 		go func(c chan time.Time) {
 			defer log.HandlePanic()
 			defer wg.Done()
@@ -399,7 +398,7 @@ func (e *requirements) PrepareSetupRequests(paths []snet.Path,
 				MsgId: base.MsgId{
 					ID: reservation.ID{
 						ASID:   localAS,
-						Suffix: make([]byte, 4),
+						Suffix: make([]byte, reservation.IDSegLen),
 					},
 					Timestamp: now,
 				},

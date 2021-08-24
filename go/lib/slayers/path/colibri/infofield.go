@@ -22,6 +22,8 @@ import (
 
 const LenInfoField int = 24
 
+const LenSuffix = 12
+
 type InfoField struct {
 	// C denotes the control plane flag.
 	C bool
@@ -61,7 +63,7 @@ func (inf *InfoField) DecodeFromBytes(b []byte) error {
 	inf.Ver = uint8(b[1]) & 0x0f
 	inf.CurrHF = uint8(b[2])
 	inf.HFCount = uint8(b[3])
-	inf.ResIdSuffix = make([]byte, 12)
+	inf.ResIdSuffix = make([]byte, LenSuffix)
 	copy(inf.ResIdSuffix, b[4:16])
 	inf.ExpTick = binary.BigEndian.Uint32(b[16:20])
 	inf.BwCls = uint8(b[20])
@@ -77,7 +79,7 @@ func (inf *InfoField) SerializeTo(b []byte) error {
 	if len(b) < LenInfoField {
 		return serrors.New("raw colibri info field buffer too small")
 	}
-	if len(inf.ResIdSuffix) != 12 {
+	if len(inf.ResIdSuffix) != LenSuffix {
 		return serrors.New("colibri ResIdSuffix must be 12 bytes long",
 			"is", len(inf.ResIdSuffix))
 	}

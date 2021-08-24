@@ -61,7 +61,7 @@ func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
 			S:           true,
 			Ver:         uint8(index.Idx),
 			HFCount:     uint8(len(index.Token.HopFields)),
-			ResIdSuffix: make([]byte, 12),
+			ResIdSuffix: make([]byte, colpath.LenSuffix),
 			ExpTick:     uint32(index.Token.ExpirationTick),
 			BwCls:       uint8(index.AllocBW),
 			Rlc:         uint8(index.Token.RLC),
