@@ -156,11 +156,7 @@ func VerifyMAC(privateKey []byte, ts colibri.Timestamp, inf *colibri.InfoField,
 		// TODO(juagargi) we will use the defined MAC computation once we start timestamping
 		// the E2E colibri packets. For now do as if C=true. Toggle comments below.
 		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s.SrcIA.A)
-		// mac, err = CalculateColibriMacSigma(privateKey, inf, currHop, s)
-		// if err != nil {
-		// 	return err
-		// }
-		// mac, err = CalculateColibriMacPacket(mac, ts, inf, s)
+		// mac, err = CalculateColibriMacPacket(privateKey, inf, ts, currHop, s)
 	}
 	if err != nil {
 		return err
@@ -208,8 +204,8 @@ func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
 	return mac[len(mac)-aes.BlockSize : len(mac)-aes.BlockSize+4], nil
 }
 
-// CalculateColibriMacSigma calculates the "sigma" authenticator.
-func CalculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
+// calculateColibriMacSigma calculates the "sigma" authenticator.
+func calculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
 	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
 
 	// Initialize cryptographic MAC function
@@ -230,9 +226,13 @@ func CalculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
 }
 
 // CalculateColibriMacPacket calculates the per-packet colibri MAC.
-func CalculateColibriMacPacket(auth []byte, ts colibri.Timestamp,
-	inf *colibri.InfoField, s *slayers.SCION) ([]byte, error) {
+func CalculateColibriMacPacket(privateKey []byte, inf *colibri.InfoField, ts colibri.Timestamp,
+	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
 
+	auth, err := calculateColibriMacSigma(privateKey, inf, currHop, s)
+	if err != nil {
+		return nil, err
+	}
 	// Initialize cryptographic MAC function
 	f, err := initColibriMac(auth)
 	if err != nil {

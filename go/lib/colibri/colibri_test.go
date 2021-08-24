@@ -186,10 +186,8 @@ func TestPacketHVFVerification(t *testing.T) {
 	c.InfoField.C = false
 	// Generate MAC
 	privateKey := []byte("a_random_key_123")
-	auth, err := libcolibri.CalculateColibriMacSigma(privateKey, c.InfoField,
+	mac, err := libcolibri.CalculateColibriMacPacket(privateKey, c.InfoField, c.PacketTimestamp,
 		c.HopFields[c.InfoField.CurrHF], s)
-	assert.NoError(t, err)
-	mac, err := libcolibri.CalculateColibriMacPacket(auth, c.PacketTimestamp, c.InfoField, s)
 	assert.NoError(t, err)
 	c.HopFields[c.InfoField.CurrHF].Mac = mac
 
