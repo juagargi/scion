@@ -60,4 +60,7 @@ type Store interface {
 	ListStitchableSegments(ctx context.Context, dst addr.IA) (*colibri.StitchableSegments, error)
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
+
+	ReportSegmentReservationsInDB(ctx context.Context) ([]*sgt.Reservation, error)
+	ReportE2EReservationsInDB(ctx context.Context) ([]*e2e.Reservation, error)
 }

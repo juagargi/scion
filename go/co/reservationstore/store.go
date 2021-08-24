@@ -100,6 +100,16 @@ func (s *Store) errWrapStr(msg string, err error, params ...interface{}) error {
 	return s.err(serrors.WrapStr(msg, err, params...))
 }
 
+func (s *Store) ReportSegmentReservationsInDB(ctx context.Context) (
+	[]*segment.Reservation, error) {
+
+	return s.db.GetAllSegmentRsvs(ctx)
+}
+
+func (s *Store) ReportE2EReservationsInDB(ctx context.Context) ([]*e2e.Reservation, error) {
+	return s.db.GetAllE2ERsvs(ctx)
+}
+
 func (s *Store) GetReservationsAtSource(ctx context.Context, dstIA addr.IA) (
 	[]*segment.Reservation, error) {
 
