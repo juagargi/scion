@@ -85,39 +85,6 @@ func NewStore(topo topology.Topology, router snet.Router, dialer coliquic.GRPCCl
 	}, nil
 }
 
-func (s *Store) deletemePrintAllRsvs(ctx context.Context) {
-
-	allRsvs, err := s.db.GetAllSegmentRsvs(ctx)
-	if err != nil {
-		panic(err)
-	}
-	for _, r := range allRsvs {
-		log.Info("deleteme FOUND reservation", "id", r.ID.String(),
-			"spath_type", r.PathAtSource.Spath.Type,
-			"direction", r.PathType,
-			"src", r.PathAtSource.SrcIA(), "dst", r.PathAtSource.DstIA(),
-			"path", r.PathAtSource.String())
-	}
-}
-
-func (s *Store) deletemePrintAllE2ERsvs(ctx context.Context) {
-	allRsvs, err := s.db.GetAllE2ERsvs(ctx)
-	if err != nil {
-		panic(err)
-	}
-	for _, r := range allRsvs {
-		log.Info("deleteme E2E rsv", "id", r.ID)
-	}
-}
-
-func (s *Store) deletemeCheckPath(rsv *segment.Reservation) {
-	assert(len(rsv.PathAtSource.Steps) > 0, "bad path %s", rsv.PathAtSource)
-	log.Info("deleteme path for rsv", "id", rsv.ID, "dir", rsv.PathType, "path", rsv.PathAtSource)
-	if s.isCore && rsv.PathType == reservation.DownPath {
-		assert(rsv.PathAtSource.CurrentStep == 0, "bad path %s", rsv.PathAtSource)
-	}
-}
-
 func (s *Store) err(err error) error {
 	if err == nil {
 		return nil
@@ -141,9 +108,6 @@ func (s *Store) GetReservationsAtSource(ctx context.Context, dstIA addr.IA) (
 
 func (s *Store) ListReservations(ctx context.Context, dstIA addr.IA,
 	pathType reservation.PathType) ([]*colibri.ReservationLooks, error) {
-	log.Info("---------------------- vvvvv ------------ list reservations")
-	s.deletemePrintAllRsvs(ctx)
-	log.Info("---------------------- ^^^^^ ------------")
 	rsvs, err := s.db.GetSegmentRsvsFromSrcDstIA(ctx, s.localIA, dstIA, pathType)
 	if err != nil {
 		log.Error("listing reservations", "err", err)
@@ -400,7 +364,7 @@ func (s *Store) ConfirmSegmentReservation(ctx context.Context, req *base.Request
 		return failedResponse, s.errWrapStr("cannot set index to confirmed", err,
 			"id", req.ID.String())
 	}
-	s.deletemeCheckPath(rsv)
+
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		return failedResponse, s.errWrapStr("cannot persist segment reservation", err,
 			"id", req.ID.String())
@@ -618,10 +582,6 @@ func (s *Store) TearDownSegmentReservation(ctx context.Context, req *base.Reques
 func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	e2e.SetupResponse, error) {
 
-	log.Info("---------------------- vvvvv ------------ E2E admission")
-	s.deletemePrintAllRsvs(ctx)
-	log.Info("---------------------- ^^^^^ ------------")
-
 	if err := s.validateAuthenticators(&req.Request); err != nil {
 		return nil, s.errWrapStr("error validating request", err, "id", req.ID.String())
 	}
@@ -721,7 +681,6 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	if maxExpTime.Before(expTime) {
 		expTime = maxExpTime
 	}
-	// idx, err := rsv.NewIndex(req.Timestamp.Add(16*time.Second), req.RequestedBW)
 	idx, err := rsv.NewIndex(expTime, req.RequestedBW)
 	if err != nil {
 		failedResponse.Message = s.errWrapStr("cannot create index in e2e admission", err,
@@ -1343,15 +1302,8 @@ func isFirstASInReservation(rsv *segment.Reservation, req *base.Request) bool {
 	}
 }
 
-func deletemePrintSegRsvs(segs []reservation.ID) string {
-	strs := make([]string, len(segs))
-	for i, s := range segs {
-		strs[i] = s.String()
-	}
-	return strings.Join(strs, ", ")
-}
-
 // assert performs an assertion on an invariant. An assertion is part of the documentation.
+// TODO(juagargi) remove after finishing debugging COLIBRI
 func assert(cond bool, msg string, params ...interface{}) {
 	if !cond {
 		panic(fmt.Sprintf(msg, params...))

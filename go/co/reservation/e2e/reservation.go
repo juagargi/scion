@@ -20,7 +20,6 @@ import (
 	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/co/reservation/segment"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
-	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
 	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
 )
@@ -126,8 +125,6 @@ func (r *Reservation) AllocResv() uint64 {
 func (r *Reservation) GetLastSegmentPathSteps() []base.PathStep {
 	seg := r.SegmentReservations[len(r.SegmentReservations)-1]
 	steps := append([]base.PathStep{}, seg.PathAtSource.Steps...)
-	log.Info("deleteme last segment path", "count", len(r.SegmentReservations), "seg", seg.ID,
-		"dir", seg.PathType, "path", seg.PathAtSource)
 	return steps
 }
 

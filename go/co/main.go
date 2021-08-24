@@ -197,15 +197,4 @@ func colibriManager(topo topology.Topology, router snet.Router, store reservatio
 		return nil, serrors.WrapStr("could not start colibri manager", err)
 	}
 	return periodic.Start(mgr, 100*time.Millisecond, 5*time.Second), nil
-	//
-	//
-	//
-	//
-	//
-	// dont
-	// forget
-	// to
-	// remote
-	// deleteme
-	// return periodic.Start(mgr, 100*time.Millisecond, 5*time.Hour), nil // TODO(juagargi)
 }
