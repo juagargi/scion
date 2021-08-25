@@ -67,7 +67,8 @@ func CreateColibriTimestampCustom(tsRel uint32, pktId uint32) colibri.Timestamp 
 	// |                             PckId                             |
 	// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 	ts := colibri.Timestamp{}
-	binary.BigEndian.PutUint64(ts[:], (uint64(tsRel)<<32)|uint64(pktId))
+	binary.BigEndian.PutUint32(ts[:4], tsRel)
+	binary.BigEndian.PutUint32(ts[4:], pktId)
 	return ts
 }
 
