@@ -205,6 +205,36 @@ func (mr *MockStoreMockRecorder) ListStitchableSegments(arg0, arg1 interface{}) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStitchableSegments", reflect.TypeOf((*MockStore)(nil).ListStitchableSegments), arg0, arg1)
 }
 
+// ReportE2EReservationsInDB mocks base method
+func (m *MockStore) ReportE2EReservationsInDB(arg0 context.Context) ([]*e2e.Reservation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportE2EReservationsInDB", arg0)
+	ret0, _ := ret[0].([]*e2e.Reservation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReportE2EReservationsInDB indicates an expected call of ReportE2EReservationsInDB
+func (mr *MockStoreMockRecorder) ReportE2EReservationsInDB(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportE2EReservationsInDB", reflect.TypeOf((*MockStore)(nil).ReportE2EReservationsInDB), arg0)
+}
+
+// ReportSegmentReservationsInDB mocks base method
+func (m *MockStore) ReportSegmentReservationsInDB(arg0 context.Context) ([]*segment.Reservation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportSegmentReservationsInDB", arg0)
+	ret0, _ := ret[0].([]*segment.Reservation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReportSegmentReservationsInDB indicates an expected call of ReportSegmentReservationsInDB
+func (mr *MockStoreMockRecorder) ReportSegmentReservationsInDB(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportSegmentReservationsInDB", reflect.TypeOf((*MockStore)(nil).ReportSegmentReservationsInDB), arg0)
+}
+
 // TearDownSegmentReservation mocks base method
 func (m *MockStore) TearDownSegmentReservation(arg0 context.Context, arg1 *reservation.Request) (reservation.Response, error) {
 	m.ctrl.T.Helper()

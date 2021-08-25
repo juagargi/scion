@@ -424,7 +424,7 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 
 	requests := []*seg.SetupReq{}
 	for _, rsv := range rsvs {
-		if len(e.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.PathAtSource})) == 0 {
+		if !e.predicate.EvalInterfaces(rsv.PathAtSource.Interfaces()) {
 			continue
 		}
 		// colibriPath := rsv.DeriveColibriPathAtSource()
@@ -483,7 +483,7 @@ func (e requirements) Compliance(rsv *seg.Reservation, atLeastUntil time.Time) C
 		return NeverCompliant
 	case rsv.PathEndProps != e.endProps:
 		return NeverCompliant
-	case len(e.predicate.EvalInterfaces([]snet.PathInterfacesHaver{rsv.PathAtSource})) == 0:
+	case !e.predicate.EvalInterfaces(rsv.PathAtSource.Interfaces()):
 		return NeverCompliant
 	}
 	indices := rsv.Indices.Filter(

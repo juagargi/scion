@@ -72,18 +72,12 @@ func ConfigDataplane(dp Dataplane, cfg *Config) error {
 	// XXX HSR currently only support 1 key, so use Key0
 	// Should it be an error if no key is set?
 	if len(cfg.MasterKeys.Key0) > 0 {
-		key0, err := scrypto.DeriveHFMacKey(cfg.MasterKeys.Key0)
-		if err != nil {
-			return err
-		}
+		key0 := scrypto.DeriveHFMacKey(cfg.MasterKeys.Key0)
 		if err := dp.SetKey(cfg.IA, 0, key0); err != nil {
 			return err
 		}
 
-		keyColibri, err := scrypto.DeriveColibriMacKey(cfg.MasterKeys.Key0)
-		if err != nil {
-			return err
-		}
+		keyColibri := scrypto.DeriveColibriMacKey(cfg.MasterKeys.Key0)
 		if err := dp.SetColibriKey(cfg.IA, 0, keyColibri); err != nil {
 			return err
 		}

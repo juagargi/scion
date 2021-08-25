@@ -22,7 +22,7 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"encoding/hex"
-	"math"
+	"fmt"
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
@@ -156,11 +156,7 @@ func VerifyMAC(privateKey []byte, ts colibri.Timestamp, inf *colibri.InfoField,
 		// TODO(juagargi) we will use the defined MAC computation once we start timestamping
 		// the E2E colibri packets. For now do as if C=true. Toggle comments below.
 		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s.SrcIA.A)
-		// mac, err = CalculateColibriMacSigma(privateKey, inf, currHop, s)
-		// if err != nil {
-		// 	return err
-		// }
-		// mac, err = CalculateColibriMacPacket(mac, ts, inf, s)
+		// mac, err = CalculateColibriMacPacket(privateKey, inf, ts, currHop, s)
 	}
 	if err != nil {
 		return err
@@ -208,8 +204,8 @@ func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
 	return mac[len(mac)-aes.BlockSize : len(mac)-aes.BlockSize+4], nil
 }
 
-// CalculateColibriMacSigma calculates the "sigma" authenticator.
-func CalculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
+// calculateColibriMacSigma calculates the "sigma" authenticator.
+func calculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
 	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
 
 	// Initialize cryptographic MAC function
@@ -230,9 +226,13 @@ func CalculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
 }
 
 // CalculateColibriMacPacket calculates the per-packet colibri MAC.
-func CalculateColibriMacPacket(auth []byte, ts colibri.Timestamp,
-	inf *colibri.InfoField, s *slayers.SCION) ([]byte, error) {
+func CalculateColibriMacPacket(privateKey []byte, inf *colibri.InfoField, ts colibri.Timestamp,
+	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
 
+	auth, err := calculateColibriMacSigma(privateKey, inf, currHop, s)
+	if err != nil {
+		return nil, err
+	}
 	// Initialize cryptographic MAC function
 	f, err := initColibriMac(auth)
 	if err != nil {
@@ -321,8 +321,8 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 	consistent := (4*(int(s.DstAddrLen)+1) == dstLen) &&
 		(4*(int(s.SrcAddrLen)+1) == srcLen)
 	if !consistent {
-		return nil, serrors.New("SL/DL not consistent with actual address lengths",
-			"DL", s.DstAddrLen, "SL", s.SrcAddrLen)
+		panic(fmt.Sprintf("SL/DL not consistent with actual address lengths. DL: %d, SL: %d",
+			s.DstAddrLen, s.SrcAddrLen))
 	}
 
 	// Write SL/ST/DL/DT into one single byte
@@ -332,7 +332,7 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 	// The MAC input consists of the InputData plus the host addresses and the flags, rounded
 	// up to the next multiple of aes.BlockSize bytes
 	bufLen := LengthInputData + 1 + srcLen + dstLen
-	nrBlocks := uint8(math.Ceil(float64(bufLen) / aes.BlockSize))
+	nrBlocks := (bufLen-1)/aes.BlockSize + 1
 	buffer := make([]byte, aes.BlockSize*nrBlocks)
 
 	err := prepareInputData(s.SrcIA.A, inf, hop, buffer)
@@ -381,7 +381,10 @@ func prepareInputData(srcAS addr.AS, inf *colibri.InfoField,
 	if len(buffer) < LengthInputData {
 		return serrors.New("provided buffer is too small")
 	}
-
+	// TODO(juagargi) Note from matzf:
+	// For the segment reservations, this is only 4 bytes, right? Removing these 8 bytes of
+	// padding would seem to allow to bring this down to a single block for the static MAC
+	// (although these are probably not the ones that we need to optimize).
 	copy(buffer[0:12], inf.ResIdSuffix)
 	binary.BigEndian.PutUint32(buffer[12:16], inf.ExpTick)
 	buffer[16] = inf.BwCls

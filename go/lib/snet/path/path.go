@@ -71,24 +71,7 @@ func (p Path) Copy() snet.Path {
 }
 
 func (p Path) String() string {
-	hops := fmtInterfaces(p.Meta.Interfaces)
+	hops := snet.FmtInterfaces(p.Meta.Interfaces)
 	return fmt.Sprintf("Hops: [%s] MTU: %d NextHop: %s",
 		strings.Join(hops, ">"), p.Meta.MTU, p.NextHop)
-}
-
-func fmtInterfaces(ifaces []snet.PathInterface) []string {
-	var hops []string
-	if len(ifaces) == 0 {
-		return hops
-	}
-	intf := ifaces[0]
-	hops = append(hops, fmt.Sprintf("%s %d", intf.IA, intf.ID))
-	for i := 1; i < len(ifaces)-1; i += 2 {
-		inIntf := ifaces[i]
-		outIntf := ifaces[i+1]
-		hops = append(hops, fmt.Sprintf("%d %s %d", inIntf.ID, inIntf.IA, outIntf.ID))
-	}
-	intf = ifaces[len(ifaces)-1]
-	hops = append(hops, fmt.Sprintf("%d %s", intf.ID, intf.IA))
-	return hops
 }

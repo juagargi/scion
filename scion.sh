@@ -51,13 +51,6 @@ cmd_topology() {
     fi
 }
 
-build_binaries() {
-    rm bin/*
-    bazel build //:scion //:scion-ci || return $?
-    tar -kxf bazel-bin/scion.tar -C bin
-    tar -kxf bazel-bin/scion-ci.tar -C bin
-}
-
 cmd_run() {
     if [ "$1" != "nobuild" ]; then
         echo "Compiling..."

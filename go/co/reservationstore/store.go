@@ -71,10 +71,7 @@ func NewStore(topo topology.Topology, router snet.Router, dialer coliquic.GRPCCl
 	if err != nil {
 		return nil, err
 	}
-	colibriKey, err := scrypto.DeriveColibriMacKey(masterKey)
-	if err != nil {
-		return nil, err
-	}
+	colibriKey := scrypto.DeriveColibriMacKey(masterKey)
 	return &Store{
 		localIA:    topo.IA(),
 		isCore:     topo.Core(),

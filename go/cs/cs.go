@@ -209,11 +209,10 @@ func realMain() error {
 		TopoProvider: itopo.Provider(),
 		Verifier:     verifier,
 	}
-	router := segreq.NewRouter(fetcherCfg)
 	provider.Router = trust.AuthRouter{
 		ISD:    topo.IA().I,
 		DB:     trustDB,
-		Router: router,
+		Router: segreq.NewRouter(fetcherCfg),
 	}
 
 	quicServer := grpc.NewServer(libgrpc.UnaryServerInterceptor())
@@ -458,7 +457,7 @@ func realMain() error {
 					Dialer:      quicStack.TLSDialer,
 					Credentials: trust.GetTansportCredentials(tlsMgr),
 				},
-				Router: router,
+				Router: segreq.NewRouter(fetcherCfg),
 			},
 		}
 		drkeyServStore = &drkey.ServiceStore{
@@ -588,7 +587,6 @@ func realMain() error {
 	tasks, err := cs.StartTasks(cs.TasksConfig{
 		Public:   nc.Public,
 		Intfs:    intfs,
-		Router:   router,
 		TrustDB:  trustDB,
 		PathDB:   pathDB,
 		RevCache: revCache,

@@ -19,15 +19,15 @@ import (
 
 	"github.com/scionproto/scion/go/co/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/serrors"
+	"github.com/scionproto/scion/go/pkg/grpc"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
 )
 
 type DaemonClient struct {
-	Dialer coliquic.GRPCClientDialer
+	Dialer grpc.Dialer
 }
 
 // ListReservations will dial to the intra AS colibri service to get the list of rsvs.

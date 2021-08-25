@@ -1955,11 +1955,8 @@ func computeColibriMac(t *testing.T, c bool, key []byte, cpath *colibri.ColibriP
 		require.NoError(t, err)
 	case false:
 		// TODO(juagargi) revert comments after fixing how we compute the E2E MAC
-		// auth, err := libcolibri.CalculateColibriMacSigma(key, cpath.InfoField,
+		// mac, err = libcolibri.CalculateColibriMacPacket(key, cpath.InfoField, packetTimestamp,
 		// 	cpath.HopFields[hopIndex], spkt)
-		// require.NoError(t, err)
-		// mac, err = libcolibri.CalculateColibriMacPacket(auth, packetTimestamp,
-		// 	cpath.InfoField, spkt)
 		// require.NoError(t, err)
 		mac, err = libcolibri.CalculateColibriMacStatic(key, cpath.InfoField,
 			cpath.HopFields[hopIndex], spkt.SrcIA.A)
