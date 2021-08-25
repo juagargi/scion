@@ -144,10 +144,7 @@ func (c *colibriPacketProcessor) cryptographicValidation() (processResult, error
 }
 
 func (c *colibriPacketProcessor) forward() (processResult, error) {
-	egressId, err := c.egressInterface()
-	if err != nil {
-		return processResult{}, err
-	}
+	egressId := c.egressInterface()
 
 	if c.ingressID == 0 {
 		// Received packet from within AS
@@ -166,8 +163,8 @@ func (c *colibriPacketProcessor) forward() (processResult, error) {
 		return c.forwardToColibriSvc()
 	} else {
 		// Data plane forwarding
-		if c.destinedToLocalHost(egressId) {
-			return c.forwardToLocalHost()
+		if c.destinedToLocalAS(egressId) {
+			return c.forwardToLocalAS()
 		} else {
 			if conn, ok := c.canForwardLocally(egressId); ok {
 				return c.forwardToLocalEgress(egressId, conn)
@@ -177,39 +174,11 @@ func (c *colibriPacketProcessor) forward() (processResult, error) {
 	}
 }
 
-func (c *colibriPacketProcessor) egressInterface() (uint16, error) {
-	if c == nil {
-		return 0, serrors.New("colibri packet processor must not be nil")
-	}
-	if c.colibriPathMinimal == nil {
-		return 0, serrors.New("colibri path must not be nil")
-	}
-	if c.colibriPathMinimal.CurrHopField == nil {
-		return 0, serrors.New("colibri hop field must not be nil")
-	}
-
+func (c *colibriPacketProcessor) egressInterface() uint16 {
 	if c.colibriPathMinimal.InfoField.R {
-		return c.colibriPathMinimal.CurrHopField.IngressId, nil
+		return c.colibriPathMinimal.CurrHopField.IngressId
 	} else {
-		return c.colibriPathMinimal.CurrHopField.EgressId, nil
-	}
-}
-
-func (c *colibriPacketProcessor) ingressInterface() (uint16, error) {
-	if c == nil {
-		return 0, serrors.New("colibri packet processor must not be nil")
-	}
-	if c.colibriPathMinimal == nil {
-		return 0, serrors.New("colibri path must not be nil")
-	}
-	if c.colibriPathMinimal.CurrHopField == nil {
-		return 0, serrors.New("colibri hop field must not be nil")
-	}
-
-	if c.colibriPathMinimal.InfoField.R {
-		return c.colibriPathMinimal.CurrHopField.EgressId, nil
-	} else {
-		return c.colibriPathMinimal.CurrHopField.IngressId, nil
+		return c.colibriPathMinimal.CurrHopField.EgressId
 	}
 }
 
@@ -244,7 +213,7 @@ func (c *colibriPacketProcessor) forwardToRemoteEgress(egressId uint16) (process
 	}
 }
 
-func (c *colibriPacketProcessor) forwardToLocalHost() (processResult, error) {
+func (c *colibriPacketProcessor) forwardToLocalAS() (processResult, error) {
 	// Inbound: packet destined to a host in the local IA.
 	a, err := c.d.resolveLocalDst(c.scionLayer)
 	if err != nil {
@@ -265,7 +234,7 @@ func (c *colibriPacketProcessor) forwardToColibriSvc() (processResult, error) {
 	return processResult{OutConn: c.d.internal, OutAddr: a, OutPkt: c.rawPkt}, nil
 }
 
-func (c *colibriPacketProcessor) destinedToLocalHost(egressId uint16) bool {
+func (c *colibriPacketProcessor) destinedToLocalAS(egressId uint16) bool {
 	isLast, _ := c.colibriPathMinimal.IsLastHop()
 	return c.scionLayer.DstIA.Equal(c.d.localIA) && egressId == 0 && isLast
 }
