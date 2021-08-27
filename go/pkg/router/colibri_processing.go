@@ -61,6 +61,7 @@ func (c *colibriPacketProcessor) process() (processResult, error) {
 	if r, err := c.cryptographicValidation(); err != nil {
 		return r, err
 	}
+	// TODO(juagargi) add SCMP errors for bad packets, ingress and egress down, etc.
 	// Forward the packet to the correct entity
 	return c.forward()
 }
