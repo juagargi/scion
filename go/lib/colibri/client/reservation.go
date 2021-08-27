@@ -46,19 +46,19 @@ type Reservation struct {
 	request     *colibri.E2EReservationSetup
 	currentTrip *colibri.FullTrip // current trip for current setup
 	colibriPath snet.Path
-	onSuccess   RenewalSuccess
-	onError     RenewalError
+	onSuccess   RenewalSuccessHandler
+	onError     RenewalErrorHandler
 }
 
 // LessFunction is used to sort full trips. The function should return true if
 // a is preferred over b; false otherwise.
 type LessFunction func(a, b colibri.FullTrip) bool
 
-type RenewalSuccess func(*Reservation)
+type RenewalSuccessHandler func(*Reservation)
 
-// RenewalError is a function that is called whenever there is an error during renewal.
+// RenewalErrorHandler is a function that is called whenever there is an error during renewal.
 // If it returns a FullTrip, the Reservation will try a new setup with it.
-type RenewalError func(*Reservation, error) *colibri.FullTrip
+type RenewalErrorHandler func(*Reservation, error) *colibri.FullTrip
 
 var _ snet.Path = (*Reservation)(nil)
 
@@ -121,8 +121,8 @@ func NewReservation(ctx context.Context,
 // On renewal error, it runs the callback and stops the periodic renewal if said
 // function returns nil. If it returns a FullTrip, it is used to try to setup a new reservation.
 func (r *Reservation) Open(ctx context.Context,
-	successFcn RenewalSuccess,
-	fallbackFcn RenewalError) error {
+	successFcn RenewalSuccessHandler,
+	fallbackFcn RenewalErrorHandler) error {
 
 	if r.runner != nil {
 		return nil
@@ -224,7 +224,7 @@ func NewReservationForTesting(
 	currentTrip *colibri.FullTrip,
 	connection *snet.Conn,
 	colibriPath snet.Path,
-	onError RenewalError) *Reservation {
+	onError RenewalErrorHandler) *Reservation {
 
 	return &Reservation{
 		runner:                 runner,
