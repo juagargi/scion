@@ -1950,7 +1950,7 @@ func computeColibriMac(t *testing.T, c bool, key []byte, cpath *colibri.ColibriP
 
 	switch c {
 	case true:
-		err = libcolibri.CalculateColibriMacStatic(mac[:], key, cpath.InfoField,
+		err = libcolibri.MACStatic(mac[:], key, cpath.InfoField,
 			cpath.HopFields[hopIndex], spkt.SrcIA.A)
 		require.NoError(t, err)
 	case false:
@@ -1958,7 +1958,7 @@ func computeColibriMac(t *testing.T, c bool, key []byte, cpath *colibri.ColibriP
 		// err = libcolibri.CalculateColibriMacPacket(mac[:], key, cpath.InfoField, packetTimestamp,
 		// 	cpath.HopFields[hopIndex], spkt)
 		// require.NoError(t, err)
-		err = libcolibri.CalculateColibriMacStatic(mac[:], key, cpath.InfoField,
+		err = libcolibri.MACStatic(mac[:], key, cpath.InfoField,
 			cpath.HopFields[hopIndex], spkt.SrcIA.A)
 		require.NoError(t, err)
 	}

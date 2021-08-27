@@ -91,7 +91,7 @@ func TestComputeMAC(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			var macBR [4]byte
-			err := colibri.CalculateColibriMacStatic(macBR[:], privateKey, &tc.inf,
+			err := colibri.MACStatic(macBR[:], privateKey, &tc.inf,
 				&tc.hfs[tc.inf.CurrHF], srcAS)
 			require.NoError(t, err)
 

@@ -1129,12 +1129,9 @@ func computeMAC(buff []byte,
 	srcAS, dstAS addr.AS, isE2E bool) error {
 
 	var input [colibri.LengthInputDataRound16]byte
-	err := colibri.MACInput(input[:], suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls,
+	colibri.MACInputStatic(input[:], suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls,
 		tok.RLC, !isE2E, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
-	if err != nil {
-		return err
-	}
-	return colibri.StaticMAC(buff, key, input[:])
+	return colibri.MACStaticFromInput(buff, key, input[:])
 }
 
 // obtainRsvs will query the local DB if the src is local, or dial the corresponding col service.
