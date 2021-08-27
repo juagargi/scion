@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	libcolibri "github.com/scionproto/scion/go/lib/colibri"
+	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/slayers"
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
 	"github.com/scionproto/scion/go/lib/xtest"
@@ -42,9 +43,13 @@ func TestStaticMacInputGeneration(t *testing.T) {
 	c.InfoField.Rlc = 0x34
 	c.InfoField.Ver = 0x6
 
-	got, err := libcolibri.PrepareMacInputStatic(s.SrcIA.A, c.InfoField, c.HopFields[0])
+	buffer := make([]byte, libcolibri.LengthInputDataRound16)
+	err := libcolibri.MACInput(buffer, c.InfoField.ResIdSuffix, c.InfoField.ExpTick,
+		reservation.BWCls(c.InfoField.BwCls), reservation.RLC(c.InfoField.Rlc),
+		c.InfoField.C, c.InfoField.R, reservation.IndexNumber(c.InfoField.Ver),
+		s.SrcIA.A, s.DstIA.A, c.HopFields[0].IngressId, c.HopFields[0].EgressId)
 	assert.NoError(t, err)
-	assert.Equal(t, want, got)
+	assert.Equal(t, want, buffer)
 }
 
 func TestSigmaMacInputGeneration(t *testing.T) {
@@ -61,9 +66,10 @@ func TestSigmaMacInputGeneration(t *testing.T) {
 	c.InfoField.Rlc = 0x34
 	c.InfoField.Ver = 0x6
 
-	got, err := libcolibri.PrepareMacInputSigma(s, c.InfoField, c.HopFields[0])
+	var buffer [64]byte
+	inLen, err := libcolibri.PrepareMacInputSigma(buffer[:], s, c.InfoField, c.HopFields[0])
 	assert.NoError(t, err)
-	assert.Equal(t, want, got)
+	assert.Equal(t, want, buffer[:inLen])
 }
 
 func TestPacketMacInputGeneration(t *testing.T) {
@@ -77,9 +83,10 @@ func TestPacketMacInputGeneration(t *testing.T) {
 	var tsRel uint32 = 0x12345678
 	packetTimestamp := libcolibri.CreateColibriTimestamp(tsRel, 7, 1025)
 
-	got, err := libcolibri.PrepareMacInputPacket(packetTimestamp, c.InfoField, s)
+	var input [16]byte
+	err := libcolibri.PrepareMacInputPacket(input[:], packetTimestamp, c.InfoField, s)
 	assert.NoError(t, err)
-	assert.Equal(t, want, got)
+	assert.Equal(t, want, input[:])
 }
 
 func TestCreateColibriTimeStamp(t *testing.T) {
@@ -162,10 +169,11 @@ func TestStaticHVFVerification(t *testing.T) {
 	c.InfoField.C = true
 	// Generate MAC
 	privateKey := []byte("a_random_key_123")
-	mac, err := libcolibri.CalculateColibriMacStatic(privateKey, c.InfoField,
+	var mac [4]byte
+	err := libcolibri.CalculateColibriMacStatic(mac[:], privateKey, c.InfoField,
 		c.HopFields[c.InfoField.CurrHF], s.SrcIA.A)
 	assert.NoError(t, err)
-	c.HopFields[c.InfoField.CurrHF].Mac = mac
+	c.HopFields[c.InfoField.CurrHF].Mac = mac[:]
 
 	// Verify MAC correctly
 	err = libcolibri.VerifyMAC(privateKey, c.PacketTimestamp, c.InfoField,
@@ -186,10 +194,11 @@ func TestPacketHVFVerification(t *testing.T) {
 	c.InfoField.C = false
 	// Generate MAC
 	privateKey := []byte("a_random_key_123")
-	mac, err := libcolibri.CalculateColibriMacPacket(privateKey, c.InfoField, c.PacketTimestamp,
+	var mac [4]byte
+	err := libcolibri.CalculateColibriMacPacket(mac[:], privateKey, c.InfoField, c.PacketTimestamp,
 		c.HopFields[c.InfoField.CurrHF], s)
 	assert.NoError(t, err)
-	c.HopFields[c.InfoField.CurrHF].Mac = mac
+	c.HopFields[c.InfoField.CurrHF].Mac = mac[:]
 
 	// TODO(juagargi) uncomment after fixing the way we compute the E2E MAC
 	// // Verify MAC correctly

@@ -90,7 +90,8 @@ func TestComputeMAC(t *testing.T) {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			macBR, err := colibri.CalculateColibriMacStatic(privateKey, &tc.inf,
+			var macBR [4]byte
+			err := colibri.CalculateColibriMacStatic(macBR[:], privateKey, &tc.inf,
 				&tc.hfs[tc.inf.CurrHF], srcAS)
 			require.NoError(t, err)
 
@@ -109,7 +110,7 @@ func TestComputeMAC(t *testing.T) {
 			hf := tc.hfs[tc.inf.CurrHF]
 			err = store.ComputeMAC(tc.inf.ResIdSuffix, tok, srcAS, 0, hf.IngressId, hf.EgressId)
 			require.NoError(t, err)
-			require.Equal(t, macBR, tok.HopFields[0].Mac[:])
+			require.Equal(t, macBR[:], tok.HopFields[0].Mac[:])
 		})
 	}
 }

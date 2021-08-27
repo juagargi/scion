@@ -147,17 +147,17 @@ func VerifyTimestamp(expirationTick uint32, ts colibri.Timestamp) bool {
 func VerifyMAC(privateKey []byte, ts colibri.Timestamp, inf *colibri.InfoField,
 	currHop *colibri.HopField, s *slayers.SCION) error {
 
-	var mac []byte
+	var mac [4]byte
 	var err error
 
 	switch inf.C {
 	case true:
-		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s.SrcIA.A)
+		err = CalculateColibriMacStatic(mac[:], privateKey, inf, currHop, s.SrcIA.A)
 	case false:
 		// TODO(juagargi) we will use the defined MAC computation once we start timestamping
 		// the E2E colibri packets. For now do as if C=true. Toggle comments below.
-		mac, err = CalculateColibriMacStatic(privateKey, inf, currHop, s.SrcIA.A)
-		// mac, err = CalculateColibriMacPacket(privateKey, inf, ts, currHop, s)
+		err = CalculateColibriMacStatic(mac[:], privateKey, inf, currHop, s.SrcIA.A)
+		// err = CalculateColibriMacPacket(mac[:], privateKey, inf, ts, currHop, s)
 	}
 	if err != nil {
 		return err
@@ -168,90 +168,95 @@ func VerifyMAC(privateKey []byte, ts colibri.Timestamp, inf *colibri.InfoField,
 			"calculated", hex.EncodeToString(mac[:4]),
 			"packet", hex.EncodeToString(currHop.Mac[:4]))
 	}
-
 	return nil
 }
 
-func StaticMAC(key []byte, input []byte) ([]byte, error) {
+// StaticMAC computes the colibri static MAC and writes it into buffer. If buffer is not at
+// at least 4 bytes long, the functions panics at runtime.
+// input is LengthInputDataRound16 bytes long.
+// TODO(juagargi) move these buffer signatures to arrays with go 1.17 (whenever the compiler
+// stops crashing with the slice->array casts).
+func StaticMAC(buffer []byte, key []byte, input []byte) error {
+	_ = buffer[3]
 	// Initialize cryptographic MAC function
 	f, err := initColibriMac(key)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// Calculate CBC-MAC = first 4 bytes of the last CBC block
-	mac := make([]byte, len(input))
-	f.CryptBlocks(mac, input)
-	return mac[len(mac)-aes.BlockSize : len(mac)-aes.BlockSize+4], nil
+	var mac [LengthInputDataRound16]byte
+	f.CryptBlocks(mac[:], input)
+	copy(buffer, mac[len(mac)-aes.BlockSize:len(mac)-aes.BlockSize+4])
+	return nil
 }
 
-// CalculateColibriMacStatic calculates the static colibri MAC.
-// The private key comes from calling scrypto.DeriveColibriKey.
-func CalculateColibriMacStatic(privateKey []byte, inf *colibri.InfoField,
-	currHop *colibri.HopField, srcAS addr.AS) ([]byte, error) {
+// CalculateColibriMacStatic uses the functions MACInput and StaticMAC to compute the MAC.
+func CalculateColibriMacStatic(buffer []byte, privateKey []byte, inf *colibri.InfoField,
+	currHop *colibri.HopField, srcAS addr.AS) error {
 
+	var input [LengthInputDataRound16]byte
+	err := MACInput(input[:], inf.ResIdSuffix, inf.ExpTick, reservation.BWCls(inf.BwCls),
+		reservation.RLC(inf.Rlc), inf.C, inf.R, reservation.IndexNumber(inf.Ver), srcAS, srcAS, // deleteme FIXME
+		currHop.IngressId, currHop.EgressId)
+	if err != nil {
+		return err
+	}
+	return StaticMAC(buffer, privateKey, input[:])
+}
+
+// calculateColibriMacSigma calculates the "sigma" authenticator, and
+// writes it in buffer, which must be at least 16 bytes long (or runtime panic).
+func calculateColibriMacSigma(buffer []byte, privateKey []byte, inf *colibri.InfoField,
+	currHop *colibri.HopField, s *slayers.SCION) error {
+
+	_ = buffer[15]
 	// Initialize cryptographic MAC function
 	f, err := initColibriMac(privateKey)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// Prepare the input for the MAC function
-	input, err := prepareMacInputStatic(srcAS, inf, currHop)
+	var input [64]byte
+	inLen, err := prepareMacInputSigma(input[:], s, inf, currHop)
 	if err != nil {
-		return nil, err
-	}
-	// Calculate CBC-MAC = first 4 bytes of the last CBC block
-	mac := make([]byte, len(input))
-	f.CryptBlocks(mac, input)
-	return mac[len(mac)-aes.BlockSize : len(mac)-aes.BlockSize+4], nil
-}
-
-// calculateColibriMacSigma calculates the "sigma" authenticator.
-func calculateColibriMacSigma(privateKey []byte, inf *colibri.InfoField,
-	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
-
-	// Initialize cryptographic MAC function
-	f, err := initColibriMac(privateKey)
-	if err != nil {
-		return nil, err
-	}
-	// Prepare the input for the MAC function
-	input, err := prepareMacInputSigma(s, inf, currHop)
-	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Calculate CBC-MAC = last CBC block
-	mac := make([]byte, len(input))
-	f.CryptBlocks(mac, input)
-	return mac[len(mac)-aes.BlockSize:], nil
+	mac := make([]byte, inLen)
+	f.CryptBlocks(mac, input[:inLen])
+	copy(buffer, mac[inLen-aes.BlockSize:])
+	return nil
 }
 
-// CalculateColibriMacPacket calculates the per-packet colibri MAC.
-func CalculateColibriMacPacket(privateKey []byte, inf *colibri.InfoField, ts colibri.Timestamp,
-	currHop *colibri.HopField, s *slayers.SCION) ([]byte, error) {
+// CalculateColibriMacPacket calculates the per-packet colibri MAC and writes it into buffer.
+// If buffer is not at least 4 bytes long, the function panics at runtime.
+func CalculateColibriMacPacket(buffer []byte, privateKey []byte, inf *colibri.InfoField, ts colibri.Timestamp,
+	currHop *colibri.HopField, s *slayers.SCION) error {
 
-	auth, err := calculateColibriMacSigma(privateKey, inf, currHop, s)
+	var sigma [16]byte
+	err := calculateColibriMacSigma(sigma[:], privateKey, inf, currHop, s)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// Initialize cryptographic MAC function
-	f, err := initColibriMac(auth)
+	f, err := initColibriMac(sigma[:])
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// Prepare the input for the MAC function
-	input, err := prepareMacInputPacket(ts, inf, s)
+	var input [16]byte
+	err = prepareMacInputPacket(input[:], ts, inf, s)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Calculate CBC-MAC = first 4 bytes of the last CBC block
 	mac := make([]byte, len(input))
-	f.CryptBlocks(mac, input)
-	return mac[len(mac)-aes.BlockSize : len(mac)-12], nil
+	f.CryptBlocks(mac, input[:])
+	copy(buffer[:4], mac[len(mac)-aes.BlockSize:len(mac)-12])
+	return nil
 }
-
-var zeroesBuff [12]byte
 
 // MACInput prepares the buffer using the passed parameters to be used as input for the
 // MAC computation.
@@ -264,6 +269,11 @@ func MACInput(buffer []byte, suffix []byte, expTick uint32,
 	if len(buffer) < LengthInputData {
 		return serrors.New("buffer too small", "actual", len(buffer), "expected", LengthInputData)
 	}
+	// TODO(juagargi) Note from matzf:
+	// For the segment reservations, this is only 4 bytes, right? Removing these 8 bytes of
+	// padding would seem to allow to bring this down to a single block for the static MAC
+	// (although these are probably not the ones that we need to optimize).
+	var zeroesBuff [12]byte
 	copy(buffer[:12], zeroesBuff[:])
 	copy(buffer[:12], suffix)
 	binary.BigEndian.PutUint32(buffer[12:16], expTick)
@@ -301,23 +311,16 @@ func initColibriMac(key []byte) (cipher.BlockMode, error) {
 	return mode, nil
 }
 
-func prepareMacInputStatic(srcAS addr.AS, inf *colibri.InfoField,
-	hop *colibri.HopField) ([]byte, error) {
+// prepareMacInputSigma copies the sigma function input values into the buffer,
+// and the function returns its length.
+// The buffer must be at least 64 bytes long, or a runtime panic will be issued.
+// 64 = 30 (standard MAC input) + 1 (flags) + 16 (max src len) + 16 (dst); aligned to 16 bytes.
+func prepareMacInputSigma(buffer []byte, s *slayers.SCION, inf *colibri.InfoField,
+	hop *colibri.HopField) (int, error) {
 
-	// Create buffer large enough to store InputData, with length aligned to 16 bytes
-	buffer := make([]byte, LengthInputDataRound16)
-	err := prepareInputData(srcAS, inf, hop, buffer)
-	if err != nil {
-		return nil, err
-	}
-	return buffer, nil
-}
-
-func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
-	hop *colibri.HopField) ([]byte, error) {
-
+	_ = buffer[63]
 	// Check consistency of SL and DL with the actual address lengths
-	srcLen := len(s.RawSrcAddr)
+	srcLen := len(s.RawSrcAddr) // max 16 bytes
 	dstLen := len(s.RawDstAddr)
 	consistent := (4*(int(s.DstAddrLen)+1) == dstLen) &&
 		(4*(int(s.SrcAddrLen)+1) == srcLen)
@@ -334,28 +337,28 @@ func prepareMacInputSigma(s *slayers.SCION, inf *colibri.InfoField,
 	// up to the next multiple of aes.BlockSize bytes
 	bufLen := LengthInputData + 1 + srcLen + dstLen
 	nrBlocks := (bufLen-1)/aes.BlockSize + 1
-	buffer := make([]byte, aes.BlockSize*nrBlocks)
+	inputLen := aes.BlockSize * nrBlocks
 
-	err := prepareInputData(s.SrcIA.A, inf, hop, buffer)
+	err := MACInput(buffer[:], inf.ResIdSuffix, inf.ExpTick, reservation.BWCls(inf.BwCls),
+		reservation.RLC(inf.Rlc), inf.C, inf.R, reservation.IndexNumber(inf.Ver), s.SrcIA.A, s.SrcIA.A,
+		hop.IngressId, hop.EgressId) // deleteme FIXME(juagargi) no dstIA used here!
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	buffer[LengthInputData] = flags
 	copy(buffer[LengthInputData+1:], s.RawSrcAddr)
 	copy(buffer[LengthInputData+1+srcLen:], s.RawDstAddr)
 
-	return buffer, nil
+	return inputLen, nil
 }
 
-func prepareMacInputPacket(ts colibri.Timestamp, inf *colibri.InfoField,
-	s *slayers.SCION) ([]byte, error) {
+// prepareMacInputPacket prepares the input for an e2e packet, and copies it into buffer.
+// buffer must be at least 16 bytes long.
+func prepareMacInputPacket(buffer []byte, ts colibri.Timestamp, inf *colibri.InfoField,
+	s *slayers.SCION) error {
 
-	if inf == nil {
-		return nil, serrors.New("invalid input")
-	}
-
-	input := make([]byte, aes.BlockSize)
-	copy(input[:8], ts[:])
+	_ = buffer[15]
+	copy(buffer[:8], ts[:])
 
 	baseHdrLen := uint64(slayers.CmnHdrLen + s.AddrHdrLen())
 	hfcount := uint64(inf.HFCount)
@@ -363,47 +366,11 @@ func prepareMacInputPacket(ts colibri.Timestamp, inf *colibri.InfoField,
 	payloadLen := uint64(inf.OrigPayLen)
 	total64 := baseHdrLen + colHdrLen + payloadLen
 	if total64 > (1 << 16) {
-		return nil, serrors.New("total packet length bigger than 2^16")
+		return serrors.New("total packet length bigger than 2^16")
 	}
 	total16 := uint16(total64)
 
-	binary.BigEndian.PutUint16(input[8:10], total16)
-
-	return input, nil
-}
-
-// prepareInputData writes InputData to the given buffer.
-func prepareInputData(srcAS addr.AS, inf *colibri.InfoField,
-	hop *colibri.HopField, buffer []byte) error {
-
-	if inf == nil || hop == nil {
-		return serrors.New("invalid input")
-	}
-	if len(buffer) < LengthInputData {
-		return serrors.New("provided buffer is too small")
-	}
-	// TODO(juagargi) Note from matzf:
-	// For the segment reservations, this is only 4 bytes, right? Removing these 8 bytes of
-	// padding would seem to allow to bring this down to a single block for the static MAC
-	// (although these are probably not the ones that we need to optimize).
-	copy(buffer[0:12], inf.ResIdSuffix)
-	binary.BigEndian.PutUint32(buffer[12:16], inf.ExpTick)
-	buffer[16] = inf.BwCls
-	buffer[17] = inf.Rlc
-	buffer[18] = 0
-
-	// Version | C | 0
-	var flags uint8
-	if inf.C {
-		flags = uint8(1) << 3
-	}
-	flags += inf.Ver << 4
-	buffer[19] = flags
-
-	binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
-	binary.BigEndian.PutUint16(buffer[20:22], hop.IngressId)
-	binary.BigEndian.PutUint16(buffer[22:24], hop.EgressId)
-
+	binary.BigEndian.PutUint16(buffer[8:10], total16)
 	return nil
 }
 

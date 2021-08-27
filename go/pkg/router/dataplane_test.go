@@ -1945,25 +1945,25 @@ func computeFullMAC(t *testing.T, key []byte, info *path.InfoField, hf *path.Hop
 func computeColibriMac(t *testing.T, c bool, key []byte, cpath *colibri.ColibriPath,
 	spkt *slayers.SCION, hopIndex uint8, packetTimestamp colibri.Timestamp) []byte {
 
-	var mac []byte
+	var mac [4]byte
 	var err error
 
 	switch c {
 	case true:
-		mac, err = libcolibri.CalculateColibriMacStatic(key, cpath.InfoField,
+		err = libcolibri.CalculateColibriMacStatic(mac[:], key, cpath.InfoField,
 			cpath.HopFields[hopIndex], spkt.SrcIA.A)
 		require.NoError(t, err)
 	case false:
 		// TODO(juagargi) revert comments after fixing how we compute the E2E MAC
-		// mac, err = libcolibri.CalculateColibriMacPacket(key, cpath.InfoField, packetTimestamp,
+		// err = libcolibri.CalculateColibriMacPacket(mac[:], key, cpath.InfoField, packetTimestamp,
 		// 	cpath.HopFields[hopIndex], spkt)
 		// require.NoError(t, err)
-		mac, err = libcolibri.CalculateColibriMacStatic(key, cpath.InfoField,
+		err = libcolibri.CalculateColibriMacStatic(mac[:], key, cpath.InfoField,
 			cpath.HopFields[hopIndex], spkt.SrcIA.A)
 		require.NoError(t, err)
 	}
 
-	return mac
+	return mac[:]
 }
 
 func bfd() control.BFD {

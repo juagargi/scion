@@ -1120,21 +1120,21 @@ func (s *Store) computeMAC(suffix []byte, tok *reservation.Token, srcAS, dstAS a
 		tok.HopFields = append([]reservation.HopField{*hf}, tok.HopFields...)
 		hf = &tok.HopFields[0]
 	}
-	mac, err := computeMAC(s.colibriKey, suffix, tok, hf, srcAS, dstAS, isE2E)
-	copy(hf.Mac[:], mac)
-	return err
+	return computeMAC(hf.Mac[:], s.colibriKey, suffix, tok, hf, srcAS, dstAS, isE2E)
 }
 
-func computeMAC(key, suffix []byte, tok *reservation.Token, hf *reservation.HopField,
-	srcAS, dstAS addr.AS, isE2E bool) ([]byte, error) {
+// computeMAC returns the MAC into buff, which has to be at least 4 bytes long (or runtime panic).
+func computeMAC(buff []byte,
+	key, suffix []byte, tok *reservation.Token, hf *reservation.HopField,
+	srcAS, dstAS addr.AS, isE2E bool) error {
 
-	buff := make([]byte, colibri.LengthInputDataRound16)
-	err := colibri.MACInput(buff, suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls, tok.RLC,
-		!isE2E, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
+	var input [colibri.LengthInputDataRound16]byte
+	err := colibri.MACInput(input[:], suffix, uint32(tok.InfoField.ExpirationTick), tok.BWCls,
+		tok.RLC, !isE2E, false, tok.Idx, srcAS, dstAS, hf.Ingress, hf.Egress)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return colibri.StaticMAC(key, buff)
+	return colibri.StaticMAC(buff, key, input[:])
 }
 
 // obtainRsvs will query the local DB if the src is local, or dial the corresponding col service.
