@@ -213,7 +213,8 @@ func realMain() error {
 		RevCache:     revCache,
 		TopoProvider: itopo.Provider(),
 		DRKeyStore:   drkeyStore,
-		Colibri:      &colibri.DaemonClient{Dialer: dialer},
+		ColFetcher:   colibri.NewFetcher(dialer),
+		ColClient:    &colibri.DaemonClient{Dialer: dialer},
 	}))
 
 	promgrpc.Register(server)
