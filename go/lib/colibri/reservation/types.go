@@ -152,8 +152,8 @@ const DurationPerTick = SecsPerTick * time.Second
 const TicksInSegmentRsv = 80
 const TicksInE2ERsv = 4
 
-const SegRsvDuration = TicksInSegmentRsv * DurationPerTick
-const E2ERsvDuration = TicksInE2ERsv * DurationPerTick
+const SegRsvDuration = TicksInSegmentRsv * DurationPerTick // ~ 5m
+const E2ERsvDuration = TicksInE2ERsv * DurationPerTick     // 16s
 
 // Tick represents a slice of time of 4 seconds.
 type Tick uint32

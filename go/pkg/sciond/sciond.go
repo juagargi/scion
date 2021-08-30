@@ -109,7 +109,8 @@ type ServerConfig struct {
 	Engine       trust.Engine
 	TopoProvider topology.Provider
 	DRKeyStore   drkeystorage.ClientStore
-	Colibri      *colibri.DaemonClient
+	ColFetcher   colibri.Fetcher
+	ColClient    *colibri.DaemonClient
 }
 
 // NewServer constructs a daemon API server.
@@ -120,7 +121,8 @@ func NewServer(cfg ServerConfig) *servers.DaemonServer {
 		RevCache:     cfg.RevCache,
 		TopoProvider: cfg.TopoProvider,
 		DRKeyStore:   cfg.DRKeyStore,
-		Colibri:      cfg.Colibri,
+		ColFetcher:   cfg.ColFetcher,
+		ColClient:    cfg.ColClient,
 		Metrics: servers.Metrics{
 			PathsRequests: servers.RequestMetrics{
 				Requests: metrics.NewPromCounterFrom(prometheus.CounterOpts{

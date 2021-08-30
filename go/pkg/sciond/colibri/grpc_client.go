@@ -30,22 +30,6 @@ type DaemonClient struct {
 	Dialer grpc.Dialer
 }
 
-// ListReservations will dial to the intra AS colibri service to get the list of rsvs.
-func (c *DaemonClient) ListReservations(ctx context.Context, req *sdpb.ColibriListRequest) (
-	*sdpb.ColibriListResponse, error) {
-
-	if req == nil {
-		return nil, serrors.New("bad nil request")
-	}
-	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
-	if err != nil {
-		return nil, err
-	}
-	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
-	response, err := client.ListStitchables(ctx, req.Base)
-	return &sdpb.ColibriListResponse{Base: response}, err
-}
-
 // SetupReservation will dial to the intra AS colibri service to setup an e2e reservation.
 func (c *DaemonClient) SetupReservation(ctx context.Context, req *sdpb.ColibriSetupRequest) (
 	*sdpb.ColibriSetupResponse, error) {
