@@ -2,7 +2,10 @@ load("//lint:go.bzl", "go_library")
 
 go_library(
     name = "go_default_library",
-    srcs = ["grpc_client.go"],
+    srcs = [
+        "fetcher.go",
+        "grpc_client.go",
+    ],
     importpath = "github.com/scionproto/scion/go/pkg/sciond/colibri",
     visibility = ["//visibility:public"],
     deps = [
@@ -13,5 +16,6 @@ go_library(
         "//go/pkg/grpc:go_default_library",
         "//go/pkg/proto/colibri:go_default_library",
         "//go/pkg/proto/daemon:go_default_library",
+        "@org_golang_x_sync//singleflight:go_default_library",
     ],
 )

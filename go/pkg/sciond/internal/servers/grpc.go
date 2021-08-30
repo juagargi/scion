@@ -53,7 +53,8 @@ type DaemonServer struct {
 	RevCache     revcache.RevCache
 	ASInspector  trust.Inspector
 	DRKeyStore   drkeystorage.ClientStore
-	Colibri      *colibri.DaemonClient
+	ColFetcher   colibri.Fetcher
+	ColClient    *colibri.DaemonClient
 
 	Metrics Metrics
 
@@ -385,13 +386,13 @@ func (s *DaemonServer) ColibriListRsvs(ctx context.Context, req *sdpb.ColibriLis
 
 	dstIA := addr.IAInt(req.Base.DstIa).IA()
 	log.FromCtx(ctx).Debug("fetching reservation list", "dst", dstIA.String())
-	return s.Colibri.ListReservations(ctx, req)
+	return s.ColFetcher.ListReservations(ctx, req)
 }
 
 func (s *DaemonServer) ColibriSetupRsv(ctx context.Context, req *sdpb.ColibriSetupRequest) (
 	*sdpb.ColibriSetupResponse, error) {
 
-	res, err := s.Colibri.SetupReservation(ctx, req)
+	res, err := s.ColClient.SetupReservation(ctx, req)
 	if err != nil {
 		return res, err
 	}
@@ -414,5 +415,5 @@ func (s *DaemonServer) ColibriSetupRsv(ctx context.Context, req *sdpb.ColibriSet
 func (s *DaemonServer) ColibriCleanupRsv(ctx context.Context, req *sdpb.ColibriCleanupRequest) (
 	*sdpb.ColibriCleanupResponse, error) {
 
-	return s.Colibri.CleanupReservation(ctx, req)
+	return s.ColClient.CleanupReservation(ctx, req)
 }
