@@ -1196,6 +1196,7 @@ func TestProcessPkt(t *testing.T) {
 }
 
 func TestProcessColibriPkt(t *testing.T) {
+	now := time.Now()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -1220,7 +1221,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(false, false, false, 0, 5, expTick, tsRel)
-				cpath.HopFields[0].Mac = computeColibriMac(t, false, key, cpath, spkt, 0,
+				cpath.HopFields[0].Mac = computeColibriMac(t, key, cpath, spkt, 0,
 					cpath.PacketTimestamp)
 
 				if !afterProcessing {
@@ -1250,7 +1251,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(false, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, false, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
 
 				if !afterProcessing {
@@ -1280,7 +1281,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(false, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, false, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
 
 				ret := toMsg(t, spkt, cpath)
@@ -1304,7 +1305,7 @@ func TestProcessColibriPkt(t *testing.T) {
 				spkt.SetDstAddr(dst)
 				spkt.DstIA = xtest.MustParseIA("1-ff00:0:110")
 
-				cpath.HopFields[4].Mac = computeColibriMac(t, false, key, cpath, spkt, 4,
+				cpath.HopFields[4].Mac = computeColibriMac(t, key, cpath, spkt, 4,
 					cpath.PacketTimestamp)
 
 				ret := toMsg(t, spkt, cpath)
@@ -1330,9 +1331,9 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(false, false, false, 4, 5, expTick, tsRel)
-				cpath.HopFields[4].Mac = computeColibriMac(t, false, key, cpath, spkt, 4,
+				cpath.HopFields[4].Mac = computeColibriMac(t, key, cpath, spkt, 4,
 					cpath.PacketTimestamp)
-				cpath.Reverse()
+				reverse(t, spkt, cpath)
 
 				if !afterProcessing {
 					return toMsg(t, spkt, cpath)
@@ -1361,9 +1362,9 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(false, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, false, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
-				cpath.Reverse()
+				reverse(t, spkt, cpath)
 
 				if !afterProcessing {
 					return toMsg(t, spkt, cpath)
@@ -1392,9 +1393,9 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(false, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, false, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
-				cpath.Reverse()
+				reverse(t, spkt, cpath)
 
 				ret := toMsg(t, spkt, cpath)
 				if afterProcessing {
@@ -1414,11 +1415,11 @@ func TestProcessColibriPkt(t *testing.T) {
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(false, false, false, 0, 5, expTick, tsRel)
 				dst := &net.IPAddr{IP: net.ParseIP("10.0.0.3").To4()}
-				spkt.SetDstAddr(dst)
-				spkt.DstIA = xtest.MustParseIA("1-ff00:0:110")
-				cpath.HopFields[0].Mac = computeColibriMac(t, false, key, cpath, spkt, 0,
+				spkt.SetSrcAddr(dst)
+				spkt.SrcIA = xtest.MustParseIA("1-ff00:0:110")
+				cpath.HopFields[0].Mac = computeColibriMac(t, key, cpath, spkt, 0,
 					cpath.PacketTimestamp)
-				cpath.Reverse()
+				reverse(t, spkt, cpath)
 
 				ret := toMsg(t, spkt, cpath)
 				if afterProcessing {
@@ -1443,7 +1444,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 0, 5, expTick, tsRel)
-				cpath.HopFields[0].Mac = computeColibriMac(t, true, key, cpath, spkt, 0,
+				cpath.HopFields[0].Mac = computeColibriMac(t, key, cpath, spkt, 0,
 					cpath.PacketTimestamp)
 
 				if !afterProcessing {
@@ -1474,7 +1475,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, true, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
 
 				ret := toMsg(t, spkt, cpath)
@@ -1498,7 +1499,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, true, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
 
 				ret := toMsg(t, spkt, cpath)
@@ -1527,7 +1528,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, true, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
 
 				if !afterProcessing {
@@ -1558,7 +1559,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 4, 5, expTick, tsRel)
-				cpath.HopFields[4].Mac = computeColibriMac(t, true, key, cpath, spkt, 4,
+				cpath.HopFields[4].Mac = computeColibriMac(t, key, cpath, spkt, 4,
 					cpath.PacketTimestamp)
 
 				ret := toMsg(t, spkt, cpath)
@@ -1587,9 +1588,9 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 4, 5, expTick, tsRel)
-				cpath.HopFields[4].Mac = computeColibriMac(t, true, key, cpath, spkt, 4,
+				cpath.HopFields[4].Mac = computeColibriMac(t, key, cpath, spkt, 4,
 					cpath.PacketTimestamp)
-				cpath.Reverse()
+				reverse(t, spkt, cpath)
 
 				if !afterProcessing {
 					return toMsg(t, spkt, cpath)
@@ -1619,9 +1620,9 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, true, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
-				cpath.Reverse()
+				reverse(t, spkt, cpath)
 
 				ret := toMsg(t, spkt, cpath)
 				if !afterProcessing {
@@ -1649,9 +1650,9 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 2, 5, expTick, tsRel)
-				cpath.HopFields[2].Mac = computeColibriMac(t, true, key, cpath, spkt, 2,
+				cpath.HopFields[2].Mac = computeColibriMac(t, key, cpath, spkt, 2,
 					cpath.PacketTimestamp)
-				cpath.Reverse()
+				reverse(t, spkt, cpath)
 
 				if !afterProcessing {
 					return toMsg(t, spkt, cpath)
@@ -1681,9 +1682,9 @@ func TestProcessColibriPkt(t *testing.T) {
 			},
 			mockMsg: func(afterProcessing bool, expTick, tsRel uint32) *ipv4.Message {
 				spkt, cpath := prepColibriBaseMsg(true, false, false, 0, 5, expTick, tsRel)
-				cpath.HopFields[0].Mac = computeColibriMac(t, true, key, cpath, spkt, 0,
+				cpath.HopFields[0].Mac = computeColibriMac(t, key, cpath, spkt, 0,
 					cpath.PacketTimestamp)
-				cpath.Reverse()
+				reverse(t, spkt, cpath)
 
 				ret := toMsg(t, spkt, cpath)
 				if !afterProcessing {
@@ -1706,7 +1707,7 @@ func TestProcessColibriPkt(t *testing.T) {
 			t.Parallel()
 			dp := tc.prepareDP(ctrl)
 
-			expTick := uint32(time.Now().Unix()/4) + 3
+			expTick := uint32(now.Unix()/4) + 3
 			tsRel, err := libcolibri.CreateTsRel(expTick)
 			assert.NoError(t, err)
 			input, want := tc.mockMsg(false, expTick, tsRel), tc.mockMsg(true, expTick, tsRel)
@@ -1923,6 +1924,18 @@ func prepColibriBaseMsg(c, r, s bool, currHF, hfCount uint8, expTick,
 	return spkt, cpath
 }
 
+// reverse reverses t scion packet with a colibri path. It changes the src and dst addresses,
+// because when we see a reversed packet, its src and dst addresses are swapped.
+func reverse(t *testing.T, spkt *slayers.SCION, path path.Path) {
+	spkt.DstAddrType, spkt.SrcAddrType = spkt.SrcAddrType, spkt.DstAddrType
+	spkt.DstAddrLen, spkt.SrcAddrLen = spkt.SrcAddrLen, spkt.DstAddrLen
+	spkt.DstIA, spkt.SrcIA = spkt.SrcIA, spkt.DstIA
+	spkt.RawDstAddr, spkt.RawSrcAddr = spkt.RawSrcAddr, spkt.RawDstAddr
+
+	_, err := path.Reverse()
+	require.NoError(t, err)
+}
+
 func computeMAC(t *testing.T, key []byte, info *path.InfoField, hf *path.HopField) []byte {
 	mac, err := scrypto.InitMac(key)
 	require.NoError(t, err)
@@ -1935,24 +1948,24 @@ func computeFullMAC(t *testing.T, key []byte, info *path.InfoField, hf *path.Hop
 	return path.FullMAC(mac, info, hf, nil)
 }
 
-func computeColibriMac(t *testing.T, c bool, key []byte, cpath *colibri.ColibriPath,
+func computeColibriMac(t *testing.T, key []byte, cpath *colibri.ColibriPath,
 	spkt *slayers.SCION, hopIndex uint8, packetTimestamp colibri.Timestamp) []byte {
 
 	var mac [4]byte
 	var err error
 
-	switch c {
+	switch cpath.InfoField.C {
 	case true:
 		err = libcolibri.MACStatic(mac[:], key, cpath.InfoField,
-			cpath.HopFields[hopIndex], spkt.SrcIA.A)
+			cpath.HopFields[hopIndex], spkt.SrcIA.A, spkt.DstIA.A)
 		require.NoError(t, err)
 	case false:
 		// TODO(juagargi) revert comments after fixing how we compute the E2E MAC
-		// err = libcolibri.CalculateColibriMacPacket(mac[:], key, cpath.InfoField, packetTimestamp,
+		// err = libcolibri.MACE2E(mac[:], key, cpath.InfoField, packetTimestamp,
 		// 	cpath.HopFields[hopIndex], spkt)
 		// require.NoError(t, err)
 		err = libcolibri.MACStatic(mac[:], key, cpath.InfoField,
-			cpath.HopFields[hopIndex], spkt.SrcIA.A)
+			cpath.HopFields[hopIndex], spkt.SrcIA.A, spkt.DstIA.A)
 		require.NoError(t, err)
 	}
 

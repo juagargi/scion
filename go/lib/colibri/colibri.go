@@ -152,11 +152,11 @@ func VerifyMAC(privateKey []byte, ts colibri.Timestamp, inf *colibri.InfoField,
 
 	switch inf.C {
 	case true:
-		err = MACStatic(mac[:], privateKey, inf, currHop, s.SrcIA.A)
+		err = MACStatic(mac[:], privateKey, inf, currHop, s.SrcIA.A, s.DstIA.A)
 	case false:
 		// TODO(juagargi) we will use the defined MAC computation once we start timestamping
 		// the E2E colibri packets. For now do as if C=true. Toggle comments below.
-		err = MACStatic(mac[:], privateKey, inf, currHop, s.SrcIA.A)
+		err = MACStatic(mac[:], privateKey, inf, currHop, s.SrcIA.A, s.DstIA.A)
 		// err = MACE2E(mac[:], privateKey, inf, ts, currHop, s)
 	}
 	if err != nil {
@@ -200,10 +200,9 @@ func MACInputStatic(buffer []byte, suffix []byte, expTick uint32,
 	flags += uint8(idx) << 4
 	buffer[19] = flags
 	if reverseFlag {
-		binary.BigEndian.PutUint64(buffer[22:30], uint64(dstAS))
-	} else {
-		binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
+		srcAS = dstAS
 	}
+	binary.BigEndian.PutUint64(buffer[22:30], uint64(srcAS))
 	binary.BigEndian.PutUint16(buffer[20:22], ingress)
 	binary.BigEndian.PutUint16(buffer[22:24], egress)
 }
@@ -230,11 +229,11 @@ func MACStaticFromInput(buffer []byte, key []byte, input []byte) error {
 // MACStatic uses the functions MACInputStatic and
 // MACStaticFromInput to compute the MAC.
 func MACStatic(buffer []byte, privateKey []byte, inf *colibri.InfoField,
-	currHop *colibri.HopField, srcAS addr.AS) error {
+	currHop *colibri.HopField, srcAS, dstAS addr.AS) error {
 
 	var input [LengthInputDataRound16]byte
 	MACInputStatic(input[:], inf.ResIdSuffix, inf.ExpTick, reservation.BWCls(inf.BwCls),
-		reservation.RLC(inf.Rlc), inf.C, inf.R, reservation.IndexNumber(inf.Ver), srcAS, srcAS, // deleteme FIXME
+		reservation.RLC(inf.Rlc), inf.C, inf.R, reservation.IndexNumber(inf.Ver), srcAS, dstAS,
 		currHop.IngressId, currHop.EgressId)
 	return MACStaticFromInput(buffer, privateKey, input[:])
 }
@@ -314,19 +313,28 @@ func MACInputSigma(buffer []byte, s *slayers.SCION, inf *colibri.InfoField,
 	hop *colibri.HopField) (int, error) {
 
 	_ = buffer[63]
+	// prepare forward or reverse fields
+	srcAddrType, dstAddrType := s.SrcAddrType, s.DstAddrType
+	srcAddrLen, dstAddrLen := s.SrcAddrLen, s.DstAddrLen
+	rawSrcAddr, rawDstAddr := s.RawSrcAddr, s.RawDstAddr
+	if inf.R {
+		srcAddrType, dstAddrType = dstAddrType, srcAddrType
+		srcAddrLen, dstAddrLen = dstAddrLen, srcAddrLen
+		rawSrcAddr, rawDstAddr = rawDstAddr, rawSrcAddr
+	}
 	// Check consistency of SL and DL with the actual address lengths
-	srcLen := len(s.RawSrcAddr) // max 16 bytes
-	dstLen := len(s.RawDstAddr)
-	consistent := (4*(int(s.DstAddrLen)+1) == dstLen) &&
-		(4*(int(s.SrcAddrLen)+1) == srcLen)
+	srcLen := len(rawSrcAddr) // max 16 bytes
+	dstLen := len(rawDstAddr)
+	consistent := (4*(int(dstAddrLen)+1) == dstLen) &&
+		(4*(int(srcAddrLen)+1) == srcLen)
 	if !consistent {
 		panic(fmt.Sprintf("SL/DL not consistent with actual address lengths. DL: %d, SL: %d",
-			s.DstAddrLen, s.SrcAddrLen))
+			dstAddrLen, srcAddrLen))
 	}
 
 	// Write SL/ST/DL/DT into one single byte
-	flags := uint8(s.DstAddrType&0x3)<<6 | uint8(s.DstAddrLen&0x3)<<4 |
-		uint8(s.SrcAddrType&0x3)<<2 | uint8(s.SrcAddrLen&0x3)
+	flags := uint8(dstAddrType&0x3)<<6 | uint8(dstAddrLen&0x3)<<4 |
+		uint8(srcAddrType&0x3)<<2 | uint8(srcAddrLen&0x3)
 
 	// The MAC input consists of the InputData plus the host addresses and the flags, rounded
 	// up to the next multiple of aes.BlockSize bytes
@@ -335,11 +343,11 @@ func MACInputSigma(buffer []byte, s *slayers.SCION, inf *colibri.InfoField,
 	inputLen := aes.BlockSize * nrBlocks
 
 	MACInputStatic(buffer[:], inf.ResIdSuffix, inf.ExpTick, reservation.BWCls(inf.BwCls),
-		reservation.RLC(inf.Rlc), inf.C, inf.R, reservation.IndexNumber(inf.Ver), s.SrcIA.A, s.SrcIA.A,
-		hop.IngressId, hop.EgressId) // deleteme FIXME(juagargi) no dstIA used here!
+		reservation.RLC(inf.Rlc), inf.C, inf.R, reservation.IndexNumber(inf.Ver),
+		s.SrcIA.A, s.DstIA.A, hop.IngressId, hop.EgressId)
 	buffer[LengthInputData] = flags
-	copy(buffer[LengthInputData+1:], s.RawSrcAddr)
-	copy(buffer[LengthInputData+1+srcLen:], s.RawDstAddr)
+	copy(buffer[LengthInputData+1:], rawSrcAddr)
+	copy(buffer[LengthInputData+1+srcLen:], rawDstAddr)
 
 	return inputLen, nil
 }

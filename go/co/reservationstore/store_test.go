@@ -59,6 +59,7 @@ func TestDebugAdmitE2EReservation(t *testing.T) {
 func TestComputeMAC(t *testing.T) {
 	privateKey := xtest.MustParseHexString("5b56986be02a37d30110c854b5f25959")
 	srcAS := xtest.MustParseAS("ff00:0:111")
+	dstAS := xtest.MustParseAS("ff00:0:112")
 
 	cases := map[string]struct {
 		inf      collayer.InfoField  // used to compute MAC in the BR
@@ -92,7 +93,7 @@ func TestComputeMAC(t *testing.T) {
 			t.Parallel()
 			var macBR [4]byte
 			err := colibri.MACStatic(macBR[:], privateKey, &tc.inf,
-				&tc.hfs[tc.inf.CurrHF], srcAS)
+				&tc.hfs[tc.inf.CurrHF], srcAS, dstAS)
 			require.NoError(t, err)
 
 			store := &reservationstore.Store{}

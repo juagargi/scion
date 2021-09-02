@@ -170,7 +170,7 @@ func TestStaticHVFVerification(t *testing.T) {
 	privateKey := []byte("a_random_key_123")
 	var mac [4]byte
 	err := libcolibri.MACStatic(mac[:], privateKey, c.InfoField,
-		c.HopFields[c.InfoField.CurrHF], s.SrcIA.A)
+		c.HopFields[c.InfoField.CurrHF], s.SrcIA.A, s.DstIA.A)
 	assert.NoError(t, err)
 	c.HopFields[c.InfoField.CurrHF].Mac = mac[:]
 

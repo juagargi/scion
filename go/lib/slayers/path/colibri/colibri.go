@@ -94,6 +94,7 @@ func (c *ColibriPath) SerializeTo(b []byte) error {
 
 // Reverse the path: toggle the R-flag, invert the order of the hop fields, and adapt the CurrHF.
 func (c *ColibriPath) Reverse() (path.Path, error) {
+	// TODO(juagargi) many checks in regular processing. Validate path at beginning and remove these
 	if c == nil {
 		return nil, serrors.New("colibri path must not be nil")
 	}

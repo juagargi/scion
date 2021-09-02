@@ -234,6 +234,6 @@ func (c *colibriPacketProcessor) forwardToColibriSvc() (processResult, error) {
 }
 
 func (c *colibriPacketProcessor) destinedToLocalAS(egressId uint16) bool {
-	isLast, _ := c.colibriPathMinimal.IsLastHop()
+	isLast := c.colibriPathMinimal.IsLastHop()
 	return c.scionLayer.DstIA.Equal(c.d.localIA) && egressId == 0 && isLast
 }
