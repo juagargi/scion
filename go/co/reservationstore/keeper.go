@@ -63,8 +63,6 @@ const minDuration = 2 * sleepAtMost
 // min validity of new indices/reservations. The bigger the value, the longer a single index
 // can be used. Too big a value could produce errors in the admission for some ASes.
 // This value would typically be equal to twice minDuration.
-// const newIndexMinDuration = 10 * time.Minute
-// const newIndexMinDuration = 40 * time.Second // TODO(juagargi) remove after debugging is finished
 const newIndexMinDuration = 2 * minDuration
 
 type keeper struct {
@@ -427,27 +425,15 @@ func (e *requirements) PrepareRenewalRequests(rsvs []*seg.Reservation, now, expT
 		if !e.predicate.EvalInterfaces(rsv.PathAtSource.Interfaces()) {
 			continue
 		}
-		// colibriPath := rsv.DeriveColibriPathAtSource()
-		// rawColibriPath := make([]byte, colibriPath.Len())
-		// if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
-		// 	return nil, serrors.WrapStr("error obtaining colibri path from reservation", err)
-		// }
-		// TODO(juagargi) if rsv.PathAtSource is colibri and expired, use a regular path
+
 		req := &seg.SetupReq{
-			Request: base.Request{ // without path in metadata (it will be set in the store)
+			Request: base.Request{
 				MsgId: base.MsgId{
 					ID:        rsv.ID, // new source setup in store
 					Index:     rsv.NextIndexToRenew(),
 					Timestamp: now,
 				},
 				Path: rsv.PathAtSource,
-				// Path: &base.TransparentPath{
-				// 	Steps: rsv.PathAtSource.Steps,
-				// 	Spath: spath.Path{
-				// 		Type: colibri.PathType,
-				// 		Raw:  rawColibriPath,
-				// 	},
-				// },
 			},
 			ExpirationTime: expTime,
 			// RLC:            e.RLC,
@@ -498,7 +484,6 @@ func (e requirements) Compliance(rsv *seg.Reservation, atLeastUntil time.Time) C
 		return NeedsActivation
 	}
 	return Compliant
-	// return NeedsActivation // TODO(juagargi) remove after debugging is done
 }
 
 // splitRequests takes a slice of requests and indices, and returns two slices:

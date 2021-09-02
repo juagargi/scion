@@ -45,7 +45,6 @@ import (
 
 // Store is the reservation store.
 type Store struct {
-	// TODO(juagargi) bind the logger to use the localIA in messages
 	localIA    addr.IA
 	isCore     bool
 	db         backend.DB                      // aka reservation map
@@ -435,15 +434,12 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 	}
 
 	if isFirstASInReservation(rsv, req) {
-		colibriPath := rsv.DeriveColibriPathAtSource()
-		rawColibriPath := make([]byte, colibriPath.Len())
-		if err := colibriPath.SerializeTo(rawColibriPath); err != nil {
-			log.Debug("error obtaining colibri path from reservation", "err", err)
-			return nil, s.errWrapStr("error obtaining colibri path from reservation", err)
-		}
-		rsv.PathAtSource.Spath = spath.Path{
-			Type: colpath.PathType,
-			Raw:  rawColibriPath,
+		transpPath, err := newTransparentPathFromReservation(rsv)
+		if err != nil {
+			log.Error("error obtaining colibri path from reservation", "err", err)
+		} else {
+			// if no errors, use the colibri path
+			rsv.PathAtSource = transpPath
 		}
 	}
 	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
@@ -683,7 +679,6 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 	}
 	// now the request has correct steps (current step is sure to exist)
 
-	// TODO(juagargi) we want to indicate the validity period in the request
 	maxExpTime := time.Now().Add(reservation.E2ERsvDuration)
 	if maxExpTime.Before(expTime) {
 		expTime = maxExpTime
@@ -824,25 +819,18 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 		return failedResponse, nil
 	}
 
-	tx, err := s.db.BeginTransaction(ctx, nil)
-	if err != nil {
-		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
-	}
-	defer tx.Rollback()
-
-	rsv, err := tx.GetE2ERsvFromID(ctx, &req.ID)
+	rsv, err := s.db.GetE2ERsvFromID(ctx, &req.ID)
 	if err != nil {
 		return failedResponse, s.errWrapStr("obtaining e2e reservation", err,
 			"id", req.ID.String())
 	}
 
-	if func() bool {
-		if rsv == nil {
-			return false
+	if rsv.Index(req.Index) != nil {
+		tx, err := s.db.BeginTransaction(ctx, nil)
+		if err != nil {
+			return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
 		}
-		_, err := base.FindIndex(rsv.Indices, req.Index)
-		return err == nil
-	}() {
+		defer tx.Rollback()
 		if err := rsv.RemoveIndex(req.Index); err != nil {
 			return failedResponse, s.errWrapStr("cannot delete e2e reservation index", err,
 				"id", req.ID.String(), "index", req.Index)
@@ -860,6 +848,7 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 		}
 	}
 	if rsv != nil && req.IsLastAS() {
+		// we need to append the next segment along the path
 		req.Path.Steps = stitchTransparentPaths(req.Path.Steps, rsv.GetLastSegmentPathSteps())
 	}
 
@@ -979,15 +968,6 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	}
 	index := rsv.Index(idx)
 
-	if err = tx.PersistSegmentRsv(ctx, rsv); err != nil {
-		failedResponse.Message = "cannot persist segment reservation: " + s.err(err).Error()
-		return failedResponse, s.errWrapStr("persisting segment reservation", err)
-	}
-	if err := tx.Commit(); err != nil {
-		failedResponse.Message = "cannot commit transaction: " + s.err(err).Error()
-		return failedResponse, s.errWrapStr("cannot commit transaction", err)
-	}
-
 	if req.IsLastAS() {
 		token = index.Token
 	} else {
@@ -1011,14 +991,6 @@ func (s *Store) admitSegmentReservation(ctx context.Context, req *segment.SetupR
 	index.Token = token
 	index.AllocBW = token.BWCls // could have been admitted for less downstream
 
-	tx, err = s.db.BeginTransaction(ctx, nil)
-	if err != nil {
-		failedResponse.Message = "storing token, cannot create transaction: " + s.err(err).Error()
-		return failedResponse, s.errWrapStr("storing token, cannot create transaction", err)
-	}
-	defer tx.Rollback()
-
-	// TODO(juagargi) can we do with one call to PersistSegmentRsv instead of two?
 	if err := tx.PersistSegmentRsv(ctx, rsv); err != nil {
 		failedResponse.Message = "storing token, cannot persist rsv: " + s.err(err).Error()
 		return failedResponse, s.errWrapStr("storing token, cannot persist rsv", err)
@@ -1080,7 +1052,6 @@ func (s *Store) sendUpstreamForAdmission(ctx context.Context, req *segment.Setup
 		return s.admitSegmentReservation(ctx, req)
 	}
 	// forward to next colibri service upstream
-	// TODO(juagargi) this is very subobtimal: the response needs 2 round trips.
 	client, err := s.operator.ColibriClient(ctx, req.Path)
 	if err != nil {
 		return failedResponse, s.errWrapStr("while finding a colibri service client", err)
@@ -1304,6 +1275,30 @@ func isFirstASInReservation(rsv *segment.Reservation, req *base.Request) bool {
 	default:
 		panic(fmt.Sprintf("unknown path type %v", rsv.PathType))
 	}
+}
+
+func newTransparentPathFromReservation(rsv *segment.Reservation) (*base.TransparentPath, error) {
+	colp := rsv.DeriveColibriPathAtSource()
+	if rsv.ActiveIndex() == nil {
+		return nil, serrors.New("no active index in reservation", "id", rsv.ID)
+	}
+	if !rsv.ActiveIndex().Expiration.After(time.Now()) {
+		return nil, serrors.New("reservations has expired active index", "id", rsv.ID,
+			"expiration", rsv.ActiveIndex().Expiration)
+	}
+	// colp can't be nil as we have a non nil active index
+	rawColibriPath := make([]byte, colp.Len())
+	if err := colp.SerializeTo(rawColibriPath); err != nil {
+		return nil, err
+	}
+	return &base.TransparentPath{
+		CurrentStep: rsv.PathAtSource.CurrentStep,
+		Steps:       rsv.PathAtSource.Steps,
+		Spath: spath.Path{
+			Type: colpath.PathType,
+			Raw:  rawColibriPath,
+		},
+	}, nil
 }
 
 // assert performs an assertion on an invariant. An assertion is part of the documentation.

@@ -48,6 +48,8 @@ func NewReservation(asid addr.AS) *Reservation {
 	}
 }
 
+// DeriveColibriPathAtSource recreates the slayers ColibriPath from the active index in this
+// reservation. If there is no active index, the path is nil.
 func (r *Reservation) DeriveColibriPathAtSource() *colpath.ColibriPath {
 	index := r.ActiveIndex()
 	if index == nil {
