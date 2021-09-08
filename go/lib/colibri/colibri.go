@@ -215,6 +215,9 @@ func MACInputStatic(buffer []byte, suffix []byte, expTick uint32,
 func MACStaticFromInput(buffer []byte, key []byte, input []byte) error {
 	_ = buffer[3]
 	// Initialize cryptographic MAC function
+	// TODO(juagargi) don't initialize everytime we need to compute the MAC, but instead
+	// pass the result of initColibriMac to this function. Do the same for other
+	// callers of initColibriMac with an invariant key.
 	f, err := initColibriMac(key)
 	if err != nil {
 		return err
