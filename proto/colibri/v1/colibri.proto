@@ -158,7 +158,9 @@ message E2eSetupRequest {
         uint32 current_segment = 2; // index of the current segment.
                                     // If the node is transfer, the first segment it belongs to.
         uint64 src_ia = 3; // the ASID will be identical to the ASID of the rsv. ID
-        uint64 dst_ia = 4; // to compute MACs as we pass the request to the next AS.
+        bytes src_host = 4;
+        uint64 dst_ia = 5; // to compute MACs as we pass the request to the next AS.
+        bytes dst_host = 6;
     }
     message E2eSetupBead {
         uint32 maxbw = 1;
@@ -195,13 +197,17 @@ message ListStitchablesResponse {
     repeated ListResponse.ReservationLooks down = 6;
 }
 
+// DaemonCleanupRequest is sent from the endhost to the colibri service.
+// The message doesn't have a src_host because the service will automatically use the
+// source address of the TCP connection.
 message DaemonSetupRequest {
     uint64 src_ia = 1;
     uint64 dst_ia = 2;
-    ReservationID id = 3;
-    uint32 index = 4;
-    repeated ReservationID segments = 5;
-    uint32 requested_bw = 6;
+    bytes dst_host = 3;
+    ReservationID id = 4;
+    uint32 index = 5;
+    repeated ReservationID segments = 6;
+    uint32 requested_bw = 7;
 }
 
 message DaemonSetupResponse {

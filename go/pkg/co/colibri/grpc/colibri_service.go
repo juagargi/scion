@@ -197,7 +197,7 @@ func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request
 func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListStitchablesRequest) (
 	*colpb.ListStitchablesResponse, error) {
 
-	if err := checkLocalCaller(ctx); err != nil {
+	if _, err := checkLocalCaller(ctx); err != nil {
 		return nil, err
 	}
 
@@ -216,7 +216,8 @@ func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListSti
 func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.DaemonSetupRequest) (
 	*colpb.DaemonSetupResponse, error) {
 
-	if err := checkLocalCaller(ctx); err != nil {
+	clientAddr, err := checkLocalCaller(ctx)
+	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
@@ -233,7 +234,9 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 			Segments:       msg.Segments,
 			CurrentSegment: 0,
 			SrcIa:          msg.SrcIa,
+			SrcHost:        clientAddr.IP,
 			DstIa:          msg.DstIa,
+			DstHost:        msg.DstHost,
 		},
 		Allocationtrail: nil,
 	}
@@ -303,7 +306,7 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 func (s *ColibriService) CleanupReservation(ctx context.Context, msg *colpb.DaemonCleanupRequest) (
 	*colpb.DaemonCleanupResponse, error) {
 
-	if err := checkLocalCaller(ctx); err != nil {
+	if _, err := checkLocalCaller(ctx); err != nil {
 		return nil, err
 	}
 	req := &base.Request{
@@ -354,16 +357,16 @@ func extractPath(ctx context.Context) (base.PacketPath, error) {
 
 // checkLocalCaller prevents the service from doing anything if the caller is not from the local AS.
 // We do it by checking the peer. We could instantiate the local ColibriService differently.
-func checkLocalCaller(ctx context.Context) error {
+func checkLocalCaller(ctx context.Context) (*net.TCPAddr, error) {
 	// To prevent this service from
 	p, ok := peer.FromContext(ctx)
 	if !ok || p == nil {
-		return serrors.New("no peer found")
+		return nil, serrors.New("no peer found")
 	}
 	tcpaddr, ok := p.Addr.(*net.TCPAddr)
 	if !ok || tcpaddr == nil {
-		return serrors.New("no valid local tcp address found", "addr", p.Addr,
+		return nil, serrors.New("no valid local tcp address found", "addr", p.Addr,
 			"type", common.TypeOf(p.Addr))
 	}
-	return nil
+	return tcpaddr, nil
 }

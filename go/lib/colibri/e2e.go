@@ -17,6 +17,8 @@
 package colibri
 
 import (
+	"net"
+
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
@@ -26,6 +28,7 @@ type E2EReservationSetup struct {
 	Id          reservation.ID
 	SrcIA       addr.IA
 	DstIA       addr.IA
+	DstHost     net.IP
 	Index       reservation.IndexNumber
 	Segments    []reservation.ID
 	RequestedBW reservation.BWCls

@@ -224,6 +224,7 @@ func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservati
 			Id:          translate.PBufID(&req.Id),
 			SrcIa:       uint64(req.SrcIA.IAInt()),
 			DstIa:       uint64(req.DstIA.IAInt()),
+			DstHost:     req.DstHost,
 			Index:       uint32(req.Index),
 			RequestedBw: uint32(req.RequestedBW),
 			Segments:    pbSegs,

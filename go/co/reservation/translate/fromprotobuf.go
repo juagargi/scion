@@ -76,7 +76,9 @@ func E2ESetupRequest(msg *colpb.E2ESetupRequest) (*e2e.SetupReq, error) {
 	return &e2e.SetupReq{
 		Request:                *base,
 		SrcIA:                  addr.IAInt(msg.Params.SrcIa).IA(),
+		SrcHost:                msg.Params.SrcHost,
 		DstIA:                  addr.IAInt(msg.Params.DstIa).IA(),
+		DstHost:                msg.Params.DstHost,
 		SegmentRsvs:            segIds,
 		CurrentSegmentRsvIndex: int(msg.Params.CurrentSegment),
 		RequestedBW:            col.BWCls(msg.RequestedBw),

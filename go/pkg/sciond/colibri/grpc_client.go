@@ -38,7 +38,7 @@ func (c *DaemonClient) SetupReservation(ctx context.Context, req *sdpb.ColibriSe
 		return nil, serrors.New("bad nil request")
 	}
 	log.Debug("setting up e2e reservation", "id", translate.ID(req.Base.Id))
-	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
+	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL) // deletmeme TODO(juagargi) pretty sure this won't work
 	if err != nil {
 		return nil, err
 	}
