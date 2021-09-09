@@ -97,6 +97,9 @@ func (r *Reservation) RemoveIndex(idx reservation.IndexNumber) error {
 
 // Index finds the Index with that IndexNumber and returns a pointer to it. Nil if not found.
 func (r *Reservation) Index(idx reservation.IndexNumber) *Index {
+	if r == nil {
+		return nil
+	}
 	sliceIndex, err := base.FindIndex(r.Indices, idx)
 	if err != nil {
 		return nil

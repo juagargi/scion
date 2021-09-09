@@ -156,7 +156,6 @@ func setupColibri(cfg *config.Config, cfgObjs *cfgObjs) (*periodic.Runner, error
 
 	// run inter and intra AS servers
 	topo := itopo.Get()
-	// TODO(juagargi) integrate TCP and QUIC with just one listener in coliquic.
 	go func() {
 		defer log.HandlePanic()
 		lis := cfgObjs.stack.QUICListener
