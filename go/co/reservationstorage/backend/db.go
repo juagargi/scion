@@ -85,8 +85,7 @@ type ReserverAndTransit interface {
 type DestinationOnly interface {
 	// AddToAdmissionList adds an entry to the white/black list.
 	// Entries in the list can overlap, i.e. for a given IA-host more than one entry can
-	// match. In that case, the result will be that of the newest one and if still clash, the
-	// most restrictive one.
+	// match. In that case, the result will be that of the newest one.
 	AddToAdmissionList(ctx context.Context, validUntil time.Time,
 		dstEndhost net.IP, regexpIA, regexpHost string, allowAdmission bool) error
 

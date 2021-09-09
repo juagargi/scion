@@ -938,7 +938,7 @@ func testCheckAdmissionList(ctx context.Context, t *testing.T, newDB func() back
 				},
 				{
 					dstEndhost: "1.1.1.1",
-					validuntil: util.SecsToTime(21), // newer -> higher priority
+					validuntil: util.SecsToTime(19), // newer -> higher priority
 					regexpIA:   "",
 					regexpHost: "1.2.3.4",
 					allowed:    false,

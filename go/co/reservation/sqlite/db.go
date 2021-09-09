@@ -605,9 +605,9 @@ func (x *executor) AddToAdmissionList(ctx context.Context, validUntil time.Time,
 func (x *executor) CheckAdmissionList(ctx context.Context, now time.Time,
 	dstEndhost net.IP, srcIA addr.IA, srcEndhost string) (int, error) {
 
-	// all entries that belong to dstEndhost sorted by time descending (newest first)
+	// all entries that belong to dstEndhost sorted by the order they where added (newest first)
 	const query = `SELECT valid_until, regexp_ia, regexp_host, yes_no FROM e2e_admission_list
-		WHERE owner_host = ? ORDER BY valid_until DESC`
+		WHERE owner_host = ? ORDER BY ROWID DESC`
 
 	rows, err := x.db.QueryContext(ctx, query, dstEndhost)
 	if err != nil {
