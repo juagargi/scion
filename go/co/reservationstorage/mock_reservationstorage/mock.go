@@ -56,6 +56,21 @@ func (mr *MockStoreMockRecorder) ActivateSegmentReservation(arg0, arg1 interface
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateSegmentReservation", reflect.TypeOf((*MockStore)(nil).ActivateSegmentReservation), arg0, arg1)
 }
 
+// AddAdmissionEntry mocks base method.
+func (m *MockStore) AddAdmissionEntry(arg0 context.Context, arg1 *colibri.AdmissionEntry) (time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddAdmissionEntry", arg0, arg1)
+	ret0, _ := ret[0].(time.Time)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AddAdmissionEntry indicates an expected call of AddAdmissionEntry.
+func (mr *MockStoreMockRecorder) AddAdmissionEntry(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddAdmissionEntry", reflect.TypeOf((*MockStore)(nil).AddAdmissionEntry), arg0, arg1)
+}
+
 // AdmitE2EReservation mocks base method.
 func (m *MockStore) AdmitE2EReservation(arg0 context.Context, arg1 *e2e.SetupReq) (e2e.SetupResponse, error) {
 	m.ctrl.T.Helper()
@@ -131,10 +146,26 @@ func (mr *MockStoreMockRecorder) ConfirmSegmentReservation(arg0, arg1 interface{
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmSegmentReservation", reflect.TypeOf((*MockStore)(nil).ConfirmSegmentReservation), arg0, arg1)
 }
 
-// DeleteExpiredIndices mocks base method.
-func (m *MockStore) DeleteExpiredIndices(arg0 context.Context) (int, time.Time, error) {
+// DeleteExpiredAdmissionEntries mocks base method.
+func (m *MockStore) DeleteExpiredAdmissionEntries(arg0 context.Context, arg1 time.Time) (int, time.Time, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteExpiredIndices", arg0)
+	ret := m.ctrl.Call(m, "DeleteExpiredAdmissionEntries", arg0, arg1)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(time.Time)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// DeleteExpiredAdmissionEntries indicates an expected call of DeleteExpiredAdmissionEntries.
+func (mr *MockStoreMockRecorder) DeleteExpiredAdmissionEntries(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpiredAdmissionEntries", reflect.TypeOf((*MockStore)(nil).DeleteExpiredAdmissionEntries), arg0, arg1)
+}
+
+// DeleteExpiredIndices mocks base method.
+func (m *MockStore) DeleteExpiredIndices(arg0 context.Context, arg1 time.Time) (int, time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteExpiredIndices", arg0, arg1)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(time.Time)
 	ret2, _ := ret[2].(error)
@@ -142,9 +173,9 @@ func (m *MockStore) DeleteExpiredIndices(arg0 context.Context) (int, time.Time, 
 }
 
 // DeleteExpiredIndices indicates an expected call of DeleteExpiredIndices.
-func (mr *MockStoreMockRecorder) DeleteExpiredIndices(arg0 interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) DeleteExpiredIndices(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpiredIndices", reflect.TypeOf((*MockStore)(nil).DeleteExpiredIndices), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpiredIndices", reflect.TypeOf((*MockStore)(nil).DeleteExpiredIndices), arg0, arg1)
 }
 
 // GetReservationsAtSource mocks base method.

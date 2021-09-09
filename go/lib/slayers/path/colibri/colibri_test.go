@@ -20,18 +20,17 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/scionproto/scion/go/lib/slayers/path/colibri"
+	"github.com/scionproto/scion/go/lib/xtest"
 )
 
-var randSlice = []byte("fe31a2e94699ede20df7edaefd8042d866bf3a4c1a7f2be603973ff077c3a6366c7933" +
-	"170974efeeec1dc88ba2bf6f88f86dd34b158cd8c176b4b1cd965ee1e093336a667952eb38efa8ff1618e9f80" +
-	"9499a578e26f23b68cfbb56a5a7cdd7b2c0f974e43c14fbc22ef2f4ea25e2224649304a961d3e2867c3cb8bf9" +
-	"2ba7bd0f")
+var randSlice = xtest.MustParseHexString("fe31a2e94699ede20df7edaefd8042d866bf3a4c1a7f2be603973f" +
+	"f077c3a6366c7933170974efeeec1dc88ba2bf6f88f86dd34b158cd8c176b4b1cd965ee1e093336a667952eb38e" +
+	"fa8ff1618e9f809499a578e26f23b68cfbb56a5a7cdd7b2c0f974e43c14fbc22ef2f4ea25e2224649304a961d3e" +
+	"2867c3cb8bf92ba7bd0f")
 
 func TestColibriSerializeDecode(t *testing.T) {
 	for i := 2; i < 11; i++ {
 		bufferLength := 8 + colibri.LenInfoField + i*colibri.LenHopField
-		// TODO(juagargi) just realized that randSlice was intended to
-		// be a slice of bytes, not of chars
 		buffer := randSlice[:bufferLength]
 		// Remove the "reserved" flags from the info field
 		buffer[8] = buffer[8] & uint8(0xE0)
