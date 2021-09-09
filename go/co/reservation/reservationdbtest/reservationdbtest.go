@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -835,7 +836,7 @@ func testGetE2ERsvsOnSegRsv(ctx context.Context, t *testing.T, newDB func() back
 func testAddToAdmissionList(ctx context.Context, t *testing.T, newDB func() backend.DB) {
 	db := newDB()
 	futureTS := util.SecsToTime(1)
-	thisHost := "127.0.0.1"
+	thisHost := net.ParseIP("127.0.0.1")
 	regexpIA := ""
 	regexpHost := ""
 	err := db.AddToAdmissionList(ctx, futureTS, thisHost, regexpIA, regexpHost, true)
@@ -957,11 +958,11 @@ func testCheckAdmissionList(ctx context.Context, t *testing.T, newDB func() back
 			t.Parallel()
 			db := newDB()
 			for _, entry := range tc.entries {
-				err := db.AddToAdmissionList(ctx, entry.validuntil, entry.dstEndhost,
+				err := db.AddToAdmissionList(ctx, entry.validuntil, net.ParseIP(entry.dstEndhost),
 					entry.regexpIA, entry.regexpHost, entry.allowed)
 				require.NoError(t, err)
 			}
-			res, err := db.CheckAdmissionList(ctx, tc.currentTime, tc.dstEndhost,
+			res, err := db.CheckAdmissionList(ctx, tc.currentTime, net.ParseIP(tc.dstEndhost),
 				xtest.MustParseIA(tc.srcIA), tc.srcHost)
 			if tc.expectFailure {
 				require.Error(t, err)

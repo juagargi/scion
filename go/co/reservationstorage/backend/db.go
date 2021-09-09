@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"net"
 	"time"
 
 	"github.com/scionproto/scion/go/co/reservation/e2e"
@@ -87,12 +88,12 @@ type DestinationOnly interface {
 	// match. In that case, the result will be that of the newest one and if still clash, the
 	// most restrictive one.
 	AddToAdmissionList(ctx context.Context, validUntil time.Time,
-		dstEndhost, regexpIA, regexpHost string, allowAdmission bool) error
+		dstEndhost net.IP, regexpIA, regexpHost string, allowAdmission bool) error
 
 	// CheckAdmissionList checks the stored white and black lists to allow or deny an admission
 	// coming from and endhost at a given time.
 	// The functions returns >0 if admitted, < 0 if not admitted, or 0 if no valid entry was found.
-	CheckAdmissionList(ctx context.Context, now time.Time, dstEndhost string,
+	CheckAdmissionList(ctx context.Context, now time.Time, dstEndhost net.IP,
 		srcIA addr.IA, srcEndhost string) (int, error)
 }
 

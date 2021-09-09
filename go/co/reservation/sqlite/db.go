@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"net"
 	"regexp"
 	"strings"
 	"sync"
@@ -580,7 +581,7 @@ func (x *executor) PersistEgDemand(ctx context.Context, source addr.AS, egress u
 }
 
 func (x *executor) AddToAdmissionList(ctx context.Context, validUntil time.Time,
-	dstEndhost, regexpIA, regexpHost string, allowAdmission bool) error {
+	dstEndhost net.IP, regexpIA, regexpHost string, allowAdmission bool) error {
 
 	// first validate regular expressions
 	if _, err := regexp.Compile(regexpIA); err != nil {
@@ -602,7 +603,7 @@ func (x *executor) AddToAdmissionList(ctx context.Context, validUntil time.Time,
 	return err
 }
 func (x *executor) CheckAdmissionList(ctx context.Context, now time.Time,
-	dstEndhost string, srcIA addr.IA, srcEndhost string) (int, error) {
+	dstEndhost net.IP, srcIA addr.IA, srcEndhost string) (int, error) {
 
 	// all entries that belong to dstEndhost sorted by time descending (newest first)
 	const query = `SELECT valid_until, regexp_ia, regexp_host, yes_no FROM e2e_admission_list

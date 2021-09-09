@@ -72,7 +72,7 @@ const (
 		FOREIGN KEY(e2e) REFERENCES e2e_reservation(ROWID) ON DELETE CASCADE
 	);
 	CREATE TABLE e2e_admission_list (
-		owner_host TEXT NOT NULL,
+		owner_host BLOB NOT NULL,
 		valid_until INTEGER NOT NULL,
 		regexp_ia TEXT NOT NULL,
 		regexp_host TEXT NOT NULL,

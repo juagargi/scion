@@ -218,8 +218,7 @@ func (s *Store) AddAdmissionEntry(ctx context.Context, entry *colibri.AdmissionE
 	if entry.ValidUntil.After(maxDeadline) {
 		entry.ValidUntil = maxDeadline
 	}
-	// deleteme TODO(juagargi) change signature and schema of DB to store net.IP instead of string
-	err := s.db.AddToAdmissionList(ctx, entry.ValidUntil, entry.DstHost.String(),
+	err := s.db.AddToAdmissionList(ctx, entry.ValidUntil, entry.DstHost,
 		entry.RegexpIA, entry.RegexpHost, entry.AcceptAdmission)
 	return entry.ValidUntil, err
 }
