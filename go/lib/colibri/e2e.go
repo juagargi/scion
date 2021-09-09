@@ -18,6 +18,7 @@ package colibri
 
 import (
 	"net"
+	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
@@ -46,4 +47,22 @@ func (e *E2EResponseError) Error() string {
 type E2ESetupError struct {
 	E2EResponseError
 	AllocationTrail []reservation.BWCls
+}
+
+// AdmissionEntry contains the fields which will be inserted into the admission list of the host
+// specified by DstHost. If DstHost is empty, the apparent IP address of the connection
+// between the sciond daemon and the local COLIBRI service will be used.
+// If DstHost is not empty, it will be checked against the IP of the connection between the
+// sciond daemon and the local COLIBRI service.
+// The value ValidUntil specifies the point in time when this entry will no longer be valid.
+// Expired (non valid) entries are deleted automatically.
+// If during admission more than one entry in the admission list match the request/renewal,
+// only the newest one will be considered.
+type AdmissionEntry struct {
+	DstHost net.IP // the owner of this admission list. If empty, the IP from
+	//                the TCP connection from the daemon to the service will be used
+	ValidUntil      time.Time // requested validity of the entry
+	RegexpIA        string
+	RegexpHost      string
+	AcceptAdmission bool
 }

@@ -417,3 +417,9 @@ func (s *DaemonServer) ColibriCleanupRsv(ctx context.Context, req *sdpb.ColibriC
 
 	return s.ColClient.CleanupReservation(ctx, req)
 }
+
+func (s *DaemonServer) ColibriAddAdmissionEntry(ctx context.Context,
+	req *sdpb.ColibriAdmissionEntry) (*sdpb.ColibriAdmissionEntryResponse, error) {
+
+	return s.ColClient.ColibriAddAdmissionEntry(ctx, req)
+}

@@ -43,6 +43,8 @@ import (
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
+const MaxAdmissionEntryValidity = time.Minute
+
 // Store is the reservation store.
 type Store struct {
 	// TODO(juagargi) bind the logger to use the localIA in messages
@@ -207,6 +209,19 @@ func (s *Store) ListStitchableSegments(ctx context.Context, dst addr.IA) (
 
 	// TODO(juagargi) we could use a local DB to cache the results, like the path query does.
 	return response, nil
+}
+
+func (s *Store) AddAdmissionEntry(ctx context.Context, entry *colibri.AdmissionEntry) (
+	time.Time, error) {
+
+	maxDeadline := time.Now().Add(MaxAdmissionEntryValidity)
+	if entry.ValidUntil.After(maxDeadline) {
+		entry.ValidUntil = maxDeadline
+	}
+	// deleteme TODO(juagargi) change signature and schema of DB to store net.IP instead of string
+	err := s.db.AddToAdmissionList(ctx, entry.ValidUntil, entry.DstHost.String(),
+		entry.RegexpIA, entry.RegexpHost, entry.AcceptAdmission)
+	return entry.ValidUntil, err
 }
 
 // InitSegmentReservation will start a new segment reservation request. The source of

@@ -62,3 +62,19 @@ func (c *DaemonClient) CleanupReservation(ctx context.Context, req *sdpb.Colibri
 	response, err := client.CleanupReservation(ctx, req.Base)
 	return &sdpb.ColibriCleanupResponse{Base: response}, err
 }
+
+func (c *DaemonClient) ColibriAddAdmissionEntry(ctx context.Context,
+	req *sdpb.ColibriAdmissionEntry) (*sdpb.ColibriAdmissionEntryResponse, error) {
+
+	if req == nil {
+		return nil, serrors.New("bad nil request")
+	}
+	log.Debug("adding admission entry", "accept", req.Base.Accept)
+	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
+	if err != nil {
+		return nil, err
+	}
+	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
+	res, err := client.AddAdmissionEntry(ctx, req.Base)
+	return &sdpb.ColibriAdmissionEntryResponse{Base: res}, err
+}

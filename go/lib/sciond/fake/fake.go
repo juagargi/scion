@@ -210,6 +210,12 @@ func (c connector) ColibriCleanupRsv(context.Context, *reservation.ID,
 	panic("not implemented")
 }
 
+func (c connector) ColibriAddAdmissionEntry(context.Context, *colibri.AdmissionEntry) (
+	time.Time, error) {
+
+	panic("not implemented")
+}
+
 func (c connector) Close(ctx context.Context) error {
 	return nil
 }

@@ -35,6 +35,7 @@ service Colibri {
     rpc ListStitchables(ListStitchablesRequest) returns (ListStitchablesResponse) {}
     rpc SetupReservation(DaemonSetupRequest) returns (DaemonSetupResponse) {}
     rpc CleanupReservation(DaemonCleanupRequest) returns (DaemonCleanupResponse) {}
+    rpc AddAdmissionEntry(DaemonAdmissionEntry) returns (DaemonAdmissionEntryResponse) {}
 }
 
 // /////////////////////////////////////////////////
@@ -235,4 +236,16 @@ message DaemonCleanupResponse {
         uint32 failed_step = 2;
     }
     Failure failure = 1; // or nil if all ok
+}
+
+message DaemonAdmissionEntry {
+    bytes dst_host = 1; // the owner host
+    uint32 valid_until = 2;
+    string regexp_ia = 3;
+    string regexp_host = 4;
+    bool accept = 5;
+}
+
+message DaemonAdmissionEntryResponse {
+    uint32 valid_until = 1;
 }

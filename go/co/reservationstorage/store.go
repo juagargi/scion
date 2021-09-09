@@ -61,6 +61,13 @@ type Store interface {
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
 
+	// as the destination of reservations:
+
+	// AddAdmissionEntry adds the auto-expiring entry to the admission list.
+	// The store will check the validity date and trim it to the maximum allowed one.
+	// The function returns the effective validity time for the entry.
+	AddAdmissionEntry(ctx context.Context, entry *colibri.AdmissionEntry) (time.Time, error)
+
 	ReportSegmentReservationsInDB(ctx context.Context) ([]*sgt.Reservation, error)
 	ReportE2EReservationsInDB(ctx context.Context) ([]*e2e.Reservation, error)
 }

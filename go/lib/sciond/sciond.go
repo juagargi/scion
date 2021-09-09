@@ -106,6 +106,9 @@ type Connector interface {
 	// ColibriCleanupRsv cleans an E2E reservation. The ID must be E2E compliant.
 	// This method may return an E2EResponseError.
 	ColibriCleanupRsv(ctx context.Context, req *reservation.ID, index reservation.IndexNumber) error
+	// ColibriAddAdmissionEntry adds an entry to the admission list. It returns the effective
+	// validity time for the entry in the list.
+	ColibriAddAdmissionEntry(ctx context.Context, entry *colibri.AdmissionEntry) (time.Time, error)
 	// Close shuts down the connection to a SCIOND server.
 	Close(ctx context.Context) error
 }

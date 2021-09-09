@@ -24,7 +24,7 @@ import (
 
 	"github.com/scionproto/scion/go/co/reservation/translate"
 	"github.com/scionproto/scion/go/lib/addr"
-	"github.com/scionproto/scion/go/lib/colibri"
+	col "github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
 	dkctrl "github.com/scionproto/scion/go/lib/ctrl/drkey"
@@ -37,6 +37,7 @@ import (
 	"github.com/scionproto/scion/go/lib/snet/path"
 	"github.com/scionproto/scion/go/lib/spath"
 	"github.com/scionproto/scion/go/lib/topology"
+	"github.com/scionproto/scion/go/lib/util"
 	libgrpc "github.com/scionproto/scion/go/pkg/grpc"
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 	sdpb "github.com/scionproto/scion/go/pkg/proto/daemon"
@@ -189,7 +190,7 @@ func (c grpcConn) DRKeyGetLvl2Key(ctx context.Context, meta drkey.Lvl2Meta,
 }
 
 func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
-	*colibri.StitchableSegments, error) {
+	*col.StitchableSegments, error) {
 
 	req := &sdpb.ColibriListRequest{
 		Base: &colpb.ListStitchablesRequest{
@@ -212,7 +213,7 @@ func (c grpcConn) ColibriListRsvs(ctx context.Context, dstIA addr.IA) (
 	return stitchable, nil
 }
 
-func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservationSetup) (
+func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *col.E2EReservationSetup) (
 	snet.Path, error) {
 
 	pbSegs := make([]*colpb.ReservationID, len(req.Segments))
@@ -240,8 +241,8 @@ func (c grpcConn) ColibriSetupRsv(ctx context.Context, req *colibri.E2EReservati
 		for i, b := range sdRes.Base.Failure.AllocTrail {
 			trail[i] = reservation.BWCls(b)
 		}
-		return nil, &colibri.E2ESetupError{
-			E2EResponseError: colibri.E2EResponseError{
+		return nil, &col.E2ESetupError{
+			E2EResponseError: col.E2EResponseError{
 				Message:  sdRes.Base.Failure.ErrorMessage,
 				FailedAS: int(sdRes.Base.Failure.FailedStep),
 			},
@@ -282,12 +283,30 @@ func (c grpcConn) ColibriCleanupRsv(ctx context.Context, id *reservation.ID,
 		return err
 	}
 	if sdRes.Base.Failure != nil {
-		return &colibri.E2EResponseError{
+		return &col.E2EResponseError{
 			Message:  sdRes.Base.Failure.ErrorMessage,
 			FailedAS: int(sdRes.Base.Failure.FailedStep),
 		}
 	}
 	return nil
+}
+
+func (c grpcConn) ColibriAddAdmissionEntry(ctx context.Context, entry *col.AdmissionEntry) (
+	time.Time, error) {
+	req := &sdpb.ColibriAdmissionEntry{
+		Base: &colpb.DaemonAdmissionEntry{
+			DstHost:    entry.DstHost,
+			ValidUntil: util.TimeToSecs(entry.ValidUntil),
+			RegexpIa:   entry.RegexpIA,
+			RegexpHost: entry.RegexpHost,
+		},
+	}
+	client := sdpb.NewDaemonServiceClient(c.conn)
+	res, err := client.ColibriAddAdmissionEntry(ctx, req)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return util.SecsToTime(res.Base.ValidUntil), nil
 }
 
 func (c grpcConn) Close(_ context.Context) error {

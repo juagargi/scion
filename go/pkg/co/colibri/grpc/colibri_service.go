@@ -15,6 +15,7 @@
 package grpc
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -27,6 +28,7 @@ import (
 	"github.com/scionproto/scion/go/co/reservation/translate"
 	"github.com/scionproto/scion/go/co/reservationstorage"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
@@ -333,6 +335,31 @@ func (s *ColibriService) CleanupReservation(ctx context.Context, msg *colpb.Daem
 	return &colpb.DaemonCleanupResponse{}, nil
 }
 
+func (s *ColibriService) AddAdmissionEntry(ctx context.Context,
+	req *colpb.DaemonAdmissionEntry) (*colpb.DaemonAdmissionEntryResponse, error) {
+
+	clientAddr, err := checkLocalCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(req.DstHost) > 0 {
+		// check that we have the same IP address in the DstHost field and the TCP connection
+		if !bytes.Equal(req.DstHost, clientAddr.IP) {
+			return nil, serrors.New("IP address in request not the same as connnection",
+				"req", net.IP(req.DstHost).String(), "conn", clientAddr.IP.String())
+		}
+	}
+	entry := &colibri.AdmissionEntry{
+		DstHost:         clientAddr.IP,
+		ValidUntil:      util.SecsToTime(req.ValidUntil),
+		RegexpIA:        req.RegexpIa,
+		RegexpHost:      req.RegexpHost,
+		AcceptAdmission: req.Accept,
+	}
+	validUntil, err := s.Store.AddAdmissionEntry(ctx, entry)
+	return &colpb.DaemonAdmissionEntryResponse{ValidUntil: util.TimeToSecs(validUntil)}, err
+}
+
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
 func extractPath(ctx context.Context) (base.PacketPath, error) {
 	// TODO(juagargi) move from PacketPath to TransparentPath
@@ -358,7 +385,6 @@ func extractPath(ctx context.Context) (base.PacketPath, error) {
 // checkLocalCaller prevents the service from doing anything if the caller is not from the local AS.
 // We do it by checking the peer. We could instantiate the local ColibriService differently.
 func checkLocalCaller(ctx context.Context) (*net.TCPAddr, error) {
-	// To prevent this service from
 	p, ok := peer.FromContext(ctx)
 	if !ok || p == nil {
 		return nil, serrors.New("no peer found")
