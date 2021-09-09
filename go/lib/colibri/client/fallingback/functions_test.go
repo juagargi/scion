@@ -37,6 +37,7 @@ func TestCaptureTrips(t *testing.T) {
 
 	srclIA := xtest.MustParseIA("1-ff00:0:111")
 	dstIA := xtest.MustParseIA("1-ff00:0:112")
+	dstHost := xtest.MustParseIP(t, "192.0.2.10")
 	stitchables := ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 		// 1 direct trip, + 2 thru core
 		ct.WithCoreASes("1-ff00:0:110", "1-ff00:0:100"),
@@ -51,7 +52,7 @@ func TestCaptureTrips(t *testing.T) {
 	daemon.EXPECT().ColibriListRsvs(gomock.Any(), gomock.Any()).Return(stitchables, nil)
 
 	capturedTrips := make([]*colibri.FullTrip, 0)
-	_, err := client.NewReservation(ctx, daemon, srclIA, dstIA, 11, 0,
+	_, err := client.NewReservation(ctx, daemon, srclIA, dstIA, dstHost, 11, 0,
 		CaptureTrips(&capturedTrips))
 	require.NoError(t, err)
 	require.Len(t, capturedTrips, 3) // three trips?

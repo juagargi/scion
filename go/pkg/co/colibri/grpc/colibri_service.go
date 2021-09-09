@@ -27,6 +27,7 @@ import (
 	"github.com/scionproto/scion/go/co/reservation/translate"
 	"github.com/scionproto/scion/go/co/reservationstorage"
 	"github.com/scionproto/scion/go/lib/addr"
+	"github.com/scionproto/scion/go/lib/colibri"
 	"github.com/scionproto/scion/go/lib/colibri/coliquic"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/common"
@@ -197,7 +198,7 @@ func (s *ColibriService) CleanupE2EIndex(ctx context.Context, msg *colpb.Request
 func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListStitchablesRequest) (
 	*colpb.ListStitchablesResponse, error) {
 
-	if err := checkLocalCaller(ctx); err != nil {
+	if _, err := checkLocalCaller(ctx); err != nil {
 		return nil, err
 	}
 
@@ -216,7 +217,8 @@ func (s *ColibriService) ListStitchables(ctx context.Context, msg *colpb.ListSti
 func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.DaemonSetupRequest) (
 	*colpb.DaemonSetupResponse, error) {
 
-	if err := checkLocalCaller(ctx); err != nil {
+	clientAddr, err := checkLocalCaller(ctx)
+	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
@@ -233,7 +235,9 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 			Segments:       msg.Segments,
 			CurrentSegment: 0,
 			SrcIa:          msg.SrcIa,
+			SrcHost:        clientAddr.IP,
 			DstIa:          msg.DstIa,
+			DstHost:        msg.DstHost,
 		},
 		Allocationtrail: nil,
 	}
@@ -303,7 +307,7 @@ func (s *ColibriService) SetupReservation(ctx context.Context, msg *colpb.Daemon
 func (s *ColibriService) CleanupReservation(ctx context.Context, msg *colpb.DaemonCleanupRequest) (
 	*colpb.DaemonCleanupResponse, error) {
 
-	if err := checkLocalCaller(ctx); err != nil {
+	if _, err := checkLocalCaller(ctx); err != nil {
 		return nil, err
 	}
 	req := &base.Request{
@@ -330,6 +334,42 @@ func (s *ColibriService) CleanupReservation(ctx context.Context, msg *colpb.Daem
 	return &colpb.DaemonCleanupResponse{}, nil
 }
 
+func (s *ColibriService) AddAdmissionEntry(ctx context.Context,
+	req *colpb.DaemonAdmissionEntry) (*colpb.DaemonAdmissionEntryResponse, error) {
+
+	clientAddr, err := checkLocalCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// TODO(juagargi)
+	// because we can't guarantee that the IP the client requested is reachable from this
+	// service, checking that the connection from the endhost to this service uses the same
+	// IP is wrong.
+	// A new design for this check must be created and implemented. For now, the check is
+	// completely disabled (commented code below).
+	// if len(req.DstHost) > 0 {
+	// 	// check that we have the same IP address in the DstHost field and the TCP connection
+	// 	if !bytes.Equal(req.DstHost, clientAddr.IP) {
+	// 		return nil, serrors.New("IP address in request not the same as connnection",
+	// 			"req", net.IP(req.DstHost).String(), "conn", clientAddr.IP.String())
+	// 	}
+	// }
+	if len(req.DstHost) == 0 {
+		req.DstHost = clientAddr.IP
+	}
+	entry := &colibri.AdmissionEntry{
+		DstHost:         req.DstHost,
+		ValidUntil:      util.SecsToTime(req.ValidUntil),
+		RegexpIA:        req.RegexpIa,
+		RegexpHost:      req.RegexpHost,
+		AcceptAdmission: req.Accept,
+	}
+	validUntil, err := s.Store.AddAdmissionEntry(ctx, entry)
+	return &colpb.DaemonAdmissionEntryResponse{
+		ValidUntil: util.TimeToSecs(validUntil),
+	}, err
+}
+
 // extractPath returns the PacketPath, ingress and egress used with this RPC.
 func extractPath(ctx context.Context) (base.PacketPath, error) {
 	// TODO(juagargi) move from PacketPath to TransparentPath
@@ -354,16 +394,15 @@ func extractPath(ctx context.Context) (base.PacketPath, error) {
 
 // checkLocalCaller prevents the service from doing anything if the caller is not from the local AS.
 // We do it by checking the peer. We could instantiate the local ColibriService differently.
-func checkLocalCaller(ctx context.Context) error {
-	// To prevent this service from
+func checkLocalCaller(ctx context.Context) (*net.TCPAddr, error) {
 	p, ok := peer.FromContext(ctx)
 	if !ok || p == nil {
-		return serrors.New("no peer found")
+		return nil, serrors.New("no peer found")
 	}
 	tcpaddr, ok := p.Addr.(*net.TCPAddr)
 	if !ok || tcpaddr == nil {
-		return serrors.New("no valid local tcp address found", "addr", p.Addr,
+		return nil, serrors.New("no valid local tcp address found", "addr", p.Addr,
 			"type", common.TypeOf(p.Addr))
 	}
-	return nil
+	return tcpaddr, nil
 }

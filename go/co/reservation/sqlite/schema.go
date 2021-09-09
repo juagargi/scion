@@ -71,6 +71,14 @@ const (
 		FOREIGN KEY(seg) REFERENCES seg_reservation(ROWID) ON DELETE CASCADE,
 		FOREIGN KEY(e2e) REFERENCES e2e_reservation(ROWID) ON DELETE CASCADE
 	);
+	CREATE TABLE e2e_admission_list (
+		ROWID INTEGER PRIMARY KEY AUTOINCREMENT,
+		owner_host BLOB NOT NULL,
+		valid_until INTEGER NOT NULL,
+		regexp_ia TEXT NOT NULL,
+		regexp_host TEXT NOT NULL,
+		yes_no INTEGER NOT NULL
+	);
 
 	-- Tables that start with state_ are meant to enhance performance.
 	-- They must be updated every time an index / reservation is added / deleted / modified.
@@ -158,5 +166,9 @@ const (
 	);
 	CREATE INDEX "index2_e2e_to_seg" ON "e2e_to_seg" (
 		"seg"
+	);
+	CREATE INDEX "index_e2e_admission_list" ON "e2e_admission_list" (
+		"owner_host",
+		"valid_until"
 	);`
 )

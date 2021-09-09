@@ -68,7 +68,7 @@ var _ snet.Path = (*Reservation)(nil)
 // "more important" to the sorting).
 func NewReservation(ctx context.Context,
 	daemon sciond.Connector,
-	localIA, dstIA addr.IA,
+	localIA, dstIA addr.IA, dstHost net.IP,
 	bw reservation.BWCls, index reservation.IndexNumber,
 	lessFcns ...LessFunction) (*Reservation, error) {
 
@@ -98,6 +98,7 @@ func NewReservation(ctx context.Context,
 		},
 		SrcIA:       localIA,
 		DstIA:       dstIA,
+		DstHost:     dstHost,
 		Index:       index,
 		Segments:    trip.Segments(),
 		RequestedBW: bw,

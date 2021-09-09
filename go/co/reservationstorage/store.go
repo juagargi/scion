@@ -48,7 +48,7 @@ type Store interface {
 
 	// DeleteExpiredIndices returns the number of indices deleted, and the time for the
 	// next expiration
-	DeleteExpiredIndices(ctx context.Context) (int, time.Time, error)
+	DeleteExpiredIndices(ctx context.Context, now time.Time) (int, time.Time, error)
 
 	// as the source of reservations:
 
@@ -60,6 +60,17 @@ type Store interface {
 	ListStitchableSegments(ctx context.Context, dst addr.IA) (*colibri.StitchableSegments, error)
 	// InitSegmentReservation starts a new segment reservation.
 	InitSegmentReservation(ctx context.Context, req *sgt.SetupReq) error
+
+	// as the destination of reservations:
+
+	// AddAdmissionEntry adds the auto-expiring entry to the admission list.
+	// The store will check the validity date and trim it to the maximum allowed one.
+	// The function returns the effective validity time for the entry.
+	AddAdmissionEntry(ctx context.Context, entry *colibri.AdmissionEntry) (time.Time, error)
+
+	// DeleteExpiredAdmissionEntries removes expired entries from the admission list.
+	// It returns the number of entries removed, and the time when it should be called again.
+	DeleteExpiredAdmissionEntries(ctx context.Context, now time.Time) (int, time.Time, error)
 
 	ReportSegmentReservationsInDB(ctx context.Context) ([]*sgt.Reservation, error)
 	ReportE2EReservationsInDB(ctx context.Context) ([]*e2e.Reservation, error)

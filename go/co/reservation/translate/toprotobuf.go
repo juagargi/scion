@@ -49,7 +49,9 @@ func PBufE2ESetupReq(req *e2e.SetupReq) *colpb.E2ESetupRequest {
 			Segments:       segs,
 			CurrentSegment: uint32(req.CurrentSegmentRsvIndex),
 			SrcIa:          uint64(req.SrcIA.IAInt()),
+			SrcHost:        req.SrcHost,
 			DstIa:          uint64(req.DstIA.IAInt()),
+			DstHost:        req.DstHost,
 		},
 		Allocationtrail: trail,
 	}

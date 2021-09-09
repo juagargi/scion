@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"net"
 	"time"
 
 	"github.com/scionproto/scion/go/co/reservation/e2e"
@@ -81,6 +82,23 @@ type ReserverAndTransit interface {
 	DeleteE2ERsv(ctx context.Context, ID *reservation.ID) error
 }
 
+type DestinationOnly interface {
+	// AddToAdmissionList adds an entry to the white/black list.
+	// Entries in the list can overlap, i.e. for a given IA-host more than one entry can
+	// match. In that case, the result will be that of the newest one.
+	AddToAdmissionList(ctx context.Context, validUntil time.Time,
+		dstEndhost net.IP, regexpIA, regexpHost string, allowAdmission bool) error
+
+	// CheckAdmissionList checks the stored white and black lists to allow or deny an admission
+	// coming from and endhost at a given time.
+	// The functions returns >0 if admitted, < 0 if not admitted, or 0 if no valid entry was found.
+	CheckAdmissionList(ctx context.Context, now time.Time, dstEndhost net.IP,
+		srcIA addr.IA, srcEndhost string) (int, error)
+
+	// DeleteExpiredAdmissionEntries removes all the entries that are no longer valid.
+	DeleteExpiredAdmissionEntries(ctx context.Context, now time.Time) (int, error)
+}
+
 // OptimizedStore is implemented by all DBs.
 type OptimizedStore interface {
 	// GetInterfaceUsageIngress returns the bandwidth already blocked in ingress interface `ifid`.
@@ -120,6 +138,7 @@ type ColibriStorage interface {
 	ReserverOnly
 	TransitOnly
 	ReserverAndTransit
+	DestinationOnly
 	OptimizedStore
 }
 

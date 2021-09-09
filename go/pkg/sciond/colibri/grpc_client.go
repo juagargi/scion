@@ -38,7 +38,7 @@ func (c *DaemonClient) SetupReservation(ctx context.Context, req *sdpb.ColibriSe
 		return nil, serrors.New("bad nil request")
 	}
 	log.Debug("setting up e2e reservation", "id", translate.ID(req.Base.Id))
-	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
+	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL) // deletmeme TODO(juagargi) pretty sure this won't work
 	if err != nil {
 		return nil, err
 	}
@@ -61,4 +61,19 @@ func (c *DaemonClient) CleanupReservation(ctx context.Context, req *sdpb.Colibri
 	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
 	response, err := client.CleanupReservation(ctx, req.Base)
 	return &sdpb.ColibriCleanupResponse{Base: response}, err
+}
+
+func (c *DaemonClient) ColibriAddAdmissionEntry(ctx context.Context,
+	req *sdpb.ColibriAdmissionEntry) (*sdpb.ColibriAdmissionEntryResponse, error) {
+
+	if req == nil {
+		return nil, serrors.New("bad nil request")
+	}
+	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
+	if err != nil {
+		return nil, err
+	}
+	client := colpb.NewColibriClient(conn) // TODO(juagargi) cache the client
+	res, err := client.AddAdmissionEntry(ctx, req.Base)
+	return &sdpb.ColibriAdmissionEntryResponse{Base: res}, err
 }

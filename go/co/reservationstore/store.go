@@ -43,6 +43,8 @@ import (
 	colpb "github.com/scionproto/scion/go/pkg/proto/colibri"
 )
 
+const MaxAdmissionEntryValidity = time.Minute
+
 // Store is the reservation store.
 type Store struct {
 	localIA    addr.IA
@@ -206,6 +208,31 @@ func (s *Store) ListStitchableSegments(ctx context.Context, dst addr.IA) (
 
 	// TODO(juagargi) we could use a local DB to cache the results, like the path query does.
 	return response, nil
+}
+
+func (s *Store) AddAdmissionEntry(ctx context.Context, entry *colibri.AdmissionEntry) (
+	time.Time, error) {
+
+	maxDeadline := time.Now().Add(MaxAdmissionEntryValidity)
+	if entry.ValidUntil.After(maxDeadline) {
+		entry.ValidUntil = maxDeadline
+	}
+	err := s.db.AddToAdmissionList(ctx, entry.ValidUntil, entry.DstHost,
+		entry.RegexpIA, entry.RegexpHost, entry.AcceptAdmission)
+	log.Debug("added entry to admission list", "host", entry.DstHost.String(),
+		"valid_until", util.TimeToCompact(entry.ValidUntil), "admit", entry.AcceptAdmission,
+		"regexp_ia", entry.RegexpIA, "regexp_host", entry.RegexpHost)
+	return entry.ValidUntil, err
+}
+
+func (s *Store) DeleteExpiredAdmissionEntries(ctx context.Context, now time.Time) (
+	int, time.Time, error) {
+
+	n, err := s.db.DeleteExpiredAdmissionEntries(ctx, now)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	return n, now.Add(MaxAdmissionEntryValidity), nil
 }
 
 // InitSegmentReservation will start a new segment reservation request. The source of
@@ -732,15 +759,36 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 		}
 	}
 
-	log.Debug("e2e admission", "requested_cls", req.RequestedBW,
+	log.Debug("e2e admission", "id", req.ID.String(), "requested_cls", req.RequestedBW,
 		"requested", req.RequestedBW.ToKbps(), "admitted", admitted, "free", free)
 
 	var token *reservation.Token
 	if req.IsLastAS() {
-		// TODO(juagargi): contact the endhost
+		var notAdmittedMsg string
+		if admitted {
+			// check white/black (admission) list of endhost
+			admitted = false
+			res, err := tx.CheckAdmissionList(ctx, time.Now(), req.DstHost,
+				req.SrcIA, req.SrcHost.String())
+			log.Debug("checked admission list", "admit", res, "err", err,
+				"host", req.DstHost.String(), "src_ia", req.SrcIA, "src_host", req.SrcHost)
+			switch {
+			case err != nil:
+				notAdmittedMsg = fmt.Sprintf("error in admission list: %s", err)
+			case res < 0:
+				notAdmittedMsg = "endhost denied the admission"
+			case res == 0:
+				notAdmittedMsg = "endhost did not explicitly admit (too busy)"
+			case res > 0:
+				admitted = true
+			}
+		}
 		if !admitted {
+			if notAdmittedMsg == "" {
+				notAdmittedMsg = "not admitted"
+			}
 			return &e2e.SetupResponseFailure{
-				Message:    "not admitted",
+				Message:    notAdmittedMsg,
 				FailedStep: uint8(failedStep),
 				AllocTrail: req.AllocationTrail,
 			}, nil
@@ -868,8 +916,8 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 }
 
 // DeleteExpiredIndices will just call the DB's method to delete the expired indices.
-func (s *Store) DeleteExpiredIndices(ctx context.Context) (int, time.Time, error) {
-	n, err := s.db.DeleteExpiredIndices(ctx, time.Now())
+func (s *Store) DeleteExpiredIndices(ctx context.Context, now time.Time) (int, time.Time, error) {
+	n, err := s.db.DeleteExpiredIndices(ctx, now)
 	if err != nil {
 		return 0, time.Time{}, serrors.WrapStr("deleting expired indices", err)
 	}

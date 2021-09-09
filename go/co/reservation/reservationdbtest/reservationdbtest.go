@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -51,6 +52,8 @@ func TestDB(t *testing.T, newDB func() backend.DB) {
 		"get all e2e reservations":               testGetAllE2ERsvs,
 		"get e2e reservation from ID":            testGetE2ERsvFromID,
 		"get e2e reservations from segment ones": testGetE2ERsvsOnSegRsv,
+		"add entries to admission list":          testAddToAdmissionList,
+		"check admission list":                   testCheckAdmissionList,
 		"state interface blocked":                testGetInterfaceUsage,
 		"stateful tables":                        testStatefulTables,
 	}
@@ -828,6 +831,154 @@ func testGetE2ERsvsOnSegRsv(ctx context.Context, t *testing.T, newDB func() back
 	rsvs, err = db.GetE2ERsvsOnSegRsv(ctx, &s2.ID)
 	require.NoError(t, err)
 	require.ElementsMatch(t, rsvs, []*e2e.Reservation{e2, e3})
+}
+
+func testAddToAdmissionList(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	db := newDB()
+	futureTS := util.SecsToTime(1)
+	thisHost := net.ParseIP("127.0.0.1")
+	regexpIA := ""
+	regexpHost := ""
+	err := db.AddToAdmissionList(ctx, futureTS, thisHost, regexpIA, regexpHost, true)
+	require.NoError(t, err)
+
+	regexpIA = "\\"
+	err = db.AddToAdmissionList(ctx, futureTS, thisHost, regexpIA, regexpHost, true)
+	require.Error(t, err)
+
+	regexpIA = ""
+	regexpHost = "\\"
+	err = db.AddToAdmissionList(ctx, futureTS, thisHost, regexpIA, regexpHost, true)
+	require.Error(t, err)
+}
+
+func testCheckAdmissionList(ctx context.Context, t *testing.T, newDB func() backend.DB) {
+	type Entry struct {
+		dstEndhost string
+		validuntil time.Time
+		regexpIA   string
+		regexpHost string
+		allowed    bool
+	}
+	cases := map[string]struct {
+		entries     []Entry
+		currentTime time.Time
+		dstEndhost  string
+		srcIA       string
+		srcHost     string
+
+		expectFailure   bool
+		expectNoEntries bool
+		allowed         bool
+	}{
+		"empty": {
+			entries:         []Entry{},
+			currentTime:     util.SecsToTime(1),
+			dstEndhost:      "1.1.1.1",
+			srcIA:           "1-ff00:0:111",
+			srcHost:         "1.2.3.4",
+			expectNoEntries: true,
+		},
+		"one_rule_accepting": {
+			entries: []Entry{
+				{
+					dstEndhost: "1.1.1.1",
+					validuntil: util.SecsToTime(20),
+					regexpIA:   "", // equivalent to .*
+					regexpHost: "",
+					allowed:    true,
+				},
+			},
+			currentTime: util.SecsToTime(10),
+			dstEndhost:  "1.1.1.1",
+			srcIA:       "1-ff00:0:111",
+			srcHost:     "1.2.3.4",
+			allowed:     true,
+		},
+		"expired_rule": {
+			entries: []Entry{
+				{
+					dstEndhost: "1.1.1.1",
+					validuntil: util.SecsToTime(10),
+					regexpIA:   "",
+					regexpHost: "",
+					allowed:    true,
+				},
+			},
+			currentTime:     util.SecsToTime(11),
+			dstEndhost:      "1.1.1.1",
+			srcIA:           "1-ff00:0:111",
+			srcHost:         "1.2.3.4",
+			expectNoEntries: true,
+		},
+		"match_only_ia": {
+			entries: []Entry{
+				{
+					dstEndhost: "1.1.1.1",
+					validuntil: util.SecsToTime(20),
+					regexpIA:   ".*",
+					regexpHost: "2.2.2.2",
+					allowed:    true,
+				},
+			},
+			currentTime:     util.SecsToTime(11),
+			dstEndhost:      "1.1.1.1",
+			srcIA:           "1-ff00:0:111",
+			srcHost:         "1.2.3.4",
+			expectNoEntries: true,
+		},
+		"whitelist_everything,_blacklist_host": {
+			entries: []Entry{
+				{
+					dstEndhost: "1.1.1.1",
+					validuntil: util.SecsToTime(20),
+					regexpIA:   "",
+					regexpHost: "",
+					allowed:    true,
+				},
+				{
+					dstEndhost: "1.1.1.1",
+					validuntil: util.SecsToTime(19), // newer -> higher priority
+					regexpIA:   "",
+					regexpHost: "1.2.3.4",
+					allowed:    false,
+				},
+			},
+			currentTime: util.SecsToTime(11),
+			dstEndhost:  "1.1.1.1",
+			srcIA:       "1-ff00:0:111",
+			srcHost:     "1.2.3.4",
+			allowed:     false,
+		},
+	}
+
+	for name, tc := range cases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			db := newDB()
+			for _, entry := range tc.entries {
+				err := db.AddToAdmissionList(ctx, entry.validuntil, net.ParseIP(entry.dstEndhost),
+					entry.regexpIA, entry.regexpHost, entry.allowed)
+				require.NoError(t, err)
+			}
+			res, err := db.CheckAdmissionList(ctx, tc.currentTime, net.ParseIP(tc.dstEndhost),
+				xtest.MustParseIA(tc.srcIA), tc.srcHost)
+			if tc.expectFailure {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			switch {
+			case tc.expectNoEntries:
+				require.Equal(t, 0, res)
+			case tc.allowed:
+				require.Greater(t, res, 0)
+			case !tc.allowed:
+				require.Less(t, res, 0)
+			}
+		})
+	}
 }
 
 func testGetInterfaceUsage(ctx context.Context, t *testing.T, newDB func() backend.DB) {

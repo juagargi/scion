@@ -44,6 +44,8 @@ service DaemonService {
     rpc ColibriSetupRsv(ColibriSetupRequest) returns (ColibriSetupResponse) {}
     // Cleans an E2E reservation up.
     rpc ColibriCleanupRsv(ColibriCleanupRequest) returns (ColibriCleanupResponse) {}
+    // Adds a new automatically expiring entry to the admission list for the host.
+    rpc ColibriAddAdmissionEntry(ColibriAdmissionEntry) returns (ColibriAdmissionEntryResponse) {}
 }
 
 message PathsRequest {
@@ -225,4 +227,12 @@ message ColibriCleanupRequest {
 
 message ColibriCleanupResponse {
     proto.colibri.v1.DaemonCleanupResponse base = 1;
+}
+
+message ColibriAdmissionEntry {
+    proto.colibri.v1.DaemonAdmissionEntry base = 1;
+}
+
+message ColibriAdmissionEntryResponse {
+    proto.colibri.v1.DaemonAdmissionEntryResponse base = 1;
 }

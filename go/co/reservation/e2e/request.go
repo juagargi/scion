@@ -15,6 +15,7 @@
 package e2e
 
 import (
+	"net"
 	"sync"
 
 	base "github.com/scionproto/scion/go/co/reservation"
@@ -27,7 +28,9 @@ import (
 type SetupReq struct {
 	base.Request
 	SrcIA                  addr.IA // necessary to compute the MACs during admission
+	SrcHost                net.IP
 	DstIA                  addr.IA
+	DstHost                net.IP
 	SegmentRsvs            []col.ID
 	CurrentSegmentRsvIndex int // index in SegmentRsv above. Transfer nodes use the first segment
 	RequestedBW            col.BWCls
@@ -58,6 +61,12 @@ func (r *SetupReq) Validate() error {
 	if len(r.SegmentRsvs) == 0 || len(r.SegmentRsvs) > 3 {
 		return serrors.New("invalid number of segment reservations for an e2e request",
 			"count", len(r.SegmentRsvs))
+	}
+	if r.SrcIA.IsZero() || r.SrcHost == nil || r.SrcHost.IsUnspecified() ||
+		r.DstIA.IsZero() || r.DstHost == nil || r.DstHost.IsUnspecified() {
+
+		return serrors.New("empty fields not allowed", "src_ia", r.SrcIA, "src_host", r.SrcHost,
+			"dst_ia", r.DstIA, "dst_host", r.DstHost)
 	}
 	return nil
 }

@@ -21,6 +21,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"net"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -576,6 +578,82 @@ func (x *executor) PersistEgDemand(ctx context.Context, source addr.AS, egress u
 		return db.NewTxError("error persisting egress demand", err)
 	}
 	return nil
+}
+
+func (x *executor) AddToAdmissionList(ctx context.Context, validUntil time.Time,
+	dstEndhost net.IP, regexpIA, regexpHost string, allowAdmission bool) error {
+
+	// first validate regular expressions
+	if _, err := regexp.Compile(regexpIA); err != nil {
+		return serrors.WrapStr("invalid IA regexp", err)
+	}
+	if _, err := regexp.Compile(regexpHost); err != nil {
+		return serrors.WrapStr("invalid host regexp", err)
+	}
+
+	const query = `INSERT INTO e2e_admission_list (owner_host, valid_until,
+		regexp_ia, regexp_host, yes_no) VALUES (?, ?, ?, ?, ?)`
+	_, err := x.db.ExecContext(ctx, query,
+		dstEndhost,
+		util.TimeToSecs(validUntil),
+		regexpIA,
+		regexpHost,
+		allowAdmission)
+
+	return err
+}
+func (x *executor) CheckAdmissionList(ctx context.Context, now time.Time,
+	dstEndhost net.IP, srcIA addr.IA, srcEndhost string) (int, error) {
+
+	// all entries that belong to dstEndhost sorted by the order they where added (newest first)
+	const query = `SELECT valid_until, regexp_ia, regexp_host, yes_no FROM e2e_admission_list
+		WHERE owner_host = ? ORDER BY ROWID DESC`
+
+	rows, err := x.db.QueryContext(ctx, query, dstEndhost)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var validUntilSecs int32
+		var regexpIA, regexpHost string
+		var accepted bool
+
+		err = rows.Scan(&validUntilSecs, &regexpIA, &regexpHost, &accepted)
+		if err != nil {
+			return 0, serrors.WrapStr("obtaining the admission list", err)
+		}
+		validUntil := util.SecsToTime(uint32(validUntilSecs))
+		if now.After(validUntil) {
+			continue
+		}
+		if match, _ := regexp.MatchString(regexpIA, srcIA.String()); !match {
+			continue
+		}
+		if match, _ := regexp.MatchString(regexpHost, srcEndhost); !match {
+			continue
+		}
+		if accepted {
+			return 1, nil
+		} else {
+			return -1, nil
+		}
+	}
+	return 0, nil
+}
+
+func (x *executor) DeleteExpiredAdmissionEntries(ctx context.Context, now time.Time) (int, error) {
+	const query = `DELETE FROM e2e_admission_list WHERE valid_until > ?`
+	res, err := x.db.ExecContext(ctx, query, util.TimeToSecs(now))
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
 }
 
 func (x *executor) DebugCountSegmentRsvs(ctx context.Context) (int, error) {
