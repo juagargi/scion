@@ -56,6 +56,26 @@ func (mr *MockColibriClientMockRecorder) ActivateSegmentIndex(arg0, arg1 interfa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateSegmentIndex", reflect.TypeOf((*MockColibriClient)(nil).ActivateSegmentIndex), varargs...)
 }
 
+// AddAdmissionEntry mocks base method.
+func (m *MockColibriClient) AddAdmissionEntry(arg0 context.Context, arg1 *colibri.DaemonAdmissionEntry, arg2 ...grpc.CallOption) (*colibri.DaemonAdmissionEntryResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "AddAdmissionEntry", varargs...)
+	ret0, _ := ret[0].(*colibri.DaemonAdmissionEntryResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AddAdmissionEntry indicates an expected call of AddAdmissionEntry.
+func (mr *MockColibriClientMockRecorder) AddAdmissionEntry(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddAdmissionEntry", reflect.TypeOf((*MockColibriClient)(nil).AddAdmissionEntry), varargs...)
+}
+
 // CleanupE2EIndex mocks base method.
 func (m *MockColibriClient) CleanupE2EIndex(arg0 context.Context, arg1 *colibri.Request, arg2 ...grpc.CallOption) (*colibri.Response, error) {
 	m.ctrl.T.Helper()
@@ -292,6 +312,21 @@ func (m *MockColibriServer) ActivateSegmentIndex(arg0 context.Context, arg1 *col
 func (mr *MockColibriServerMockRecorder) ActivateSegmentIndex(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateSegmentIndex", reflect.TypeOf((*MockColibriServer)(nil).ActivateSegmentIndex), arg0, arg1)
+}
+
+// AddAdmissionEntry mocks base method.
+func (m *MockColibriServer) AddAdmissionEntry(arg0 context.Context, arg1 *colibri.DaemonAdmissionEntry) (*colibri.DaemonAdmissionEntryResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddAdmissionEntry", arg0, arg1)
+	ret0, _ := ret[0].(*colibri.DaemonAdmissionEntryResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AddAdmissionEntry indicates an expected call of AddAdmissionEntry.
+func (mr *MockColibriServerMockRecorder) AddAdmissionEntry(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddAdmissionEntry", reflect.TypeOf((*MockColibriServer)(nil).AddAdmissionEntry), arg0, arg1)
 }
 
 // CleanupE2EIndex mocks base method.

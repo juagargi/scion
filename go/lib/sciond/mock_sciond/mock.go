@@ -73,6 +73,21 @@ func (mr *MockConnectorMockRecorder) Close(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockConnector)(nil).Close), arg0)
 }
 
+// ColibriAddAdmissionEntry mocks base method.
+func (m *MockConnector) ColibriAddAdmissionEntry(arg0 context.Context, arg1 *colibri.AdmissionEntry) (time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ColibriAddAdmissionEntry", arg0, arg1)
+	ret0, _ := ret[0].(time.Time)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ColibriAddAdmissionEntry indicates an expected call of ColibriAddAdmissionEntry.
+func (mr *MockConnectorMockRecorder) ColibriAddAdmissionEntry(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ColibriAddAdmissionEntry", reflect.TypeOf((*MockConnector)(nil).ColibriAddAdmissionEntry), arg0, arg1)
+}
+
 // ColibriCleanupRsv mocks base method.
 func (m *MockConnector) ColibriCleanupRsv(arg0 context.Context, arg1 *reservation.ID, arg2 reservation.IndexNumber) error {
 	m.ctrl.T.Helper()

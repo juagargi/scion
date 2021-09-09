@@ -7,6 +7,7 @@ package mock_backend
 import (
 	context "context"
 	sql "database/sql"
+	net "net"
 	reflect "reflect"
 	time "time"
 
@@ -41,6 +42,20 @@ func (m *MockDB) EXPECT() *MockDBMockRecorder {
 	return m.recorder
 }
 
+// AddToAdmissionList mocks base method.
+func (m *MockDB) AddToAdmissionList(arg0 context.Context, arg1 time.Time, arg2 net.IP, arg3, arg4 string, arg5 bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddToAdmissionList", arg0, arg1, arg2, arg3, arg4, arg5)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddToAdmissionList indicates an expected call of AddToAdmissionList.
+func (mr *MockDBMockRecorder) AddToAdmissionList(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddToAdmissionList", reflect.TypeOf((*MockDB)(nil).AddToAdmissionList), arg0, arg1, arg2, arg3, arg4, arg5)
+}
+
 // BeginTransaction mocks base method.
 func (m *MockDB) BeginTransaction(arg0 context.Context, arg1 *sql.TxOptions) (backend.Transaction, error) {
 	m.ctrl.T.Helper()
@@ -54,6 +69,21 @@ func (m *MockDB) BeginTransaction(arg0 context.Context, arg1 *sql.TxOptions) (ba
 func (mr *MockDBMockRecorder) BeginTransaction(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginTransaction", reflect.TypeOf((*MockDB)(nil).BeginTransaction), arg0, arg1)
+}
+
+// CheckAdmissionList mocks base method.
+func (m *MockDB) CheckAdmissionList(arg0 context.Context, arg1 time.Time, arg2 net.IP, arg3 addr.IA, arg4 string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckAdmissionList", arg0, arg1, arg2, arg3, arg4)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CheckAdmissionList indicates an expected call of CheckAdmissionList.
+func (mr *MockDBMockRecorder) CheckAdmissionList(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckAdmissionList", reflect.TypeOf((*MockDB)(nil).CheckAdmissionList), arg0, arg1, arg2, arg3, arg4)
 }
 
 // Close mocks base method.
@@ -82,6 +112,21 @@ func (m *MockDB) DeleteE2ERsv(arg0 context.Context, arg1 *reservation.ID) error 
 func (mr *MockDBMockRecorder) DeleteE2ERsv(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteE2ERsv", reflect.TypeOf((*MockDB)(nil).DeleteE2ERsv), arg0, arg1)
+}
+
+// DeleteExpiredAdmissionEntries mocks base method.
+func (m *MockDB) DeleteExpiredAdmissionEntries(arg0 context.Context, arg1 time.Time) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteExpiredAdmissionEntries", arg0, arg1)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteExpiredAdmissionEntries indicates an expected call of DeleteExpiredAdmissionEntries.
+func (mr *MockDBMockRecorder) DeleteExpiredAdmissionEntries(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpiredAdmissionEntries", reflect.TypeOf((*MockDB)(nil).DeleteExpiredAdmissionEntries), arg0, arg1)
 }
 
 // DeleteExpiredIndices mocks base method.

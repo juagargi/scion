@@ -165,7 +165,6 @@ message E2eSetupRequest {
     }
     message E2eSetupBead {
         uint32 maxbw = 1;
-        bytes hopfield = 2; // TODO(juagargi) unnecessary?
     }
 
     Request base = 1; // the path here is from src to dst
