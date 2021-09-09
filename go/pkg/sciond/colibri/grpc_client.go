@@ -69,7 +69,6 @@ func (c *DaemonClient) ColibriAddAdmissionEntry(ctx context.Context,
 	if req == nil {
 		return nil, serrors.New("bad nil request")
 	}
-	log.Debug("adding admission entry", "accept", req.Base.Accept)
 	conn, err := c.Dialer.Dial(ctx, addr.SvcCOL)
 	if err != nil {
 		return nil, err

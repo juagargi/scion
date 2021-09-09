@@ -15,7 +15,6 @@
 package grpc
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -342,22 +341,33 @@ func (s *ColibriService) AddAdmissionEntry(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if len(req.DstHost) > 0 {
-		// check that we have the same IP address in the DstHost field and the TCP connection
-		if !bytes.Equal(req.DstHost, clientAddr.IP) {
-			return nil, serrors.New("IP address in request not the same as connnection",
-				"req", net.IP(req.DstHost).String(), "conn", clientAddr.IP.String())
-		}
+	// TODO(juagargi)
+	// because we can't guarantee that the IP the client requested is reachable from this
+	// service, checking that the connection from the endhost to this service uses the same
+	// IP is wrong.
+	// A new design for this check must be created and implemented. For now, the check is
+	// completely disabled (commented code below).
+	// if len(req.DstHost) > 0 {
+	// 	// check that we have the same IP address in the DstHost field and the TCP connection
+	// 	if !bytes.Equal(req.DstHost, clientAddr.IP) {
+	// 		return nil, serrors.New("IP address in request not the same as connnection",
+	// 			"req", net.IP(req.DstHost).String(), "conn", clientAddr.IP.String())
+	// 	}
+	// }
+	if len(req.DstHost) == 0 {
+		req.DstHost = clientAddr.IP
 	}
 	entry := &colibri.AdmissionEntry{
-		DstHost:         clientAddr.IP,
+		DstHost:         req.DstHost,
 		ValidUntil:      util.SecsToTime(req.ValidUntil),
 		RegexpIA:        req.RegexpIa,
 		RegexpHost:      req.RegexpHost,
 		AcceptAdmission: req.Accept,
 	}
 	validUntil, err := s.Store.AddAdmissionEntry(ctx, entry)
-	return &colpb.DaemonAdmissionEntryResponse{ValidUntil: util.TimeToSecs(validUntil)}, err
+	return &colpb.DaemonAdmissionEntryResponse{
+		ValidUntil: util.TimeToSecs(validUntil),
+	}, err
 }
 
 // extractPath returns the PacketPath, ingress and egress used with this RPC.

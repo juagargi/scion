@@ -62,8 +62,8 @@ func (r *SetupReq) Validate() error {
 		return serrors.New("invalid number of segment reservations for an e2e request",
 			"count", len(r.SegmentRsvs))
 	}
-	if r.SrcIA.IsZero() || r.SrcHost.IsUnspecified() ||
-		r.DstIA.IsZero() || r.DstHost.IsUnspecified() {
+	if r.SrcIA.IsZero() || r.SrcHost == nil || r.SrcHost.IsUnspecified() ||
+		r.DstIA.IsZero() || r.DstHost == nil || r.DstHost.IsUnspecified() {
 
 		return serrors.New("empty fields not allowed", "src_ia", r.SrcIA, "src_host", r.SrcHost,
 			"dst_ia", r.DstIA, "dst_host", r.DstHost)

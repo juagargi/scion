@@ -299,6 +299,7 @@ func (c grpcConn) ColibriAddAdmissionEntry(ctx context.Context, entry *col.Admis
 			ValidUntil: util.TimeToSecs(entry.ValidUntil),
 			RegexpIa:   entry.RegexpIA,
 			RegexpHost: entry.RegexpHost,
+			Accept:     entry.AcceptAdmission,
 		},
 	}
 	client := sdpb.NewDaemonServiceClient(c.conn)
