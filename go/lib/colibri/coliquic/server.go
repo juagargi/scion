@@ -63,7 +63,6 @@ func GetColibriPath(session quic.Session) (*colibri.ColibriPath, error) {
 
 // NewConnListener adapts a quic.Listener to be a net.Listener.
 func NewConnListener(listener quic.Listener) net.Listener {
-	// TODO(juagargi) check squic.NewConnListener as it has weird error semantics for its Accept()
 	return squic.NewConnListener(listener)
 }
 

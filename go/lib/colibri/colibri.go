@@ -190,14 +190,14 @@ func MACInputStatic(buffer []byte, suffix []byte, expTick uint32,
 	binary.BigEndian.PutUint32(buffer[12:16], expTick)
 	buffer[16] = uint8(bwCls)
 	buffer[17] = uint8(rlc)
-	buffer[18] = 0 // TODO(juagargi) shouldn't it be HFCount?
+	buffer[18] = 0
 
 	// Version | C | 0
 	var flags uint8
 	if controlFlag {
 		flags = uint8(1) << 3
 	}
-	flags += uint8(idx) << 4
+	flags |= uint8(idx) << 4
 	buffer[19] = flags
 	if reverseFlag {
 		srcAS = dstAS
