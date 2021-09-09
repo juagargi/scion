@@ -95,6 +95,9 @@ type DestinationOnly interface {
 	// The functions returns >0 if admitted, < 0 if not admitted, or 0 if no valid entry was found.
 	CheckAdmissionList(ctx context.Context, now time.Time, dstEndhost net.IP,
 		srcIA addr.IA, srcEndhost string) (int, error)
+
+	// DeleteExpiredAdmissionEntries removes all the entries that are no longer valid.
+	DeleteExpiredAdmissionEntries(ctx context.Context, now time.Time) (int, error)
 }
 
 // OptimizedStore is implemented by all DBs.

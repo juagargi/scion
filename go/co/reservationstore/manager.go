@@ -49,16 +49,17 @@ type Manager interface {
 
 // manager takes care of the health of the segment reservations.
 type manager struct {
-	now            func() time.Time // replace in tests
-	wakeupTime     time.Time        // no need to do anything until this time
-	wakeupExpirer  time.Time        // wake up the colibri reservation expire routine
-	wakeupKeeper   time.Time        // wake up the keeper (new rsvs/indices)
-	wakeupListE2Es time.Time
-	wakeupListSegs time.Time
-	keeper         *keeper // handles new rsvs/indices
-	localIA        addr.IA
-	store          reservationstorage.Store
-	router         snet.Router
+	now                 func() time.Time // replace in tests
+	wakeupTime          time.Time        // no need to do anything until this time
+	wakeupListSegs      time.Time
+	wakeupListE2Es      time.Time
+	wakeupKeeper        time.Time // wake up the keeper (new rsvs/indices)
+	wakeupExpirer       time.Time // wake up the colibri reservation expire routine
+	wakeupAdmissionList time.Time
+	keeper              *keeper // handles new rsvs/indices
+	localIA             addr.IA
+	store               reservationstorage.Store
+	router              snet.Router
 }
 
 func NewColibriManager(localIA addr.IA, router snet.Router, store reservationstorage.Store,
@@ -92,8 +93,8 @@ func (m *manager) Run(ctx context.Context) {
 		return
 	}
 	wg := sync.WaitGroup{}
-	wg.Add(4)
-	go func() {
+	wg.Add(5)
+	go func() { // periodic report of segment reservations
 		defer log.HandlePanic()
 		defer wg.Done()
 		defer func() {
@@ -121,7 +122,7 @@ func (m *manager) Run(ctx context.Context) {
 			log.Debug("----------- colibri segments ------------\n" + strings.Join(table, "\n"))
 		}
 	}()
-	go func() {
+	go func() { // periodic report of e2e reservations
 		defer log.HandlePanic()
 		defer wg.Done()
 		defer func() {
@@ -157,7 +158,7 @@ func (m *manager) Run(ctx context.Context) {
 			log.Debug("___________ colibri e2e's now ___________\n" + strings.Join(table, "\n"))
 		}
 	}()
-	go func() {
+	go func() { // keep segment reservations (new setups and renewals)
 		defer log.HandlePanic()
 		defer wg.Done()
 		if now.Before(m.wakeupKeeper) {
@@ -173,33 +174,50 @@ func (m *manager) Run(ctx context.Context) {
 		logger.Info("will wait until the specified time", "wakeup_time", wakeupTime)
 		m.wakeupKeeper = wakeupTime
 	}()
-	go func() {
+	go func() { // periodic removal of expired indices (both segment & e2e)
 		defer log.HandlePanic()
 		defer wg.Done()
 		if now.Before(m.wakeupExpirer) {
 			return
 		}
-		n, wakeupTime, err := m.store.DeleteExpiredIndices(ctx)
+		n, wakeupTime, err := m.store.DeleteExpiredIndices(ctx, m.now())
 		if err != nil {
 			logger.Error("deleting expired indices", "deleted_count", n, "err", err)
 		}
+		if n > 0 {
+			logger.Debug("deleted expired indices", "count", n)
+		}
 		if wakeupTime.IsZero() {
-			wakeupTime = now.Add(2 * time.Second)
+			wakeupTime = now.Add(8 * time.Second)
 		}
 		m.wakeupExpirer = wakeupTime
 	}()
+	go func() { // periodic removal of expired admission entries (white/black lists)
+		defer log.HandlePanic()
+		defer wg.Done()
+		if now.Before(m.wakeupAdmissionList) {
+			return
+		}
+		n, wakeupTime, err := m.store.DeleteExpiredAdmissionEntries(ctx, m.now())
+		if err != nil {
+			logger.Error("deleting expired admission list entries", "err", err)
+		}
+		if n > 0 {
+			logger.Debug("deleted expired indices", "count", n)
+		}
+		if wakeupTime.IsZero() {
+			wakeupTime = now.Add(8 * time.Second)
+		}
+		m.wakeupAdmissionList = wakeupTime
+	}()
 	wg.Wait()
 
-	m.wakeupTime = m.wakeupKeeper
-	if m.wakeupExpirer.Before(m.wakeupTime) {
-		m.wakeupTime = m.wakeupExpirer
-	}
-	if m.wakeupListSegs.Before(m.wakeupTime) {
-		m.wakeupTime = m.wakeupListSegs
-	}
-	if m.wakeupListE2Es.Before(m.wakeupTime) {
-		m.wakeupTime = m.wakeupListE2Es
-	}
+	m.wakeupTime = findEarliest(
+		m.wakeupListSegs,
+		m.wakeupListE2Es,
+		m.wakeupKeeper,
+		m.wakeupExpirer,
+		m.wakeupAdmissionList)
 }
 
 func (m *manager) Now() time.Time {
@@ -285,4 +303,17 @@ func (m *manager) ActivateManyRequest(ctx context.Context, reqs []*base.Request)
 	}
 	wg.Wait()
 	return errs
+}
+
+func findEarliest(times ...time.Time) time.Time {
+	if len(times) == 0 {
+		return time.Time{}
+	}
+	earliest := times[0]
+	for i := 1; i < len(times); i++ {
+		if times[i].Before(earliest) {
+			earliest = times[i]
+		}
+	}
+	return earliest
 }

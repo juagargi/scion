@@ -643,6 +643,19 @@ func (x *executor) CheckAdmissionList(ctx context.Context, now time.Time,
 	return 0, nil
 }
 
+func (x *executor) DeleteExpiredAdmissionEntries(ctx context.Context, now time.Time) (int, error) {
+	const query = `DELETE FROM e2e_admission_list WHERE valid_until > ?`
+	res, err := x.db.ExecContext(ctx, query, util.TimeToSecs(now))
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
 func (x *executor) DebugCountSegmentRsvs(ctx context.Context) (int, error) {
 	const query = `SELECT COUNT(*) FROM seg_reservation`
 	var count int

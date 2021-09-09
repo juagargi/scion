@@ -223,6 +223,16 @@ func (s *Store) AddAdmissionEntry(ctx context.Context, entry *colibri.AdmissionE
 	return entry.ValidUntil, err
 }
 
+func (s *Store) DeleteExpiredAdmissionEntries(ctx context.Context, now time.Time) (
+	int, time.Time, error) {
+
+	n, err := s.db.DeleteExpiredAdmissionEntries(ctx, now)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	return n, now.Add(MaxAdmissionEntryValidity), nil
+}
+
 // InitSegmentReservation will start a new segment reservation request. The source of
 // the request will have this very AS as source.
 func (s *Store) InitSegmentReservation(ctx context.Context, req *segment.SetupReq) error {
@@ -893,8 +903,8 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 }
 
 // DeleteExpiredIndices will just call the DB's method to delete the expired indices.
-func (s *Store) DeleteExpiredIndices(ctx context.Context) (int, time.Time, error) {
-	n, err := s.db.DeleteExpiredIndices(ctx, time.Now())
+func (s *Store) DeleteExpiredIndices(ctx context.Context, now time.Time) (int, time.Time, error) {
+	n, err := s.db.DeleteExpiredIndices(ctx, now)
 	if err != nil {
 		return 0, time.Time{}, serrors.WrapStr("deleting expired indices", err)
 	}
