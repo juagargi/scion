@@ -41,6 +41,7 @@ func TestNewReservation(t *testing.T) {
 
 	srcIA := xtest.MustParseIA("1-ff00:0:111")
 	dstIA := xtest.MustParseIA("1-ff00:0:112")
+	dstHost := xtest.MustParseIP(t, "192.0.2.10")
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	daemon := mock_sciond.NewMockConnector(ctrl)
@@ -49,7 +50,7 @@ func TestNewReservation(t *testing.T) {
 			ct.WithUpSegs(1),
 		), nil)
 
-	rsv, err := NewReservation(ctx, daemon, srcIA, dstIA, 11, 0, sorting.ByExpiration)
+	rsv, err := NewReservation(ctx, daemon, srcIA, dstIA, dstHost, 11, 0, sorting.ByExpiration)
 	require.NoError(t, err)
 	require.True(t, rsv.request.Id.IsE2EID())
 	require.Equal(t, dstIA, rsv.dstIA)
@@ -67,6 +68,7 @@ func TestReservationOpen(t *testing.T) {
 
 	srcIA := xtest.MustParseIA("1-ff00:0:111")
 	dstIA := xtest.MustParseIA("1-ff00:0:112")
+	dstHost := xtest.MustParseIP(t, "192.0.2.10")
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	daemon := mock_sciond.NewMockConnector(ctrl)
@@ -75,7 +77,7 @@ func TestReservationOpen(t *testing.T) {
 			ct.WithUpSegs(1),
 		), nil)
 
-	rsv, err := NewReservation(ctx, daemon, srcIA, dstIA, 11, 0, sorting.ByExpiration)
+	rsv, err := NewReservation(ctx, daemon, srcIA, dstIA, dstHost, 11, 0, sorting.ByExpiration)
 	require.NoError(t, err)
 
 	// modify the global task duration for the test
@@ -132,6 +134,7 @@ func TestReservationOpenSuccessfully(t *testing.T) {
 
 	srcIA := xtest.MustParseIA("1-ff00:0:111")
 	dstIA := xtest.MustParseIA("1-ff00:0:112")
+	dstHost := xtest.MustParseIP(t, "192.0.2.10")
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	daemon := mock_sciond.NewMockConnector(ctrl)
@@ -140,7 +143,7 @@ func TestReservationOpenSuccessfully(t *testing.T) {
 			ct.WithUpSegs(1),
 		), nil)
 
-	rsv, err := NewReservation(ctx, daemon, srcIA, dstIA, 11, 0, sorting.ByExpiration)
+	rsv, err := NewReservation(ctx, daemon, srcIA, dstIA, dstHost, 11, 0, sorting.ByExpiration)
 	require.NoError(t, err)
 	// modify the global task duration for the test
 	rsv.e2eRenewalTaskDuration = reservation.TicksInE2ERsv * 4 * time.Millisecond / 2 // 16 millisecs
@@ -181,6 +184,7 @@ func TestReservationFailOnRenewal(t *testing.T) {
 
 	srcIA := xtest.MustParseIA("1-ff00:0:111")
 	dstIA := xtest.MustParseIA("1-ff00:0:112")
+	dstHost := xtest.MustParseIP(t, "192.0.2.10")
 	stitchables := ct.NewStitchableSegments("1-ff00:0:111", "1-ff00:0:112",
 		ct.WithUpSegs(1, 1), // two up
 	)
@@ -194,7 +198,7 @@ func TestReservationFailOnRenewal(t *testing.T) {
 	)
 
 	trips := colibri.CombineAll(stitchables)
-	rsv, err := NewReservation(ctx, daemon, srcIA, dstIA, 11, 0) // unsorted; will use [0]
+	rsv, err := NewReservation(ctx, daemon, srcIA, dstIA, dstHost, 11, 0) // unsorted; will use [0]
 	require.NoError(t, err)
 
 	// modify the global task duration for the test
