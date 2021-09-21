@@ -18,8 +18,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/scionproto/scion/go/lib/addr"
@@ -32,8 +35,9 @@ import (
 )
 
 var (
-	features string
-	test     string
+	features    string
+	test        string
+	parallelism int
 )
 
 func main() {
@@ -74,7 +78,7 @@ func realMain() int {
 		return 1
 	}
 	if err := runTests(in, pairs); err != nil {
-		log.Error("Error during tests", "err", err)
+		log.Error("Error during tests", "err", err.Error())
 		return 1
 	}
 	return 0
@@ -85,7 +89,7 @@ func addFlags() {
 		fmt.Sprintf("enable development features (%v)", feature.String(&feature.Default{}, "|")))
 	flag.StringVar(&test, "test", "",
 		"Test to run. If empty, all tests are run.")
-
+	flag.IntVar(&parallelism, "parallelism", 1, "How many end2end tests run in parallel.")
 }
 
 func runTests(in integration.Integration, pairs []integration.IAPair) error {
@@ -140,6 +144,95 @@ func runTests(in integration.Integration, pairs []integration.IAPair) error {
 			return err
 		}
 
+		// Start a done signal listener. This is how the end2end binary
+		// communicates with this integration test. This is solely used to print
+		// the progress of the test.
+		var ctrMtx sync.Mutex
+		var ctr int
+		doneDir, err := filepath.Abs(filepath.Join(integration.LogDir(), "socks"))
+		if err != nil {
+			return serrors.WrapStr("determining abs path", err)
+		}
+		if err := os.MkdirAll(doneDir, os.ModePerm); err != nil {
+			return serrors.WrapStr("creating socks directory", err)
+		}
+		// this is a bit of a hack, socket file names have a max length of 108
+		// and inside bazel tests we easily have longer paths, therefore we
+		// create a temporary symlink to the directory where we put the socket
+		// file.
+		tmpDir, err := ioutil.TempDir("", "e2e_integration")
+		if err != nil {
+			return serrors.WrapStr("creating temp dir", err)
+		}
+		if err := os.Remove(tmpDir); err != nil {
+			return serrors.WrapStr("deleting temp dir", err)
+		}
+		if err := os.Symlink(doneDir, tmpDir); err != nil {
+			return serrors.WrapStr("symlinking socks dir", err)
+		}
+		doneDir = tmpDir
+		defer os.Remove(doneDir)
+		socket, clean, err := integration.ListenDone(doneDir, func(src, dst addr.IA) {
+			ctrMtx.Lock()
+			defer ctrMtx.Unlock()
+			ctr++
+			testInfo := fmt.Sprintf("%v -> %v (%v/%v)", src, dst, ctr, len(pairs))
+			log.Info(fmt.Sprintf("Test %v: %s", in.Name(), testInfo))
+		})
+		if err != nil {
+			return serrors.WrapStr("creating done listener", err)
+		}
+		defer clean()
+
+		// CI collapses if parallelism is too high.
+		semaphore := make(chan struct{}, parallelism)
+
+		// Docker exec comes with a 1 second overhead. We group all the pairs by
+		// the clients. And run all pairs for a given client in one execution.
+		// Thus, reducing the overhead dramatically.
+		groups := integration.GroupBySource(pairs)
+		clientResults := make(chan error, len(groups))
+		for src, dsts := range groups {
+			go func(src *snet.UDPAddr, dsts []*snet.UDPAddr) {
+				defer log.HandlePanic()
+
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+				// Aggregate all the commands that need to be run.
+				cmds := make([]integration.Cmd, 0, len(dsts))
+				for _, dst := range dsts {
+					if dst.IA.Equal(src.IA) {
+						continue
+					}
+					cmd, err := clientTemplate(socket).Template(src, dst)
+					if err != nil {
+						clientResults <- err
+						return
+					}
+					cmds = append(cmds, cmd)
+				}
+				var tester string
+				logFile := fmt.Sprintf("%s/client_%s.log",
+					filepath.Join(integration.LogDir(), "colibri_integration"),
+					src.IA.FileFmt(false))
+				err := integration.Run(ctx, integration.RunConfig{
+					Commands: cmds,
+					LogFile:  logFile,
+					Tester:   tester,
+				})
+				if err != nil {
+					err = serrors.WithCtx(err, "file", relFile(logFile))
+				}
+				clientResults <- err
+			}(src, dsts)
+		}
+		errs = nil
+		for range groups {
+			err := <-clientResults
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
 		return errs.ToError()
 	})
 }
@@ -194,4 +287,25 @@ func contains(ases *util.ASList, core bool, ia addr.IA) bool {
 		}
 	}
 	return false
+}
+
+func clientTemplate(progressSock string) integration.Cmd {
+	cmd := integration.Cmd{
+		Binary: "./bin/colibri",
+		Args: []string{
+			"--sciond", integration.SCIOND,
+			"--local", integration.SrcAddrPattern + ":0",
+			"--remote", integration.DstAddrPattern + ":" + integration.ServerPortReplace,
+			"--progress", progressSock,
+		},
+	}
+	return cmd
+}
+
+func relFile(file string) string {
+	rel, err := filepath.Rel(filepath.Dir(integration.LogDir()), file)
+	if err != nil {
+		return file
+	}
+	return rel
 }

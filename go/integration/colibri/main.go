@@ -15,9 +15,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -26,6 +29,7 @@ import (
 	libint "github.com/scionproto/scion/go/lib/integration"
 	"github.com/scionproto/scion/go/lib/log"
 	"github.com/scionproto/scion/go/lib/sciond"
+	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/sock/reliable"
 	"github.com/scionproto/scion/go/lib/util"
@@ -39,10 +43,9 @@ func realMain() int {
 	defer log.HandlePanic()
 	defer log.Flush()
 
-	fmt.Printf("deleteme first line in colibri binary\n")
-	var dstAddr snet.UDPAddr
+	var remote snet.UDPAddr
 	var timeout = util.DurWrap{Duration: 5 * time.Second}
-	addFlags(&dstAddr, &timeout)
+	addFlags(&remote, &timeout)
 	integration.Setup()
 
 	closeTracer, err := integration.InitTracer("end2end-" + integration.Mode)
@@ -57,9 +60,7 @@ func realMain() int {
 		return 0
 	}
 	c := client{}
-	return c.run()
-	// colibriClient(dstAddr, timeout.Duration)
-	// return 0
+	return c.run(&remote)
 }
 
 func addFlags(remote *snet.UDPAddr, timeout *util.DurWrap) {
@@ -73,38 +74,58 @@ func (s server) run() {
 	log.Info("Starting server", "isd_as", integration.Local.IA)
 	defer log.Info("Finished server", "isd_as", integration.Local.IA)
 
-	dispatcher := &snet.DefaultPacketDispatcherService{
-		Dispatcher: reliable.NewDispatcher(""),
-		SCMPHandler: snet.DefaultSCMPHandler{
-			RevocationHandler: sciond.RevHandler{Connector: integration.SDConn()},
-		},
-	}
-	conn, port, err := dispatcher.Register(context.Background(), integration.Local.IA,
-		integration.Local.Host, addr.SvcNone)
+	dispatcher := reliable.NewDispatcher(reliable.DefaultDispPath)
+	scionNet := snet.NewNetwork(integration.Local.IA, dispatcher, sciond.RevHandler{
+		Connector: integration.SDConn()})
+	conn, err := scionNet.Listen(context.Background(), "udp", integration.Local.Host, addr.SvcNone)
 	if err != nil {
 		integration.LogFatal("Error listening", "err", err)
 	}
+	log.Info("Listening", "local", conn.LocalAddr().String())
 	if len(os.Getenv(libint.GoIntegrationEnv)) > 0 {
 		// Needed for integration test ready signal.
-		fmt.Printf("Port=%d\n", port)
+		addr, err := net.ResolveUDPAddr("udp", conn.LocalAddr().String())
+		if err != nil {
+			log.Error("unable to parse listening address", "err", err)
+		}
+		fmt.Printf("Port=%d\n", addr.Port)
 		fmt.Printf("%s%s\n\n", libint.ReadySignal, integration.Local.IA)
 	}
-	log.Info("Listening", "local", fmt.Sprintf("%v:%d", integration.Local.Host, port))
 
 	for {
-		if err := s.accept(conn); err != nil {
+		buffer := make([]byte, 16384)
+		if err := s.accept(conn, buffer); err != nil {
 			log.Error("accepting connection", "err", err)
 		}
 	}
 }
 
-func (s server) accept(conn snet.PacketConn) error {
+func (s server) accept(conn *snet.Conn, buffer []byte) error {
+	n, from, err := conn.ReadFrom(buffer)
+	if err != nil {
+		return err
+	}
+	fromScion, ok := from.(*snet.UDPAddr)
+	if !ok {
+		return serrors.New("not a scion address", "addr", from)
+	}
+
+	data := buffer[:n]
+	if !bytes.Equal(data, ([]byte)("test test")) {
+		return serrors.New("unknown received pattern", "pattern", string(data),
+			"hex", hex.EncodeToString(data))
+	}
+	log.Info("received pattern", "sender", fromScion.String())
 	return nil
 }
 
 type client struct{}
 
-func (c client) run() int {
-	log.Info("deleteme started client")
+func (c client) run(remote *snet.UDPAddr) int {
+	pair := fmt.Sprintf("%s -> %s", integration.Local.IA, remote.IA)
+	log.Info("Starting", "pair", pair)
+	defer log.Info("Finished", "pair", pair)
+	defer integration.Done(integration.Local.IA, remote.IA)
+
 	return 0
 }
