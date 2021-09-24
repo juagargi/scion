@@ -50,7 +50,7 @@ func realMain() int {
 	defer log.Flush()
 
 	var remote snet.UDPAddr
-	var timeout = util.DurWrap{Duration: 5 * time.Second}
+	var timeout = util.DurWrap{Duration: 3 * time.Second}
 	addFlags(&remote, &timeout)
 	integration.Setup()
 
@@ -62,19 +62,28 @@ func realMain() int {
 	defer closeTracer()
 
 	if integration.Mode == integration.ModeServer {
-		server{}.run()
+		server{
+			Timeout: timeout.Duration,
+		}.run()
 		return 0
 	}
-	c := client{}
-	return c.run(&remote)
+	c := client{
+		Daemon:  integration.SDConn(),
+		Timeout: timeout.Duration,
+		LocalIA: integration.Local.IA,
+		Remote:  &remote,
+	}
+	return c.run()
 }
 
 func addFlags(remote *snet.UDPAddr, timeout *util.DurWrap) {
 	flag.Var(remote, "remote", "(Mandatory for clients) address to connect to")
-	flag.Var(timeout, "timeout", "The timeout for each attempt")
+	flag.Var(timeout, "timeout", `The timeout for each attempt (default "3s")`)
 }
 
-type server struct{}
+type server struct {
+	Timeout time.Duration
+}
 
 func (s server) run() {
 	log.Info("Starting server", "isd_as", integration.Local.IA)
@@ -112,7 +121,7 @@ func (s server) run() {
 
 func (s server) allowAdmission(daemon sciond.Connector, serverIP net.IP) {
 	for {
-		ctx, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
+		ctx, cancelF := context.WithTimeout(context.Background(), s.Timeout)
 		entry := &colibri.AdmissionEntry{
 			DstHost:         serverIP, // could be empty to detect it automatically
 			ValidUntil:      time.Now().Add(time.Minute),
@@ -160,15 +169,20 @@ func (s server) accept(conn *snet.Conn, buffer []byte) error {
 	return nil
 }
 
-type client struct{}
+type client struct {
+	Daemon  sciond.Connector
+	Timeout time.Duration
+	LocalIA addr.IA
+	Remote  *snet.UDPAddr
+}
 
-func (c client) run(remote *snet.UDPAddr) int {
-	pair := fmt.Sprintf("%s -> %s", integration.Local.IA, remote.IA)
+func (c client) run() int {
+	pair := fmt.Sprintf("%s -> %s", integration.Local.IA, c.Remote.IA)
 	log.Info("Starting", "pair", pair)
 	defer log.Info("Finished", "pair", pair)
-	defer integration.Done(integration.Local.IA, remote.IA)
+	defer integration.Done(integration.Local.IA, c.Remote.IA)
 
-	ctx, cancelF := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancelF := context.WithTimeout(context.Background(), c.Timeout)
 	defer cancelF()
 	deadline, _ := ctx.Deadline()
 
@@ -177,7 +191,7 @@ func (c client) run(remote *snet.UDPAddr) int {
 		Connector: integration.SDConn(),
 		IA:        integration.Local.IA,
 	}
-	pathsToDst, err := pathquerier.Query(ctx, remote.IA)
+	pathsToDst, err := pathquerier.Query(ctx, c.Remote.IA)
 	if err != nil {
 		integration.LogFatal("obtaining paths", "err", err)
 	}
@@ -186,14 +200,14 @@ func (c client) run(remote *snet.UDPAddr) int {
 	}
 	pathToDst := pathsToDst[0]
 	log.Debug("found path to destination", "path", pathToDst)
-	remote.Path = pathToDst.Path()
-	remote.NextHop = pathToDst.UnderlayNextHop()
+	c.Remote.Path = pathToDst.Path()
+	c.Remote.NextHop = pathToDst.UnderlayNextHop()
 	// dial to destination using the first path
 	dispatcher := reliable.NewDispatcher(reliable.DefaultDispPath)
 	scionNet := snet.NewNetwork(integration.Local.IA, dispatcher, sciond.RevHandler{
 		Connector: integration.SDConn()})
-	log.Debug("dialing with best effort", "addr", remote.String(), "path", remote.Path)
-	conn, err := scionNet.Dial(ctx, "udp", integration.Local.Host, remote, addr.SvcNone)
+	log.Debug("dialing with best effort", "addr", c.Remote.String(), "path", c.Remote.Path)
+	conn, err := scionNet.Dial(ctx, "udp", integration.Local.Host, c.Remote, addr.SvcNone)
 	if err != nil {
 		integration.LogFatal("dialing", "err", err)
 	}
@@ -201,7 +215,7 @@ func (c client) run(remote *snet.UDPAddr) int {
 	if err != nil {
 		integration.LogFatal("setting deadline", "err", err)
 	}
-	_, err = conn.WriteTo([]byte("colibri test best effort"), remote)
+	_, err = conn.WriteTo([]byte("colibri test best effort"), c.Remote)
 	if err != nil {
 		integration.LogFatal("writing data with best effort", "err", err)
 	}
@@ -211,7 +225,7 @@ func (c client) run(remote *snet.UDPAddr) int {
 	if err != nil {
 		integration.LogFatal("reading data", "err", err)
 	}
-	stitchable, err := c.listRsvs(ctx, integration.SDConn(), remote.IA)
+	stitchable, err := c.listRsvs(ctx)
 	if err != nil {
 		integration.LogFatal("listing reservations", "err", err)
 	}
@@ -222,14 +236,14 @@ func (c client) run(remote *snet.UDPAddr) int {
 		integration.LogFatal("no trips found")
 	}
 	// obtain an reservation
-	p, err := c.createRsv(ctx, integration.SDConn(), integration.Local.IA, remote, trips[0].Segments(), 1)
+	rsvID, p, err := c.createRsv(ctx, trips[0].Segments(), 1)
 	if err != nil {
 		integration.LogFatal("creating reservation", "err", err)
 	}
 	// use the reservation
-	remote.Path = p.Path()
-	remote.NextHop = p.UnderlayNextHop()
-	_, err = conn.WriteTo([]byte("colibri test colibri path"), remote)
+	c.Remote.Path = p.Path()
+	c.Remote.NextHop = p.UnderlayNextHop()
+	_, err = conn.WriteTo([]byte("colibri test colibri path"), c.Remote)
 	if err != nil {
 		integration.LogFatal("writing data with colibri", "err", err)
 	}
@@ -246,13 +260,17 @@ func (c client) run(remote *snet.UDPAddr) int {
 	if sraddr.Path.Type != colpath.PathType {
 		integration.LogFatal("non-colibri path type", "type", sraddr.Path.Type)
 	}
+	// clean reservation up
+	if err = c.cleanRsv(ctx, &rsvID, 0); err != nil {
+		integration.LogFatal("cleaning reservation up", "err", err)
+	}
 	return 0
 }
 
-func (c client) listRsvs(ctx context.Context, daemon sciond.Connector, remote addr.IA) (
+func (c client) listRsvs(ctx context.Context) (
 	*libcol.StitchableSegments, error) {
 	for {
-		stitchable, err := daemon.ColibriListRsvs(ctx, remote)
+		stitchable, err := c.Daemon.ColibriListRsvs(ctx, c.Remote.IA)
 		if err != nil {
 			return nil, err
 		}
@@ -263,22 +281,29 @@ func (c client) listRsvs(ctx context.Context, daemon sciond.Connector, remote ad
 	}
 }
 
-func (c client) createRsv(ctx context.Context, daemon sciond.Connector, localIA addr.IA,
-	remoteAddr *snet.UDPAddr, segments []reservation.ID, requestBW reservation.BWCls) (
-	snet.Path, error) {
+func (c client) createRsv(ctx context.Context, segments []reservation.ID,
+	requestBW reservation.BWCls) (reservation.ID, snet.Path, error) {
 
 	setupReq := &libcol.E2EReservationSetup{
 		Id: reservation.ID{
-			ASID:   localIA.A,
+			ASID:   c.LocalIA.A,
 			Suffix: make([]byte, 12),
 		},
-		SrcIA:       localIA,
-		DstIA:       remoteAddr.IA,
-		DstHost:     remoteAddr.Host.IP,
+		SrcIA:       c.LocalIA,
+		DstIA:       c.Remote.IA,
+		DstHost:     c.Remote.Host.IP,
 		Index:       0, // new index
 		Segments:    segments,
 		RequestedBW: requestBW,
 	}
 	rand.Read(setupReq.Id.Suffix) // random suffix
-	return daemon.ColibriSetupRsv(ctx, setupReq)
+	p, err := c.Daemon.ColibriSetupRsv(ctx, setupReq)
+	return setupReq.Id, p, err
+}
+
+func (c client) cleanRsv(ctx context.Context, id *reservation.ID,
+	idx reservation.IndexNumber) error {
+
+	log.Debug("cleaning e2e rsv", "id", id)
+	return c.Daemon.ColibriCleanupRsv(ctx, id, idx)
 }

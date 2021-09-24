@@ -31,12 +31,10 @@ import (
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/snet"
 	"github.com/scionproto/scion/go/lib/util"
-	"github.com/scionproto/scion/go/pkg/app/feature"
 )
 
 var (
-	features    string
-	test        string
+	timeout     = &util.DurWrap{Duration: 10 * time.Second}
 	parallelism int
 )
 
@@ -52,15 +50,9 @@ func realMain() int {
 	}
 	defer log.HandlePanic()
 	defer log.Flush()
-	if len(features) != 0 {
-		if _, err := feature.ParseDefault(strings.Split(features, ",")); err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing features: %s\n", err)
-			return 1
-		}
-	}
 
 	clientArgs := []string{
-		"--timeout", "4s",
+		"--timeout", timeout.String(),
 		"--sciond", integration.SCIOND,
 		"--remote", integration.DstAddrPattern + ":" + integration.ServerPortReplace,
 	}
@@ -85,10 +77,7 @@ func realMain() int {
 }
 
 func addFlags() {
-	flag.StringVar(&features, "features", "",
-		fmt.Sprintf("enable development features (%v)", feature.String(&feature.Default{}, "|")))
-	flag.StringVar(&test, "test", "",
-		"Test to run. If empty, all tests are run.")
+	flag.Var(timeout, "timeout", "The timeout for each attempt")
 	flag.IntVar(&parallelism, "parallelism", 1, "How many end2end tests run in parallel.")
 }
 

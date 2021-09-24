@@ -210,6 +210,7 @@ func (s *Store) ListStitchableSegments(ctx context.Context, dst addr.IA) (
 	return response, nil
 }
 
+// AddAdmissionEntry adds an entry to the admission list. It returns the deadline for the entry.
 func (s *Store) AddAdmissionEntry(ctx context.Context, entry *colibri.AdmissionEntry) (
 	time.Time, error) {
 
