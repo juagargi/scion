@@ -156,7 +156,7 @@ func WithUpSegs(idxs ...int) StitchableMod {
 }
 
 // WithDownSegs is called like: WithDownSegs(2,2,3,6).
-// meaning to create up segments to indices 2 (twice), 3 and 6.
+// meaning to create down segments to indices 2 (twice), 3 and 6.
 // When using an index N in WithDownSegs(N), if N=0 it refers to the src, N=1 to dst,
 // and N>1 to the (N-2)th core (e.g. N=5 refers to the 5-2= 3rd core AS).
 func WithDownSegs(idxs ...int) StitchableMod {
@@ -273,6 +273,9 @@ func (g *fullTripGenerator) GetAI(idx int) addr.IA {
 	case 1:
 		return g.dst
 	default:
+		if len(g.cores) < idx-1 {
+			panic(fmt.Sprintf("bad index for core AS %d: only %d cores defined", idx, len(g.cores)))
+		}
 		return g.cores[idx-2]
 	}
 }
@@ -387,7 +390,7 @@ func T(trips ...trip) []trip {
 }
 
 // WithTrips is called like:
-// WithTrips(T(U(0,1)), T(U(0,2),D(2,1)) )
+// WithTrips(T(U(0,1)), T(U(0,2), D(2,1)) )
 // indicating that there are two trips, one up src->dst and another up,down src->core1,core1->dst
 func WithTrips(trips ...[]trip) FullTripMod {
 	return func(generator *fullTripGenerator) {

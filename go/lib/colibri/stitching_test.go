@@ -45,6 +45,52 @@ func TestCombineAll(t *testing.T) {
 				ct.WithCoresInTrip("1-ff00:0:110"),
 				ct.WithTrips(ct.T(ct.U(0, 2), ct.D(2, 1)))),
 		},
+		"from_core": {
+			stitchable: ct.NewStitchableSegments("1-ff00:0:110", "1-ff00:0:112",
+				ct.WithDownSegs(0), // core1 to src
+			),
+			expected: ct.NewFullTrips("1-ff00:0:110", "1-ff00:0:112",
+				ct.WithTrips(ct.T(ct.D(0, 1))),
+			),
+		},
+		"core_to_core_then_down": {
+			stitchable: ct.NewStitchableSegments("1-ff00:0:110", "1-ff00:0:211",
+				ct.WithCoreASes("1-ff00:0:210"),
+				ct.WithCoreSegs(ct.P(0, 2)), // src -> core2
+				ct.WithDownSegs(2),          // core2 -> dst
+			),
+			expected: ct.NewFullTrips("1-ff00:0:110", "1-ff00:0:211",
+				ct.WithCoresInTrip("1-ff00:0:210"),
+				ct.WithTrips(ct.T(ct.C(0, 2), ct.D(2, 1))),
+			),
+		},
+		"core_to_core": {
+			stitchable: ct.NewStitchableSegments("1-ff00:0:110", "1-ff00:0:210",
+				ct.WithCoreSegs(ct.P(0, 1)), // src -> dst
+			),
+			expected: ct.NewFullTrips("1-ff00:0:110", "1-ff00:0:210",
+				ct.WithTrips(ct.T(ct.C(0, 1))),
+			),
+		},
+		"core_to_far_core": {
+			stitchable: ct.NewStitchableSegments("1-ff00:0:110", "2-ff00:0:210",
+				ct.WithCoreSegs(ct.P(0, 1)), // src -> dst
+			),
+			expected: ct.NewFullTrips("1-ff00:0:110", "2-ff00:0:210",
+				ct.WithTrips(ct.T(ct.C(0, 1))),
+			),
+		},
+		"core_to_far_core_then_down": {
+			stitchable: ct.NewStitchableSegments("1-ff00:0:110", "2-ff00:0:211",
+				ct.WithCoreASes("2-ff00:0:210"),
+				ct.WithCoreSegs(ct.P(0, 2)), // src -> core2
+				ct.WithDownSegs(2),          // core2 -> dst
+			),
+			expected: ct.NewFullTrips("1-ff00:0:110", "2-ff00:0:211",
+				ct.WithCoresInTrip("2-ff00:0:210"),
+				ct.WithTrips(ct.T(ct.C(0, 2), ct.D(2, 1))),
+			),
+		},
 	}
 	for name, tc := range cases {
 		name, tc := name, tc

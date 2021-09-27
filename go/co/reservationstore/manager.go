@@ -135,7 +135,7 @@ func (m *manager) Run(ctx context.Context) {
 			return
 		}
 		table := make([]string, 0, len(rsvs)+1)
-		table = append(table, fmt.Sprintf("%32s %8s %3s %3s %12s",
+		table = append(table, fmt.Sprintf("%38s %8s %3s %3s %12s",
 			"id", "alloc", "idx", "bw", "exptime"))
 		for _, r := range rsvs {
 			args := []interface{}{
@@ -152,7 +152,7 @@ func (m *manager) Run(ctx context.Context) {
 			} else {
 				args = append(args, "--", "---", "-------")
 			}
-			table = append(table, fmt.Sprintf("%32s %8d %3s %3s %12s", args...))
+			table = append(table, fmt.Sprintf("%38s %8d %3s %3s %12s", args...))
 		}
 		if len(rsvs) > 0 {
 			log.Debug("___________ colibri e2e's now ___________\n" + strings.Join(table, "\n"))

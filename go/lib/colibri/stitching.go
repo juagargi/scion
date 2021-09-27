@@ -251,6 +251,13 @@ func combineAll(stitchable *StitchableSegments) []*FullTrip {
 		return fulltrips
 	}
 
+	// Can we reach the destination directly with a down segment? (e.g. core to non core)
+	if downSegs, ok := downs[stitchable.SrcIA]; ok {
+		for _, down := range downSegs {
+			trip := &FullTrip{down.Copy()}
+			fulltrips = append(fulltrips, trip)
+		}
+	}
 	// In tempTrips we have partial, temporary trips up->core or core that don't reach the dst.
 	// We will attempt to complete these temporary trips with a down segment.
 	for _, t := range tempTrips {
@@ -265,6 +272,7 @@ func combineAll(stitchable *StitchableSegments) []*FullTrip {
 	return fulltrips
 }
 
+// segmentsToMap sorts the reservation looks by source AS.
 func segmentsToMap(sgmts []*ReservationLooks) map[addr.IA][]*ReservationLooks {
 	segsPerSrc := make(map[addr.IA][]*ReservationLooks, len(sgmts))
 	for _, r := range sgmts {
