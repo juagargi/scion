@@ -75,6 +75,7 @@ func (idxs Indices) GetToken(i int) *reservation.Token            { return idxs[
 func (idxs Indices) Rotate(i int) base.IndicesInterface {
 	return append(idxs[i:], idxs[:i]...)
 }
+
 func (idxs Indices) String() string {
 	strs := make([]string, len(idxs))
 	for i, index := range idxs {

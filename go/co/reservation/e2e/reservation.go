@@ -15,10 +15,13 @@
 package e2e
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/co/reservation/segment"
+	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 	"github.com/scionproto/scion/go/lib/serrors"
 	colpath "github.com/scionproto/scion/go/lib/slayers/path/colibri"
@@ -29,6 +32,18 @@ type Reservation struct {
 	ID                  reservation.ID
 	SegmentReservations []*segment.Reservation // stitched segment reservations
 	Indices             Indices
+}
+
+func (r *Reservation) String() string {
+	if r == nil {
+		return "<nil>"
+	}
+	segs := make([]string, len(r.SegmentReservations))
+	for i, s := range r.SegmentReservations {
+		segs[i] = fmt.Sprintf("%s (%d indices) (%s)", s.ID, len(s.Indices), s.PathAtSource)
+	}
+	return fmt.Sprintf("%s: %d segment(s): {%s} . IDXS: [%s]",
+		r.ID, len(r.SegmentReservations), strings.Join(segs, "; "), r.Indices)
 }
 
 // Validate will return an error for invalid values.
@@ -122,6 +137,13 @@ func (r *Reservation) AllocResv() uint64 {
 			r.Indices[len(r.Indices)-2].AllocBW)
 	}
 	return maxBW.ToKbps()
+}
+
+func (r *Reservation) DstIA() addr.IA {
+	if len(r.SegmentReservations) == 0 {
+		return addr.IA{}
+	}
+	return r.SegmentReservations[len(r.SegmentReservations)-1].PathAtSource.DstIA()
 }
 
 // GetLastSegmentPathSteps returns the path steps for the last segment in use by this e2e rsv.

@@ -896,8 +896,9 @@ func (s *Store) CleanupE2EReservation(ctx context.Context, req *base.Request) (
 				"id", req.ID.String())
 		}
 	}
-	if rsv != nil && req.IsLastAS() {
+	if rsv != nil && req.IsLastAS() && rsv.DstIA() != req.Path.DstIA() {
 		// we need to append the next segment along the path
+		log.Debug("extending path (in cleanup)", "rsv", rsv, "req_path", req.Path)
 		req.Path.Steps = stitchTransparentPaths(req.Path.Steps, rsv.GetLastSegmentPathSteps())
 	}
 

@@ -15,6 +15,8 @@
 package e2e
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	base "github.com/scionproto/scion/go/co/reservation"
@@ -41,4 +43,12 @@ func (idxs Indices) GetAllocBW(i int) reservation.BWCls           { return idxs[
 func (idxs Indices) GetToken(i int) *reservation.Token            { return idxs[i].Token }
 func (idxs Indices) Rotate(i int) base.IndicesInterface {
 	return append(idxs[i:], idxs[:i]...)
+}
+
+func (idxs Indices) String() string {
+	strs := make([]string, len(idxs))
+	for i, index := range idxs {
+		strs[i] = fmt.Sprintf("%d:%s", index.Idx, index.Expiration)
+	}
+	return strings.Join(strs, ",")
 }

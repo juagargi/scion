@@ -184,7 +184,7 @@ func (p *TransparentPath) SrcIA() addr.IA {
 }
 
 func (p *TransparentPath) DstIA() addr.IA {
-	if p == nil {
+	if p == nil || len(p.Steps) == 0 {
 		return addr.IA{}
 	}
 	return p.Steps[len(p.Steps)-1].IA

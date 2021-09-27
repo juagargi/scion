@@ -114,7 +114,7 @@ func (s server) run() {
 	for {
 		buffer := make([]byte, 16384)
 		if err := s.accept(conn, buffer); err != nil {
-			log.Error("accepting connection", "err", err)
+			integration.LogFatal("accepting connection", "err", err)
 		}
 	}
 }
