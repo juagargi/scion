@@ -52,14 +52,14 @@ func realMain() int {
 	defer log.Flush()
 
 	clientArgs := []string{
-		"--timeout", timeout.String(),
-		"--sciond", integration.SCIOND,
-		"--remote", integration.DstAddrPattern + ":" + integration.ServerPortReplace,
+		"-timeout", timeout.String(),
+		"-sciond", integration.SCIOND,
+		"-remote", integration.DstAddrPattern + ":" + integration.ServerPortReplace,
 	}
 	serverArgs := []string{
-		"--mode", "server",
-		"--sciond", integration.SCIOND,
-		"--local", integration.DstAddrPattern + ":0",
+		"-mode", "server",
+		"-sciond", integration.SCIOND,
+		"-local", integration.DstAddrPattern + ":0",
 	}
 
 	in := integration.NewBinaryIntegration("colibri_integration", "./bin/colibri",
@@ -282,10 +282,12 @@ func clientTemplate(progressSock string) integration.Cmd {
 	cmd := integration.Cmd{
 		Binary: "./bin/colibri",
 		Args: []string{
-			"--sciond", integration.SCIOND,
-			"--local", integration.SrcAddrPattern + ":0",
-			"--remote", integration.DstAddrPattern + ":" + integration.ServerPortReplace,
-			"--progress", progressSock,
+			"-log.console", "debug",
+			"-sciond", integration.SCIOND,
+			"-local", integration.SrcAddrPattern + ":0",
+			"-remote", integration.DstAddrPattern + ":" + integration.ServerPortReplace,
+			"-progress", progressSock,
+			"-timeout", timeout.String(),
 		},
 	}
 	return cmd
