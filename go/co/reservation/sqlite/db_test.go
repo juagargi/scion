@@ -16,16 +16,21 @@ package sqlite
 
 import (
 	"context"
+	"io/ioutil"
+	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/go/co/reservation/reservationdbtest"
 	"github.com/scionproto/scion/go/co/reservation/segment"
+	coltest "github.com/scionproto/scion/go/co/reservation/test"
 	"github.com/scionproto/scion/go/co/reservationstorage/backend"
 	"github.com/scionproto/scion/go/lib/addr"
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
+	"github.com/scionproto/scion/go/lib/util"
 	"github.com/scionproto/scion/go/lib/xtest"
 )
 
@@ -49,6 +54,147 @@ func TestNewSegSuffix(t *testing.T) {
 	suffix, err = newSegSuffix(ctx, db.db, asid)
 	require.NoError(t, err)
 	require.False(t, isSuffixInDB(t, db, asid, suffix))
+}
+
+// TestTransactions checks that the read transactions have an independent and consistent view
+// of the database, as if it had taken a snapshot of it when the transaction started.
+// A read transaction is one that only performs SELECT operations.
+// As soon as one read transaction does one write operation, it is promoted to a write transaction.
+// See also https://www.sqlite.org/lang_transaction.html
+func TestTransactions(t *testing.T) {
+	ctx, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelF()
+
+	db, removeF := newDBNotTemporary(t)
+	defer removeF()
+	defer func() {
+		err := db.Close()
+		require.NoError(t, err)
+	}()
+
+	// create a segment reservation
+	rsv := segment.NewReservation(xtest.MustParseAS("ff00:0:111"))
+	rsv.ID.Suffix[0]++
+	_, err := rsv.NewIndex(1, util.SecsToTime(1), 1, 1, 1, 1, reservation.CorePath)
+	require.NoError(t, err)
+	// save the reservation to DB
+	err = db.PersistSegmentRsv(ctx, rsv)
+	require.NoError(t, err)
+
+	// now open two transactions: tx1 and tx2. Tx1 will modify the reservation and save it, but
+	// this will not affect the view of tx2, which will still see the old contents
+	db.SetMaxOpenConns(2)
+	tx1, err := db.BeginTransaction(ctx, nil)
+	require.NoError(t, err)
+	tx2, err := db.BeginTransaction(ctx, nil)
+	require.NoError(t, err)
+
+	rsv1, err := tx1.GetSegmentRsvFromID(ctx, &rsv.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, int(rsv1.Indices[0].MaxBW))
+	rsv1.Indices[0].MaxBW++
+	err = tx1.PersistSegmentRsv(ctx, rsv1)
+	require.NoError(t, err)
+	tx1.Commit()
+
+	rsv2, err := tx2.GetSegmentRsvFromID(ctx, &rsv.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, int(rsv2.Indices[0].MaxBW))
+	tx2.Commit()
+}
+
+// TestTransactionsBusy tests that we can use several transactions at the same time, and that
+// the DB will retry to obtain a write-transaction when needed.
+func TestTransactionsBusy(t *testing.T) {
+	ctx, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelF()
+
+	db, removeF := newDBNotTemporary(t)
+	defer func() {
+		err := db.Close()
+		require.NoError(t, err)
+		removeF()
+	}()
+
+	ID := coltest.MustParseID("ff00:0:111", "00000001")
+	// create a segment reservation
+	rsv := segment.NewReservation(ID.ASID)
+	rsv.ID = *ID
+	_, err := rsv.NewIndex(1, util.SecsToTime(1), 1, 1, 1, 1, reservation.CorePath)
+	require.NoError(t, err)
+	// save the reservation to DB
+	err = db.PersistSegmentRsv(ctx, rsv)
+	require.NoError(t, err)
+
+	db.SetMaxOpenConns(2)
+
+	// we need to ensure that we can read from many transactions, and that once we upgrade one
+	// transaction to write-transaction, the other transactions cannot write and automatically
+	// will retry for a period of time to obtain a write transaction.
+
+	afterTxCreation := sync.WaitGroup{}
+	afterTxCreation.Add(2)
+
+	afterTx1Modifies := sync.WaitGroup{}
+	afterTx1Modifies.Add(1)
+
+	allDone := sync.WaitGroup{}
+	allDone.Add(2)
+
+	go func() { // TX1
+		defer allDone.Done()
+
+		tx1, err := db.BeginTransaction(ctx, nil)
+		require.NoError(t, err)
+		afterTxCreation.Done()
+		afterTxCreation.Wait()
+		t.Logf("TX1: got transaction at %s", time.Now().Format(time.StampMicro))
+
+		// at this point, we have two concurrent read-transactions
+		rsv1, err := tx1.GetSegmentRsvFromID(ctx, &rsv.ID)
+		require.NoError(t, err)
+		rsv1.ID.Suffix[0]++
+
+		t.Logf("TX1: attempting to get a write-transaction at %s",
+			time.Now().Format(time.StampMicro))
+		err = tx1.PersistSegmentRsv(ctx, rsv1)
+		require.NoError(t, err)
+		afterTx1Modifies.Done()
+
+		err = tx1.Commit()
+		require.NoError(t, err)
+	}()
+
+	go func() { // TX2
+		defer allDone.Done()
+
+		tx2, err := db.BeginTransaction(ctx, nil)
+		require.NoError(t, err)
+		afterTxCreation.Done()
+		afterTxCreation.Wait()
+		t.Logf("TX2: got transaction at %s", time.Now().Format(time.StampMicro))
+
+		// at this point, we have two concurrent read-transactions
+		rsv2, err := tx2.GetSegmentRsvFromID(ctx, &rsv.ID)
+		require.NoError(t, err)
+		require.Equal(t, rsv.ID.Suffix[0], rsv2.ID.Suffix[0])
+		afterTx1Modifies.Wait()
+
+		rsv2, err = tx2.GetSegmentRsvFromID(ctx, &rsv.ID)
+		require.NoError(t, err)
+		require.Equal(t, rsv.ID.Suffix[0], rsv2.ID.Suffix[0])
+		rsv2.ID.Suffix[0] += 2
+		t.Logf("TX2: attempting to get a write-transaction at %s",
+			time.Now().Format(time.StampMicro))
+		err = tx2.PersistSegmentRsv(ctx, rsv2)
+		require.NoError(t, err)
+
+		err = tx2.Commit()
+		require.NoError(t, err)
+	}()
+
+	// wait for test to finish
+	allDone.Wait()
 }
 
 // TestRaceForSuffix checks that there are no problems trying to obtain a suffix for the same
@@ -131,6 +277,27 @@ func newDB(t testing.TB) *Backend {
 	db, err := New("file::memory:")
 	require.NoError(t, err)
 	return db
+}
+
+// newDBNotTemporary creates a non temporary sqlite database. Temporary or in-memory sqlite DBs
+// have the limitation of not using more than one connection: it creates a new temporary database
+// instead. See also https://www.sqlite.org/inmemorydb.html
+// The function returns the DB object and a cleanup fuction that must be invoked before the
+// end of the test (usually with defer).
+func newDBNotTemporary(t testing.TB) (*Backend, func()) {
+	t.Helper()
+	f, err := ioutil.TempFile("", "colibri_db_test.*.db")
+	require.NoError(t, err)
+	err = f.Close()
+	require.NoError(t, err)
+
+	db, err := New("file:" + f.Name())
+	require.NoError(t, err)
+	return db, func() {
+		os.Remove(f.Name())
+		os.Remove(f.Name() + "-shm")
+		os.Remove(f.Name() + "-wal")
+	}
 }
 
 func addSegRsvRows(t testing.TB, b *Backend, asid addr.AS, firstSuffix, lastSuffix uint32) {

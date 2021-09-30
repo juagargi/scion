@@ -447,6 +447,7 @@ func (s *Store) ActivateSegmentReservation(ctx context.Context, req *base.Reques
 		return failedResponse, s.errWrapStr("cannot create transaction", err, "id", req.ID.String())
 	}
 	defer tx.Rollback()
+
 	rsv, err := tx.GetSegmentRsvFromID(ctx, &req.ID)
 	if err != nil {
 		return failedResponse, s.errWrapStr("cannot obtain segment reservation", err,
@@ -795,7 +796,7 @@ func (s *Store) AdmitE2EReservation(ctx context.Context, req *e2e.SetupReq) (
 			}, nil
 		}
 		token = index.Token
-	} else {
+	} else { // this is not the last AS
 		if req.IsTransfer() {
 			// indicate the next node we are using the next segment:
 			req.CurrentSegmentRsvIndex++

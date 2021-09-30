@@ -51,6 +51,9 @@ func (cfg *ColibriConfig) Validate() error {
 
 func (cfg *ColibriConfig) InitDefaults() {
 	cfg.DB.InitDefaults()
+	if cfg.DB.MaxOpenConns == 0 {
+		cfg.DB.MaxOpenConns = 100
+	}
 	cfg.Delta = 0.8
 	cfg.Capacities = &colconf.Capacities{}
 	cfg.Reservations = &colconf.Reservations{}

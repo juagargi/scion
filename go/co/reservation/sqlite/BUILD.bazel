@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "db.go",
         "schema.go",
+        "transaction.go",
     ],
     importpath = "github.com/scionproto/scion/go/co/reservation/sqlite",
     visibility = ["//visibility:public"],
@@ -30,9 +31,11 @@ go_test(
     deps = [
         "//go/co/reservation/reservationdbtest:go_default_library",
         "//go/co/reservation/segment:go_default_library",
+        "//go/co/reservation/test:go_default_library",
         "//go/co/reservationstorage/backend:go_default_library",
         "//go/lib/addr:go_default_library",
         "//go/lib/colibri/reservation:go_default_library",
+        "//go/lib/util:go_default_library",
         "//go/lib/xtest:go_default_library",
         "@com_github_stretchr_testify//require:go_default_library",
     ],

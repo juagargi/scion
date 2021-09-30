@@ -24,11 +24,9 @@ import (
 	"net"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mattn/go-sqlite3"
-	_ "github.com/mattn/go-sqlite3"
 
 	base "github.com/scionproto/scion/go/co/reservation"
 	"github.com/scionproto/scion/go/co/reservation/e2e"
@@ -79,18 +77,12 @@ func (b *Backend) SetMaxIdleConns(maxIdleConns int) {
 func (b *Backend) BeginTransaction(ctx context.Context, opts *sql.TxOptions) (
 	backend.Transaction, error) {
 
-	b.Lock()
-	defer b.Unlock()
-	tx, err := b.db.BeginTx(ctx, opts)
-	if err != nil {
-		return nil, db.NewTxError("create tx", err)
-	}
-	return &transaction{
-		executor: &executor{
-			db: tx,
-		},
-		tx: tx,
-	}, nil
+	// get a transaction that will try hard to be promoted to a write-transaction even in the
+	// event of other write-transaction being present
+	return NewTransaction(ctx,
+		func() (*sql.Tx, error) {
+			return b.db.BeginTx(ctx, opts)
+		}, 100, 10*time.Millisecond)
 }
 
 // Close closes the databse.
@@ -98,27 +90,7 @@ func (b *Backend) Close() error {
 	return b.db.Close()
 }
 
-type transaction struct {
-	*executor
-	tx *sql.Tx
-}
-
-var _ backend.Transaction = (*transaction)(nil)
-
-func (t *transaction) Commit() error {
-	t.Lock()
-	defer t.Unlock()
-	return t.tx.Commit()
-}
-
-func (t *transaction) Rollback() error {
-	t.Lock()
-	defer t.Unlock()
-	return t.tx.Rollback()
-}
-
 type executor struct {
-	sync.RWMutex
 	db db.Sqler
 }
 
@@ -230,13 +202,7 @@ func (x *executor) PersistSegmentRsv(ctx context.Context, rsv *segment.Reservati
 		return serrors.New("wrong suffix", "suffix", hex.EncodeToString(rsv.ID.Suffix))
 	}
 
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		return upsertNewSegReservation(ctx, tx, rsv)
-	})
-	if err != nil {
-		return db.NewTxError("error persisting reservation", err)
-	}
-	return nil
+	return upsertNewSegReservation(ctx, x.db, rsv)
 }
 
 // DeleteExpiredIndices will remove expired indices from the DB. If a reservation is left
@@ -467,18 +433,12 @@ func (x *executor) GetTransitAlloc(ctx context.Context, ingress, egress uint16) 
 func (x *executor) PersistTransitAlloc(ctx context.Context, ingress, egress uint16,
 	transit uint64) error {
 
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		query := `INSERT INTO state_transit_alloc (ingress, egress, traffic_alloc)
+	query := `INSERT INTO state_transit_alloc (ingress, egress, traffic_alloc)
 			VALUES(?, ?, ?)
 			ON CONFLICT(ingress,egress) DO UPDATE
 			SET traffic_alloc = ?`
-		_, err := tx.ExecContext(ctx, query, ingress, egress, transit, transit)
-		return err
-	})
-	if err != nil {
-		return db.NewTxError("error persisting transit alloc", err)
-	}
-	return nil
+	_, err := x.db.ExecContext(ctx, query, ingress, egress, transit, transit)
+	return err
 }
 
 func (x *executor) GetSourceState(ctx context.Context, source addr.AS, ingress, egress uint16) (
@@ -500,20 +460,14 @@ func (x *executor) GetSourceState(ctx context.Context, source addr.AS, ingress, 
 func (x *executor) PersistSourceState(ctx context.Context, source addr.AS, ingress, egress uint16,
 	srcDem, srcAlloc uint64) error {
 
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		query := `INSERT INTO state_source_ingress_egress
+	query := `INSERT INTO state_source_ingress_egress
 		(source, ingress, egress, src_demand, src_alloc)
 		VALUES(?, ?, ?, ?, ?)
 		ON CONFLICT(source,ingress,egress) DO UPDATE
 		SET src_demand = ?, src_alloc = ?`
-		_, err := tx.ExecContext(ctx, query, source, ingress, egress, srcDem, srcAlloc,
-			srcDem, srcAlloc)
-		return err
-	})
-	if err != nil {
-		return db.NewTxError("error persisting source state", err)
-	}
-	return nil
+	_, err := x.db.ExecContext(ctx, query, source, ingress, egress, srcDem, srcAlloc,
+		srcDem, srcAlloc)
+	return err
 }
 
 func (x *executor) GetInDemand(ctx context.Context, source addr.AS, ingress uint16) (
@@ -534,18 +488,12 @@ func (x *executor) GetInDemand(ctx context.Context, source addr.AS, ingress uint
 func (x *executor) PersistInDemand(ctx context.Context, source addr.AS, ingress uint16,
 	demand uint64) error {
 
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		query := `INSERT INTO state_source_ingress (source, ingress, demand)
+	query := `INSERT INTO state_source_ingress (source, ingress, demand)
 				VALUES(?, ?, ?)
 				ON CONFLICT(source,ingress) DO UPDATE
 				SET demand = ?`
-		_, err := tx.ExecContext(ctx, query, source, ingress, demand, demand)
-		return err
-	})
-	if err != nil {
-		return db.NewTxError("error persisting ingress demand", err)
-	}
-	return nil
+	_, err := x.db.ExecContext(ctx, query, source, ingress, demand, demand)
+	return err
 }
 
 func (x *executor) GetEgDemand(ctx context.Context, source addr.AS, egress uint16) (
@@ -566,18 +514,12 @@ func (x *executor) GetEgDemand(ctx context.Context, source addr.AS, egress uint1
 func (x *executor) PersistEgDemand(ctx context.Context, source addr.AS, egress uint16,
 	demand uint64) error {
 
-	err := db.DoInTx(ctx, x.db, func(ctx context.Context, tx *sql.Tx) error {
-		query := `INSERT INTO state_source_egress (source, egress, demand)
+	query := `INSERT INTO state_source_egress (source, egress, demand)
 				VALUES(?, ?, ?)
 				ON CONFLICT(source,egress) DO UPDATE
 				SET demand = ?`
-		_, err := tx.ExecContext(ctx, query, source, egress, demand, demand)
-		return err
-	})
-	if err != nil {
-		return db.NewTxError("error persisting egress demand", err)
-	}
-	return nil
+	_, err := x.db.ExecContext(ctx, query, source, egress, demand, demand)
+	return err
 }
 
 func (x *executor) AddToAdmissionList(ctx context.Context, validUntil time.Time,
@@ -693,8 +635,9 @@ func newSegSuffix(ctx context.Context, x db.Sqler, ASID addr.AS) (uint32, error)
 	return suffix, nil
 }
 
-func upsertNewSegReservation(ctx context.Context, x *sql.Tx, rsv *segment.Reservation) error {
-
+// TODO(juagargi) force signature of those methods that write several times to DB to
+// take a transaction instead of Sqler, to ensure atomicity.
+func upsertNewSegReservation(ctx context.Context, x db.Sqler, rsv *segment.Reservation) error {
 	activeIndex := -1
 	if rsv.ActiveIndex() != nil {
 		activeIndex = int(rsv.ActiveIndex().Idx)
@@ -1274,18 +1217,12 @@ func getTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16) (uin
 func persistTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16,
 	transit uint64) error {
 
-	err := db.DoInTx(ctx, x, func(ctx context.Context, tx *sql.Tx) error {
-		query := `INSERT INTO state_transit_demand (ingress, egress, traffic_demand)
+	query := `INSERT INTO state_transit_demand (ingress, egress, traffic_demand)
 		VALUES(?, ?, ?)
 		ON CONFLICT(ingress,egress) DO UPDATE
 		SET traffic_demand = ?`
-		_, err := tx.ExecContext(ctx, query, ingress, egress, transit, transit)
-		return err
-	})
-	if err != nil {
-		return db.NewTxError("error persisting transit demand", err)
-	}
-	return nil
+	_, err := x.ExecContext(ctx, query, ingress, egress, transit, transit)
+	return err
 }
 
 func subtractTransitDem(ctx context.Context, x db.Sqler, ingress, egress uint16,
