@@ -43,11 +43,8 @@ var (
 	name        string
 	cmd         string
 	features    string
+	progress    bool
 )
-
-func getCmd() (string, bool) {
-	return cmd, strings.Contains(cmd, "end2end")
-}
 
 func main() {
 	os.Exit(realMain())
@@ -112,6 +109,8 @@ func addFlags() {
 	flag.IntVar(&parallelism, "parallelism", 1, "How many end2end tests run in parallel.")
 	flag.StringVar(&features, "features", "",
 		fmt.Sprintf("enable development features (%v)", feature.String(&feature.Default{}, "|")))
+	flag.BoolVar(&progress, "progress", true,
+		`show progress (the flag "-progress" will be passed to the command specified by -cmd)`)
 }
 
 // runTests runs the end2end tests for all pairs. In case of an error the
@@ -263,9 +262,8 @@ func runTests(in integration.Integration, pairs []integration.IAPair) error {
 }
 
 func clientTemplate(progressSock string) integration.Cmd {
-	bin, progress := getCmd()
 	cmd := integration.Cmd{
-		Binary: bin,
+		Binary: cmd,
 		Args: []string{
 			"-log.console", "debug",
 			"-attempts", strconv.Itoa(attempts),

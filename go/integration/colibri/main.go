@@ -177,6 +177,11 @@ type client struct {
 }
 
 func (c client) run() int {
+	// first check if src and dst are the same
+	if c.LocalIA.Equal(c.Remote.IA) {
+		log.Info("dst == src! Skipping test inside local AS")
+		return 0
+	}
 	pair := fmt.Sprintf("%s -> %s", integration.Local.IA, c.Remote.IA)
 	log.Info("Starting", "pair", pair)
 	defer log.Info("Finished", "pair", pair)
