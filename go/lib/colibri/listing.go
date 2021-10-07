@@ -26,6 +26,7 @@ import (
 	"github.com/scionproto/scion/go/lib/colibri/reservation"
 )
 
+// TODO(juagargi) rename to something like SegRsvInfo
 type ReservationLooks struct {
 	Id             reservation.ID
 	SrcIA          addr.IA // might be different than the Id.ASID if the segment is e.g. down

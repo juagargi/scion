@@ -4,6 +4,7 @@ load("//:scion.bzl", "scion_go_binary")
 go_library(
     name = "go_default_library",
     srcs = [
+        "colibri.go",
         "observability.go",
         "ping.go",
         "scion.go",
@@ -27,6 +28,7 @@ go_library(
         "//go/pkg/app/path:go_default_library",
         "//go/pkg/command:go_default_library",
         "//go/pkg/ping:go_default_library",
+        "//go/pkg/scioncolibrisubcmd:go_default_library",
         "//go/pkg/showpaths:go_default_library",
         "//go/pkg/traceroute:go_default_library",
         "@com_github_opentracing_opentracing_go//:go_default_library",
