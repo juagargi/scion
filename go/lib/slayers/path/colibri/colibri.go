@@ -15,6 +15,8 @@
 package colibri
 
 import (
+	"encoding/binary"
+
 	"github.com/scionproto/scion/go/lib/serrors"
 	"github.com/scionproto/scion/go/lib/slayers/path"
 )
@@ -41,6 +43,27 @@ func (c *ColibriPath) GetInfoField() *InfoField {
 
 func (c *ColibriPath) GetCurrentHopField() *HopField {
 	return c.HopFields[c.InfoField.CurrHF]
+}
+
+type hopfield struct {
+	ingress uint16
+	egress  uint16
+	mac     [4]byte
+}
+
+func (c *ColibriPath) DecodeFromBytes2(b []byte) error {
+	copy(c.PacketTimestamp[:], b[:8])
+	c.InfoField = &InfoField{}
+	if err := c.InfoField.DecodeFromBytes(b[8:]); err != nil {
+		return err
+	}
+	nrHopFields := int(c.InfoField.HFCount)
+	if 8+LenInfoField+(nrHopFields*LenHopField) > len(b) {
+		return serrors.New("raw colibri path is smaller than what is " +
+			"indicated by HFCount in the info field")
+	}
+	binary.Read()
+	return nil
 }
 
 func (c *ColibriPath) DecodeFromBytes(b []byte) error {

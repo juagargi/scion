@@ -24,6 +24,28 @@ import (
 
 func TestDecodeEncode(t *testing.T) {
 	fmt.Println("ok")
+	expected := newColibriPath()
+	buff := make([]byte, expected.Len())
+	err := expected.SerializeTo(buff)
+	require.NoError(t, err)
+
+	cp := &ColibriPath{}
+	err = cp.DecodeFromBytes2(buff)
+	require.NoError(t, err)
+	require.Equal(t, expected.PacketTimestamp, cp.PacketTimestamp)
+	require.Equal(t, expected.InfoField, cp.InfoField)
+}
+
+func BenchmarkDecodeNewFull(b *testing.B) {
+	cp := newColibriPath()
+	buff := make([]byte, cp.Len())
+	err := cp.SerializeTo(buff)
+	require.NoError(b, err)
+	var p ColibriPath
+	for i := 0; i < b.N; i++ {
+		err = p.DecodeFromBytes2(buff)
+		require.NoError(b, err)
+	}
 }
 
 func BenchmarkDecodeFull(b *testing.B) {
