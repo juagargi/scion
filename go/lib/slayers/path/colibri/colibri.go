@@ -15,6 +15,7 @@
 package colibri
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	"github.com/scionproto/scion/go/lib/serrors"
@@ -46,9 +47,9 @@ func (c *ColibriPath) GetCurrentHopField() *HopField {
 }
 
 type hopfield struct {
-	ingress uint16
-	egress  uint16
-	mac     [4]byte
+	Ingress uint16
+	Egress  uint16
+	Mac     [4]byte
 }
 
 func (c *ColibriPath) DecodeFromBytes2(b []byte) error {
@@ -62,8 +63,14 @@ func (c *ColibriPath) DecodeFromBytes2(b []byte) error {
 		return serrors.New("raw colibri path is smaller than what is " +
 			"indicated by HFCount in the info field")
 	}
-	binary.Read()
-	return nil
+	reader := bytes.NewReader(b[8+LenInfoField:])
+	qq := make([]hopfield, nrHopFields)
+	err := binary.Read(reader, binary.BigEndian, qq)
+
+	// for i, hf := range qq {
+	// 	fmt.Printf("%d: in=%d, eg=%d\n", i, hf.Ingress, hf.Egress)
+	// }
+	return err
 }
 
 func (c *ColibriPath) DecodeFromBytes(b []byte) error {
