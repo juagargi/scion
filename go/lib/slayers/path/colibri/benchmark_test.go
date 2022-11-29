@@ -55,9 +55,10 @@ func TestDecodeEncode(t *testing.T) {
 	require.Equal(t, expected.InfoField.Rlc, fast.Rlc)
 	require.Equal(t, expected.InfoField.OrigPayLen, fast.OrigPayloadLen)
 	for i := 0; i < int(expected.InfoField.HFCount); i++ {
-		require.Equal(t, expected.HopFields[i].IngressId, fast.HopFields[i].Ingress)
-		require.Equal(t, expected.HopFields[i].EgressId, fast.HopFields[i].Egress)
-		require.Equal(t, expected.HopFields[i].Mac, fast.HopFields[i].Mac[:])
+		require.Equal(t, expected.HopFields[i].IngressId, fast.HopFields[i].Ingress())
+		require.Equal(t, expected.HopFields[i].EgressId, fast.HopFields[i].Egress())
+		mac := fast.HopFields[i].Mac()
+		require.Equal(t, expected.HopFields[i].Mac, mac[:])
 	}
 }
 

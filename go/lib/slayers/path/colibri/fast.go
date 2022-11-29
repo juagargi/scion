@@ -39,9 +39,19 @@ type FastInfoField struct {
 }
 
 type FastHF struct {
-	Ingress uint16
-	Egress  uint16
-	Mac     [4]byte
+	raw [8]byte
+}
+
+func (hf FastHF) Ingress() uint16 {
+	return binary.BigEndian.Uint16(hf.raw[:2])
+}
+
+func (hf FastHF) Egress() uint16 {
+	return binary.BigEndian.Uint16(hf.raw[2:4])
+}
+
+func (hf FastHF) Mac() [4]byte {
+	return *((*[4]byte)(hf.raw[4:8]))
 }
 
 type ColibriFast struct {
@@ -56,19 +66,35 @@ func (c *ColibriFast) DecodeFromBytes(b []byte) error {
 	*(*uint8)(unsafe.Pointer(&c.CurrHF)) = b[10]
 	*(*uint8)(unsafe.Pointer(&c.HFCount)) = b[11]
 
-	*(*[12]byte)(unsafe.Pointer(&c.Suffix)) = *((*[12]byte)(b[12:24]))
+	c.Suffix = *((*[12]byte)(b[12:24]))
 
-	*(*uint32)(unsafe.Pointer(&c.ExpTick)) = binary.BigEndian.Uint32(b[24:28])
+	c.ExpTick = binary.BigEndian.Uint32(b[24:28])
 	*(*uint8)(unsafe.Pointer(&c.BwCls)) = b[28]
 	*(*uint8)(unsafe.Pointer(&c.Rlc)) = b[29]
-	*(*uint16)(unsafe.Pointer(&c.OrigPayloadLen)) = binary.BigEndian.Uint16(b[24:28])
+	c.OrigPayloadLen = binary.BigEndian.Uint16(b[24:28])
+
+	// TODO(juagargi) we can generate code to ensure that the structure
+	// aligns correctly on each platform. Otherwise this below is unsafe:
+	// *((*[32]byte)(unsafe.Pointer(c))) = *((*[32]byte)(b[:LenFastInfoField]))
 
 	offset := LenFastInfoField
 	c.HopFields = make([]FastHF, c.HFCount)
+	// TODO(juagargi) we can generate code for the 1..64 possible hop fields
+	// like the code below, and it should replace the regular loop on the
+	// hop fields, which is faster (test with e.g. 23 hop fields, etc):
+	// switch c.HFCount {
+	// case 6:
+	// 	*((*[6 * 8]byte)(unsafe.Pointer((*[6]FastHF)(c.HopFields[:6])))) =
+	// 		*((*[6 * 8]byte)(b[offset : offset+6*8]))
+	// 	return nil
+	// case 23:
+	// 	*((*[23 * 8]byte)(unsafe.Pointer((*[23]FastHF)(c.HopFields[:23])))) =
+	// 		*((*[23 * 8]byte)(b[offset : offset+23*8]))
+	// 	return nil
+	// default:
+	// }
 	for i := 0; i < int(c.HFCount); i++ {
-		*(*uint16)(unsafe.Pointer(&c.HopFields[i].Ingress)) = binary.BigEndian.Uint16(b[offset:])
-		*(*uint16)(unsafe.Pointer(&c.HopFields[i].Egress)) = binary.BigEndian.Uint16(b[offset+2:])
-		c.HopFields[i].Mac = *((*[4]byte)(b[offset+4 : offset+8]))
+		*((*[8]byte)(c.HopFields[i].raw[:])) = *((*[8]byte)(b[offset : offset+8]))
 		offset += 8
 	}
 	return nil
