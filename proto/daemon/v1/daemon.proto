@@ -26,6 +26,8 @@ import "proto/drkey/v1/drkey.proto";
 service DaemonService {
     // Return a set of paths to the requested destination.
     rpc Paths(PathsRequest) returns (PathsResponse) {}
+    // Return a set of paths and aliases to the requested destination.
+    rpc PathsAndAliases(PathsAndAliasesRequest) returns (PathsAndAliasesResponse) {}
     // Return information about an AS.
     rpc AS(ASRequest) returns (ASResponse) {}
     // Return the underlay addresses associated with
@@ -276,4 +278,19 @@ message DRKeyHostHostResponse{
     google.protobuf.Timestamp epoch_end = 2;
     // Level2 key.
     bytes key = 3;
+}
+
+message Replica {
+    uint64 ia = 1;
+    string host = 2;
+}
+
+message PathsAndAliasesRequest {
+    PathsRequest base = 1;
+    repeated string dst_hosts = 2;
+}
+
+message PathsAndAliasesResponse {
+    PathsResponse base = 1;
+    repeated Replica replicas = 2;
 }

@@ -11,6 +11,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//control:go_default_library",
+        "//control/aliases/grpc:go_default_library",
         "//control/beacon:go_default_library",
         "//control/beaconing:go_default_library",
         "//control/beaconing/grpc:go_default_library",
