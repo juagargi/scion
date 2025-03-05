@@ -24,8 +24,22 @@ service AliasesService {
     rpc GetAliases(GetAliasesRequest) returns (GetAliasesResponse) {}
 }
 
-message RegisterAliasRequest {}
+message RegisterAliasRequest {
+    string host = 1;
+    repeated Replica replicas = 3;
+}
 message RegisterAliasResponse {}
 
-message GetAliasesRequest {}
-message GetAliasesResponse {}
+message GetAliasesRequest {
+    string host = 1;
+}
+message GetAliasesResponse {
+    repeated Replica replicas = 1;
+}
+
+
+message Replica {
+    uint64 isd_as = 1;
+    string host = 2;
+    uint32 not_after = 3;
+}
