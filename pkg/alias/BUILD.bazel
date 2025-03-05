@@ -1,0 +1,9 @@
+load("//tools/lint:go.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["replica.go"],
+    importpath = "github.com/scionproto/scion/pkg/alias",
+    visibility = ["//visibility:public"],
+    deps = ["//pkg/addr:go_default_library"],
+)

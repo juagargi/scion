@@ -1,0 +1,9 @@
+load("//tools/lint:go.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["aliasdb.go"],
+    importpath = "github.com/scionproto/scion/private/aliasdb",
+    visibility = ["//visibility:public"],
+    deps = ["//pkg/alias:go_default_library"],
+)
