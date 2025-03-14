@@ -37,6 +37,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	cs "github.com/scionproto/scion/control"
+	aliasgrpc "github.com/scionproto/scion/control/aliases/grpc"
 	"github.com/scionproto/scion/control/beacon"
 	"github.com/scionproto/scion/control/beaconing"
 	beaconinggrpc "github.com/scionproto/scion/control/beaconing/grpc"
@@ -160,6 +161,11 @@ func realMain(ctx context.Context) error {
 		QueriesTotal: libmetrics.NewPromCounter(metrics.PathDBQueriesTotal),
 	})
 	defer pathDB.Close()
+
+	aliasDB, err := storage.NewAliasStorage(globalCfg.AliasDB)
+	if err != nil {
+		return serrors.Wrap("initializing alias storage", err)
+	}
 
 	macGen, err := cs.MACGenFactory(globalCfg.General.ConfigDir)
 	if err != nil {
@@ -377,6 +383,11 @@ func realMain(ctx context.Context) error {
 	if topo.Core() {
 		cppb.RegisterSegmentLookupServiceServer(quicServer, authLookupServer)
 	}
+
+	// Register an alias (replica) server for anycast.
+	aliasServer := aliasgrpc.NewAliasesServer(aliasDB, dialer)
+	cppb.RegisterAliasesServiceServer(quicServer, aliasServer)
+	cppb.RegisterAliasesQueryServer(tcpServer, aliasServer)
 
 	// Handle segment registration.
 	if topo.Core() {

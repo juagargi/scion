@@ -59,6 +59,7 @@ type Config struct {
 	BeaconDB    storage.DBConfig   `toml:"beacon_db,omitempty"`
 	TrustDB     storage.DBConfig   `toml:"trust_db,omitempty"`
 	PathDB      storage.DBConfig   `toml:"path_db,omitempty"`
+	AliasDB     storage.DBConfig   `toml:"alias_db,omitempty"`
 	BS          BSConfig           `toml:"beaconing,omitempty"`
 	PS          PSConfig           `toml:"path,omitempty"`
 	CA          CA                 `toml:"ca,omitempty"`

@@ -83,6 +83,14 @@ func (s *DaemonServer) Paths(ctx context.Context,
 	return response, unwrapMetricsError(err)
 }
 
+func (s *DaemonServer) PathsAndAliases(
+	ctx context.Context,
+	req *sdpb.PathsAndAliasesRequest,
+) (*sdpb.PathsAndAliasesResponse, error) {
+	return nil, nil // deleteme
+
+}
+
 func (s *DaemonServer) paths(ctx context.Context,
 	req *sdpb.PathsRequest) (*sdpb.PathsResponse, error) {
 

@@ -1,0 +1,53 @@
+// Copyright 2025 ETH Zurich
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+option go_package = "github.com/scionproto/scion/pkg/proto/control_plane";
+
+package proto.control_plane.v1;
+
+// AliasesService is the control service offered to the AS' clients.
+service AliasesService {
+    // Allow hosts in the local AS to register aliases.
+    rpc RegisterAlias(RegisterAliasRequest) returns (RegisterAliasResponse) {}
+    // Allow hosts in the local AS to query for aliases.
+    rpc GetAliases(GetAliasesRequest) returns (GetAliasesResponse) {}
+}
+
+// AliasesQuery is the control service offered to other ASes' control services.
+service AliasesQuery {
+    // Allow CSs in other ASes to query for aliases.
+    rpc GetAliases(GetAliasesRequest) returns (GetAliasesResponse) {}
+}
+
+message RegisterAliasRequest {
+    string host = 1;
+    repeated Replica replicas = 3;
+}
+message RegisterAliasResponse {}
+
+message GetAliasesRequest {
+    string host = 1;
+}
+message GetAliasesResponse {
+    repeated Replica replicas = 1;
+}
+
+
+message Replica {
+    uint64 isd_as = 1;
+    string host = 2;
+    uint32 not_after = 3;
+}

@@ -9,6 +9,7 @@ proto_library(
         "seg.proto",
         "seg_extensions.proto",
         "svc_resolution.proto",
+        "aliases.proto",
     ],
     visibility = ["//visibility:public"],
     deps = [
