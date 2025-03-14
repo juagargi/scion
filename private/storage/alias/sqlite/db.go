@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/alias"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/private/util"
@@ -102,21 +103,30 @@ type executor struct {
 }
 
 func (e *executor) Get(ctx context.Context, hostname string) ([]alias.Replica, error) {
-	return nil, nil
+	e.Lock()
+	defer e.Unlock()
+
+	var replicas []alias.Replica
+	err := db.DoInTx(ctx, e.db, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		replicas, err = get(ctx, tx, hostname)
+		return err
+	})
+
+	return replicas, err
 }
 
 // AddReplicas adds aliases to a given hostname, valid until notAfter.
 func (e *executor) AddReplicas(
 	ctx context.Context,
 	hostname string,
-	notAfter time.Time,
 	replicas []alias.Replica,
 ) error {
 	e.Lock()
 	defer e.Unlock()
 
 	return db.DoInTx(ctx, e.db, func(ctx context.Context, tx *sql.Tx) error {
-		return addReplicas(ctx, tx, hostname, notAfter, replicas)
+		return addReplicas(ctx, tx, hostname, replicas)
 	})
 }
 
@@ -164,11 +174,37 @@ func (e *executor) DeleteAll(ctx context.Context, hostname string) (int, error) 
 	return count, err
 }
 
+func get(
+	ctx context.Context,
+	tx *sql.Tx,
+	hostname string,
+) ([]alias.Replica, error) {
+	str := "SELECT AliasIA, AliasHostname, NotAfter FROM Aliases WHERE Hostname = ?"
+	rows, err := tx.QueryContext(ctx, str, hostname)
+	if err != nil {
+		return nil, err
+	}
+	replicas := make([]alias.Replica, 0)
+	for rows.Next() {
+		var ia uint64
+		var aliasHostname string
+		var notAfter uint32
+		if err := rows.Scan(&ia, &aliasHostname, &notAfter); err != nil {
+			return nil, err
+		}
+		replicas = append(replicas, alias.Replica{
+			IA:       addr.IA(ia),
+			Hostname: aliasHostname,
+			NotAfter: util.SecsToTime(notAfter),
+		})
+	}
+	return replicas, nil
+}
+
 func addReplicas(
 	ctx context.Context,
 	tx *sql.Tx,
 	hostname string,
-	notAfter time.Time,
 	replicas []alias.Replica,
 ) error {
 	str := "INSERT INTO Aliases (Hostname, AliasIA, AliasHostname, NotAfter) VALUES (?,?,?,?)"
@@ -177,9 +213,8 @@ func addReplicas(
 		return err
 	}
 
-	notAfterSecs := util.TimeToSecs(notAfter)
 	for _, rep := range replicas {
-		_, err := stmt.ExecContext(ctx, hostname, rep.IA, rep.Hostname, notAfterSecs)
+		_, err := stmt.ExecContext(ctx, hostname, rep.IA, rep.Hostname, util.TimeToSecs(rep.NotAfter))
 		if err != nil {
 			return serrors.Wrap("inserting alias", err, "host", hostname,
 				"ia", rep.IA.String(), "address", rep.Hostname)

@@ -31,7 +31,7 @@ type DB interface {
 
 type ReadWrite interface {
 	Get(ctx context.Context, hostname string) ([]alias.Replica, error)
-	AddReplicas(ctx context.Context, hostname string, notAfter time.Time, replicas []alias.Replica) error
+	AddReplicas(ctx context.Context, hostname string, replicas []alias.Replica) error
 	DeleteExpired(ctx context.Context, now time.Time) (int, error)
 	Delete(ctx context.Context, hostname string, replicas []alias.Replica) (int, error)
 	DeleteAll(ctx context.Context, hostname string) (int, error)

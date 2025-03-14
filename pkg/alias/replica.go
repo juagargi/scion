@@ -15,9 +15,14 @@
 // Package storage provides factories for various application storage backends.
 package alias
 
-import "github.com/scionproto/scion/pkg/addr"
+import (
+	"time"
+
+	"github.com/scionproto/scion/pkg/addr"
+)
 
 type Replica struct {
 	IA       addr.IA
 	Hostname string
+	NotAfter time.Time
 }

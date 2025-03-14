@@ -16,8 +16,14 @@
 package storage
 
 import (
+	"context"
+	"io"
+	"time"
+
 	"github.com/scionproto/scion/private/aliasdb"
+	"github.com/scionproto/scion/private/periodic"
 	sqlitealiasdb "github.com/scionproto/scion/private/storage/alias/sqlite"
+	"github.com/scionproto/scion/private/storage/cleaner"
 )
 
 func NewAliasStorage(c DBConfig) (aliasdb.DB, error) {
@@ -27,24 +33,31 @@ func NewAliasStorage(c DBConfig) (aliasdb.DB, error) {
 	}
 	SetConnLimits(db, c)
 
-	// deleteme: TODO cleaner and struct type for alias DB.
+	// Start a periodic task that cleans up the expired aliases.
+	cleaner := periodic.Start(
+		cleaner.New(
+			func(ctx context.Context) (int, error) {
+				return db.DeleteExpired(ctx, time.Now())
+			},
+			"control_aliasesstorage_cleaner",
+		),
+		30*time.Second,
+		30*time.Second,
+	)
+	return aliasDBWithCleaner{
+		DB:       db,
+		cleaner:  cleaner,
+		dbCloser: db,
+	}, nil
+}
 
-	// // Start a periodic task that cleans up the expired path segments.
-	// cleaner := periodic.Start(
-	// 	cleaner.New(
-	// 		func(ctx context.Context) (int, error) {
-	// 			return db.DeleteExpired(ctx, time.Now())
-	// 		},
-	// 		"control_pathstorage_cleaner",
-	// 	),
-	// 	30*time.Second,
-	// 	30*time.Second,
-	// )
-	// return pathDBWithCleaner{
-	// 	DB:       db,
-	// 	cleaner:  cleaner,
-	// 	dbCloser: db,
-	// }, nil
+type aliasDBWithCleaner struct {
+	aliasdb.DB
+	cleaner  *periodic.Runner
+	dbCloser io.Closer
+}
 
-	return db, err
+func (db aliasDBWithCleaner) Close() error {
+	db.cleaner.Kill()
+	return db.dbCloser.Close()
 }
