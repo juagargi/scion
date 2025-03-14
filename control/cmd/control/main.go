@@ -162,6 +162,11 @@ func realMain(ctx context.Context) error {
 	})
 	defer pathDB.Close()
 
+	aliasDB, err := storage.NewAliasStorage(globalCfg.AliasDB)
+	if err != nil {
+		return serrors.Wrap("initializing alias storage", err)
+	}
+
 	macGen, err := cs.MACGenFactory(globalCfg.General.ConfigDir)
 	if err != nil {
 		return err
@@ -380,8 +385,9 @@ func realMain(ctx context.Context) error {
 	}
 
 	// Register an alias (replica) server for anycast.
-	aliasServer := aliasgrpc.NewAliasesServer()
+	aliasServer := aliasgrpc.NewAliasesServer(aliasDB, dialer)
 	cppb.RegisterAliasesServiceServer(quicServer, aliasServer)
+	cppb.RegisterAliasesQueryServer(tcpServer, aliasServer)
 
 	// Handle segment registration.
 	if topo.Core() {
