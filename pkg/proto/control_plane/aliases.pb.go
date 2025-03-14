@@ -316,11 +316,18 @@ var file_proto_control_plane_v1_aliases_proto_rawDesc = []byte{
 	0x61, 0x73, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2a, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c, 0x5f, 0x70, 0x6c, 0x61, 0x6e,
 	0x65, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x41, 0x6c, 0x69, 0x61, 0x73, 0x65, 0x73, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x35, 0x5a, 0x33, 0x67, 0x69, 0x74,
-	0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x73, 0x63, 0x69, 0x6f, 0x6e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x2f, 0x73, 0x63, 0x69, 0x6f, 0x6e, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x2f, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c, 0x5f, 0x70, 0x6c, 0x61, 0x6e, 0x65,
-	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x32, 0x75, 0x0a, 0x0c, 0x41, 0x6c, 0x69,
+	0x61, 0x73, 0x65, 0x73, 0x51, 0x75, 0x65, 0x72, 0x79, 0x12, 0x65, 0x0a, 0x0a, 0x47, 0x65, 0x74,
+	0x41, 0x6c, 0x69, 0x61, 0x73, 0x65, 0x73, 0x12, 0x29, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x63, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c, 0x5f, 0x70, 0x6c, 0x61, 0x6e, 0x65, 0x2e, 0x76, 0x31,
+	0x2e, 0x47, 0x65, 0x74, 0x41, 0x6c, 0x69, 0x61, 0x73, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x2a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x63, 0x6f, 0x6e, 0x74, 0x72,
+	0x6f, 0x6c, 0x5f, 0x70, 0x6c, 0x61, 0x6e, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x41,
+	0x6c, 0x69, 0x61, 0x73, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
+	0x42, 0x35, 0x5a, 0x33, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x73,
+	0x63, 0x69, 0x6f, 0x6e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x73, 0x63, 0x69, 0x6f, 0x6e, 0x2f,
+	0x70, 0x6b, 0x67, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x6f,
+	0x6c, 0x5f, 0x70, 0x6c, 0x61, 0x6e, 0x65, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -348,10 +355,12 @@ var file_proto_control_plane_v1_aliases_proto_depIdxs = []int32{
 	4, // 1: proto.control_plane.v1.GetAliasesResponse.replicas:type_name -> proto.control_plane.v1.Replica
 	0, // 2: proto.control_plane.v1.AliasesService.RegisterAlias:input_type -> proto.control_plane.v1.RegisterAliasRequest
 	2, // 3: proto.control_plane.v1.AliasesService.GetAliases:input_type -> proto.control_plane.v1.GetAliasesRequest
-	1, // 4: proto.control_plane.v1.AliasesService.RegisterAlias:output_type -> proto.control_plane.v1.RegisterAliasResponse
-	3, // 5: proto.control_plane.v1.AliasesService.GetAliases:output_type -> proto.control_plane.v1.GetAliasesResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
+	2, // 4: proto.control_plane.v1.AliasesQuery.GetAliases:input_type -> proto.control_plane.v1.GetAliasesRequest
+	1, // 5: proto.control_plane.v1.AliasesService.RegisterAlias:output_type -> proto.control_plane.v1.RegisterAliasResponse
+	3, // 6: proto.control_plane.v1.AliasesService.GetAliases:output_type -> proto.control_plane.v1.GetAliasesResponse
+	3, // 7: proto.control_plane.v1.AliasesQuery.GetAliases:output_type -> proto.control_plane.v1.GetAliasesResponse
+	5, // [5:8] is the sub-list for method output_type
+	2, // [2:5] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -432,7 +441,7 @@ func file_proto_control_plane_v1_aliases_proto_init() {
 			NumEnums:      0,
 			NumMessages:   5,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_proto_control_plane_v1_aliases_proto_goTypes,
 		DependencyIndexes: file_proto_control_plane_v1_aliases_proto_depIdxs,
@@ -554,6 +563,78 @@ var _AliasesService_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAliases",
 			Handler:    _AliasesService_GetAliases_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "proto/control_plane/v1/aliases.proto",
+}
+
+// AliasesQueryClient is the client API for AliasesQuery service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
+type AliasesQueryClient interface {
+	GetAliases(ctx context.Context, in *GetAliasesRequest, opts ...grpc.CallOption) (*GetAliasesResponse, error)
+}
+
+type aliasesQueryClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAliasesQueryClient(cc grpc.ClientConnInterface) AliasesQueryClient {
+	return &aliasesQueryClient{cc}
+}
+
+func (c *aliasesQueryClient) GetAliases(ctx context.Context, in *GetAliasesRequest, opts ...grpc.CallOption) (*GetAliasesResponse, error) {
+	out := new(GetAliasesResponse)
+	err := c.cc.Invoke(ctx, "/proto.control_plane.v1.AliasesQuery/GetAliases", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AliasesQueryServer is the server API for AliasesQuery service.
+type AliasesQueryServer interface {
+	GetAliases(context.Context, *GetAliasesRequest) (*GetAliasesResponse, error)
+}
+
+// UnimplementedAliasesQueryServer can be embedded to have forward compatible implementations.
+type UnimplementedAliasesQueryServer struct {
+}
+
+func (*UnimplementedAliasesQueryServer) GetAliases(context.Context, *GetAliasesRequest) (*GetAliasesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAliases not implemented")
+}
+
+func RegisterAliasesQueryServer(s *grpc.Server, srv AliasesQueryServer) {
+	s.RegisterService(&_AliasesQuery_serviceDesc, srv)
+}
+
+func _AliasesQuery_GetAliases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAliasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AliasesQueryServer).GetAliases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.control_plane.v1.AliasesQuery/GetAliases",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AliasesQueryServer).GetAliases(ctx, req.(*GetAliasesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+var _AliasesQuery_serviceDesc = grpc.ServiceDesc{
+	ServiceName: "proto.control_plane.v1.AliasesQuery",
+	HandlerType: (*AliasesQueryServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetAliases",
+			Handler:    _AliasesQuery_GetAliases_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

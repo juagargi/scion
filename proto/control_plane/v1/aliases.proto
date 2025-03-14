@@ -18,9 +18,17 @@ option go_package = "github.com/scionproto/scion/pkg/proto/control_plane";
 
 package proto.control_plane.v1;
 
-
+// AliasesService is the control service offered to the AS' clients.
 service AliasesService {
+    // Allow hosts in the local AS to register aliases.
     rpc RegisterAlias(RegisterAliasRequest) returns (RegisterAliasResponse) {}
+    // Allow hosts in the local AS to query for aliases.
+    rpc GetAliases(GetAliasesRequest) returns (GetAliasesResponse) {}
+}
+
+// AliasesQuery is the control service offered to other ASes' control services.
+service AliasesQuery {
+    // Allow CSs in other ASes to query for aliases.
     rpc GetAliases(GetAliasesRequest) returns (GetAliasesResponse) {}
 }
 
