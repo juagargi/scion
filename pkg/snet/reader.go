@@ -16,7 +16,6 @@ package snet
 
 import (
 	"net"
-	"net/netip"
 	"sync"
 	"time"
 
@@ -86,21 +85,6 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 	udp, ok := pkt.Payload.(UDPPayload)
 	if !ok {
 		return 0, nil, serrors.New("unexpected payload", "type", common.TypeOf(pkt.Payload))
-	}
-
-	// XXX(JordiSubira): We explicitly forbid nil or unspecified address in the current constructor
-	// for Conn.
-	// If this were ever to change, we would always fall into the following if statement, then
-	// we would like to replace this logic (e.g., using IP_PKTINFO, with its caveats).
-	pktAddrPort := netip.AddrPortFrom(pkt.Destination.Host.IP(), udp.DstPort)
-	if c.local.IA != pkt.Destination.IA ||
-		c.local.Host.AddrPort() != pktAddrPort {
-		return 0, nil, serrors.New("packet is destined to a different host",
-			"local_isd_as", c.local.IA,
-			"local_host", c.local.Host,
-			"pkt_destination_isd_as", pkt.Destination.IA,
-			"pkt_destination_host", pktAddrPort,
-		)
 	}
 
 	// Extract remote address.
