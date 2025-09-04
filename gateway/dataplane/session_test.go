@@ -30,6 +30,7 @@ import (
 	"github.com/scionproto/scion/pkg/private/mocks/net/mock_net"
 	"github.com/scionproto/scion/pkg/snet"
 	"github.com/scionproto/scion/pkg/snet/mock_snet"
+	"github.com/scionproto/scion/pkg/snet/multihomed"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
 )
 
@@ -82,6 +83,7 @@ func TestTwoPaths(t *testing.T) {
 }
 
 func TestNoLeak(t *testing.T) {
+	multihomed.StopContinuousCheckInterfaces(t)
 	defer goleak.VerifyNone(t)
 
 	ctrl := gomock.NewController(t)
