@@ -27,21 +27,11 @@ import (
 	"github.com/scionproto/scion/pkg/slayers/path"
 )
 
-// The FullFlyoverMac makes use of the assembly code in the asm_* files
-// There are two main, related, reasons for that.
-// First, the AES key expansion performed by these assembly files is
-// much faster than what the library code does.
-// BenchmarkFlyoverMac and BenchmarkFlyoverMacLib in mac_test.go show the difference
-//
-// Second, the library implementation of the AES key expansion performs calls to make()
-// and allocates memory, which we would like to avoid
-// This is also the main reason why the direct call to assembly is much faster
-//
-// A full implementation of AES written in go only without memory allocations
-// has been attempted, but turned out to not be much more efficient than
-// the library implementation.
-// This is expectedt to be due to the fact that a go only implementation of AES
-// is unable to make use of hardware accelerated AES instructions.
+// The original implementation of FullFlyoverMac used assembly helpers copied from the
+// Go AES implementation to avoid per-call allocations and the hidden key schedule work
+// inside aes.NewCipher. The pure-Go expanded-key path below keeps the same caller-facing
+// shape and buffer reuse, while preserving the assembly implementation for side-by-side
+// testing and benchmarking.
 
 // defined in asm_* assembly files
 
@@ -105,10 +95,81 @@ func DeriveAuthKey(
 	return buffer[0:AkBufferSize]
 }
 
-// Computes full flyover MAC Vk based on authentication key Ak.
-// Requires buffer to be of size at least FlyoverMacBufferSize
-// Requires xkbuffer to be of size at least XkBufferSize.
-// (Used to store the AES expanded keys)
+// ExpandAES128Key expands the 16-byte AES-128 key into the caller-provided round-key
+// workspace. xk must have room for 44 uint32 values.
+func ExpandAES128Key(ak []byte, xk []uint32) {
+	_ = ak[AkBufferSize-1]
+	_ = xk[XkBufferSize-1]
+
+	xk[0] = binary.BigEndian.Uint32(ak[0:4])
+	xk[1] = binary.BigEndian.Uint32(ak[4:8])
+	xk[2] = binary.BigEndian.Uint32(ak[8:12])
+	xk[3] = binary.BigEndian.Uint32(ak[12:16])
+
+	for i := 4; i < XkBufferSize; i++ {
+		t := xk[i-1]
+		if i%4 == 0 {
+			t = subw(rotw(t)) ^ (uint32(powx[i/4-1]) << 24)
+		}
+		xk[i] = xk[i-4] ^ t
+	}
+}
+
+func subw(w uint32) uint32 {
+	return uint32(sbox0[w>>24])<<24 |
+		uint32(sbox0[w>>16&0xff])<<16 |
+		uint32(sbox0[w>>8&0xff])<<8 |
+		uint32(sbox0[w&0xff])
+}
+
+func rotw(w uint32) uint32 {
+	return w<<8 | w>>24
+}
+
+// EncryptAES128BlockExpanded encrypts one AES-128 block in place using the
+// caller-provided expanded key schedule.
+func EncryptAES128BlockExpanded(xk []uint32, dstsrc []byte) {
+	_ = xk[XkBufferSize-1]
+	_ = dstsrc[FlyoverMacBufferSize-1]
+
+	s0 := binary.BigEndian.Uint32(dstsrc[0:4]) ^ xk[0]
+	s1 := binary.BigEndian.Uint32(dstsrc[4:8]) ^ xk[1]
+	s2 := binary.BigEndian.Uint32(dstsrc[8:12]) ^ xk[2]
+	s3 := binary.BigEndian.Uint32(dstsrc[12:16]) ^ xk[3]
+
+	k := 4
+	var t0, t1, t2, t3 uint32
+	for r := 0; r < aesRounds-1; r++ {
+		t0 = xk[k+0] ^ te0[uint8(s0>>24)] ^ te1[uint8(s1>>16)] ^ te2[uint8(s2>>8)] ^ te3[uint8(s3)]
+		t1 = xk[k+1] ^ te0[uint8(s1>>24)] ^ te1[uint8(s2>>16)] ^ te2[uint8(s3>>8)] ^ te3[uint8(s0)]
+		t2 = xk[k+2] ^ te0[uint8(s2>>24)] ^ te1[uint8(s3>>16)] ^ te2[uint8(s0>>8)] ^ te3[uint8(s1)]
+		t3 = xk[k+3] ^ te0[uint8(s3>>24)] ^ te1[uint8(s0>>16)] ^ te2[uint8(s1>>8)] ^ te3[uint8(s2)]
+		k += 4
+		s0, s1, s2, s3 = t0, t1, t2, t3
+	}
+
+	s0 = uint32(sbox0[t0>>24])<<24 | uint32(sbox0[t1>>16&0xff])<<16 |
+		uint32(sbox0[t2>>8&0xff])<<8 | uint32(sbox0[t3&0xff])
+	s1 = uint32(sbox0[t1>>24])<<24 | uint32(sbox0[t2>>16&0xff])<<16 |
+		uint32(sbox0[t3>>8&0xff])<<8 | uint32(sbox0[t0&0xff])
+	s2 = uint32(sbox0[t2>>24])<<24 | uint32(sbox0[t3>>16&0xff])<<16 |
+		uint32(sbox0[t0>>8&0xff])<<8 | uint32(sbox0[t1&0xff])
+	s3 = uint32(sbox0[t3>>24])<<24 | uint32(sbox0[t0>>16&0xff])<<16 |
+		uint32(sbox0[t1>>8&0xff])<<8 | uint32(sbox0[t2&0xff])
+
+	s0 ^= xk[k+0]
+	s1 ^= xk[k+1]
+	s2 ^= xk[k+2]
+	s3 ^= xk[k+3]
+
+	binary.BigEndian.PutUint32(dstsrc[0:4], s0)
+	binary.BigEndian.PutUint32(dstsrc[4:8], s1)
+	binary.BigEndian.PutUint32(dstsrc[8:12], s2)
+	binary.BigEndian.PutUint32(dstsrc[12:16], s3)
+}
+
+// Computes full flyover MAC Vk based on authentication key Ak, using the pure-Go
+// expanded-key path.
 func FullFlyoverMac(
 	ak []byte,
 	dstIA addr.IA,
@@ -118,7 +179,45 @@ func FullFlyoverMac(
 	buffer []byte,
 	xkbuffer []uint32,
 ) []byte {
+	return FullFlyoverMacGo(ak, dstIA, pktlen, resStartTime, highResTime, buffer, xkbuffer)
+}
 
+// FullFlyoverMacGo computes the flyover MAC using the pure-Go expanded-key AES path.
+func FullFlyoverMacGo(
+	ak []byte,
+	dstIA addr.IA,
+	pktlen uint16,
+	resStartTime uint16,
+	highResTime uint32,
+	buffer []byte,
+	xkbuffer []uint32,
+) []byte {
+	// Bounds check.
+	_ = buffer[FlyoverMacBufferSize-1]
+	_ = xkbuffer[XkBufferSize-1]
+
+	binary.BigEndian.PutUint64(buffer[0:8], uint64(dstIA))
+	binary.BigEndian.PutUint16(buffer[8:10], pktlen)
+	binary.BigEndian.PutUint16(buffer[10:12], resStartTime)
+	binary.BigEndian.PutUint32(buffer[12:16], highResTime)
+
+	ExpandAES128Key(ak, xkbuffer)
+	EncryptAES128BlockExpanded(xkbuffer, buffer[:FlyoverMacBufferSize])
+
+	return buffer[0:FlyoverMacBufferSize]
+}
+
+// FullFlyoverMacAsm preserves the original assembly-backed implementation for
+// side-by-side testing and benchmarking.
+func FullFlyoverMacAsm(
+	ak []byte,
+	dstIA addr.IA,
+	pktlen uint16,
+	resStartTime uint16,
+	highResTime uint32,
+	buffer []byte,
+	xkbuffer []uint32,
+) []byte {
 	// Bounds check.
 	_ = buffer[FlyoverMacBufferSize-1]
 	_ = xkbuffer[XkBufferSize-1]
