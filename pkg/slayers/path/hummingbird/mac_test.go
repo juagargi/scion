@@ -17,10 +17,13 @@ package hummingbird_test
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/blake2s"
 
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/slayers/path/hummingbird"
@@ -359,4 +362,61 @@ func BenchmarkFullFlyoverMacEndhost(b *testing.B) {
 	for b.Loop() {
 		hummingbird.FlyoverMacWithAkAesBlock(block, buffer, dstIA, pktlen, resStartTs, highResTs)
 	}
+}
+
+func BenchmarkMacAlternatives(b *testing.B) {
+	const (
+		AkSize  = hummingbird.AkBufferSize
+		MacSize = hummingbird.FlyoverMacBufferSize
+	)
+	ak := []byte{
+		0x7e, 0x61, 0x04, 0x91, 0x30, 0x6b, 0x95, 0xec,
+		0xb5, 0x75, 0xc6, 0xe9, 0x4c, 0x5a, 0x89, 0x84,
+	}
+
+	b.Run(
+		// AesEncrypt just calls AES encrypt. Times for my machine.
+		// 13.40 ns/op
+		"AesEncrypt", func(b *testing.B) {
+			buffer := make([]byte, MacSize)
+			block, err := aes.NewCipher(ak)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			for b.Loop() {
+				block.Encrypt(buffer[:16], buffer[:16])
+			}
+		},
+	)
+
+	b.Run("HMAC", func(b *testing.B) {
+		// Alternative using an HMAC with SHA256.
+		// 478.3 ns/op
+		buffer := make([]byte, MacSize)
+		h := hmac.New(sha256.New, ak)
+		b.ResetTimer()
+		for b.Loop() {
+			h.Reset()
+			h.Write(buffer)
+			h.Sum(nil)
+		}
+	},
+	)
+
+	b.Run("BLAKE2s", func(b *testing.B) {
+		// Keyed hash using BLAKE2s approach.
+		// 234.7 ns/op
+		buffer := make([]byte, MacSize)
+		h, err := blake2s.New256(ak)
+		require.NoError(b, err)
+		var fullMac [32]byte
+
+		b.ResetTimer()
+		for b.Loop() {
+			h.Reset()
+			h.Write(buffer)
+			h.Sum(fullMac[:0])
+		}
+	})
+
 }
