@@ -35,33 +35,50 @@ var sourceFiles = map[string]string{
 }
 
 func main() {
+	outDir := flag.String("out-dir", "", "directory to write generated files into")
+	prefix := flag.String("prefix", "", "prefix to add to generated output filenames")
 	check := flag.Bool("check", false, "verify generated files are up to date")
 	flag.Parse()
 
-	if err := run(*check); err != nil {
+	if err := run(config{
+		check:  *check,
+		outDir: *outDir,
+		prefix: *prefix,
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "gen_hbird_aesasm: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(check bool) error {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		return err
+type config struct {
+	check  bool
+	outDir string
+	prefix string
+}
+
+func run(cfg config) error {
+	dstDir := cfg.outDir
+	if dstDir == "" {
+		repoRoot, err := findRepoRoot()
+		if err != nil {
+			return err
+		}
+		dstDir = filepath.Join(repoRoot, packageDir)
 	}
 	goRoot, err := resolveGOROOT(defaultGoEnv)
 	if err != nil {
 		return err
 	}
 
-	for dstName, srcRel := range sourceFiles {
+	for _, dstName := range orderedSourceNames() {
+		srcRel := sourceFiles[dstName]
 		srcPath := filepath.Join(goRoot, srcRel)
-		dstPath := filepath.Join(repoRoot, packageDir, dstName)
+		dstPath := filepath.Join(dstDir, cfg.prefix+dstName)
 		content, err := buildOutput(srcPath, srcRel, runtime.Version())
 		if err != nil {
 			return fmt.Errorf("%s -> %s: %w", srcRel, dstName, err)
 		}
-		if check {
+		if cfg.check {
 			if err := checkFile(dstPath, content); err != nil {
 				return err
 			}
@@ -72,6 +89,14 @@ func run(check bool) error {
 		}
 	}
 	return nil
+}
+
+func orderedSourceNames() []string {
+	return []string{
+		"asm_amd64.s",
+		"asm_arm64.s",
+		"asm_ppc64x.s",
+	}
 }
 
 func findRepoRoot() (string, error) {
@@ -91,7 +116,7 @@ func findRepoRoot() (string, error) {
 }
 
 func resolveGOROOT(goEnv func() (string, error)) (string, error) {
-	if goroot := runtime.GOROOT(); goroot != "" {
+	if goroot := firstValidGOROOT(runtime.GOROOT(), os.Getenv("GOROOT")); goroot != "" {
 		return goroot, nil
 	}
 	goroot, err := goEnv()
@@ -101,10 +126,30 @@ func resolveGOROOT(goEnv func() (string, error)) (string, error) {
 	if goroot == "" {
 		return "", errors.New("resolve GOROOT: empty result from go env GOROOT")
 	}
+	if !isValidGOROOT(goroot) {
+		return "", fmt.Errorf("resolve GOROOT: invalid path %q", goroot)
+	}
 	return goroot, nil
 }
 
-func defaultGoEnv() (string, error) {
+func firstValidGOROOT(candidates ...string) string {
+	for _, goroot := range candidates {
+		if isValidGOROOT(goroot) {
+			return goroot
+		}
+	}
+	return ""
+}
+
+func isValidGOROOT(goroot string) bool {
+	if goroot == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(goroot, "src"))
+	return err == nil && info.IsDir()
+}
+
+var defaultGoEnv = func() (string, error) {
 	out, err := exec.Command("go", "env", "GOROOT").Output()
 	if err != nil {
 		return "", err

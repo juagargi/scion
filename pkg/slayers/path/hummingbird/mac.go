@@ -35,7 +35,9 @@ import (
 // The pure-Go expanded-key helpers below are retained for side-by-side testing and
 // benchmarking.
 
-// Run `go generate ./pkg/slayers/path/hummingbird` to regenerate the assembly files.
+// Bazel builds regenerate the copied AES assembly automatically. Run
+// `go generate ./pkg/slayers/path/hummingbird` to refresh the checked-in files for
+// raw `go build` workflows.
 
 // defined in asm_* assembly files
 
