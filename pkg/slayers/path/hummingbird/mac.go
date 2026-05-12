@@ -14,6 +14,8 @@
 
 //go:build amd64 || arm64 || ppc64 || ppc64le
 
+//go:generate go run github.com/scionproto/scion/tools/gen_hbird_aesasm
+
 package hummingbird
 
 import (
@@ -29,9 +31,11 @@ import (
 
 // The original implementation of FullFlyoverMac used assembly helpers copied from the
 // Go AES implementation to avoid per-call allocations and the hidden key schedule work
-// inside aes.NewCipher. The pure-Go expanded-key path below keeps the same caller-facing
-// shape and buffer reuse, while preserving the assembly implementation for side-by-side
-// testing and benchmarking.
+// inside aes.NewCipher. The assembly-backed path remains the default implementation.
+// The pure-Go expanded-key helpers below are retained for side-by-side testing and
+// benchmarking.
+
+// Run `go generate ./pkg/slayers/path/hummingbird` to regenerate the assembly files.
 
 // defined in asm_* assembly files
 
@@ -39,17 +43,19 @@ import (
 func encryptBlockAsm(nr int, xk *uint32, dst, src *byte)
 
 //go:noescape
-func expandKeyAsm(nr int, key *byte, enc *uint32)
+func expandKeyAsm(nr int, key *byte, enc, dec *uint32)
 
 const (
 	PathType = 5
 	// SecretValueDerivationSalt is the PBKDF2 salt used to derive the Hummingbird AS secret value.
 	SecretValueDerivationSalt = "Derive hbird sv"
 
-	aesRounds            = 10
 	AkBufferSize         = 16
 	FlyoverMacBufferSize = 16
-	XkBufferSize         = (aesRounds + 1) * (128 / 32) // 44
+
+	aesRounds        = 10
+	aesRoundKeyWords = (aesRounds + 1) * (128 / 32) // 44
+	XkBufferSize     = 2 * aesRoundKeyWords         // enc + dec key schedule
 	// Total MAC buffer size:
 	MACBufferSize = path.MACBufferSize + FlyoverMacBufferSize + AkBufferSize
 )
@@ -96,17 +102,17 @@ func DeriveAuthKey(
 }
 
 // ExpandAES128Key expands the 16-byte AES-128 key into the caller-provided round-key
-// workspace. xk must have room for 44 uint32 values.
+// workspace. xk must have room for at least 44 uint32 values.
 func ExpandAES128Key(ak []byte, xk []uint32) {
 	_ = ak[AkBufferSize-1]
-	_ = xk[XkBufferSize-1]
+	_ = xk[aesRoundKeyWords-1]
 
 	xk[0] = binary.BigEndian.Uint32(ak[0:4])
 	xk[1] = binary.BigEndian.Uint32(ak[4:8])
 	xk[2] = binary.BigEndian.Uint32(ak[8:12])
 	xk[3] = binary.BigEndian.Uint32(ak[12:16])
 
-	for i := 4; i < XkBufferSize; i++ {
+	for i := 4; i < aesRoundKeyWords; i++ {
 		t := xk[i-1]
 		if i%4 == 0 {
 			t = subw(rotw(t)) ^ (uint32(powx[i/4-1]) << 24)
@@ -129,7 +135,7 @@ func rotw(w uint32) uint32 {
 // EncryptAES128BlockExpanded encrypts one AES-128 block in place using the
 // caller-provided expanded key schedule.
 func EncryptAES128BlockExpanded(xk []uint32, dstsrc []byte) {
-	_ = xk[XkBufferSize-1]
+	_ = xk[aesRoundKeyWords-1]
 	_ = dstsrc[FlyoverMacBufferSize-1]
 
 	s0 := binary.BigEndian.Uint32(dstsrc[0:4]) ^ xk[0]
@@ -168,8 +174,8 @@ func EncryptAES128BlockExpanded(xk []uint32, dstsrc []byte) {
 	binary.BigEndian.PutUint32(dstsrc[12:16], s3)
 }
 
-// Computes full flyover MAC Vk based on authentication key Ak, using the pure-Go
-// expanded-key path.
+// Computes full flyover MAC Vk based on authentication key Ak using the assembly-backed
+// AES helpers copied from the Go standard library.
 func FullFlyoverMac(
 	ak []byte,
 	dstIA addr.IA,
@@ -179,7 +185,7 @@ func FullFlyoverMac(
 	buffer []byte,
 	xkbuffer []uint32,
 ) []byte {
-	return FullFlyoverMacGo(ak, dstIA, pktlen, resStartTime, highResTime, buffer, xkbuffer)
+	return FullFlyoverMacAsm(ak, dstIA, pktlen, resStartTime, highResTime, buffer, xkbuffer)
 }
 
 // FullFlyoverMacGo computes the flyover MAC using the pure-Go expanded-key AES path.
@@ -207,8 +213,7 @@ func FullFlyoverMacGo(
 	return buffer[0:FlyoverMacBufferSize]
 }
 
-// FullFlyoverMacAsm preserves the original assembly-backed implementation for
-// side-by-side testing and benchmarking.
+// FullFlyoverMacAsm uses the assembly-backed AES helpers.
 func FullFlyoverMacAsm(
 	ak []byte,
 	dstIA addr.IA,
@@ -227,7 +232,7 @@ func FullFlyoverMacAsm(
 	binary.BigEndian.PutUint16(buffer[10:12], resStartTime)
 	binary.BigEndian.PutUint32(buffer[12:16], highResTime)
 
-	expandKeyAsm(aesRounds, &ak[0], &xkbuffer[0])
+	expandKeyAsm(aesRounds, &ak[0], &xkbuffer[0], &xkbuffer[aesRoundKeyWords])
 	encryptBlockAsm(aesRounds, &xkbuffer[0], &buffer[0], &buffer[0])
 
 	return buffer[0:FlyoverMacBufferSize]
