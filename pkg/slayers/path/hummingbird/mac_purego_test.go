@@ -1,22 +1,152 @@
-// Copyright 2009 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright 2025 ETH Zurich
 //
-// This file is adapted from Go's generic AES implementation and trimmed to the
-// constants needed for AES-128 encryption only.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-//go:build amd64 || arm64 || ppc64 || ppc64le
+package hummingbird_test
 
-package hummingbird
+import (
+	"encoding/binary"
 
-// Powers of x mod poly in GF(2).
-var powx = [16]byte{
+	"github.com/scionproto/scion/pkg/addr"
+	"github.com/scionproto/scion/pkg/slayers/path/hummingbird"
+)
+
+// This file keeps a pure-Go AES-128 implementation local to tests.
+//
+// The production package uses the assembly-backed AES helpers as the supported
+// fast path. The code here exists only so tests and benchmarks can:
+//   - compare the assembly-backed implementation against a local pure-Go path,
+//   - benchmark the pure-Go expanded-key approach without exposing it in the
+//     package API,
+//   - keep the production package surface focused on supported runtime paths.
+//
+// The implementation below is intentionally kept byte-for-byte compatible with
+// the former production pure-Go helper path so that existing correctness tests
+// and benchmark comparisons keep their meaning.
+
+// expandAES128KeyTest expands a 16-byte AES-128 key into encryption round keys.
+func expandAES128KeyTest(ak []byte, xk []uint32) {
+	_ = ak[hummingbird.AkBufferSize-1]
+	_ = xk[aesRoundKeyWordsTest-1]
+
+	xk[0] = binary.BigEndian.Uint32(ak[0:4])
+	xk[1] = binary.BigEndian.Uint32(ak[4:8])
+	xk[2] = binary.BigEndian.Uint32(ak[8:12])
+	xk[3] = binary.BigEndian.Uint32(ak[12:16])
+
+	for i := 4; i < aesRoundKeyWordsTest; i++ {
+		t := xk[i-1]
+		if i%4 == 0 {
+			t = subwTest(rotwTest(t)) ^ (uint32(powxTest[i/4-1]) << 24)
+		}
+		xk[i] = xk[i-4] ^ t
+	}
+}
+
+// subwTest applies the AES S-box to each byte of a 32-bit word.
+func subwTest(w uint32) uint32 {
+	return uint32(sbox0Test[w>>24])<<24 |
+		uint32(sbox0Test[w>>16&0xff])<<16 |
+		uint32(sbox0Test[w>>8&0xff])<<8 |
+		uint32(sbox0Test[w&0xff])
+}
+
+// rotwTest rotates a 32-bit word by one byte, matching AES key-schedule logic.
+func rotwTest(w uint32) uint32 {
+	return w<<8 | w>>24
+}
+
+// encryptAES128BlockExpandedTest encrypts one block in place with expanded AES-128 round keys.
+func encryptAES128BlockExpandedTest(xk []uint32, dstsrc []byte) {
+	_ = xk[aesRoundKeyWordsTest-1]
+	_ = dstsrc[hummingbird.FlyoverMacBufferSize-1]
+
+	s0 := binary.BigEndian.Uint32(dstsrc[0:4]) ^ xk[0]
+	s1 := binary.BigEndian.Uint32(dstsrc[4:8]) ^ xk[1]
+	s2 := binary.BigEndian.Uint32(dstsrc[8:12]) ^ xk[2]
+	s3 := binary.BigEndian.Uint32(dstsrc[12:16]) ^ xk[3]
+
+	k := 4
+	var t0, t1, t2, t3 uint32
+	for r := 0; r < aesRoundsTest-1; r++ {
+		t0 = xk[k+0] ^ te0Test[uint8(s0>>24)] ^ te1Test[uint8(s1>>16)] ^ te2Test[uint8(s2>>8)] ^ te3Test[uint8(s3)]
+		t1 = xk[k+1] ^ te0Test[uint8(s1>>24)] ^ te1Test[uint8(s2>>16)] ^ te2Test[uint8(s3>>8)] ^ te3Test[uint8(s0)]
+		t2 = xk[k+2] ^ te0Test[uint8(s2>>24)] ^ te1Test[uint8(s3>>16)] ^ te2Test[uint8(s0>>8)] ^ te3Test[uint8(s1)]
+		t3 = xk[k+3] ^ te0Test[uint8(s3>>24)] ^ te1Test[uint8(s0>>16)] ^ te2Test[uint8(s1>>8)] ^ te3Test[uint8(s2)]
+		k += 4
+		s0, s1, s2, s3 = t0, t1, t2, t3
+	}
+
+	s0 = uint32(sbox0Test[t0>>24])<<24 | uint32(sbox0Test[t1>>16&0xff])<<16 |
+		uint32(sbox0Test[t2>>8&0xff])<<8 | uint32(sbox0Test[t3&0xff])
+	s1 = uint32(sbox0Test[t1>>24])<<24 | uint32(sbox0Test[t2>>16&0xff])<<16 |
+		uint32(sbox0Test[t3>>8&0xff])<<8 | uint32(sbox0Test[t0&0xff])
+	s2 = uint32(sbox0Test[t2>>24])<<24 | uint32(sbox0Test[t3>>16&0xff])<<16 |
+		uint32(sbox0Test[t0>>8&0xff])<<8 | uint32(sbox0Test[t1&0xff])
+	s3 = uint32(sbox0Test[t3>>24])<<24 | uint32(sbox0Test[t0>>16&0xff])<<16 |
+		uint32(sbox0Test[t1>>8&0xff])<<8 | uint32(sbox0Test[t2&0xff])
+
+	s0 ^= xk[k+0]
+	s1 ^= xk[k+1]
+	s2 ^= xk[k+2]
+	s3 ^= xk[k+3]
+
+	binary.BigEndian.PutUint32(dstsrc[0:4], s0)
+	binary.BigEndian.PutUint32(dstsrc[4:8], s1)
+	binary.BigEndian.PutUint32(dstsrc[8:12], s2)
+	binary.BigEndian.PutUint32(dstsrc[12:16], s3)
+}
+
+// fullFlyoverMacGoTest reproduces the former pure-Go flyover-MAC path for tests and benchmarks.
+func fullFlyoverMacGoTest(
+	ak []byte,
+	dstIA addr.IA,
+	pktlen uint16,
+	resStartTime uint16,
+	highResTime uint32,
+	buffer []byte,
+	xkbuffer []uint32,
+) []byte {
+	_ = buffer[hummingbird.FlyoverMacBufferSize-1]
+	_ = xkbuffer[hummingbird.XkBufferSize-1]
+
+	binary.BigEndian.PutUint64(buffer[0:8], uint64(dstIA))
+	binary.BigEndian.PutUint16(buffer[8:10], pktlen)
+	binary.BigEndian.PutUint16(buffer[10:12], resStartTime)
+	binary.BigEndian.PutUint32(buffer[12:16], highResTime)
+
+	expandAES128KeyTest(ak, xkbuffer)
+	encryptAES128BlockExpandedTest(xkbuffer, buffer[:hummingbird.FlyoverMacBufferSize])
+
+	return buffer[:hummingbird.FlyoverMacBufferSize]
+}
+
+const (
+	aesRoundsTest        = 10
+	aesRoundKeyWordsTest = (aesRoundsTest + 1) * (128 / 32)
+)
+
+// AES tables copied into test scope so the pure-Go comparison path stays out of
+// the production package.
+
+// powxTest contains powers of x mod poly in GF(2) for AES key expansion.
+var powxTest = [16]byte{
 	0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
 	0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f,
 }
 
-// FIPS-197 Figure 7. S-box substitution values in hexadecimal format.
-var sbox0 = [256]byte{
+// sbox0Test is the AES S-box from FIPS-197 Figure 7.
+var sbox0Test = [256]byte{
 	0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
 	0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
 	0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
@@ -35,8 +165,8 @@ var sbox0 = [256]byte{
 	0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16,
 }
 
-// Lookup tables for encryption.
-var te0 = [256]uint32{
+// te0Test-te3Test are the AES encryption T-tables used by the pure-Go test path.
+var te0Test = [256]uint32{
 	0xc66363a5, 0xf87c7c84, 0xee777799, 0xf67b7b8d, 0xfff2f20d, 0xd66b6bbd, 0xde6f6fb1, 0x91c5c554,
 	0x60303050, 0x02010103, 0xce6767a9, 0x562b2b7d, 0xe7fefe19, 0xb5d7d762, 0x4dababe6, 0xec76769a,
 	0x8fcaca45, 0x1f82829d, 0x89c9c940, 0xfa7d7d87, 0xeffafa15, 0xb25959eb, 0x8e4747c9, 0xfbf0f00b,
@@ -71,7 +201,7 @@ var te0 = [256]uint32{
 	0x824141c3, 0x299999b0, 0x5a2d2d77, 0x1e0f0f11, 0x7bb0b0cb, 0xa85454fc, 0x6dbbbbd6, 0x2c16163a,
 }
 
-var te1 = [256]uint32{
+var te1Test = [256]uint32{
 	0xa5c66363, 0x84f87c7c, 0x99ee7777, 0x8df67b7b, 0x0dfff2f2, 0xbdd66b6b, 0xb1de6f6f, 0x5491c5c5,
 	0x50603030, 0x03020101, 0xa9ce6767, 0x7d562b2b, 0x19e7fefe, 0x62b5d7d7, 0xe64dabab, 0x9aec7676,
 	0x458fcaca, 0x9d1f8282, 0x4089c9c9, 0x87fa7d7d, 0x15effafa, 0xebb25959, 0xc98e4747, 0x0bfbf0f0,
@@ -106,7 +236,7 @@ var te1 = [256]uint32{
 	0xc3824141, 0xb0299999, 0x775a2d2d, 0x111e0f0f, 0xcb7bb0b0, 0xfca85454, 0xd66dbbbb, 0x3a2c1616,
 }
 
-var te2 = [256]uint32{
+var te2Test = [256]uint32{
 	0x63a5c663, 0x7c84f87c, 0x7799ee77, 0x7b8df67b, 0xf20dfff2, 0x6bbdd66b, 0x6fb1de6f, 0xc55491c5,
 	0x30506030, 0x01030201, 0x67a9ce67, 0x2b7d562b, 0xfe19e7fe, 0xd762b5d7, 0xabe64dab, 0x769aec76,
 	0xca458fca, 0x829d1f82, 0xc94089c9, 0x7d87fa7d, 0xfa15effa, 0x59ebb259, 0x47c98e47, 0xf00bfbf0,
@@ -130,7 +260,7 @@ var te2 = [256]uint32{
 	0xe03bdbe0, 0x32566432, 0x3a4e743a, 0x0a1e140a, 0x49db9249, 0x060a0c06, 0x246c4824, 0x5ce4b85c,
 	0xc25d9fc2, 0xd36ebdd3, 0xacef43ac, 0x62a6c462, 0x91a83991, 0x95a43195, 0xe437d3e4, 0x798bf279,
 	0xe732d5e7, 0xc8438bc8, 0x37596e37, 0x6db7da6d, 0x8d8c018d, 0xd564b1d5, 0x4ed29c4e, 0xa9e049a9,
-	0x6cb4d86c, 0x56faac56, 0xf407f3f4, 0xea25cfea, 0x65afca65, 0x7a8ef47a, 0xaeaee947, 0x08181008,
+	0x6cb4d86c, 0x56faac56, 0xf407f3f4, 0xea25cfea, 0x65afca65, 0x7a8ef47a, 0xaee947ae, 0x08181008,
 	0xbad56fba, 0x7888f078, 0x256f4a25, 0x2e725c2e, 0x1c24381c, 0xa6f157a6, 0xb4c773b4, 0xc65197c6,
 	0xe823cbe8, 0xdd7ca1dd, 0x749ce874, 0x1f213e1f, 0x4bdd964b, 0xbddc61bd, 0x8b860d8b, 0x8a850f8a,
 	0x7090e070, 0x3e427c3e, 0xb5c471b5, 0x66aacc66, 0x48d89048, 0x03050603, 0xf601f7f6, 0x0e121c0e,
@@ -141,7 +271,7 @@ var te2 = [256]uint32{
 	0x41c38241, 0x99b02999, 0x2d775a2d, 0x0f111e0f, 0xb0cb7bb0, 0x54fca854, 0xbbd66dbb, 0x163a2c16,
 }
 
-var te3 = [256]uint32{
+var te3Test = [256]uint32{
 	0x6363a5c6, 0x7c7c84f8, 0x777799ee, 0x7b7b8df6, 0xf2f20dff, 0x6b6bbdd6, 0x6f6fb1de, 0xc5c55491,
 	0x30305060, 0x01010302, 0x6767a9ce, 0x2b2b7d56, 0xfefe19e7, 0xd7d762b5, 0xababe64d, 0x76769aec,
 	0xcaca458f, 0x82829d1f, 0xc9c94089, 0x7d7d87fa, 0xfafa15ef, 0x5959ebb2, 0x4747c98e, 0xf0f00bfb,

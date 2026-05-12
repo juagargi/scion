@@ -15,7 +15,6 @@ genrule(
 go_library(
     name = "go_default_library",
     srcs = [
-        "aes_tables.go",
         "base.go",
         "decoded.go",
         "flyoverhopfield.go",
@@ -60,6 +59,7 @@ go_test(
         "export_test.go",
         "flyoverhopfield_test.go",
         "mac_test.go",
+        "mac_purego_test.go",
         "raw_test.go",
         "testpaths_test.go",
     ],

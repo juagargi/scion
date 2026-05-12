@@ -176,8 +176,8 @@ func TestExpandAES128KeyAndEncryptBlockExpanded(t *testing.T) {
 	block.Encrypt(expected, expected)
 
 	got := append([]byte(nil), input...)
-	hummingbird.ExpandAES128Key(ak, xkbuffer)
-	hummingbird.EncryptAES128BlockExpanded(xkbuffer, got)
+	expandAES128KeyTest(ak, xkbuffer)
+	encryptAES128BlockExpandedTest(xkbuffer, got)
 
 	require.Equal(t, expected, got)
 }
@@ -196,7 +196,7 @@ func TestFullFlyoverMacGoMatchesAssembly(t *testing.T) {
 	asmBuffer := make([]byte, hummingbird.FlyoverMacBufferSize)
 	asmXkbuffer := make([]uint32, hummingbird.XkBufferSize)
 
-	goMAC := hummingbird.FullFlyoverMacGo(
+	goMAC := fullFlyoverMacGoTest(
 		ak, dstIA, pktlen, resStartTs, highResTs, goBuffer, goXkbuffer,
 	)
 	asmMAC := hummingbird.FullFlyoverMacAsm(
@@ -221,7 +221,7 @@ func BenchmarkFlyoverMacGo(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		hummingbird.FullFlyoverMacGo(ak, dstIA, pktlen, resStartTs, highResTs, buffer, xkbuffer)
+		fullFlyoverMacGoTest(ak, dstIA, pktlen, resStartTs, highResTs, buffer, xkbuffer)
 	}
 }
 
@@ -280,7 +280,7 @@ func BenchmarkExpandAES128Key(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		hummingbird.ExpandAES128Key(ak, xkbuffer)
+		expandAES128KeyTest(ak, xkbuffer)
 	}
 }
 
@@ -292,14 +292,14 @@ func BenchmarkEncryptAES128BlockExpanded(b *testing.B) {
 	xkbuffer := make([]uint32, hummingbird.XkBufferSize)
 	buffer := make([]byte, hummingbird.FlyoverMacBufferSize)
 
-	hummingbird.ExpandAES128Key(ak, xkbuffer)
+	expandAES128KeyTest(ak, xkbuffer)
 	b.ResetTimer()
 	for b.Loop() {
 		copy(buffer, []byte{
 			0, 1, 2, 3, 4, 5, 6, 7,
 			8, 9, 10, 11, 12, 13, 14, 15,
 		})
-		hummingbird.EncryptAES128BlockExpanded(xkbuffer, buffer)
+		encryptAES128BlockExpandedTest(xkbuffer, buffer)
 	}
 }
 
@@ -330,7 +330,7 @@ func BenchmarkFlyoverMacRouterLike(b *testing.B) {
 			block, resID, bw, in, eg, start, duration,
 			buffer[hummingbird.FlyoverMacBufferSize:],
 		)
-		hummingbird.FullFlyoverMacGo(
+		fullFlyoverMacGoTest(
 			ak, dstIA, pktlen, resStartTs, highResTs,
 			buffer[:hummingbird.FlyoverMacBufferSize], xkbuffer,
 		)
