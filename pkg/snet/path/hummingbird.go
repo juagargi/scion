@@ -39,7 +39,8 @@ type Reservation struct {
 	metadata *snet.PathMetadata // Set at construction time.
 	Hops     []*Hop             // Same length as `Dec`. Hops[i]==nil iff no hop at i (eg. xover hop).
 
-	counter uint32 // duplicate detection counter
+	originalMacs [][6]byte // Original SCION MACs for each hop field.
+	counter      uint32    // duplicate detection counter
 }
 
 var _ snet.DataplanePath = (*Reservation)(nil)
@@ -96,7 +97,7 @@ func (r Reservation) deriveDataPlanePath(
 
 	// Update timestamps
 	secs := uint32(timeStamp.Unix())
-	millis := uint32(timeStamp.Nanosecond()/1000) << 22
+	millis := uint32(timeStamp.Nanosecond()/1000000) << 22
 	millis |= r.counter
 	r.Dec.Base.PathMeta.BaseTS = secs
 	r.Dec.Base.PathMeta.HighResTS = millis
@@ -126,9 +127,9 @@ func (r Reservation) deriveDataPlanePath(
 		)
 
 		binary.BigEndian.PutUint32(hf.HopField.Mac[:4],
-			binary.BigEndian.Uint32(flyovermac[:4])^binary.BigEndian.Uint32(hf.HopField.Mac[:4]))
+			binary.BigEndian.Uint32(flyovermac[:4])^binary.BigEndian.Uint32(r.originalMacs[i][:4]))
 		binary.BigEndian.PutUint16(hf.HopField.Mac[4:],
-			binary.BigEndian.Uint16(flyovermac[4:])^binary.BigEndian.Uint16(hf.HopField.Mac[4:]))
+			binary.BigEndian.Uint16(flyovermac[4:])^binary.BigEndian.Uint16(r.originalMacs[i][4:]))
 	}
 	return r.Dec
 }
@@ -171,6 +172,10 @@ func WithScionPath(p snet.Path, flyoverMap FlyoverMap) ReservationModFcn {
 		}
 		// Extend the number of hops to that of the path.
 		r.Hops = make([]*Hop, len(r.Dec.HopFields))
+		r.originalMacs = make([][6]byte, len(r.Dec.HopFields))
+		for i, hf := range r.Dec.HopFields {
+			copy(r.originalMacs[i][:], hf.HopField.Mac[:])
+		}
 
 		// We use the path metadata to get the IAs and interface ID sequence from it.
 		r.metadata = p.Metadata()
