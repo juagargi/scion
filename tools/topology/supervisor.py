@@ -29,6 +29,8 @@ from topology.common import (
     DISP_CONFIG_NAME,
     HBIRD_CONFIG_NAME,
     SD_CONFIG_NAME,
+    http_url,
+    prom_addr,
 )
 
 SUPERVISOR_CONF = 'supervisord.conf'
@@ -101,10 +103,27 @@ class SupervisorGenerator(object):
 
     def _hummingbird_entries(self, topo_id, topo, base):
         entries = []
-        if not topo.get("control_service", {}):
+        control_services = topo.get("control_service", {})
+        if not control_services:
+            return entries
+        cs_elem = None
+        for cs_id, elem in control_services.items():
+            if cs_id.endswith("-1"):
+                cs_elem = elem
+                break
+        if cs_elem is None:
             return entries
         name = "hbird%s" % topo_id.file_fmt()
         cmd_args = [
+            "python3",
+            "tools/wait_http_ready.py",
+            "--url",
+            http_url(prom_addr(cs_elem["addr"], 30452), "/metrics"),
+            "--timeout",
+            "60",
+            "--interval",
+            "1",
+            "--",
             "bin/hummingbird", "--config",
             os.path.join(base, HBIRD_CONFIG_NAME),
         ]

@@ -48,10 +48,13 @@ def scion_app_base():
 #
 # Load the image into docker with
 #   bazel run //path:name.load
-def scion_app_image(name, src, entrypoint, appdir = "/app", workdir = "/share", cmd = None, caps = None, caps_binary = None):
+def scion_app_image(name, src, entrypoint, appdir = "/app", workdir = "/share", cmd = None, caps = None, caps_binary = None, extra_srcs = None):
+    srcs = [src]
+    if extra_srcs:
+        srcs += extra_srcs
     pkg_tar(
         name = "%s_docker_files" % name,
-        srcs = [src],
+        srcs = srcs,
         package_dir = appdir,
         mode = "0755",
     )

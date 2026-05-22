@@ -117,6 +117,10 @@ def join_host_port(host: str, port: int) -> str:
     return '[{}]:{}'.format(host, port)
 
 
+def http_url(addr: str, path: str) -> str:
+    return "http://{}{}".format(addr, path)
+
+
 def sciond_ip(docker, topo_id, networks: Mapping[IPNetwork,
                                                  NetworkDescription]):
     for net_desc in networks.values():

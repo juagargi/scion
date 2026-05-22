@@ -4,6 +4,7 @@ load("@scion_python_deps//:requirements.bzl", "requirement")
 
 exports_files([
     "gzip_exec_interp",
+    "wait_http_ready.py",
 ])
 
 sh_binary(

@@ -38,6 +38,7 @@ scion_app_image(
 scion_app_image(
     name = "control",
     src = "//control/cmd/control",
+    extra_srcs = ["//tools/http_ready:http_ready"],
     cmd = [
         "--config",
         "/etc/scion/cs.toml",
