@@ -34,6 +34,7 @@ import (
 	"github.com/scionproto/scion/router/bfd"
 	"github.com/scionproto/scion/router/control"
 	"github.com/scionproto/scion/router/mock_router"
+	pr "github.com/scionproto/scion/router/priority"
 )
 
 var (
@@ -76,7 +77,12 @@ func newMockLink(ingress uint16) Link { return &MockLink{ifID: ingress} }
 
 // NewPacket makes a mock packet. It has shortcomings which makes it unsuited for some tests: it
 // refers to a mock link that has the scope Internal in all cases, and a blank remote address.
-func NewPacket(raw []byte, src, dst *net.UDPAddr, ingress, egress uint16) *Packet {
+func NewPacket(
+	raw []byte,
+	src, dst *net.UDPAddr,
+	ingress, egress uint16,
+	priority pr.PriorityLabel,
+) *Packet {
 	pktBuf := &([bufSize]byte{})
 	p := Packet{
 		buffer:    pktBuf,
@@ -92,6 +98,9 @@ func NewPacket(raw []byte, src, dst *net.UDPAddr, ingress, egress uint16) *Packe
 	}
 	p.RawPacket = p.RawPacket[:len(raw)]
 	copy(p.RawPacket, raw)
+
+	p.PriorityLabel = priority
+
 	return &p
 }
 

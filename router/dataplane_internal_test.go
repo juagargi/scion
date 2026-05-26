@@ -43,6 +43,7 @@ import (
 	underlayconn "github.com/scionproto/scion/private/underlay/conn"
 	"github.com/scionproto/scion/router/control"
 	"github.com/scionproto/scion/router/mock_router"
+	pr "github.com/scionproto/scion/router/priority"
 )
 
 var testKey = []byte("testkey_xxxxxxxx")
@@ -466,7 +467,7 @@ func TestSlowPathProcessing(t *testing.T) {
 			dp := tc.prepareDP(ctrl)
 
 			rp := tc.mockMsg()
-			pkt := NewPacket(rp, nil, nil, tc.srcInterface, 0)
+			pkt := NewPacket(rp, nil, nil, tc.srcInterface, 0, pr.WithBestEffort)
 			pkt.Link = newMockLink(tc.srcInterface)
 
 			processor := newPacketProcessor(dp)

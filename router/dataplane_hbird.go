@@ -368,14 +368,6 @@ func (p *scionPacketProcessor) validatePathMetaTimestamp() {
 	}
 }
 
-// Converts a flyover bandwidth value to bytes per second
-func convertResBw(bw uint16) int64 {
-
-	// In this implementation, we choose to allow reservations up to 64 kBps
-	// Since the bandwidth field has 10 bits, we multiply by 64 to reach the target range
-	return int64(bw * 64)
-}
-
 func (p *scionPacketProcessor) checkReservationBandwidth() disposition {
 	// Only check bandwidth if packet is given priority.
 	// Bandwidth check is NOT performed for late packets that have flyover but no priority.
@@ -391,7 +383,7 @@ func (p *scionPacketProcessor) checkReservationBandwidth() disposition {
 
 	// Get the token bucket or add a new one.
 	resKey := uint64(p.flyoverField.ResID) + uint64(ingress)<<22 + uint64(egress)<<38
-	resBw := convertResBw(p.flyoverField.Bw)
+	resBw := tokenbucket.ConvertBW(p.flyoverField.Bw)
 	now := time.Now()
 	v, _ := p.d.tokenBuckets.LoadOrStore(
 		resKey,

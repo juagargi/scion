@@ -109,7 +109,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 				if afterProcessing {
 					dstAddr = &net.UDPAddr{IP: dst.IP().AsSlice(), Port: dstUDPPort}
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -142,7 +143,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[0].HopField.Mac)
 					egress = 1
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -175,7 +177,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
 					egress = 2
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -210,7 +213,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 				} else {
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -239,7 +243,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 				dpath.Base.PathMeta.CurrHF = 4
 				ingress := uint16(1)
 				egress := uint16(0)
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: discarded,
 		},
@@ -306,7 +311,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					// it is still the same. That is the key behavior.
 					egress = 2
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -378,7 +384,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					// of HF1 will fail. Otherwise, this isn't visible because we changed segment.
 					egress = 1
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -451,7 +458,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[1].UpdateSegID(dpath.HopFields[2].HopField.Mac)
 					egress = 2
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -530,7 +538,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					// this test.
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -564,7 +573,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					// The link is specific to the sibling. It has the address. So we don't expect:
 					// dstAddr = &net.UDPAddr{IP: net.ParseIP("10.0.200.200").To4(), Port: 30043}
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -623,7 +633,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
 				}
 
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
+					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -645,7 +656,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					{HopField: path.HopField{ConsIngress: 41, ConsEgress: 40}},
 					{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
 					{HopField: path.HopField{ConsIngress: 1, ConsEgress: 0},
-						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 16},
+						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 129},
 				}
 				dpath.Base.PathMeta.SegLen[0] = 6 + 5 // 2 hops + 1 flyover
 				dpath.Base.NumLines = 6 + 5
@@ -660,7 +671,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 						dpath.HopFields[2].HopField)
 					dstAddr = &net.UDPAddr{IP: dst.IP().AsSlice(), Port: dstUDPPort}
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -680,11 +692,11 @@ func TestProcessHbirdPacket(t *testing.T) {
 				spkt.SrcIA = addr.MustParseIA("1-ff00:0:110")
 				dpath.HopFields = []hummingbird.FlyoverHopField{
 					{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1},
-						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 16},
+						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 129},
 					{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30},
-						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 16},
+						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 129},
 					{HopField: path.HopField{ConsIngress: 41, ConsEgress: 40},
-						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 16},
+						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 129},
 				}
 				dpath.Base.PathMeta.CurrHF = 0
 				dpath.Base.PathMeta.SegLen[0] = 5 * 3 // 3 flyovers
@@ -700,7 +712,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[0].HopField.Mac)
 					egress = 1
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -720,11 +733,11 @@ func TestProcessHbirdPacket(t *testing.T) {
 				spkt.SrcIA = addr.MustParseIA("1-ff00:0:110")
 				dpath.HopFields = []hummingbird.FlyoverHopField{
 					{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1},
-						Flyover: true, ResStartTime: 5, Duration: 2, Bw: 16},
+						Flyover: true, ResStartTime: 5, Duration: 2, Bw: 129},
 					{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30},
-						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 16},
+						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 129},
 					{HopField: path.HopField{ConsIngress: 41, ConsEgress: 40},
-						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 16},
+						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 129},
 				}
 				dpath.Base.PathMeta.CurrHF = 0
 				dpath.Base.PathMeta.SegLen[0] = 5 * 3 // 3 flyovers
@@ -733,18 +746,17 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[0], dpath.HopFields[0], dpath.Base.PathMeta)
 				ingress := uint16(0)
 				egress := uint16(0)
-				var pkt *router.Packet
+				priority := pr.WithPriority
 				if afterProcessing {
 					dpath.HopFields[0].HopField.Mac = computeMAC(t, key, dpath.InfoFields[0],
 						dpath.HopFields[0].HopField)
 					assert.NoError(t, dpath.IncPath(hummingbird.FlyoverLines))
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[0].HopField.Mac)
 					egress = 1
-					pkt = router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
-					pkt.PriorityLabel = pr.WithBestEffort
-					return pkt
+					priority = pr.WithBestEffort
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					priority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -768,9 +780,9 @@ func TestProcessHbirdPacket(t *testing.T) {
 					{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1},
 						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 1},
 					{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30},
-						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 16},
+						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 1},
 					{HopField: path.HopField{ConsIngress: 41, ConsEgress: 40},
-						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 16},
+						Flyover: true, ResStartTime: 123, Duration: 304, Bw: 1},
 				}
 				dpath.Base.PathMeta.CurrHF = 0
 				dpath.Base.PathMeta.SegLen[0] = 5 * 3 // 3 flyovers
@@ -785,7 +797,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					scionudpLayer.SrcPort = uint16(srcUDPPort)
 					scionudpLayer.DstPort = uint16(dstUDPPort)
 					scionudpLayer.SetNetworkLayerForChecksum(spkt)
-					err := gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{FixLengths: true},
+					err := gopacket.SerializeLayers(buffer,
+						gopacket.SerializeOptions{FixLengths: true},
 						spkt, scionudpLayer, gopacket.Payload(largePayload))
 					require.NoError(t, err)
 					return buffer.Bytes()
@@ -793,18 +806,17 @@ func TestProcessHbirdPacket(t *testing.T) {
 
 				ingress := uint16(0)
 				egress := uint16(0)
-				var pkt *router.Packet
+				priority := pr.WithPriority
 				if afterProcessing {
 					dpath.HopFields[0].HopField.Mac = computeMAC(t, key, dpath.InfoFields[0],
 						dpath.HopFields[0].HopField)
 					assert.NoError(t, dpath.IncPath(hummingbird.FlyoverLines))
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[0].HopField.Mac)
 					egress = 1
-					pkt = router.NewPacket(serializeLargePayload(spkt, dpath), nil, nil, ingress, egress)
-					pkt.PriorityLabel = pr.WithBestEffort
-					return pkt
+					priority = pr.WithBestEffort
 				}
-				return router.NewPacket(serializeLargePayload(spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(serializeLargePayload(spkt, dpath), nil, nil,
+					ingress, egress, priority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -825,7 +837,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 				dpath.HopFields = []hummingbird.FlyoverHopField{
 					{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
 					{HopField: path.HopField{ConsIngress: 1, ConsEgress: 2},
-						Flyover: true, Bw: 5, ResStartTime: 123, Duration: 304},
+						Flyover: true, Bw: 129, ResStartTime: 123, Duration: 304},
 					{HopField: path.HopField{ConsIngress: 40, ConsEgress: 41}},
 				}
 
@@ -843,7 +855,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
 					egress = 2
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -864,7 +877,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 				dpath.HopFields = []hummingbird.FlyoverHopField{
 					{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
 					{HopField: path.HopField{ConsIngress: 2, ConsEgress: 1},
-						Flyover: true, ResID: 42, ResStartTime: 5, Duration: 301, Bw: 16},
+						Flyover: true, ResID: 42, ResStartTime: 5, Duration: 301, Bw: 129},
 					{HopField: path.HopField{ConsIngress: 40, ConsEgress: 41}},
 				}
 				dpath.Base.NumLines = 11
@@ -884,7 +897,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[0].UpdateSegID(
 						computeMAC(t, key, dpath.InfoFields[0], dpath.HopFields[1].HopField))
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -906,7 +920,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 				dpath.HopFields = []hummingbird.FlyoverHopField{
 					{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
 					{HopField: path.HopField{ConsIngress: 1, ConsEgress: 3},
-						Flyover: true, ResID: 42, ResStartTime: 5, Duration: 301, Bw: 16},
+						Flyover: true, ResID: 42, ResStartTime: 5, Duration: 301, Bw: 129},
 					{HopField: path.HopField{ConsIngress: 50, ConsEgress: 51}},
 				}
 				dpath.Base.NumLines = 11
@@ -917,7 +931,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 				var dstAddr *net.UDPAddr
 				ingress := uint16(1)
 				egress := uint16(3)
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -956,7 +971,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					HopFields: []hummingbird.FlyoverHopField{
 						{HopField: path.HopField{ConsIngress: 31, ConsEgress: 0}}, // Src,
 						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 51},
-							Flyover: true, Bw: 5, ResStartTime: 5, Duration: 310}, // IA 110
+							Flyover: true, Bw: 129, ResStartTime: 5, Duration: 310}, // IA 110
 						// xover here.
 						{HopField: path.HopField{ConsIngress: 3, ConsEgress: 0}}, // IA 110
 						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1}}, // Dst
@@ -973,7 +988,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 				if afterProcessing {
 					dpath.HopFields[1].Flyover = false
 					dpath.HopFields[2].Flyover = true
-					dpath.HopFields[2].Bw = 5
+					dpath.HopFields[2].Bw = 129
 					dpath.HopFields[2].ResStartTime = 5
 					dpath.HopFields[2].Duration = 310
 					dpath.HopFields[1].HopField.Mac =
@@ -998,7 +1013,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 						dpath.HopFields[1],
 					))
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -1039,7 +1055,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 51}}, // IA 110
 						// xover here.
 						{HopField: path.HopField{ConsIngress: 3, ConsEgress: 0}, // IA 110
-							Flyover: true, Bw: 5, ResStartTime: 5, Duration: 310},
+							Flyover: true, Bw: 129, ResStartTime: 5, Duration: 310},
 						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1}}, // Dst
 					},
 				}
@@ -1052,7 +1068,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					// Restore flyover to xover ingress hop from the egress one.
 					dpath.HopFields[2].Flyover = false
 					dpath.HopFields[1].Flyover = true
-					dpath.HopFields[1].Bw = 5
+					dpath.HopFields[1].Bw = 129
 					dpath.HopFields[1].ResStartTime = 5
 					dpath.HopFields[1].Duration = 310
 					dpath.HopFields[2].HopField.Mac =
@@ -1061,7 +1077,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.PathMeta.SegLen[1] -= 2
 					require.NoError(t, dpath.IncPath(hummingbird.FlyoverLines))
 				}
-				pkt := router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				pkt := router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 				// Replace the link of the packet with the one from dataplane.
 				ifaces := router.ExtractInterfaces(dp)
 				// At the xover egress border router, the packet enters the BR via 0, but the
@@ -1110,7 +1127,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					HopFields: []hummingbird.FlyoverHopField{
 						{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
 						{HopField: path.HopField{ConsIngress: 1, ConsEgress: 2},
-							Flyover: true, Bw: 5, ResStartTime: 123, Duration: 304},
+							Flyover: true, Bw: 129, ResStartTime: 123, Duration: 304},
 						{HopField: path.HopField{ConsIngress: 40, ConsEgress: 41}},
 					},
 				}
@@ -1137,7 +1154,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					// it is still the same. That is the key behavior.
 					egress = 2
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -1178,7 +1196,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					HopFields: []hummingbird.FlyoverHopField{
 						{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
 						{HopField: path.HopField{ConsIngress: 1, ConsEgress: 2},
-							Flyover: true, Bw: 5, ResStartTime: 123, Duration: 304},
+							Flyover: true, Bw: 129, ResStartTime: 123, Duration: 304},
 						{HopField: path.HopField{ConsIngress: 40, ConsEgress: 41}},
 					},
 				}
@@ -1211,7 +1229,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					// of HF1 will fail. Otherwise, this isn't visible because we changed segment.
 					egress = 1
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -1255,7 +1274,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 						{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
 						{HopField: path.HopField{ConsIngress: 40, ConsEgress: 41}},
 						{HopField: path.HopField{ConsIngress: 1, ConsEgress: 2},
-							Flyover: true, Bw: 5, ResStartTime: 123, Duration: 304},
+							Flyover: true, Bw: 129, ResStartTime: 123, Duration: 304},
 						{HopField: path.HopField{ConsIngress: 50, ConsEgress: 51}},
 						// There has to be a 4th hop to make
 						// the 3rd router agree that the packet
@@ -1287,7 +1306,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					dpath.InfoFields[1].UpdateSegID(dpath.HopFields[2].HopField.Mac)
 					egress = 2
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -1328,7 +1348,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					HopFields: []hummingbird.FlyoverHopField{
 						{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
 						{HopField: path.HopField{ConsIngress: 1, ConsEgress: 2},
-							Flyover: true, Bw: 5, ResStartTime: 123, Duration: 304},
+							Flyover: true, Bw: 129, ResStartTime: 123, Duration: 304},
 						{HopField: path.HopField{ConsIngress: 40, ConsEgress: 41}},
 						{HopField: path.HopField{ConsIngress: 50, ConsEgress: 51}},
 						// The second segment (4th hop) has to be
@@ -1371,7 +1391,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 						t, key, dpath.InfoFields[0], dpath.HopFields[1].HopField)
 					dpath.InfoFields[0].UpdateSegID(scionMac)
 				}
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress)
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
@@ -1443,7 +1464,7 @@ func TestProcessHbirdSCMP(t *testing.T) {
 
 				raw := toBytes(t, spkt, dpath)
 				original := bytes.Clone(raw)
-				pkt := router.NewPacket(raw, nil, nil, 1, 0)
+				pkt := router.NewPacket(raw, nil, nil, 1, 0, pr.WithBestEffort)
 				pkt.Link = router.ExtractInterfaces(dp)[1]
 				return pkt, original
 			},
