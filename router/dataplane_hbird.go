@@ -369,11 +369,11 @@ func (p *scionPacketProcessor) validatePathMetaTimestamp() {
 }
 
 // Converts a flyover bandwidth value to bytes per second
-func convertResBw(bw uint16) float64 {
+func convertResBw(bw uint16) int64 {
 
 	// In this implementation, we choose to allow reservations up to 64 kBps
 	// Since the bandwidth field has 10 bits, we multiply by 64 to reach the target range
-	return float64(bw * 64)
+	return int64(bw * 64)
 }
 
 func (p *scionPacketProcessor) checkReservationBandwidth() disposition {
