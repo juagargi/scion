@@ -134,16 +134,81 @@ func (icm *IntervalColorMap) markAncestors(index int, color uint32) error {
 
 // AssignColor assigns and returns the first free color in the interval low, high;
 // this corresponds to the interval (start_time, expiration_time).
-func (icm *IntervalColorMap) AssignColor(low, high int) (uint32, error) {
-	color, err := icm.firstFreeColor(low, high)
-	if err != nil {
-		return 0, err
-	}
-	if err := icm.markUsedColor(color, low, high); err != nil {
-		return 0, err
-	}
-	return color, nil
+func (icm *IntervalColorMap) AssignColor(low, duration int) (uint32, error) {
+    if duration <= 0 {
+        return 0, fmt.Errorf("invalid duration for color tree: %d", duration)
+    }
+    // If duration covers the entire map, override low to 0
+    if duration >= icm.NUnitIntervals {
+        low = 0
+    } else if low < 0 || low >= icm.NUnitIntervals {
+        return 0, fmt.Errorf("invalid interval start on color tree: %d", low)
+    }
+
+    var intervals [][]int
+    if duration >= icm.NUnitIntervals || low+duration <= icm.NUnitIntervals {
+        // Linear / Full-coverage case
+        end := low + duration - 1
+        if duration >= icm.NUnitIntervals {
+            end = icm.NUnitIntervals - 1
+        }
+        intervals = [][]int{{low, end}}
+    } else {
+        // Wrapping case
+        end := low + duration
+        intervals = [][]int{
+            {low, icm.NUnitIntervals - 1},
+            {0, (end % icm.NUnitIntervals) - 1},
+        }
+    }
+
+    var color uint32
+    var err error
+
+    if len(intervals) == 1 {
+        // Fast path for non-wrapping: direct lookup
+        color, err = icm.firstFreeColor(intervals[0][0], intervals[0][1])
+        if err != nil {
+            return 0, err
+        }
+    } else {
+        // Slow path for wrapping: build union of node bitmaps
+        var chunks []uint64 // Consider pre-allocating capacity if max size is known
+        
+        for _, interval := range intervals {
+            nodes, err := icm.nodesForInterval(interval[0], interval[1])
+            if err != nil {
+                return 0, err
+            }
+            for _, nodeRef := range nodes {
+                // Grow chunks efficiently if necessary
+                if len(nodeRef.colorBits) > len(chunks) {
+                    newChunks := make([]uint64, len(nodeRef.colorBits))
+                    copy(newChunks, chunks)
+                    chunks = newChunks
+                }
+                for i, bit := range nodeRef.colorBits {
+                    chunks[i] |= bit
+                }
+            }
+        }
+
+        color, err = firstFreeFromChunkIter(chunks)
+        if err != nil {
+            return 0, err
+        }
+    }
+
+    // 3. Unified Mark Used step
+    for _, interval := range intervals {
+        if err := icm.markUsedColor(color, interval[0], interval[1]); err != nil {
+            return 0, err
+        }
+    }
+
+    return color, nil
 }
+
 
 // firstFreeColor is a helper function calling an iterator over the combined chunked data.
 func (icm *IntervalColorMap) firstFreeColor(low, high int) (uint32, error) {
