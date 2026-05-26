@@ -62,3 +62,28 @@ func (t *TokenBucket) Apply(size int, now time.Time) bool {
 	}
 	return false
 }
+
+// ConvertBW converts 10-bit data-plane encoded bandwidth into bytes per second.
+// This conversion follows the proposal from the Hummingbird paper.
+func ConvertBW(bw uint16) int64 {
+	// e=0:   0..31
+	// e=1:  32..63
+	// e=2:  64,66,68,..126
+	// e=3:  128,132,..252
+	// e=31: ~ 2^35..2^36
+
+	exponent := bw >> 5
+	mantissa := bw & 0x1f
+
+	var bytesPerSecond int64
+	if exponent == 0 {
+		// For exponent=0, the value is represented directly by mantissa.
+		bytesPerSecond = int64(mantissa)
+	} else {
+		// For exponent>0, restore the implicit +32 and scale by 2^(exponent-1):
+		// result = (mantissa + 32) * 2^(exponent - 1)
+		bytesPerSecond = int64(mantissa+32) << (exponent - 1)
+	}
+
+	return bytesPerSecond
+}
