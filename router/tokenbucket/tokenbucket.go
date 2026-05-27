@@ -1,6 +1,8 @@
 package tokenbucket
 
 import (
+	"fmt"
+	"math/bits"
 	"sync"
 	"time"
 )
@@ -63,8 +65,17 @@ func (t *TokenBucket) Apply(size int, now time.Time) bool {
 	return false
 }
 
-// ConvertBW converts 10-bit data-plane encoded bandwidth into bytes per second.
-// This conversion follows the proposal from the Hummingbird paper.
+// ConvertBW converts a 10-bit Hummingbird bandwidth code into bytes per second.
+//
+// The 10 bits are interpreted as:
+// - bits [9:5]: exponent e (5 bits)
+// - bits [4:0]: mantissa m (5 bits)
+//
+// The decoded real bandwidth is:
+// - m, if e == 0
+// - (m + 32) * 2^(e-1), if e > 0
+//
+// ConvertBW is monotonic over the valid encoded range [0, 1023].
 func ConvertBW(bw uint16) int64 {
 	// e=0:   0..31
 	// e=1:  32..63
@@ -86,4 +97,50 @@ func ConvertBW(bw uint16) int64 {
 	}
 
 	return bytesPerSecond
+}
+
+const maxEncodedBW = (1 << 10) - 1
+
+var maxRealBw = ConvertBW(maxEncodedBW)
+
+// RealBwToEncoded converts real bandwidth in bytes per second to a 10-bit
+// Hummingbird bandwidth code.
+//
+// Quantization policy is ceil: when an exact representation does not exist,
+// the returned code is the smallest encodable value whose decoded bandwidth is
+// greater than or equal to bw.
+//
+// Errors:
+// - bw < 0
+// - bw exceeds the maximum representable value ConvertBW(1023)
+func RealBwToEncoded(bw int64) (uint16, error) {
+	switch {
+	case bw < 0:
+		return 0, fmt.Errorf("bandwidth must be non-negative: %d", bw)
+	case bw == 0:
+		return 0, nil
+	case bw > maxRealBw:
+		return 0, fmt.Errorf("bandwidth %d exceeds max representable %d", bw, maxRealBw)
+	case bw <= 31:
+		// exponent=0 directly represents 0..31 via mantissa.
+		return uint16(bw), nil
+	default:
+	}
+
+	// For exponent>0, decoded bandwidth is:
+	// (mantissa + 32) * 2^(exponent - 1), with mantissa in [0, 31].
+	//
+	// First choose the minimum exponent e such that bw <= 63*2^(e-1).
+	// Let x = ceil(bw/63). Then e-1 = ceil(log2(x)).
+	x := uint64((bw + 62) / 63)
+	exponentMinus1 := bits.Len64(x - 1)
+	exponent := uint16(exponentMinus1 + 1)
+
+	// With the chosen exponent, compute the minimum q=(mantissa+32) satisfying:
+	// q * 2^(e-1) >= bw  => q = ceil(bw / 2^(e-1)).
+	scale := int64(1) << exponentMinus1
+	q := (bw + scale - 1) / scale
+	mantissa := uint16(q - 32)
+
+	return (exponent << 5) | mantissa, nil
 }

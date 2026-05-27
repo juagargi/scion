@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/router/tokenbucket"
 )
@@ -197,4 +198,60 @@ func TestConvertBW(t *testing.T) {
 			assert.Equal(t, tc.expected, tokenbucket.ConvertBW(tc.bw))
 		})
 	}
+}
+
+// TestRealBwToEncodedRoundTrip verifies real->encoded->real behavior under ceil quantization.
+func TestRealBwToEncodedRoundTrip(t *testing.T) {
+	// Include boundaries and interior values that are often non-representable.
+	realBws := []int64{
+		0, 1, 2, 30, 31, 32, 33, 62, 63, 64, 65, 66,
+		127, 128, 129, 1023, 1024, 1025,
+		tokenbucket.ConvertBW(1023) - 1,
+		tokenbucket.ConvertBW(1023),
+	}
+
+	for _, realBw := range realBws {
+		t.Run(fmt.Sprintf("%d", realBw), func(t *testing.T) {
+			encoded, err := tokenbucket.RealBwToEncoded(realBw)
+			require.NoError(t, err)
+
+			decoded := tokenbucket.ConvertBW(encoded)
+			// Ceil guarantee: never under-encode requested bandwidth.
+			assert.GreaterOrEqual(t, decoded, realBw, "real=%d encoded=%d decoded=%d",
+				realBw, encoded, decoded)
+
+			if encoded > 0 {
+				// Minimality guarantee: previous codepoint is strictly below requested bandwidth.
+				prevDecoded := tokenbucket.ConvertBW(encoded - 1)
+				assert.Less(t, prevDecoded, realBw, "real=%d encoded=%d prevDecoded=%d",
+					realBw, encoded, prevDecoded)
+			}
+		})
+	}
+}
+
+// TestEncodedToRealToEncodedIdempotent verifies that already-representable
+// values stay stable through real->encoded conversion.
+func TestEncodedToRealToEncodedIdempotent(t *testing.T) {
+	for encoded := uint16(0); encoded < 1024; encoded++ {
+		t.Run(fmt.Sprintf("%d", encoded), func(t *testing.T) {
+			realBw := tokenbucket.ConvertBW(encoded)
+			encoded2, err := tokenbucket.RealBwToEncoded(realBw)
+			require.NoError(t, err)
+			assert.Equal(t, encoded, encoded2, "encoded=%d real=%d", encoded, realBw)
+		})
+	}
+}
+
+func TestRealBwToEncodedErrors(t *testing.T) {
+	t.Run("-1", func(t *testing.T) {
+		_, err := tokenbucket.RealBwToEncoded(-1)
+		require.Error(t, err)
+	})
+
+	t.Run("1023", func(t *testing.T) {
+		maxRealBw := tokenbucket.ConvertBW(1023)
+		_, err := tokenbucket.RealBwToEncoded(maxRealBw + 1)
+		require.Error(t, err)
+	})
 }
