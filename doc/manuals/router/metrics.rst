@@ -57,6 +57,7 @@ local system (if any) are not counted in this number.
 
 **Labels**: ``interface``, ``isd_as`` and ``neighbor_isd_as``.
 
+
 Dropped packets total
 ---------------------
 
@@ -116,6 +117,18 @@ BFD packets sent/received (intra-AS)
 router in the local AS.
 
 **Labels**: ``sibling`` and ``isd_as``.
+
+Hummingbird packets processed total
+-----------------------------------
+
+**Name**: ``router_humm_processed_pkts_total``
+
+**Type**: Counter
+
+**Description**: Total number of Hummingbird packets received by the router
+processor.
+
+**Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
 
 Service instance count
 ----------------------

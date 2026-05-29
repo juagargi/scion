@@ -635,6 +635,12 @@ func (p *scionPacketProcessor) processHbirdEgress() disposition {
 
 // func (p *scionPacketProcessor) processHummingbird() (processResult, error) {
 func (p *scionPacketProcessor) processHummingbird() disposition {
+	// Increment the counter of received Hummingbird packets.
+	if m := p.pkt.Link.Metrics(); m != nil {
+		sc := ClassOfSize(len(p.pkt.RawPacket))
+		m[sc].HummProcessedPackets.Inc()
+	}
+
 	var ok bool
 	p.hbirdPath, ok = p.scionLayer.Path.(*hummingbird.Raw)
 	if !ok {
