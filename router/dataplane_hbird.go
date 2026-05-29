@@ -75,6 +75,8 @@ func (p *scionPacketProcessor) parseHbirdPath() disposition {
 	}
 	if p.flyoverField.Flyover {
 		p.pkt.PriorityLabel = pr.WithPriority
+		sc := ClassOfSize(len(p.pkt.RawPacket))
+		p.pkt.Link.Metrics()[sc].HummFlyoverPackets.Inc()
 	}
 
 	return pForward
@@ -363,7 +365,7 @@ func (p *scionPacketProcessor) validatePathMetaTimestamp() {
 		time.Duration(p.hbirdPath.PathMeta.HighResTS>>22) * time.Millisecond)
 	// TODO: make a configurable value instead of using a flat 1 seconds
 	if time.Until(timestamp).Abs() > time.Duration(1)*time.Second {
-		// Forward with best-effort is timestamp is too old.
+		// Forward with best-effort if timestamp is too old.
 		p.pkt.PriorityLabel = pr.WithBestEffort
 	}
 }
@@ -636,10 +638,8 @@ func (p *scionPacketProcessor) processHbirdEgress() disposition {
 // func (p *scionPacketProcessor) processHummingbird() (processResult, error) {
 func (p *scionPacketProcessor) processHummingbird() disposition {
 	// Increment the counter of received Hummingbird packets.
-	if m := p.pkt.Link.Metrics(); m != nil {
-		sc := ClassOfSize(len(p.pkt.RawPacket))
-		m[sc].HummProcessedPackets.Inc()
-	}
+	sc := ClassOfSize(len(p.pkt.RawPacket))
+	p.pkt.Link.Metrics()[sc].HummProcessedPackets.Inc()
 
 	var ok bool
 	p.hbirdPath, ok = p.scionLayer.Path.(*hummingbird.Raw)
@@ -647,13 +647,14 @@ func (p *scionPacketProcessor) processHummingbird() disposition {
 		// TODO(lukedirtwalker) parameter problem invalid path?
 		return errorDiscard("error", errMalformedPath)
 	}
+
 	if disp := p.parseHbirdPath(); disp != pForward {
 		return disp
 	}
 	if disp := p.determinePeerHbird(); disp != pForward {
 		return disp
 	}
-	// deleteme uncomment
+
 	if disp := p.validateHopExpiryHbird(); disp != pForward {
 		return disp
 	}
@@ -679,7 +680,7 @@ func (p *scionPacketProcessor) processHummingbird() disposition {
 }
 
 func (p *scionPacketProcessor) processHBIRDFlyover() disposition {
-	// deleteme uncomment
+
 	if disp := p.validateReservationExpiry(); disp != pForward {
 		return disp
 	}

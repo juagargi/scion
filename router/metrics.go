@@ -35,6 +35,7 @@ type Metrics struct {
 	OutputPacketsTotal        *prometheus.CounterVec
 	ProcessedPackets          *prometheus.CounterVec
 	HummProcessedPackets      *prometheus.CounterVec
+	HummFlyoverPackets        *prometheus.CounterVec
 	DroppedPacketsTotal       *prometheus.CounterVec
 	InterfaceUp               *prometheus.GaugeVec
 	BFDInterfaceStateChanges  *prometheus.CounterVec
@@ -63,6 +64,13 @@ func NewMetrics() *Metrics {
 			prometheus.CounterOpts{
 				Name: "router_humm_processed_pkts_total",
 				Help: "Total number of Hummingbird packets received by the router processor",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
+		),
+		HummFlyoverPackets: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_humm_flyover_pkts_total",
+				Help: "Total number of parsed Hummingbird packets with a flyover",
 			},
 			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
 		),
@@ -278,6 +286,7 @@ type trafficMetrics struct {
 	DroppedPacketsBusySlowPath  prometheus.Counter
 	ProcessedPackets            prometheus.Counter
 	HummProcessedPackets        prometheus.Counter
+	HummFlyoverPackets          prometheus.Counter
 	Output                      [ttMax]outputMetrics
 }
 
@@ -315,6 +324,7 @@ func newTrafficMetrics(
 		InputPacketsTotal:    metrics.InputPacketsTotal.MustCurryWith(ifLabels).With(scLabels),
 		ProcessedPackets:     metrics.ProcessedPackets.MustCurryWith(ifLabels).With(scLabels),
 		HummProcessedPackets: metrics.HummProcessedPackets.MustCurryWith(ifLabels).With(scLabels),
+		HummFlyoverPackets:   metrics.HummFlyoverPackets.MustCurryWith(ifLabels).With(scLabels),
 	}
 
 	// Output metrics have the extra "trafficType" label.
@@ -350,6 +360,7 @@ func newTrafficMetrics(
 	c.DroppedPacketsBusySlowPath.Add(0)
 	c.ProcessedPackets.Add(0)
 	c.HummProcessedPackets.Add(0)
+	c.HummFlyoverPackets.Add(0)
 	return c
 }
 

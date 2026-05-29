@@ -59,12 +59,13 @@ type SlowPathRequestView struct {
 
 // Implements the link interface minimally
 type MockLink struct {
-	ifID uint16
+	ifID    uint16
+	metrics *InterfaceMetrics
 }
 
 func (l *MockLink) IsUp() bool                                           { return true }
 func (l *MockLink) IfID() uint16                                         { return l.ifID }
-func (l *MockLink) Metrics() *InterfaceMetrics                           { return nil }
+func (l *MockLink) Metrics() *InterfaceMetrics                           { return l.metrics }
 func (l *MockLink) Scope() LinkScope                                     { return Internal }
 func (l *MockLink) BFDSession() *bfd.Session                             { return nil }
 func (l *MockLink) Resolve(p *Packet, host addr.Host, port uint16) error { return nil }
@@ -73,7 +74,14 @@ func (l *MockLink) SendBlocking(p *Packet)                               {}
 
 var _ Link = new(MockLink)
 
-func newMockLink(ingress uint16) Link { return &MockLink{ifID: ingress} }
+func newMockLink(ingress uint16) Link {
+	local := addr.MustParseIA("1-ff00:0:1")
+	neighbor := addr.MustParseIA("1-ff00:0:2")
+	return &MockLink{
+		ifID:    ingress,
+		metrics: newInterfaceMetrics(metrics, ingress, local, "", neighbor),
+	}
+}
 
 // NewPacket makes a mock packet. It has shortcomings which makes it unsuited for some tests: it
 // refers to a mock link that has the scope Internal in all cases, and a blank remote address.

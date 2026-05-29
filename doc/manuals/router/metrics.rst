@@ -130,6 +130,18 @@ processor.
 
 **Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
 
+Hummingbird flyover packets total
+---------------------------------
+
+**Name**: ``router_humm_flyover_pkts_total``
+
+**Type**: Counter
+
+**Description**: Total number of parsed Hummingbird packets with flyover hop
+fields.
+
+**Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
+
 Service instance count
 ----------------------
 
