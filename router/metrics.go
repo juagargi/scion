@@ -39,6 +39,7 @@ type Metrics struct {
 	HummFlyoverPackets        *prometheus.CounterVec
 	HummDemotedFreshnessPkts  *prometheus.CounterVec
 	HummDemotedExpiredPkts    *prometheus.CounterVec
+	HummDemotedTokenBucketPkts *prometheus.CounterVec
 	InterfaceUp               *prometheus.GaugeVec
 	BFDInterfaceStateChanges  *prometheus.CounterVec
 	BFDPacketsSent            *prometheus.CounterVec
@@ -122,6 +123,13 @@ func NewMetrics() *Metrics {
 			prometheus.CounterOpts{
 				Name: "router_humm_demoted_expired_total",
 				Help: "Total number of Hummingbird packets demoted to best-effort due to expired reservations",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
+		),
+		HummDemotedTokenBucketPkts: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_humm_demoted_tokenbucket_total",
+				Help: "Total number of Hummingbird packets demoted to best-effort due to token bucket checks",
 			},
 			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
 		),
@@ -305,6 +313,7 @@ type trafficMetrics struct {
 	HummFlyoverPackets          prometheus.Counter
 	HummDemotedFreshnessPkts    prometheus.Counter
 	HummDemotedExpiredPkts      prometheus.Counter
+	HummDemotedTokenBucketPkts  prometheus.Counter
 	Output                      [ttMax]outputMetrics
 }
 
@@ -346,6 +355,8 @@ func newTrafficMetrics(
 		HummDemotedFreshnessPkts: metrics.HummDemotedFreshnessPkts.MustCurryWith(ifLabels).
 			With(scLabels),
 		HummDemotedExpiredPkts: metrics.HummDemotedExpiredPkts.MustCurryWith(ifLabels).With(scLabels),
+		HummDemotedTokenBucketPkts: metrics.HummDemotedTokenBucketPkts.MustCurryWith(ifLabels).
+			With(scLabels),
 	}
 
 	// Output metrics have the extra "trafficType" label.
@@ -384,6 +395,7 @@ func newTrafficMetrics(
 	c.HummFlyoverPackets.Add(0)
 	c.HummDemotedFreshnessPkts.Add(0)
 	c.HummDemotedExpiredPkts.Add(0)
+	c.HummDemotedTokenBucketPkts.Add(0)
 	return c
 }
 

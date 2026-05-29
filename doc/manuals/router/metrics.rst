@@ -166,6 +166,18 @@ to expired reservations.
 
 **Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
 
+Hummingbird token bucket demotions total
+----------------------------------------
+
+**Name**: ``router_humm_demoted_tokenbucket_total``
+
+**Type**: Counter
+
+**Description**: Total number of Hummingbird packets demoted to best-effort due
+to token bucket checks.
+
+**Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
+
 Service instance count
 ----------------------
 

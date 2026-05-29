@@ -378,7 +378,7 @@ func (p *scionPacketProcessor) validatePathMetaTimestamp(sc sizeClass) {
 	}
 }
 
-func (p *scionPacketProcessor) checkReservationBandwidth() disposition {
+func (p *scionPacketProcessor) checkReservationBandwidth(sc sizeClass) disposition {
 	// Only check bandwidth if packet is given priority.
 	// Bandwidth check is NOT performed for late packets that have flyover but no priority.
 	if p.pkt.PriorityLabel != pr.WithPriority {
@@ -429,6 +429,7 @@ func (p *scionPacketProcessor) checkReservationBandwidth() disposition {
 		log.Debug("hummingbird packet exceeding allowed bandwidth token bucket",
 			"resID", fmt.Sprintf("%x", p.flyoverField.ResID))
 		p.pkt.PriorityLabel = pr.WithBestEffort
+		p.pkt.Link.Metrics()[sc].HummDemotedTokenBucketPkts.Inc()
 	} else {
 		log.Debug("hummingbird checking BW: packet fits into bucket")
 	}
@@ -696,7 +697,7 @@ func (p *scionPacketProcessor) processHBIRDFlyover(sc sizeClass) disposition {
 		return disp
 	}
 	p.validatePathMetaTimestamp(sc)
-	if disp := p.checkReservationBandwidth(); disp != pForward {
+	if disp := p.checkReservationBandwidth(sc); disp != pForward {
 		return disp
 	}
 	if disp := p.handleHbirdIngressRouterAlert(); disp != pForward {
