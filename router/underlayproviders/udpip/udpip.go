@@ -443,6 +443,10 @@ func (u *udpConnection) send(batchSize int, pool router.PacketPool) {
 		router.UpdateOutputMetrics(u.metrics, iterator)
 		// Return storage for all the written packets.
 		for p := range iterator {
+			if p.PriorityLabel == pr.WithPriority {
+				sc := router.ClassOfSize(len(p.RawPacket))
+				u.metrics[sc].PriorityForwardedPackets.Inc()
+			}
 			pool.Put(p)
 		}
 		// The next packet to write is now the first one not written.

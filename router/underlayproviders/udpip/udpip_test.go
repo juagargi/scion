@@ -18,6 +18,7 @@ package udpip
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
 	"hash/fnv"
 	"net/netip"
 	"testing"
@@ -33,6 +34,7 @@ import (
 	"github.com/scionproto/scion/pkg/slayers"
 	"github.com/scionproto/scion/pkg/slayers/path"
 	"github.com/scionproto/scion/pkg/slayers/path/scion"
+	"github.com/scionproto/scion/router"
 )
 
 var (
@@ -317,4 +319,23 @@ func TestComputeProcIdErrorCases(t *testing.T) {
 			assert.Equal(t, tc.expectedSuccess, ok)
 		})
 	}
+}
+
+// BenchmarkClassOfSize measures the overhead of calling ClassOfSize per packet.
+// Since our udpConnection.send function calls it for every packet, this overhead should be small.
+func BenchmarkClassOfSize(b *testing.B) {
+	sizes := []int{1, 50, 100, 200, 2000, 9000}
+
+	var sink int
+	for _, sz := range sizes {
+		sz := sz
+		b.Run(fmt.Sprintf("size=%d", sz), func(b *testing.B) {
+			var sc int
+			for i := 0; i < b.N; i++ {
+				sc = int(router.ClassOfSize(sz))
+			}
+			sink = sc
+		})
+	}
+	_ = sink
 }

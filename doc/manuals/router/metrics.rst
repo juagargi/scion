@@ -70,6 +70,19 @@ This metric reports the number of packets that were dropped because of errors.
 
 **Labels**: ``interface``, ``isd_as`` and ``neighbor_isd_as``.
 
+Priority forwarded packets total
+--------------------------------
+
+**Name**: ``router_priority_forwarded_pkts_total``
+
+**Type**: Counter
+
+**Description**: Total number of priority packets successfully forwarded by the
+router.
+
+**Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
+
+
 BFD state changes (inter-AS)
 ----------------------------
 

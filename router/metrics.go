@@ -29,27 +29,28 @@ import (
 
 // Metrics defines the data-plane metrics for the BR.
 type Metrics struct {
-	InputBytesTotal           *prometheus.CounterVec
-	OutputBytesTotal          *prometheus.CounterVec
-	InputPacketsTotal         *prometheus.CounterVec
-	OutputPacketsTotal        *prometheus.CounterVec
-	ProcessedPackets          *prometheus.CounterVec
-	DroppedPacketsTotal       *prometheus.CounterVec
-	HummProcessedPackets      *prometheus.CounterVec
-	HummFlyoverPackets        *prometheus.CounterVec
-	HummDemotedFreshnessPkts  *prometheus.CounterVec
-	HummDemotedExpiredPkts    *prometheus.CounterVec
+	InputBytesTotal            *prometheus.CounterVec
+	OutputBytesTotal           *prometheus.CounterVec
+	InputPacketsTotal          *prometheus.CounterVec
+	OutputPacketsTotal         *prometheus.CounterVec
+	ProcessedPackets           *prometheus.CounterVec
+	PriorityForwardedPackets   *prometheus.CounterVec
+	DroppedPacketsTotal        *prometheus.CounterVec
+	HummProcessedPackets       *prometheus.CounterVec
+	HummFlyoverPackets         *prometheus.CounterVec
+	HummDemotedFreshnessPkts   *prometheus.CounterVec
+	HummDemotedExpiredPkts     *prometheus.CounterVec
 	HummDemotedTokenBucketPkts *prometheus.CounterVec
-	InterfaceUp               *prometheus.GaugeVec
-	BFDInterfaceStateChanges  *prometheus.CounterVec
-	BFDPacketsSent            *prometheus.CounterVec
-	BFDPacketsReceived        *prometheus.CounterVec
-	ServiceInstanceCount      *prometheus.GaugeVec
-	ServiceInstanceChanges    *prometheus.CounterVec
-	SiblingReachable          *prometheus.GaugeVec
-	SiblingBFDPacketsSent     *prometheus.CounterVec
-	SiblingBFDPacketsReceived *prometheus.CounterVec
-	SiblingBFDStateChanges    *prometheus.CounterVec
+	InterfaceUp                *prometheus.GaugeVec
+	BFDInterfaceStateChanges   *prometheus.CounterVec
+	BFDPacketsSent             *prometheus.CounterVec
+	BFDPacketsReceived         *prometheus.CounterVec
+	ServiceInstanceCount       *prometheus.GaugeVec
+	ServiceInstanceChanges     *prometheus.CounterVec
+	SiblingReachable           *prometheus.GaugeVec
+	SiblingBFDPacketsSent      *prometheus.CounterVec
+	SiblingBFDPacketsReceived  *prometheus.CounterVec
+	SiblingBFDStateChanges     *prometheus.CounterVec
 }
 
 // NewMetrics initializes the metrics for the Border Router, and registers them with the default
@@ -60,6 +61,13 @@ func NewMetrics() *Metrics {
 			prometheus.CounterOpts{
 				Name: "router_processed_pkts_total",
 				Help: "Total number of packets processed by the processor",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
+		),
+		PriorityForwardedPackets: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_priority_forwarded_pkts_total",
+				Help: "Total number of priority packets successfully forwarded by the router",
 			},
 			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
 		),
@@ -309,6 +317,7 @@ type trafficMetrics struct {
 	DroppedPacketsBusyForwarder prometheus.Counter
 	DroppedPacketsBusySlowPath  prometheus.Counter
 	ProcessedPackets            prometheus.Counter
+	PriorityForwardedPackets    prometheus.Counter
 	HummProcessedPackets        prometheus.Counter
 	HummFlyoverPackets          prometheus.Counter
 	HummDemotedFreshnessPkts    prometheus.Counter
@@ -347,9 +356,11 @@ func newTrafficMetrics(
 	scLabels prometheus.Labels) trafficMetrics {
 
 	c := trafficMetrics{
-		InputBytesTotal:      metrics.InputBytesTotal.MustCurryWith(ifLabels).With(scLabels),
-		InputPacketsTotal:    metrics.InputPacketsTotal.MustCurryWith(ifLabels).With(scLabels),
-		ProcessedPackets:     metrics.ProcessedPackets.MustCurryWith(ifLabels).With(scLabels),
+		InputBytesTotal:   metrics.InputBytesTotal.MustCurryWith(ifLabels).With(scLabels),
+		InputPacketsTotal: metrics.InputPacketsTotal.MustCurryWith(ifLabels).With(scLabels),
+		ProcessedPackets:  metrics.ProcessedPackets.MustCurryWith(ifLabels).With(scLabels),
+		PriorityForwardedPackets: metrics.PriorityForwardedPackets.MustCurryWith(ifLabels).
+			With(scLabels),
 		HummProcessedPackets: metrics.HummProcessedPackets.MustCurryWith(ifLabels).With(scLabels),
 		HummFlyoverPackets:   metrics.HummFlyoverPackets.MustCurryWith(ifLabels).With(scLabels),
 		HummDemotedFreshnessPkts: metrics.HummDemotedFreshnessPkts.MustCurryWith(ifLabels).
@@ -391,6 +402,7 @@ func newTrafficMetrics(
 	c.DroppedPacketsBusyForwarder.Add(0)
 	c.DroppedPacketsBusySlowPath.Add(0)
 	c.ProcessedPackets.Add(0)
+	c.PriorityForwardedPackets.Add(0)
 	c.HummProcessedPackets.Add(0)
 	c.HummFlyoverPackets.Add(0)
 	c.HummDemotedFreshnessPkts.Add(0)
