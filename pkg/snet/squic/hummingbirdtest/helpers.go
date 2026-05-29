@@ -50,7 +50,7 @@ const (
 	// HbirdTestResID is the synthetic reservation ID used by the tests.
 	HbirdTestResID = uint32(1)
 	// HbirdTestBandwidth is the synthetic bandwidth class used by the tests.
-	HbirdTestBandwidth = uint16(2)
+	HbirdTestBandwidth = uint16(1024 - 1)
 	// HbirdTestDuration is the reservation lifetime in seconds.
 	HbirdTestDuration = uint16(9)
 	// HbirdTestStartOffset backdates the reservation slightly so it is already
@@ -62,6 +62,26 @@ const (
 	// QUICTestMessageReply is the fixed server response for the round trip.
 	QUICTestMessageReply = "pong over scion"
 )
+
+// ReservationParams configures synthetic Hummingbird reservation values used by
+// live tests.
+type ReservationParams struct {
+	ResID       uint32
+	Bandwidth   uint16
+	Duration    uint16
+	StartOffset time.Duration
+}
+
+// DefaultReservationParams returns the baseline reservation used by existing
+// Hummingbird live tests.
+func DefaultReservationParams() ReservationParams {
+	return ReservationParams{
+		ResID:       HbirdTestResID,
+		Bandwidth:   HbirdTestBandwidth,
+		Duration:    HbirdTestDuration,
+		StartOffset: HbirdTestStartOffset,
+	}
+}
 
 // QUICTestMessageClient is the fixed client payload used by the round-trip
 // tests. It is kept at or above 20 KiB so the exchange exercises multiple
@@ -219,11 +239,34 @@ func BuildHummingbirdRemote(
 	keysRoot string,
 	log Logger,
 ) (*snet.UDPAddr, error) {
+	return BuildHummingbirdRemoteWithParams(
+		ctx,
+		conn,
+		clientLocal,
+		serverRemote,
+		keysRoot,
+		DefaultReservationParams(),
+		log,
+	)
+}
+
+// BuildHummingbirdRemoteWithParams turns a plain remote address into one that
+// carries a Hummingbird reservation path and the matching next hop with
+// caller-provided reservation parameters.
+func BuildHummingbirdRemoteWithParams(
+	ctx context.Context,
+	conn daemon.Connector,
+	clientLocal *snet.UDPAddr,
+	serverRemote *snet.UDPAddr,
+	keysRoot string,
+	params ReservationParams,
+	log Logger,
+) (*snet.UDPAddr, error) {
 	basePath, err := BasePath(ctx, conn, clientLocal.IA, serverRemote.IA, log)
 	if err != nil {
 		return nil, err
 	}
-	reservation, err := NewHummingbirdReservation(basePath, keysRoot, time.Now(), log)
+	reservation, err := NewHummingbirdReservationWithParams(basePath, keysRoot, time.Now(), params, log)
 	if err != nil {
 		return nil, err
 	}
@@ -253,12 +296,25 @@ func NewHummingbirdReservation(
 	now time.Time,
 	log Logger,
 ) (snet.DataplanePath, error) {
+	return NewHummingbirdReservationWithParams(basePath, keysRoot, now, DefaultReservationParams(), log)
+}
+
+// NewHummingbirdReservationWithParams derives one flyover reservation per hop
+// using caller-provided reservation parameters and wraps them into a reservation
+// dataplane path.
+func NewHummingbirdReservationWithParams(
+	basePath snet.Path,
+	keysRoot string,
+	now time.Time,
+	params ReservationParams,
+	log Logger,
+) (snet.DataplanePath, error) {
 	baseHops := snetpath.InterfacesToBaseHops(basePath.Metadata().Interfaces)
 	if len(baseHops) == 0 {
 		return nil, serrors.New("base path does not contain any hops")
 	}
 
-	startTime := uint32(now.Add(HbirdTestStartOffset).Unix())
+	startTime := uint32(now.Add(params.StartOffset).Unix())
 	aesByIA := make(map[addr.IA]cipher.Block)
 	buffer := make([]byte, hummlib.AkBufferSize)
 	flyovers := make([]*snetpath.Hop, 0, len(baseHops))
@@ -279,29 +335,29 @@ func NewHummingbirdReservation(
 		// reservation so the routers can validate every flyover hop.
 		akRaw := hummlib.DeriveAuthKey(
 			block,
-			HbirdTestResID,
-			HbirdTestBandwidth,
+			params.ResID,
+			params.Bandwidth,
 			baseHop.Ingress,
 			baseHop.Egress,
 			startTime,
-			HbirdTestDuration,
+			params.Duration,
 			buffer,
 		)
 		var ak [hummlib.AkBufferSize]byte
 		copy(ak[:], akRaw)
 		if log != nil {
 			log("reservation inputs ia=%s in=%d eg=%d res_id=%d bw=%d start=%d dur=%d ak=%s",
-				baseHop.IA, baseHop.Ingress, baseHop.Egress, HbirdTestResID,
-				HbirdTestBandwidth, startTime, HbirdTestDuration, hex.EncodeToString(ak[:]))
+				baseHop.IA, baseHop.Ingress, baseHop.Egress, params.ResID,
+				params.Bandwidth, startTime, params.Duration, hex.EncodeToString(ak[:]))
 		}
 		flyovers = append(flyovers, &snetpath.Hop{
 			BaseHop: baseHop,
 			Flyover: &snetpath.FlyoverData{
-				ResID:     HbirdTestResID,
+				ResID:     params.ResID,
 				Ak:        ak,
-				Bw:        HbirdTestBandwidth,
+				Bw:        params.Bandwidth,
 				StartTime: startTime,
-				Duration:  HbirdTestDuration,
+				Duration:  params.Duration,
 			},
 		})
 	}
@@ -480,6 +536,28 @@ func RunClient(
 	keysRoot string,
 	log Logger,
 ) error {
+	return RunClientWithParams(
+		ctx,
+		daemonAddr,
+		localAddr,
+		remoteAddr,
+		keysRoot,
+		DefaultReservationParams(),
+		log,
+	)
+}
+
+// RunClientWithParams runs the client side with caller-provided reservation
+// parameters for Hummingbird path construction.
+func RunClientWithParams(
+	ctx context.Context,
+	daemonAddr string,
+	localAddr *snet.UDPAddr,
+	remoteAddr *snet.UDPAddr,
+	keysRoot string,
+	params ReservationParams,
+	log Logger,
+) error {
 	clientDaemon, err := ConnectDaemon(ctx, daemonAddr)
 	if err != nil {
 		return err
@@ -496,7 +574,8 @@ func RunClient(
 	}
 	defer clientConn.Close()
 
-	remote, err := BuildHummingbirdRemote(ctx, clientDaemon, localAddr, remoteAddr, keysRoot, log)
+	remote, err := BuildHummingbirdRemoteWithParams(
+		ctx, clientDaemon, localAddr, remoteAddr, keysRoot, params, log)
 	if err != nil {
 		return err
 	}
