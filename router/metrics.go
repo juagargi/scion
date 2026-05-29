@@ -34,9 +34,11 @@ type Metrics struct {
 	InputPacketsTotal         *prometheus.CounterVec
 	OutputPacketsTotal        *prometheus.CounterVec
 	ProcessedPackets          *prometheus.CounterVec
+	DroppedPacketsTotal       *prometheus.CounterVec
 	HummProcessedPackets      *prometheus.CounterVec
 	HummFlyoverPackets        *prometheus.CounterVec
-	DroppedPacketsTotal       *prometheus.CounterVec
+	HummDemotedFreshnessPkts  *prometheus.CounterVec
+	HummDemotedExpiredPkts    *prometheus.CounterVec
 	InterfaceUp               *prometheus.GaugeVec
 	BFDInterfaceStateChanges  *prometheus.CounterVec
 	BFDPacketsSent            *prometheus.CounterVec
@@ -57,20 +59,6 @@ func NewMetrics() *Metrics {
 			prometheus.CounterOpts{
 				Name: "router_processed_pkts_total",
 				Help: "Total number of packets processed by the processor",
-			},
-			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
-		),
-		HummProcessedPackets: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "router_humm_processed_pkts_total",
-				Help: "Total number of Hummingbird packets received by the router processor",
-			},
-			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
-		),
-		HummFlyoverPackets: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "router_humm_flyover_pkts_total",
-				Help: "Total number of parsed Hummingbird packets with a flyover",
 			},
 			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
 		),
@@ -108,6 +96,34 @@ func NewMetrics() *Metrics {
 				Help: "Total number of packets dropped by the router.",
 			},
 			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass", "reason"},
+		),
+		HummProcessedPackets: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_humm_processed_pkts_total",
+				Help: "Total number of Hummingbird packets received by the router processor",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
+		),
+		HummFlyoverPackets: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_humm_flyover_pkts_total",
+				Help: "Total number of parsed Hummingbird packets with a flyover",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
+		),
+		HummDemotedFreshnessPkts: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_humm_demoted_freshness_total",
+				Help: "Total number of Hummingbird packets demoted to best-effort due to freshness checks",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
+		),
+		HummDemotedExpiredPkts: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_humm_demoted_expired_total",
+				Help: "Total number of Hummingbird packets demoted to best-effort due to expired reservations",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
 		),
 		InterfaceUp: promauto.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -287,6 +303,8 @@ type trafficMetrics struct {
 	ProcessedPackets            prometheus.Counter
 	HummProcessedPackets        prometheus.Counter
 	HummFlyoverPackets          prometheus.Counter
+	HummDemotedFreshnessPkts    prometheus.Counter
+	HummDemotedExpiredPkts      prometheus.Counter
 	Output                      [ttMax]outputMetrics
 }
 
@@ -325,6 +343,9 @@ func newTrafficMetrics(
 		ProcessedPackets:     metrics.ProcessedPackets.MustCurryWith(ifLabels).With(scLabels),
 		HummProcessedPackets: metrics.HummProcessedPackets.MustCurryWith(ifLabels).With(scLabels),
 		HummFlyoverPackets:   metrics.HummFlyoverPackets.MustCurryWith(ifLabels).With(scLabels),
+		HummDemotedFreshnessPkts: metrics.HummDemotedFreshnessPkts.MustCurryWith(ifLabels).
+			With(scLabels),
+		HummDemotedExpiredPkts: metrics.HummDemotedExpiredPkts.MustCurryWith(ifLabels).With(scLabels),
 	}
 
 	// Output metrics have the extra "trafficType" label.
@@ -361,6 +382,8 @@ func newTrafficMetrics(
 	c.ProcessedPackets.Add(0)
 	c.HummProcessedPackets.Add(0)
 	c.HummFlyoverPackets.Add(0)
+	c.HummDemotedFreshnessPkts.Add(0)
+	c.HummDemotedExpiredPkts.Add(0)
 	return c
 }
 

@@ -34,6 +34,12 @@ import (
 	"github.com/scionproto/scion/router/tokenbucket"
 )
 
+// MaxFreshnessTolerance is the allowed drift from current time for a "fresh" packet.
+// If the packet exceeds this limit (under or over), it will be best-effort.
+// This parameter heavily correlates with the allowed clock drift, and maximum path latency.
+// TODO: make a configurable value instead of using a flat 5 seconds
+const MaxFreshnessTolerance = 5 * time.Second
+
 // SetHbirdKey sets the key for the PRF function used to compute the Hummingbird Auth Key.
 func (d *dataPlane) SetHbirdKey(key []byte) error {
 	d.mtx.Lock()
@@ -58,7 +64,7 @@ func (d *dataPlane) SetHbirdKey(key []byte) error {
 	return nil
 }
 
-func (p *scionPacketProcessor) parseHbirdPath() disposition {
+func (p *scionPacketProcessor) parseHbirdPath(sc sizeClass) disposition {
 	var err error
 	if !p.hbirdPath.CurrHFIsHopStart() || !p.hbirdPath.CurrINFMatchesCurrHF() {
 		return errorDiscard("error", errMalformedPath)
@@ -75,7 +81,6 @@ func (p *scionPacketProcessor) parseHbirdPath() disposition {
 	}
 	if p.flyoverField.Flyover {
 		p.pkt.PriorityLabel = pr.WithPriority
-		sc := ClassOfSize(len(p.pkt.RawPacket))
 		p.pkt.Link.Metrics()[sc].HummFlyoverPackets.Inc()
 	}
 
@@ -136,7 +141,7 @@ func (p *scionPacketProcessor) validateHopExpiryHbird() disposition {
 	return pSlowPath
 }
 
-func (p *scionPacketProcessor) validateReservationExpiry() disposition {
+func (p *scionPacketProcessor) validateReservationExpiry(sc sizeClass) disposition {
 	startTime := util.SecsToTime(p.hbirdPath.PathMeta.BaseTS - uint32(p.flyoverField.ResStartTime))
 	endTime := startTime.Add(time.Duration(p.flyoverField.Duration) * time.Second)
 	now := time.Now()
@@ -147,6 +152,7 @@ func (p *scionPacketProcessor) validateReservationExpiry() disposition {
 		"reservation start", startTime,
 		"reservation end", endTime, "now", now)
 	p.pkt.PriorityLabel = pr.WithBestEffort
+	p.pkt.Link.Metrics()[sc].HummDemotedExpiredPkts.Inc()
 	return pForward
 }
 
@@ -358,15 +364,17 @@ func (p *scionPacketProcessor) validateHbirdTransitUnderlaySrc() disposition {
 	return pForward
 }
 
-// Verifies the PathMetaHeader timestamp is recent
-// Current implementation works with a nanosecond granularity HighResTS
-func (p *scionPacketProcessor) validatePathMetaTimestamp() {
+// Verifies the PathMetaHeader timestamp is recent.
+// Current implementation works with a millisecond granularity HighResTS.
+// If the freshness of the packet is not within 5 seconds, it will be marked as best-effort.
+func (p *scionPacketProcessor) validatePathMetaTimestamp(sc sizeClass) {
 	timestamp := util.SecsToTime(p.hbirdPath.PathMeta.BaseTS).Add(
 		time.Duration(p.hbirdPath.PathMeta.HighResTS>>22) * time.Millisecond)
-	// TODO: make a configurable value instead of using a flat 1 seconds
-	if time.Until(timestamp).Abs() > time.Duration(1)*time.Second {
+
+	if time.Until(timestamp).Abs() > MaxFreshnessTolerance {
 		// Forward with best-effort if timestamp is too old.
 		p.pkt.PriorityLabel = pr.WithBestEffort
+		p.pkt.Link.Metrics()[sc].HummDemotedFreshnessPkts.Inc()
 	}
 }
 
@@ -635,7 +643,6 @@ func (p *scionPacketProcessor) processHbirdEgress() disposition {
 	return pForward
 }
 
-// func (p *scionPacketProcessor) processHummingbird() (processResult, error) {
 func (p *scionPacketProcessor) processHummingbird() disposition {
 	// Increment the counter of received Hummingbird packets.
 	sc := ClassOfSize(len(p.pkt.RawPacket))
@@ -648,9 +655,10 @@ func (p *scionPacketProcessor) processHummingbird() disposition {
 		return errorDiscard("error", errMalformedPath)
 	}
 
-	if disp := p.parseHbirdPath(); disp != pForward {
+	if disp := p.parseHbirdPath(sc); disp != pForward {
 		return disp
 	}
+
 	if disp := p.determinePeerHbird(); disp != pForward {
 		return disp
 	}
@@ -674,20 +682,20 @@ func (p *scionPacketProcessor) processHummingbird() disposition {
 		return disp
 	}
 	if p.flyoverField.Flyover {
-		return p.processHBIRDFlyover()
+		return p.processHBIRDFlyover(sc)
 	}
 	return p.processHBIRDBestEffort()
 }
 
-func (p *scionPacketProcessor) processHBIRDFlyover() disposition {
+func (p *scionPacketProcessor) processHBIRDFlyover(sc sizeClass) disposition {
 
-	if disp := p.validateReservationExpiry(); disp != pForward {
+	if disp := p.validateReservationExpiry(sc); disp != pForward {
 		return disp
 	}
 	if disp := p.verifyHbirdFlyoverMac(); disp != pForward {
 		return disp
 	}
-	p.validatePathMetaTimestamp()
+	p.validatePathMetaTimestamp(sc)
 	if disp := p.checkReservationBandwidth(); disp != pForward {
 		return disp
 	}

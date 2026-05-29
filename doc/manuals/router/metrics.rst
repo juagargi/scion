@@ -142,6 +142,30 @@ fields.
 
 **Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
 
+Hummingbird freshness demotions total
+-------------------------------------
+
+**Name**: ``router_humm_demoted_freshness_total``
+
+**Type**: Counter
+
+**Description**: Total number of Hummingbird packets demoted to best-effort due
+to freshness checks.
+
+**Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
+
+Hummingbird expiration demotions total
+--------------------------------------
+
+**Name**: ``router_humm_demoted_expired_total``
+
+**Type**: Counter
+
+**Description**: Total number of Hummingbird packets demoted to best-effort due
+to expired reservations.
+
+**Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
+
 Service instance count
 ----------------------
 
