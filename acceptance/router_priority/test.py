@@ -51,6 +51,10 @@ def measure_br(url: str):
             "total": 0,
             "interface": defaultdict(int),
         },
+        "router_priority_forwarded_pkts":{
+            "total": 0,
+            "interface": defaultdict(int),
+        },
     }
     text = requests.get(url).text
     for family in text_string_to_metric_families(text):
@@ -134,6 +138,19 @@ class Test(base.TestTopogen):
             metrics_before["router_dropped_pkts"]["reason"]["busy_forwarder"]
         if busy_fwd == 0:
             print(f"Insufficient load: no packet drop occurred.")
+            sys.exit(1)
+        bfd_sent_delta = metrics_after["router_bfd_sent_packets"]["total"] -\
+            metrics_before["router_bfd_sent_packets"]["total"]
+        print(f"BFD sent packets delta: {bfd_sent_delta}")
+        prio_fwd = metrics_after["router_priority_forwarded_pkts"]["total"] -\
+            metrics_before["router_priority_forwarded_pkts"]["total"]
+        print(f"Priority-forwarded packets delta: {prio_fwd}")
+        if prio_fwd <= 0:
+            print("Expected priority-forwarded packets to increase, but it did not.")
+            sys.exit(1)
+        if prio_fwd < bfd_sent_delta:
+            print("Priority-forwarded packets delta is lower than BFD sent packets delta.")
+            print(f"prio_fwd={prio_fwd}, bfd_sent_delta={bfd_sent_delta}")
             sys.exit(1)
         print(f"router metrics follow.\n"
             f"Before:\n-----8<-----\n{metrics_before}\n-----8<-----\n"
