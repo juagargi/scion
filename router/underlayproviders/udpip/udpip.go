@@ -511,6 +511,7 @@ func (u *provider) NewExternalLink(
 	remote string,
 	ifID uint16,
 	metrics *router.InterfaceMetrics,
+	queueMetrics *router.QueueDepthMetrics,
 ) (router.Link, error) {
 	localAddr, err := conn.ResolveAddrPortOrPort(local)
 	if err != nil {
@@ -529,7 +530,16 @@ func (u *provider) NewExternalLink(
 	if l := u.allLinks[remoteAddr]; l != nil {
 		return nil, serrors.Join(errDuplicateRemote, nil, "addr", remote)
 	}
-	return u.newConnectedLink(qSize, bfd, localAddr, remoteAddr, ifID, metrics, router.External)
+	return u.newConnectedLink(
+		qSize,
+		bfd,
+		localAddr,
+		remoteAddr,
+		ifID,
+		metrics,
+		queueMetrics,
+		router.External,
+	)
 }
 
 func (u *provider) newConnectedLink(
@@ -539,6 +549,7 @@ func (u *provider) newConnectedLink(
 	remoteAddr netip.AddrPort,
 	ifID uint16,
 	metrics *router.InterfaceMetrics,
+	queueMetrics *router.QueueDepthMetrics,
 	scope router.LinkScope, // Since this can be used for either Sibling or External
 ) (router.Link, error) {
 
@@ -548,6 +559,7 @@ func (u *provider) newConnectedLink(
 		return nil, err
 	}
 	queues := createQueues(qSize)
+	registerQueueDepthMetrics(queueMetrics, queues)
 	el := &connectedLink{
 		name:       remoteAddr.String(),
 		egressQs:   typeCastEgressQueues(queues),
@@ -580,6 +592,21 @@ func createQueues(qSize int) [pr.QueueCount]chan *router.Packet {
 		queues[i] = make(chan *router.Packet, qSize)
 	}
 	return queues
+}
+
+func registerQueueDepthMetrics(
+	queueMetrics *router.QueueDepthMetrics,
+	queues [pr.QueueCount]chan *router.Packet,
+) {
+	if queueMetrics == nil {
+		return
+	}
+	queueMetrics.Register("priority", func() float64 {
+		return float64(len(queues[pr.WithPriority]))
+	})
+	queueMetrics.Register("best_effort", func() float64 {
+		return float64(len(queues[pr.WithBestEffort]))
+	})
 }
 
 func typeCastEgressQueues(queues [pr.QueueCount]chan *router.Packet) [pr.QueueCount]chan<- *router.Packet {
@@ -714,6 +741,7 @@ func (u *provider) NewSiblingLink(
 	local string,
 	remote string,
 	metrics *router.InterfaceMetrics,
+	queueMetrics *router.QueueDepthMetrics,
 ) (router.Link, error) {
 	localAddr, err := conn.ResolveAddrPortOrPort(local)
 	if err != nil {
@@ -736,7 +764,16 @@ func (u *provider) NewSiblingLink(
 	// If we have linux support, we use connected links, even though the local address is the same
 	// for all sibling links.
 	if u.connOpener.UDPCanReuseLocal() {
-		return u.newConnectedLink(qSize, bfd, localAddr, remoteAddr, 0, metrics, router.Sibling)
+		return u.newConnectedLink(
+			qSize,
+			bfd,
+			localAddr,
+			remoteAddr,
+			0,
+			metrics,
+			queueMetrics,
+			router.Sibling,
+		)
 	}
 	return u.newDetachedLink(bfd, remoteAddr, metrics)
 }
@@ -883,7 +920,10 @@ type internalLink struct {
 // TODO(multi_underlay): We still go with the assumption that internal links are always
 // udpip, so we don't expect a string here. That should change.
 func (u *provider) NewInternalLink(
-	local string, qSize int, metrics *router.InterfaceMetrics,
+	local string,
+	qSize int,
+	metrics *router.InterfaceMetrics,
+	queueMetrics *router.QueueDepthMetrics,
 ) (router.Link, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -904,6 +944,7 @@ func (u *provider) NewInternalLink(
 	}
 	u.internalHashSeed = makeHashSeed()
 	queues := createQueues(qSize)
+	registerQueueDepthMetrics(queueMetrics, queues)
 	il := &internalLink{
 		egressQs:         typeCastEgressQueues(queues),
 		metrics:          metrics,

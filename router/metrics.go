@@ -20,11 +20,13 @@ import (
 	"math/bits"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/scionproto/scion/pkg/addr"
+	libprom "github.com/scionproto/scion/pkg/private/prom"
 )
 
 // Metrics defines the data-plane metrics for the BR.
@@ -51,11 +53,141 @@ type Metrics struct {
 	SiblingBFDPacketsSent      *prometheus.CounterVec
 	SiblingBFDPacketsReceived  *prometheus.CounterVec
 	SiblingBFDStateChanges     *prometheus.CounterVec
+	// QueueDepth is a scrape-time collector over egress queue occupancy. Unlike InterfaceMetrics,
+	// these metrics are tied to queue-owning underlay connections rather than to traffic size
+	// classes, because detached sibling links can share the same underlying queues.
+	QueueDepth *queueDepthCollector
+}
+
+// MetricLabels carries the common router interface labels for metrics.
+type MetricLabels struct {
+	Interface     string
+	ISDAS         string
+	NeighborISDAS string
+}
+
+// prometheusLabels converts the compact label holder into the map form expected by Prometheus
+// vector metrics.
+func (l MetricLabels) prometheusLabels() prometheus.Labels {
+	return prometheus.Labels{
+		"interface":       l.Interface,
+		"isd_as":          l.ISDAS,
+		"neighbor_isd_as": l.NeighborISDAS,
+	}
+}
+
+// QueueDepthMetrics registers queue depth callbacks for one queue-owning connection.
+// It is intentionally separate from InterfaceMetrics: queue depth is connection-local state,
+// whereas InterfaceMetrics stores traffic counters pre-expanded by size class.
+type QueueDepthMetrics struct {
+	collector *queueDepthCollector
+	labels    MetricLabels
+}
+
+// NewQueueDepthMetrics returns a connection-scoped registration handle for queue depth metrics.
+func NewQueueDepthMetrics(metrics *Metrics, labels MetricLabels) *QueueDepthMetrics {
+	if metrics == nil || metrics.QueueDepth == nil {
+		return nil
+	}
+	return &QueueDepthMetrics{
+		collector: metrics.QueueDepth,
+		labels:    labels,
+	}
+}
+
+// Register registers one queue depth callback under the connection's labels.
+// The callback is invoked only when Prometheus scrapes, which keeps queue metrics off the packet
+// enqueue/dequeue hot path.
+func (m *QueueDepthMetrics) Register(queue string, readDepth func() float64) {
+	if m == nil {
+		return
+	}
+	m.collector.Register(m.labels, queue, readDepth)
+}
+
+// queueDepthCollector is a custom collector because queue depth is naturally sampled on demand:
+// the underlay can expose a callback that reads len(queue) at scrape time, instead of updating a
+// mutable gauge on every push/pop or on a timer.
+type queueDepthCollector struct {
+	desc *prometheus.Desc
+	mu   sync.RWMutex
+	fns  map[string]queueDepthFunc
+}
+
+type queueDepthFunc struct {
+	labels [4]string
+	read   func() float64
+}
+
+func newQueueDepthCollector() *queueDepthCollector {
+	return &queueDepthCollector{
+		desc: prometheus.NewDesc(
+			"router_queue_depth",
+			"Current number of packets in a router egress queue.",
+			[]string{"interface", "isd_as", "neighbor_isd_as", "queue"},
+			nil,
+		),
+		fns: make(map[string]queueDepthFunc),
+	}
+}
+
+func (c *queueDepthCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.desc
+}
+
+// Collect snapshots the registered callbacks and emits one gauge per
+// (interface, isd_as, neighbor_isd_as, queue) label tuple.
+func (c *queueDepthCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.RLock()
+	snapshot := make([]queueDepthFunc, 0, len(c.fns))
+	for _, fn := range c.fns {
+		snapshot = append(snapshot, fn)
+	}
+	c.mu.RUnlock()
+
+	for _, fn := range snapshot {
+		ch <- prometheus.MustNewConstMetric(
+			c.desc,
+			prometheus.GaugeValue,
+			fn.read(),
+			fn.labels[:]...,
+		)
+	}
+}
+
+// Register installs or replaces the callback for one labeled queue series.
+func (c *queueDepthCollector) Register(
+	labels MetricLabels,
+	queue string,
+	readDepth func() float64,
+) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	key := strings.Join([]string{
+		labels.Interface,
+		labels.ISDAS,
+		labels.NeighborISDAS,
+		queue,
+	}, "\x00")
+	c.fns[key] = queueDepthFunc{
+		labels: [4]string{
+			labels.Interface,
+			labels.ISDAS,
+			labels.NeighborISDAS,
+			queue,
+		},
+		read: readDepth,
+	}
 }
 
 // NewMetrics initializes the metrics for the Border Router, and registers them with the default
 // registry.
+//
+// Most BR metrics are plain Prometheus vectors. QueueDepth is the exception: it is a custom
+// collector that reads queue occupancy lazily at scrape time.
 func NewMetrics() *Metrics {
+	queueDepth := libprom.SafeRegister(newQueueDepthCollector()).(*queueDepthCollector)
 	return &Metrics{
 		ProcessedPackets: promauto.NewCounterVec(
 			prometheus.CounterOpts{
@@ -213,6 +345,7 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"sibling", "isd_as"},
 		),
+		QueueDepth: queueDepth,
 	}
 }
 
@@ -334,6 +467,9 @@ type outputMetrics struct {
 	OutputPacketsTotal prometheus.Counter
 }
 
+// newInterfaceMetrics creates the per-interface, per-size-class counter bundle used on the traffic
+// fast path. Queue depth is intentionally not part of this structure because queue ownership does
+// not always align one-to-one with logical interfaces.
 func newInterfaceMetrics(
 	metrics *Metrics,
 	id uint16,
@@ -341,7 +477,7 @@ func newInterfaceMetrics(
 	sibling string,
 	neighbor addr.IA) *InterfaceMetrics {
 
-	ifLabels := interfaceLabels(id, localIA, sibling, neighbor)
+	ifLabels := newMetricLabels(id, localIA, sibling, neighbor).prometheusLabels()
 	m := InterfaceMetrics{}
 	for sc := minSizeClass; sc < maxSizeClass; sc++ {
 		scLabels := prometheus.Labels{"sizeclass": sc.String()}
@@ -427,35 +563,37 @@ func newOutputMetrics(
 	return om
 }
 
-func interfaceLabels(
-	id uint16, localIA addr.IA, sibling string, neighbor addr.IA) prometheus.Labels {
+// newMetricLabels centralizes the router's interface labeling scheme so both vector metrics and
+// scrape-time collectors use identical label values.
+func newMetricLabels(
+	id uint16, localIA addr.IA, sibling string, neighbor addr.IA) MetricLabels {
 
 	if sibling != "" {
 		// For siblings, we label with the address of the sibling router. The ifID isn't relevant
 		// (it's just a unique key in the metrics table but the link is shared with other ifIDs).
 		// and we don't know the far AS (the neighbor's is the same as local; that's not useful
 		// so we don't make a label with it).
-		return prometheus.Labels{
-			"isd_as":          localIA.String(),
-			"interface":       "sibling->" + sibling,
-			"neighbor_isd_as": "unknown",
+		return MetricLabels{
+			ISDAS:         localIA.String(),
+			Interface:     "sibling->" + sibling,
+			NeighborISDAS: "unknown",
 		}
 	}
 
 	if id == 0 {
 		// Internal interface
-		return prometheus.Labels{
-			"isd_as":          localIA.String(),
-			"interface":       "internal",
-			"neighbor_isd_as": localIA.String(),
+		return MetricLabels{
+			ISDAS:         localIA.String(),
+			Interface:     "internal",
+			NeighborISDAS: localIA.String(),
 		}
 	}
 
 	// External interface
-	return prometheus.Labels{
-		"isd_as":          localIA.String(),
-		"interface":       strconv.FormatUint(uint64(id), 10),
-		"neighbor_isd_as": neighbor.String(),
+	return MetricLabels{
+		ISDAS:         localIA.String(),
+		Interface:     strconv.FormatUint(uint64(id), 10),
+		NeighborISDAS: neighbor.String(),
 	}
 }
 

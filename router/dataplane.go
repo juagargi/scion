@@ -477,8 +477,15 @@ func (d *dataPlane) AddInternalInterface(localHost addr.Host, provider, localAdd
 	if internalUnderlay == nil {
 		return serrors.JoinNoStack(errNoSuchUnderlay, nil, "provider", provider)
 	}
+	labels := newMetricLabels(0, d.localIA, "", d.neighborIAs[0])
 	iMetrics := newInterfaceMetrics(d.Metrics, 0, d.localIA, "", d.neighborIAs[0])
-	lk, err := internalUnderlay.NewInternalLink(localAddr, d.RunConfig.BatchSize, iMetrics)
+	qMetrics := NewQueueDepthMetrics(d.Metrics, labels)
+	lk, err := internalUnderlay.NewInternalLink(
+		localAddr,
+		d.RunConfig.BatchSize,
+		iMetrics,
+		qMetrics,
+	)
 	if err != nil {
 		return err
 	}
@@ -527,14 +534,17 @@ func (d *dataPlane) AddExternalInterface(
 	}
 	d.linkTypes[ifID] = link.LinkTo
 
+	labels := newMetricLabels(ifID, d.localIA, "", d.neighborIAs[ifID])
 	iMetrics := newInterfaceMetrics(d.Metrics, ifID, d.localIA, "", d.neighborIAs[ifID])
+	qMetrics := NewQueueDepthMetrics(d.Metrics, labels)
 	lk, err := underlay.NewExternalLink(
 		d.RunConfig.BatchSize,
 		bfd,
 		link.Local.Addr,
 		link.Remote.Addr,
 		ifID,
-		iMetrics)
+		iMetrics,
+		qMetrics)
 	if err != nil {
 		return err
 	}
@@ -676,10 +686,18 @@ func (d *dataPlane) AddNextHop(
 	// Note that a link to the same sibling router might already exist. If so, it will be
 	// returned instead of creating a new one. As a result, the bfd session and metrics will be
 	// ignored and simply garbage collected.
+	labels := newMetricLabels(ifID, d.localIA, link.Remote.Addr, d.neighborIAs[ifID])
 	iMetrics := newInterfaceMetrics(
 		d.Metrics, ifID, d.localIA, link.Remote.Addr, d.neighborIAs[ifID])
+	qMetrics := NewQueueDepthMetrics(d.Metrics, labels)
 	lk, err := underlay.NewSiblingLink(
-		d.RunConfig.BatchSize, bfd, link.Local.Addr, link.Remote.Addr, iMetrics)
+		d.RunConfig.BatchSize,
+		bfd,
+		link.Local.Addr,
+		link.Remote.Addr,
+		iMetrics,
+		qMetrics,
+	)
 	if err != nil {
 		return err
 	}

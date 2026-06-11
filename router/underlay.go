@@ -129,6 +129,7 @@ type UnderlayProvider interface {
 		remote string,
 		ifID uint16,
 		metrics *InterfaceMetrics,
+		queueMetrics *QueueDepthMetrics,
 	) (Link, error)
 
 	// NewSiblingLink returns a link that addresses any number of remote ASes via a single sibling
@@ -141,12 +142,18 @@ type UnderlayProvider interface {
 		local string,
 		remote string,
 		metrics *InterfaceMetrics,
+		queueMetrics *QueueDepthMetrics,
 	) (Link, error)
 
 	// NewInternalLink returns a link that addresses any host internal to the enclosing AS, so it is
 	// given neither ifID nor remote address. Outgoing packets need to have a destination address as
 	// metadata. Incoming packets have no defined ingress ifID.
-	NewInternalLink(localAddr string, qSize int, metrics *InterfaceMetrics) (Link, error)
+	NewInternalLink(
+		localAddr string,
+		qSize int,
+		metrics *InterfaceMetrics,
+		queueMetrics *QueueDepthMetrics,
+	) (Link, error)
 }
 
 // NewProviderFn is a function that instantiates an underlay provider.
