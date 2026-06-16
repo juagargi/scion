@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/pkg/addr"
-	"github.com/scionproto/scion/pkg/snet/squic/hummingbirdtest"
+	"github.com/scionproto/scion/pkg/hummingbird/hummingbirdtest"
 )
 
 func main() {
@@ -75,7 +75,7 @@ func runServer(args []string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return hummingbirdtest.RunServer(ctx, daemonAddr, local, peerIA, log.Printf)
+	return hummingbirdtest.RunQuicServer(ctx, daemonAddr, local, peerIA, log.Printf)
 }
 
 func runClient(args []string) error {

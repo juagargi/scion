@@ -419,6 +419,14 @@ func (p *Packet) Decode() error {
 			DstPort: udpLayer.DstPort,
 			Payload: udpLayer.Payload,
 		}
+		if e2eLayer.ActualLen != 0 {
+			var e2e slayers.EndToEndExtn
+			parser = gopacket.NewDecodingLayerParser(slayers.LayerTypeEndToEndExtn, &e2e)
+			if err := parser.DecodeLayers(e2eLayer.Contents, &decoded); err != nil {
+				return serrors.Wrap("cannot decode endToend extension", err)
+			}
+			p.E2eExtnContents = e2e.Options
+		}
 	case slayers.LayerTypeSCMP:
 		gpkt := gopacket.NewPacket(scmpLayer.Payload, scmpLayer.NextLayerType(),
 			gopacket.DecodeOptions{})
@@ -617,4 +625,6 @@ type PacketInfo struct {
 	Path DataplanePath
 	// Payload is the Payload of the message.
 	Payload Payload
+	// E2eExtnContents makes an E2E extension data available to the callers.
+	E2eExtnContents []*slayers.EndToEndOption
 }

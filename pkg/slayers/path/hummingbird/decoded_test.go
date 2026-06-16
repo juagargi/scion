@@ -211,6 +211,80 @@ func TestDecodedGetCurrentHopField(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestIsCrossOver(t *testing.T) {
+	dec := mkTiny2Segments(t)
+	assert.Equal(t, 0, dec.IsCrossOver(0))
+	assert.Equal(t, -1, dec.IsCrossOver(1))
+	assert.Equal(t, +1, dec.IsCrossOver(2))
+	assert.Equal(t, 0, dec.IsCrossOver(3))
+
+	dec = mkTiny1Segment(t)
+	assert.Equal(t, 0, dec.IsCrossOver(0))
+	assert.Equal(t, 0, dec.IsCrossOver(1))
+}
+
+func mkTiny2Segments(t *testing.T) *hummingbird.Decoded {
+	return mkDecodedHbirdPath(
+		t,
+		hbirdPathCase{
+			infos: []bool{false, true},
+			hops: [][]hbirdHopCase{
+				{
+					hbirdHopCase{
+						ingress: 0,
+						egress:  1,
+						flyover: false,
+					},
+					hbirdHopCase{
+						ingress: 41,
+						egress:  0,
+						flyover: false,
+					},
+				},
+				{
+					hbirdHopCase{
+						ingress: 0,
+						egress:  2,
+						flyover: false,
+					},
+					hbirdHopCase{
+						ingress: 1,
+						egress:  0,
+						flyover: false,
+					},
+				},
+			},
+		},
+		0,
+		0,
+	)
+}
+
+func mkTiny1Segment(t *testing.T) *hummingbird.Decoded {
+	return mkDecodedHbirdPath(
+		t,
+		hbirdPathCase{
+			infos: []bool{false},
+			hops: [][]hbirdHopCase{
+				{
+					hbirdHopCase{
+						ingress: 0,
+						egress:  1,
+						flyover: false,
+					},
+					hbirdHopCase{
+						ingress: 41,
+						egress:  0,
+						flyover: false,
+					},
+				},
+			},
+		},
+		0,
+		0,
+	)
+}
+
 func mkDecodedHbirdPath(
 	t *testing.T,
 	pcase hbirdPathCase,
@@ -234,17 +308,16 @@ func mkDecodedHbirdPath(
 	i := 0
 	for j, hops := range pcase.hops {
 		for _, hop := range hops {
-			isFlyover := hop[1] == 1
 			s.HopFields = append(s.HopFields,
 				hummingbird.FlyoverHopField{
 					HopField: path.HopField{
-						ConsIngress: hop[0],
-						ConsEgress:  hop[0],
+						ConsIngress: hop.ingress,
+						ConsEgress:  hop.egress,
 						Mac:         [6]byte{1, 2, 3, 4, 5, 6}},
-					Flyover:  isFlyover,
+					Flyover:  hop.flyover,
 					Duration: 2,
 				})
-			if isFlyover {
+			if hop.flyover {
 				i += 5
 				s.PathMeta.SegLen[j] += 5
 			} else {
@@ -255,6 +328,17 @@ func mkDecodedHbirdPath(
 	}
 	s.NumINF = len(pcase.infos)
 	s.NumLines = i
+
+	// Compute the first hop per segment.
+	s.FirstHopPerSeg[0] = uint8(len(s.HopFields))
+	s.FirstHopPerSeg[1] = uint8(len(s.HopFields))
+	switch s.NumINF {
+	case 2: // Only two segments, fix the second segment start index.
+		s.FirstHopPerSeg[0] = uint8(len(pcase.hops[0]))
+	case 3: // Three segments, fix both the second and third segment starting index.
+		s.FirstHopPerSeg[0] = uint8(len(pcase.hops[0]))
+		s.FirstHopPerSeg[1] = uint8(len(pcase.hops[1])) + s.FirstHopPerSeg[0]
+	}
 
 	return s
 }

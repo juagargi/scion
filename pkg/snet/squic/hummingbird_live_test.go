@@ -29,7 +29,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/scionproto/scion/pkg/snet/squic/hummingbirdtest"
+	"github.com/scionproto/scion/pkg/hummingbird/hummingbirdtest"
 )
 
 const (
@@ -71,7 +71,7 @@ func TestQUICOverHummingbirdTinyTopology(t *testing.T) {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- hummingbirdtest.RunServer(
+		serverErr <- hummingbirdtest.RunQuicServer(
 			ctx,
 			tinyServerDaemonAddr,
 			serverLocal,
@@ -122,7 +122,7 @@ func TestQUICOverHummingbirdTinyTopologyTokenBucketDemotion(t *testing.T) {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- hummingbirdtest.RunServer(
+		serverErr <- hummingbirdtest.RunQuicServer(
 			ctx,
 			tinyServerDaemonAddr,
 			serverLocal,

@@ -9,7 +9,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//pkg/addr:go_default_library",
-        "//pkg/snet/squic/hummingbirdtest:go_default_library",
+        "//pkg/hummingbird/hummingbirdtest:go_default_library",
     ],
 )
 

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package hummingbirdtest contains shared helpers for the Hummingbird QUIC
-// live test and the matching acceptance test.
+// Package hummingbirdtest contains shared helpers for Hummingbird live tests
+// and the matching acceptance test.
 
 package hummingbirdtest
 
@@ -28,18 +28,21 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
 
+	"github.com/gopacket/gopacket"
 	"github.com/quic-go/quic-go"
 
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/daemon"
 	"github.com/scionproto/scion/pkg/daemon/types"
 	"github.com/scionproto/scion/pkg/private/serrors"
+	"github.com/scionproto/scion/pkg/slayers"
 	hummlib "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 	"github.com/scionproto/scion/pkg/snet"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
@@ -61,6 +64,11 @@ const (
 	QUICTestMessageSize = 20 * 1024
 	// QUICTestMessageReply is the fixed server response for the round trip.
 	QUICTestMessageReply = "pong over scion"
+	// PacketTestMessageSize keeps the packet payload comfortably below the tiny
+	// topology MTU while still exercising non-trivial Hummingbird traffic.
+	PacketTestMessageSize = 1024
+	// PacketTestMessageReply is the fixed datagram reply for the round trip.
+	PacketTestMessageReply = "pong over hummingbird"
 )
 
 // ReservationParams configures synthetic Hummingbird reservation values used by
@@ -87,6 +95,11 @@ func DefaultReservationParams() ReservationParams {
 // tests. It is kept at or above 20 KiB so the exchange exercises multiple
 // packets instead of succeeding on only a few packets.
 var QUICTestMessageClient = bytes.Repeat([]byte("ping over hummingbird|"), 1024)[:QUICTestMessageSize]
+
+// PacketTestMessageClient is the fixed datagram payload used by the packet
+// round-trip tests.
+// var PacketTestMessageClient = bytes.Repeat([]byte("packet over hummingbird|"), 64)[:PacketTestMessageSize]
+var PacketTestMessageClient = ([]byte)("packet over hummingbird")
 
 //go:embed tls.pem
 var tlsPEM []byte
@@ -483,31 +496,196 @@ func RunQUICClientRoundTrip(
 	return nil
 }
 
-// RunServer runs the one-shot QUIC server side of the Hummingbird test against
+// RunPacketServerOnce reads one datagram, validates the fixed client payload,
+// replies once, and then returns.
+func RunPacketServerOnce(serverConn *snet.Conn) error {
+	buf := make([]byte, len(PacketTestMessageClient))
+	n, remote, err := serverConn.ReadFrom(buf)
+	if err != nil {
+		return serrors.Wrap("reading client datagram", err)
+	}
+	if !bytes.Equal(buf[:n], PacketTestMessageClient) {
+		return serrors.New("unexpected client datagram payload")
+	}
+	if _, err := serverConn.WriteTo([]byte(PacketTestMessageReply), remote); err != nil {
+		return serrors.Wrap("writing server datagram reply", err)
+	}
+	return nil
+}
+
+// RunPacketClientRoundTrip sends one datagram to remote and verifies the fixed
+// server reply.
+func RunPacketClientRoundTrip(clientConn *snet.Conn, remote *snet.UDPAddr) error {
+	if _, err := clientConn.WriteTo(PacketTestMessageClient, remote); err != nil {
+		return serrors.Wrap("writing client datagram", err)
+	}
+
+	reply := make([]byte, len(PacketTestMessageReply))
+	n, _, err := clientConn.ReadFrom(reply)
+	if err != nil {
+		return serrors.Wrap("reading server datagram reply", err)
+	}
+	if string(reply[:n]) != PacketTestMessageReply {
+		return serrors.New("unexpected server datagram reply", "reply", string(reply[:n]))
+	}
+	return nil
+}
+
+func RunPacketClientWithE2eRoundTrip(
+	srcAddr snet.UDPAddr,
+	dstAddr snet.UDPAddr,
+	clientConn *snet.Conn,
+	remote *snet.UDPAddr,
+) error {
+
+	useRawPacket := true
+	if useRawPacket {
+		fmt.Println("!!! deleteme sending client packet as raw layers")
+		srcIP, _ := netip.AddrFromSlice(srcAddr.Host.IP)
+		dstIP, _ := netip.AddrFromSlice(dstAddr.Host.IP)
+		scn := &slayers.SCION{
+			SrcIA: srcAddr.IA,
+			DstIA: dstAddr.IA,
+		}
+		if err := scn.SetSrcAddr(addr.HostIP(srcIP)); err != nil {
+			return err
+		}
+		if err := scn.SetDstAddr(addr.HostIP(dstIP)); err != nil {
+			return err
+		}
+
+		// scn.NextHdr = slayers.L4UDP
+		scn.NextHdr = slayers.End2EndClass
+
+		//
+		e2e := &slayers.EndToEndExtn{
+			Options: []*slayers.EndToEndOption{
+				{
+					OptType: slayers.OptTypeReversePath,
+					OptData: []byte("end2end data"),
+				},
+			},
+		}
+		e2e.NextHdr = slayers.L4UDP
+
+		// We don't set the payload, as we are using gopacket directly.
+		// But we need the payload length.
+		udp := &slayers.UDP{
+			// SrcPort: 32767,
+			// SrcPort: uint16(srcAddr.Host.Port),
+
+			// Use the same port where the clientConn is listening:
+			SrcPort: uint16(clientConn.LocalAddr().(*snet.UDPAddr).Host.Port),
+			DstPort: uint16(dstAddr.Host.Port),
+		}
+		udp.SetNetworkLayerForChecksum(scn)
+
+		// Serialize the payload:
+		upperLayer := gopacket.NewSerializeBuffer()
+		err := gopacket.SerializeLayers(upperLayer,
+			gopacket.SerializeOptions{
+				ComputeChecksums: true,
+				FixLengths:       true,
+			},
+			// udp, gopacket.Payload(PacketTestMessageClient),
+			e2e, udp, gopacket.Payload(PacketTestMessageClient),
+		)
+		if err != nil {
+			return err
+		}
+		scn.PayloadLen = uint16(len(upperLayer.Bytes()))
+
+		// With the correct size, we can now set the path and path type:
+		if err := remote.Path.SetPath(scn); err != nil {
+			return err
+		}
+		//
+		//
+
+		//
+		// Write message.
+		//
+
+		// With raw UDP and slayers:
+		buf := gopacket.NewSerializeBuffer()
+		err = gopacket.SerializeLayers(buf,
+			gopacket.SerializeOptions{
+				ComputeChecksums: true,
+				FixLengths:       true,
+			},
+			// scn, udp, gopacket.Payload(PacketTestMessageClient),
+			scn, e2e, udp, gopacket.Payload(PacketTestMessageClient),
+		)
+		if err != nil {
+			return err
+		}
+		rawBuf := buf.Bytes()
+
+		udpSock, err := net.ListenUDP("udp", srcAddr.Host)
+		if err != nil {
+			return err
+		}
+		defer udpSock.Close()
+
+		n, err := udpSock.WriteToUDP(rawBuf, remote.NextHop)
+		fmt.Printf("deleteme written %d bytes to UDP socket\n", n)
+		if err != nil {
+			return err
+		}
+	} else {
+		// With regular snet:
+		fmt.Printf("deleteme local socket address is: %s\n", clientConn.LocalAddr().String())
+		if _, err := clientConn.WriteTo(PacketTestMessageClient, remote); err != nil {
+			return serrors.Wrap("writing client datagram", err)
+		}
+	}
+
+	reply := make([]byte, len(PacketTestMessageReply))
+	n, _, err := clientConn.ReadFrom(reply)
+	if err != nil {
+		return serrors.Wrap("reading server datagram reply", err)
+	}
+	if string(reply[:n]) != PacketTestMessageReply {
+		return serrors.New("unexpected server datagram reply", "reply", string(reply[:n]))
+	}
+	return nil
+}
+
+func RunPacketServer(
+	ctx context.Context,
+	daemonAddr string,
+	localAddr *snet.UDPAddr,
+	peerIA addr.IA,
+	log Logger,
+) (*snet.Conn, error) {
+	serverDaemon, err := ConnectDaemon(ctx, daemonAddr)
+	if err != nil {
+		return nil, err
+	}
+	defer serverDaemon.Close()
+
+	serverTopo, err := daemon.LoadTopology(ctx, serverDaemon)
+	if err != nil {
+		return nil, serrors.Wrap("loading server topology", err)
+	}
+	serverBasePath, err := BasePath(ctx, serverDaemon, localAddr.IA, peerIA, log)
+	if err != nil {
+		return nil, err
+	}
+	replyPather := FixedReplyPather{Path: serverBasePath.Dataplane()}
+	return NewSCIONConn(ctx, serverTopo, localAddr.Host, replyPather, true)
+}
+
+// RunQuicServer runs the one-shot QUIC server side of the Hummingbird test against
 // the provided daemon and local address.
-func RunServer(
+func RunQuicServer(
 	ctx context.Context,
 	daemonAddr string,
 	localAddr *snet.UDPAddr,
 	peerIA addr.IA,
 	log Logger,
 ) error {
-	serverDaemon, err := ConnectDaemon(ctx, daemonAddr)
-	if err != nil {
-		return err
-	}
-	defer serverDaemon.Close()
-
-	serverTopo, err := daemon.LoadTopology(ctx, serverDaemon)
-	if err != nil {
-		return serrors.Wrap("loading server topology", err)
-	}
-	serverBasePath, err := BasePath(ctx, serverDaemon, localAddr.IA, peerIA, log)
-	if err != nil {
-		return err
-	}
-	replyPather := FixedReplyPather{Path: serverBasePath.Dataplane()}
-	serverConn, err := NewSCIONConn(ctx, serverTopo, localAddr.Host, replyPather, true)
+	serverConn, err := RunPacketServer(ctx, daemonAddr, localAddr, peerIA, log)
 	if err != nil {
 		return err
 	}
@@ -588,6 +766,107 @@ func RunClientWithParams(
 		return err
 	}
 	return RunQUICClientRoundTrip(ctx, clientConn, remote, tlsConfig)
+}
+
+// RunPacketClient runs the client side of the packet-based Hummingbird test,
+// including reservation construction and a single datagram round trip.
+func RunPacketClient(
+	ctx context.Context,
+	daemonAddr string,
+	localAddr *snet.UDPAddr,
+	remoteAddr *snet.UDPAddr,
+	keysRoot string,
+	log Logger,
+) error {
+	return RunPacketClientWithParams(
+		ctx,
+		daemonAddr,
+		localAddr,
+		remoteAddr,
+		keysRoot,
+		DefaultReservationParams(),
+		log,
+	)
+}
+
+// RunPacketClientWithParams runs the packet-based client side with
+// caller-provided reservation parameters.
+func RunPacketClientWithParams(
+	ctx context.Context,
+	daemonAddr string,
+	localAddr *snet.UDPAddr,
+	remoteAddr *snet.UDPAddr,
+	keysRoot string,
+	params ReservationParams,
+	log Logger,
+) error {
+	clientDaemon, err := ConnectDaemon(ctx, daemonAddr)
+	if err != nil {
+		return err
+	}
+	defer clientDaemon.Close()
+
+	clientTopo, err := daemon.LoadTopology(ctx, clientDaemon)
+	if err != nil {
+		return serrors.Wrap("loading client topology", err)
+	}
+	clientConn, err := NewSCIONConn(ctx, clientTopo, localAddr.Host, nil, false)
+	if err != nil {
+		return err
+	}
+	defer clientConn.Close()
+
+	remote, err := BuildHummingbirdRemoteWithParams(
+		ctx, clientDaemon, localAddr, remoteAddr, keysRoot, params, log)
+	if err != nil {
+		return err
+	}
+	if _, ok := remote.Path.(*snetpath.Reservation); !ok {
+		return serrors.New("expected hummingbird reservation path", "type", reflect.TypeOf(remote.Path))
+	}
+
+	return RunPacketClientRoundTrip(clientConn, remote)
+}
+
+func RunPacketClientWithParamsAndE2E(
+	ctx context.Context,
+	daemonAddr string,
+	localAddr *snet.UDPAddr,
+	remoteAddr *snet.UDPAddr,
+	keysRoot string,
+	params ReservationParams,
+	log Logger,
+) error {
+	clientDaemon, err := ConnectDaemon(ctx, daemonAddr)
+	if err != nil {
+		return err
+	}
+	defer clientDaemon.Close()
+
+	clientTopo, err := daemon.LoadTopology(ctx, clientDaemon)
+	if err != nil {
+		return serrors.Wrap("loading client topology", err)
+	}
+	clientConn, err := NewSCIONConn(ctx, clientTopo, localAddr.Host, nil, false)
+	if err != nil {
+		return err
+	}
+	defer clientConn.Close()
+	fmt.Printf("deleteme clientConn created as: %s\n", clientConn.LocalAddr().String())
+
+	remote, err := BuildHummingbirdRemoteWithParams(
+		ctx, clientDaemon, localAddr, remoteAddr, keysRoot, params, log)
+	if err != nil {
+		return err
+	}
+	if _, ok := remote.Path.(*snetpath.Reservation); !ok {
+		return serrors.New("expected hummingbird reservation path", "type", reflect.TypeOf(remote.Path))
+	}
+
+	return RunPacketClientWithE2eRoundTrip(
+		*localAddr,
+		*remoteAddr,
+		clientConn, remote)
 }
 
 // MustParseUDPAddr parses a SCION UDP address string and returns a wrapped

@@ -34,6 +34,7 @@ const (
 	OptTypePad1 OptionType = iota
 	OptTypePadN
 	OptTypeAuthenticator
+	OptTypeReversePath // e.g. Hummingbird reverse reservation.
 )
 
 type tlvOption struct {

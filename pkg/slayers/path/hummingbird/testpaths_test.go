@@ -176,42 +176,118 @@ var pathReverseTestCases = map[string]struct {
 	wantIdxs [][2]int
 }{
 	"1 segment, 2 hops": {
-		input:    hbirdPathCase{[]bool{true}, [][][]uint16{{{11, 0}, {12, 1}}}},
-		want:     hbirdPathCase{[]bool{false}, [][][]uint16{{{12, 0}, {11, 0}}}},
+		input: hbirdPathCase{
+			infos: []bool{true},
+			hops: [][]hbirdHopCase{{
+				{ingress: 11, egress: 11, flyover: false},
+				{ingress: 12, egress: 12, flyover: true},
+			}},
+		},
+		want: hbirdPathCase{
+			infos: []bool{false},
+			hops: [][]hbirdHopCase{{
+				{ingress: 12, egress: 12, flyover: false},
+				{ingress: 11, egress: 11, flyover: false},
+			}},
+		},
 		inIdxs:   [][2]int{{0, 0}, {0, 3}},
 		wantIdxs: [][2]int{{0, 3}, {0, 0}},
 	},
 	"1 segment, 5 hops": {
-		input: hbirdPathCase{[]bool{true},
-			[][][]uint16{{{11, 1}, {12, 1}, {13, 0}, {14, 1}, {15, 0}}}},
-		want: hbirdPathCase{[]bool{false},
-			[][][]uint16{{{15, 0}, {14, 0}, {13, 0}, {12, 0}, {11, 0}}}},
+		input: hbirdPathCase{
+			infos: []bool{true},
+			hops: [][]hbirdHopCase{{
+				{ingress: 11, egress: 11, flyover: true},
+				{ingress: 12, egress: 12, flyover: true},
+				{ingress: 13, egress: 13, flyover: false},
+				{ingress: 14, egress: 14, flyover: true},
+				{ingress: 15, egress: 15, flyover: false},
+			}},
+		},
+		want: hbirdPathCase{
+			infos: []bool{false},
+			hops: [][]hbirdHopCase{{
+				{ingress: 15, egress: 15, flyover: false},
+				{ingress: 14, egress: 14, flyover: false},
+				{ingress: 13, egress: 13, flyover: false},
+				{ingress: 12, egress: 12, flyover: false},
+				{ingress: 11, egress: 11, flyover: false},
+			}},
+		},
 		inIdxs:   [][2]int{{0, 0}, {0, 5}, {0, 10}, {0, 13}, {0, 18}},
 		wantIdxs: [][2]int{{0, 12}, {0, 9}, {0, 6}, {0, 3}, {0, 0}},
 	},
 	"2 segments, 5 hops": {
-		input: hbirdPathCase{[]bool{true, false},
-			[][][]uint16{{{11, 0}, {12, 0}}, {{13, 1}, {14, 1}, {15, 0}}}},
-		want: hbirdPathCase{[]bool{true, false},
-			[][][]uint16{{{15, 0}, {14, 0}, {13, 0}}, {{12, 0}, {11, 0}}}},
+		input: hbirdPathCase{
+			infos: []bool{true, false},
+			hops: [][]hbirdHopCase{
+				{
+					{ingress: 11, egress: 11, flyover: false},
+					{ingress: 12, egress: 12, flyover: false},
+				},
+				{
+					{ingress: 13, egress: 13, flyover: true},
+					{ingress: 14, egress: 14, flyover: true},
+					{ingress: 15, egress: 15, flyover: false},
+				},
+			},
+		},
+		want: hbirdPathCase{
+			infos: []bool{true, false},
+			hops: [][]hbirdHopCase{
+				{
+					{ingress: 15, egress: 15, flyover: false},
+					{ingress: 14, egress: 14, flyover: false},
+					{ingress: 13, egress: 13, flyover: false},
+				},
+				{
+					{ingress: 12, egress: 12, flyover: false},
+					{ingress: 11, egress: 11, flyover: false},
+				},
+			},
+		},
 		inIdxs:   [][2]int{{0, 0}, {0, 3}, {1, 6}, {1, 11}, {1, 16}},
 		wantIdxs: [][2]int{{1, 12}, {1, 9}, {0, 6}, {0, 3}, {0, 0}},
 	},
 	"3 segments, 9 hops": {
 		input: hbirdPathCase{
-			[]bool{true, false, false},
-			[][][]uint16{
-				{{11, 1}, {12, 0}},
-				{{13, 0}, {14, 1}, {15, 1}, {16, 0}},
-				{{17, 0}, {18, 1}, {19, 1}},
+			infos: []bool{true, false, false},
+			hops: [][]hbirdHopCase{
+				{
+					{ingress: 11, egress: 11, flyover: true},
+					{ingress: 12, egress: 12, flyover: false},
+				},
+				{
+					{ingress: 13, egress: 13, flyover: false},
+					{ingress: 14, egress: 14, flyover: true},
+					{ingress: 15, egress: 15, flyover: true},
+					{ingress: 16, egress: 16, flyover: false},
+				},
+				{
+					{ingress: 17, egress: 17, flyover: false},
+					{ingress: 18, egress: 18, flyover: true},
+					{ingress: 19, egress: 19, flyover: true},
+				},
 			},
 		},
 		want: hbirdPathCase{
-			[]bool{true, true, false},
-			[][][]uint16{
-				{{19, 0}, {18, 0}, {17, 0}},
-				{{16, 0}, {15, 0}, {14, 0}, {13, 0}},
-				{{12, 0}, {11, 0}},
+			infos: []bool{true, true, false},
+			hops: [][]hbirdHopCase{
+				{
+					{ingress: 19, egress: 19, flyover: false},
+					{ingress: 18, egress: 18, flyover: false},
+					{ingress: 17, egress: 17, flyover: false},
+				},
+				{
+					{ingress: 16, egress: 16, flyover: false},
+					{ingress: 15, egress: 15, flyover: false},
+					{ingress: 14, egress: 14, flyover: false},
+					{ingress: 13, egress: 13, flyover: false},
+				},
+				{
+					{ingress: 12, egress: 12, flyover: false},
+					{ingress: 11, egress: 11, flyover: false},
+				},
 			},
 		},
 		inIdxs: [][2]int{
@@ -223,7 +299,16 @@ var pathReverseTestCases = map[string]struct {
 	},
 }
 
+type hbirdHopCase struct {
+	ingress  uint16
+	egress   uint16
+	flyover  bool
+}
+
+// hbirdPathCase is a compact test fixture for mkDecodedHbirdPath.
+// infos stores one ConsDir flag per segment. hops stores the hop fixtures for
+// each segment in path order.
 type hbirdPathCase struct {
 	infos []bool
-	hops  [][][]uint16
+	hops  [][]hbirdHopCase
 }

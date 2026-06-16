@@ -22,6 +22,7 @@ import (
 
 	"github.com/scionproto/scion/pkg/private/common"
 	"github.com/scionproto/scion/pkg/private/serrors"
+	"github.com/scionproto/scion/pkg/slayers"
 )
 
 // ReplyPather creates reply paths based on the incoming RawPath.
@@ -81,6 +82,12 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 	if !ok {
 		return 0, nil, serrors.New("unexpected path", "type", common.TypeOf(pkt.Path))
 	}
+
+	if statefulRP, ok := c.replyPather.(StatefulReplyPather); ok {
+		hummReverse := ContainsReversePathState(pkt.E2eExtnContents)
+		statefulRP.SetState(hummReverse)
+	}
+
 	replyPath, err := c.replyPather.ReplyPath(rpath)
 	if err != nil {
 		return 0, nil, serrors.Wrap("creating reply path", err)
@@ -140,4 +147,15 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 
 func (c *scionConnReader) SetReadDeadline(t time.Time) error {
 	return c.conn.SetReadDeadline(t)
+}
+
+// ContainsReversePathState extracts the reverse path information reservation option from the
+// end to end extension and returns it, or nil if none is present.
+func ContainsReversePathState(opts []*slayers.EndToEndOption) []byte {
+	for _, opt := range opts {
+		if opt.OptType == slayers.OptTypeReversePath {
+			return opt.OptData
+		}
+	}
+	return nil
 }

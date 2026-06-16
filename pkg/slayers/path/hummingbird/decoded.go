@@ -60,6 +60,12 @@ func (s *Decoded) DecodeFromBytes(data []byte) error {
 
 	// Allocate maximum number of possible hopfields based on length
 	s.HopFields = make([]FlyoverHopField, s.NumLines/HopLines)
+	// Safe default: if we never discover a segment boundary while decoding,
+	// treat the missing boundary as "after the last hop".
+	s.HopFields = make([]FlyoverHopField, s.NumLines/HopLines)
+	s.FirstHopPerSeg[0] = uint8(len(s.HopFields))
+	s.FirstHopPerSeg[1] = uint8(len(s.HopFields))
+
 	i, j := 0, 0
 	// If last hop is not a flyover hop, decode it with only 12 bytes slice
 	for ; j < s.NumLines-HopLines; i++ {
@@ -161,6 +167,14 @@ func (s *Decoded) Reverse() (path.Path, error) {
 	// Update CurrINF and CurrHF and SegLens
 	s.PathMeta.CurrINF = uint8(s.NumINF) - s.PathMeta.CurrINF - 1
 	s.PathMeta.CurrHF = uint8(s.NumLines) - s.PathMeta.CurrHF - HopLines
+	s.FirstHopPerSeg[0] = uint8(len(s.HopFields))
+	s.FirstHopPerSeg[1] = uint8(len(s.HopFields))
+	if s.PathMeta.SegLen[1] != 0 {
+		s.FirstHopPerSeg[0] = s.PathMeta.SegLen[0] / HopLines
+	}
+	if s.PathMeta.SegLen[2] != 0 {
+		s.FirstHopPerSeg[1] = s.FirstHopPerSeg[0] + s.PathMeta.SegLen[1]/HopLines
+	}
 
 	return s, nil
 }
@@ -246,6 +260,48 @@ func (s *Decoded) InfIndexForHFIndex(hfIdx uint8) uint8 {
 		}
 	}
 	return s.InfIndexForHF(lineCount)
+}
+
+func (s Decoded) NumberOfHFsInSegment(segmentIndex int) int {
+	// Guard against out of valid segment indices. Negative indices are passed to the default case.
+	if segmentIndex >= s.NumINF {
+		return 0
+	}
+
+	switch segmentIndex {
+	case 0:
+		return int(s.FirstHopPerSeg[0])
+	case 1:
+		return int(s.FirstHopPerSeg[1] - s.FirstHopPerSeg[0])
+	case 2:
+		return len(s.HopFields) - int(s.FirstHopPerSeg[1])
+	default:
+		return 0
+	}
+}
+
+// IsCrossOver returns -1 for the first hop of a crossover, +1 for the second, or 0 for none.
+func (s Decoded) IsCrossOver(hfIdx uint8) int {
+	// A crossover is the "joining" of two segments.
+	// A crossover hop is that one that participates in a crossover, i.e., having two segments
+	// participating in a crossover, the last hop of the first segment, or the first hop of the
+	// last segment.
+
+	idx := int(hfIdx)
+	for i := range s.NumINF - 1 {
+		c := s.NumberOfHFsInSegment(i)
+		if idx == c-1 {
+			// Last hop of first segment of the crossover.
+			return -1
+		}
+		idx -= c
+		if idx == 0 {
+			// First hop of second segment of the crossover, and not destination AS.
+			return 1
+		}
+	}
+
+	return 0
 }
 
 // Converts a SCiON decoded path to a hummingbird decoded path

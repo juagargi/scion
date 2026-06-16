@@ -18,18 +18,11 @@ import (
 	"crypto/cipher"
 
 	dppath "github.com/scionproto/scion/pkg/slayers/path"
-	"github.com/scionproto/scion/pkg/snet"
+	"github.com/scionproto/scion/pkg/slayers/path/scion"
 )
 
-func WithMetadata(metadata *snet.PathMetadata) ReservationModFcn {
-	return func(r *Reservation) error {
-		r.metadata = metadata
-		return nil
-	}
-}
-
-func (r *Reservation) SetScionPath(p SCION) error {
-	return r.setScionPath(p)
+func (r *Reservation) SetScionPath(dec *scion.Decoded) error {
+	return r.setScionPath(dec)
 }
 
 func (r *Reservation) GetScionMACs() [][dppath.MacLen]byte {
@@ -38,4 +31,8 @@ func (r *Reservation) GetScionMACs() [][dppath.MacLen]byte {
 
 func (r *Reservation) AesBlocks() *[]cipher.Block {
 	return &r.blocksPerAk
+}
+
+func NewHopBitSet(buff []byte, nBits int) hopBitset {
+	return newHopBitset(buff, nBits)
 }
