@@ -43,8 +43,14 @@ func OneShotReservation(
 		return nil, serrors.Wrap("redeeming flyovers", err)
 	}
 
+	// Convert the path to a dataplane path.
+	scionPath, ok := p.Dataplane().(snetpath.SCION)
+	if !ok {
+		return nil, serrors.New("provided path must be of type scion")
+	}
+
 	// Build a reservation with the flyovers.
 	return snetpath.NewReservation(
-		snetpath.WithScionPath(p, snetpath.FlyoversToMap(flyovers)),
+		snetpath.WithDataplanePath(scionPath, p.Destination(), flyovers),
 	)
 }

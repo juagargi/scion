@@ -58,3 +58,9 @@ func (p RawReplyPath) SetPath(s *slayers.SCION) error {
 	s.Path, s.PathType = p.Path, p.Path.Type()
 	return nil
 }
+
+// StatefulReplyPather represents a reply pather that can contain state.
+type StatefulReplyPather interface {
+	SetState([]byte)
+	ReplyPathToSrc(srcIA SCIONAddress, rpath RawPath) (DataplanePath, error)
+}

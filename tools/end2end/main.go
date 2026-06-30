@@ -566,9 +566,14 @@ func (c *client) buildReservationWithSecretValues(
 			},
 		})
 	}
+	scionPath, ok := path.Dataplane().(snetpath.SCION)
+	if !ok {
+		return nil, serrors.New("provided path must be of type scion")
+	}
+
 	return snetpath.NewReservation(
 		snetpath.WithNow(returnNow),
-		snetpath.WithScionPath(path, snetpath.FlyoversToMap(flyovers)),
+		snetpath.WithDataplanePath(scionPath, path.Destination(), flyovers),
 	)
 }
 

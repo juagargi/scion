@@ -28,9 +28,9 @@ go_test(
     tags = ["exclusive"],
     deps = [
         ":go_default_library",
+        "//pkg/hummingbird/hummingbirdtest:go_default_library",
         "//pkg/proto/control_plane:go_default_library",
         "//pkg/proto/control_plane/mock_control_plane:go_default_library",
-        "//pkg/hummingbird/hummingbirdtest:go_default_library",
         "@com_github_golang_mock//gomock:go_default_library",
         "@com_github_quic_go_quic_go//:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",

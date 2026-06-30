@@ -7,6 +7,7 @@ go_library(
         "empty.go",
         "epic.go",
         "hummingbird.go",
+        "hummingbird_reply_pather.go",
         "onehop.go",
         "path.go",
         "scion.go",
@@ -39,8 +40,6 @@ go_test(
     embed = [":go_default_library"],
     deps = [
         "//pkg/addr:go_default_library",
-        "//pkg/daemon:go_default_library",
-        "//pkg/daemon/types:go_default_library",
         "//pkg/hummingbird/hummingbirdtest:go_default_library",
         "//pkg/private/util:go_default_library",
         "//pkg/segment/iface:go_default_library",

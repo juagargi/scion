@@ -155,140 +155,43 @@ func WithDstIA(dstIA addr.IA) ReservationModFcn {
 	}
 }
 
-// WithScionPath allows to build a Reservation based on the SCION path and flyovers passed as
-// arguments. If no flyover is found for a hop, that hop will not have priority.
-// The flyover map is modified by removing those flyovers that were used during the reservation.
-func WithScionPath(p snet.Path, flyoverMap FlyoverMap) ReservationModFcn {
+// WithRawPath can be used to build a Reservation given the RawPath, e.g. in case
+// of replying to a received packet.
+// Only scion and hummingbird path types are supported.
+func WithRawPath(rawPath snet.RawPath, dstIA addr.IA, seq FlyoverSequence) ReservationModFcn {
 	return func(r *Reservation) error {
-		if p == nil {
-			return serrors.New("nil path")
-		}
-		switch p := p.Dataplane().(type) {
-		case SCION:
-			scionDec := &scion.Decoded{}
-			if err := scionDec.DecodeFromBytes(p.Raw); err != nil {
-				return serrors.Wrap("decoding scion path", err)
-			}
-			if err := r.setScionPath(scionDec); err != nil {
+		switch rawPath.PathType {
+		case scion.PathType:
+			return r.setupReservationWithScion(rawPath.Raw, dstIA, seq)
+		case dphum.PathType:
+			dec := &dphum.Decoded{}
+			if err := dec.DecodeFromBytes(rawPath.Raw); err != nil {
 				return err
 			}
+			return r.setupReservationWithHummDecoded(dec, dstIA, seq)
 		default:
-			return serrors.New("Unsupported path type")
+			return serrors.New("creating reservation: unsupported path type",
+				"type", rawPath.PathType.String(),
+			)
 		}
-		// Extend the number of hops to that of the path.
-		r.Hops = make([]*Hop, len(r.Dec.HopFields))
-		r.blocksPerAk = make([]cipher.Block, len(r.Hops))
-
-		// We use the path metadata to get the IAs and interface ID sequence from it.
-		interfaces := p.Metadata().Interfaces
-		baseHops := InterfacesToBaseHops(interfaces)
-
-		// Set the destination IA from the path metadata:
-		r.DstIA = baseHops[len(baseHops)-1].IA
-
-		hfIndices := reservationHopFieldIndicesForFlyovers(r.Dec)
-		if len(hfIndices) != len(baseHops) {
-			return serrors.New("inconsistent path metadata to hop-field mapping",
-				"base_hops", len(baseHops), "hop_fields", len(hfIndices))
-		}
-		for i, baseHop := range baseHops {
-			err := r.SetHopAndFlyover(hfIndices[i], consumeFlyover(flyoverMap, baseHop))
-			if err != nil {
-				return serrors.Wrap("cannot set the flyover for hop", err,
-					"index", i, "base hop", baseHop)
-			}
-		}
-
-		return nil
 	}
 }
 
-func WithScionDataplane(p *scion.Raw, dstIA addr.IA, flyoverSeq FlyoverSequence) ReservationModFcn {
+// WithDataplanePath builds a Reservation from an snet DataplanePath.
+// It does not need to deserialize the path from bytes if the path passed is already of
+// type Reservation.
+func WithDataplanePath(p snet.DataplanePath, dstIA addr.IA, seq FlyoverSequence) ReservationModFcn {
 	return func(r *Reservation) error {
-		if p == nil {
-			return serrors.New("nil path")
+		switch p := p.(type) {
+		case SCION:
+			return r.setupReservationWithScion(p.Raw, dstIA, seq)
+		case *Reservation:
+			return r.setupReservationWithHummDecoded(p.Dec, dstIA, seq)
+		default:
+			return serrors.New("creating reservation: unsupported path type",
+				"type", fmt.Sprintf("%T", p),
+			)
 		}
-
-		scionDec, err := p.ToDecoded()
-		if err != nil {
-			return serrors.Wrap("cannot convert to scion decoded", err)
-		}
-		if err := r.setScionPath(scionDec); err != nil {
-			return err
-		}
-		r.DstIA = dstIA
-
-		// Extend the number of hops to that of the path.
-		r.Hops = make([]*Hop, len(r.Dec.HopFields))
-		r.blocksPerAk = make([]cipher.Block, len(r.Hops))
-
-		hfIndices := reservationHopFieldIndicesForFlyovers(r.Dec)
-		if len(hfIndices) != len(flyoverSeq) {
-			return serrors.New("inconsistent path metadata to hop-field mapping",
-				"base_hops", len(flyoverSeq), "hop_fields", len(hfIndices))
-		}
-		for i, baseHop := range flyoverSeq {
-			// err := r.SetHopAndFlyover(hfIndices[i], consumeFlyover(flyoverSeq, baseHop))
-			// Verify that the ingress and egress interfaces match:
-
-			// Assign.
-			err := r.SetHopAndFlyover(hfIndices[i], baseHop)
-			if err != nil {
-				return serrors.Wrap("cannot set the flyover for hop", err,
-					"index", i, "base hop", baseHop)
-			}
-		}
-
-		return nil
-	}
-}
-
-// WithHummDataplane allows building a Reservation directly from a decoded Hummingbird dataplane
-// path and a positional sequence of flyovers. The flyover sequence is aligned to the logical hop
-// sequence obtained from the dataplane hop fields after collapsing segment crossovers.
-func WithHummDataplane(dec *dphum.Decoded, seq FlyoverSequence) ReservationModFcn {
-	return func(r *Reservation) error {
-		if dec == nil {
-			return serrors.New("nil hummingbird dataplane path")
-		}
-		r.Dec = dec
-		r.Hops = make([]*Hop, len(r.Dec.HopFields))
-		r.blocksPerAk = make([]cipher.Block, len(r.Hops))
-		r.cloneScionMACsFromHummDecoded()
-
-		// hopsFromDP will skip crossovers.
-		hopsFromDP, err := hummDataplaneToBaseHops(r.Dec)
-		if err != nil {
-			return err
-		}
-		hfIndices := reservationHopFieldIndicesForFlyovers(r.Dec)
-		if len(hopsFromDP) != len(seq) || len(hopsFromDP) != len(hfIndices) {
-			return serrors.New("inconsistent hummingbird dataplane to flyover mapping",
-				"base_hops", len(hopsFromDP),
-				"flyover_sequence", len(seq),
-				"hop_fields", len(hfIndices))
-		}
-		for i, hopFromDP := range hopsFromDP {
-			hop := seq[i]
-			if hop == nil {
-				continue
-			}
-
-			if hop.BaseHop.Ingress != hopFromDP.Ingress ||
-				hop.BaseHop.Egress != hopFromDP.Egress {
-				return serrors.New("mismatch hop parameter and data-plane",
-					"index", i,
-					"hop", hop,
-					"dataplane_hop", hopFromDP)
-			}
-			if err := r.SetHopAndFlyover(hfIndices[i], hop); err != nil {
-				return serrors.Wrap("cannot set the flyover for dataplane hop", err,
-					"index", i,
-					"hop", hop,
-					"dataplane hop", hopFromDP)
-			}
-		}
-		return nil
 	}
 }
 
@@ -311,6 +214,89 @@ func (r *Reservation) cloneScionMACsFromHummDecoded() {
 	for i, hf := range r.Dec.HopFields {
 		r.scionMacs[i] = hf.HopField.Mac
 	}
+}
+
+func (r *Reservation) setupReservationWithScion(
+	serializedPath []byte,
+	dstIA addr.IA,
+	seq FlyoverSequence,
+) error {
+	var dec scion.Decoded
+	if err := dec.DecodeFromBytes(serializedPath); err != nil {
+		return err
+	}
+	if err := r.setScionPath(&dec); err != nil {
+		return err
+	}
+	// hopsFromDP will skip crossovers.
+	hopsFromDP, err := scionDataplaneToBaseHops(&dec)
+	if err != nil {
+		return err
+	}
+
+	r.DstIA = dstIA
+	// Extend the number of hops to that of the path.
+	r.Hops = make([]*Hop, len(r.Dec.HopFields))
+	r.blocksPerAk = make([]cipher.Block, len(r.Hops))
+
+	return r.assignFlyovers(seq, hopsFromDP)
+}
+
+func (r *Reservation) setupReservationWithHummDecoded(
+	hummDec *dphum.Decoded,
+	dstIA addr.IA,
+	seq FlyoverSequence,
+) error {
+	r.Dec = &dphum.Decoded{}
+	r.Dec = hummDec
+	r.cloneScionMACsFromHummDecoded()
+
+	// hopsFromDP will skip crossovers.
+	hopsFromDP, err := hummDataplaneToBaseHops(r.Dec)
+	if err != nil {
+		return err
+	}
+
+	r.DstIA = dstIA
+	// Extend the number of hops to that of the path.
+	r.Hops = make([]*Hop, len(r.Dec.HopFields))
+	r.blocksPerAk = make([]cipher.Block, len(r.Hops))
+
+	return r.assignFlyovers(seq, hopsFromDP)
+}
+
+func (r *Reservation) assignFlyovers(
+	seq FlyoverSequence,
+	hopsFromDP []BaseHop,
+) error {
+	hfIndices := reservationHopFieldIndicesForFlyovers(r.Dec)
+	if len(hopsFromDP) != len(seq) || len(hopsFromDP) != len(hfIndices) {
+		return serrors.New("inconsistent hummingbird dataplane to flyover mapping",
+			"base_hops", len(hopsFromDP),
+			"flyover_sequence", len(seq),
+			"hop_fields", len(hfIndices))
+	}
+	for i, hopFromDP := range hopsFromDP {
+		hop := seq[i]
+		if hop == nil {
+			continue
+		}
+
+		if hop.BaseHop.Ingress != hopFromDP.Ingress ||
+			hop.BaseHop.Egress != hopFromDP.Egress {
+			return serrors.New("mismatch hop parameter and data-plane",
+				"index", i,
+				"hop", hop,
+				"dataplane_hop", hopFromDP)
+		}
+		if err := r.SetHopAndFlyover(hfIndices[i], hop); err != nil {
+			return serrors.Wrap("cannot set the flyover for dataplane hop", err,
+				"index", i,
+				"hop", hop,
+				"dataplane hop", hopFromDP)
+		}
+	}
+	return nil
 }
 
 func (r *Reservation) SetHopAndFlyover(
@@ -375,17 +361,6 @@ func (r *Reservation) SetHopAndFlyover(
 	r.blocksPerAk[hfIdx] = block
 
 	return nil
-}
-
-func consumeFlyover(flyoverMap FlyoverMap, baseHop BaseHop) *Hop {
-	flyover, ok := flyoverMap[baseHop]
-	if ok {
-		delete(flyoverMap, baseHop)
-	}
-	return &Hop{
-		BaseHop: baseHop,
-		Flyover: flyover,
-	}
 }
 
 // reservationHopFieldIndicesForFlyovers returns the hop field indices in the Hummingbird path

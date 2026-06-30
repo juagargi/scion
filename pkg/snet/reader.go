@@ -86,6 +86,7 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 	if statefulRP, ok := c.replyPather.(StatefulReplyPather); ok {
 		hummReverse := ContainsReversePathState(pkt.E2eExtnContents)
 		statefulRP.SetState(hummReverse)
+		// pkt.Source
 	}
 
 	replyPath, err := c.replyPather.ReplyPath(rpath)

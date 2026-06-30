@@ -27,6 +27,7 @@ import (
 	"github.com/scionproto/scion/pkg/slayers"
 	"github.com/scionproto/scion/pkg/slayers/path/empty"
 	"github.com/scionproto/scion/pkg/slayers/path/epic"
+	"github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 	"github.com/scionproto/scion/pkg/slayers/path/onehop"
 	"github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/private/topology/underlay"
@@ -325,6 +326,27 @@ func (c *SCIONPacketConn) lastHop(p *Packet) (*net.UDPAddr, error) {
 		ifID := hf.ConsIngress
 		if !infoField.ConsDir {
 			ifID = hf.ConsEgress
+		}
+		return c.ifIDToAddr(ifID)
+	case hummingbird.PathType:
+		var path hummingbird.Raw
+		err := path.DecodeFromBytes(rpath.Raw)
+		if err != nil {
+			return nil, err
+		}
+		infoField, err := path.GetCurrentInfoField()
+		if err != nil {
+			return nil, err
+		}
+		hf, err := path.GetCurrentHopField()
+		if err != nil {
+			return nil, err
+		}
+		var ifID uint16
+		if infoField.ConsDir {
+			ifID = hf.HopField.ConsIngress
+		} else {
+			ifID = hf.HopField.ConsEgress
 		}
 		return c.ifIDToAddr(ifID)
 	case scion.PathType:

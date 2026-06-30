@@ -16,7 +16,8 @@ package path
 
 import (
 	"github.com/scionproto/scion/pkg/private/serrors"
-	"github.com/scionproto/scion/pkg/slayers/path/hummingbird"
+	"github.com/scionproto/scion/pkg/slayers"
+	dphumm "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 	"github.com/scionproto/scion/pkg/snet"
 )
 
@@ -29,11 +30,11 @@ func (p *HummReplyPather) SetState(state []byte) {
 }
 
 func (HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, error) {
-	if rpath.PathType != hummingbird.PathType {
+	if rpath.PathType != dphumm.PathType {
 		return nil, serrors.New("non hummingbird path type for a hummingbird reply pather",
 			"path_type", rpath.PathType)
 	}
-	var dec hummingbird.Decoded
+	var dec dphumm.Decoded
 	if err := dec.DecodeFromBytes(rpath.Raw); err != nil {
 		return nil, serrors.Wrap("cannot decode hummingbird raw path", err)
 	}
@@ -50,4 +51,13 @@ func (HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, error)
 	return snet.RawReplyPath{
 		Path: reversed,
 	}, nil
+}
+
+type HummReplyPath struct {
+	OriginalPath snet.RawPath
+	Reversed     *Reservation
+}
+
+func (p HummReplyPath) SetPath(s *slayers.SCION) error {
+	return p.Reversed.SetPath(s)
 }

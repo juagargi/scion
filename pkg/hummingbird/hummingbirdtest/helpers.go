@@ -301,17 +301,6 @@ func BuildHummingbirdRemoteWithParams(
 	return remote, nil
 }
 
-// NewHummingbirdReservation derives one flyover reservation per hop on the
-// selected base path and wraps them into a reservation dataplane path.
-func NewHummingbirdReservation(
-	basePath snet.Path,
-	keysRoot string,
-	now time.Time,
-	log Logger,
-) (snet.DataplanePath, error) {
-	return NewHummingbirdReservationWithParams(basePath, keysRoot, now, DefaultReservationParams(), log)
-}
-
 // NewHummingbirdReservationWithParams derives one flyover reservation per hop
 // using caller-provided reservation parameters and wraps them into a reservation
 // dataplane path.
@@ -375,9 +364,15 @@ func NewHummingbirdReservationWithParams(
 		})
 	}
 
+	// Convert the path to a scion raw path.
+	scionPath, ok := basePath.Dataplane().(snetpath.SCION)
+	if !ok {
+		return nil, serrors.New("provided path must be of type scion")
+	}
+
 	reservation, err := snetpath.NewReservation(
 		snetpath.WithNow(func() time.Time { return now }),
-		snetpath.WithScionPath(basePath, snetpath.FlyoversToMap(flyovers)),
+		snetpath.WithDataplanePath(scionPath, basePath.Destination(), flyovers),
 	)
 	if err != nil {
 		return nil, serrors.Wrap("building reservation path", err)
