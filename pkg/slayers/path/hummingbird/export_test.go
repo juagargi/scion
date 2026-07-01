@@ -14,4 +14,18 @@
 
 package hummingbird
 
+import "github.com/scionproto/scion/pkg/addr"
+
 var ExportedFlyoverLen = flyoverLen
+
+func FullFlyoverMacAsm(
+	ak []byte,
+	dstIA addr.IA,
+	pktlen uint16,
+	resStartTime uint16,
+	highResTime uint32,
+	buffer []byte,
+	xkbuffer []uint32,
+) []byte {
+	return fullFlyoverMacAsm(ak, dstIA, pktlen, resStartTime, highResTime, buffer, xkbuffer)
+}

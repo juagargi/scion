@@ -112,11 +112,11 @@ func FullFlyoverMac(
 	buffer []byte,
 	xkbuffer []uint32,
 ) []byte {
-	return FullFlyoverMacAsm(ak, dstIA, pktlen, resStartTime, highResTime, buffer, xkbuffer)
+	return fullFlyoverMacAsm(ak, dstIA, pktlen, resStartTime, highResTime, buffer, xkbuffer)
 }
 
 // FullFlyoverMacAsm uses the assembly-backed AES helpers.
-func FullFlyoverMacAsm(
+func fullFlyoverMacAsm(
 	ak []byte,
 	dstIA addr.IA,
 	pktlen uint16,

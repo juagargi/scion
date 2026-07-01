@@ -582,7 +582,6 @@ func RunPacketClientWithE2eRoundTrip(
 				ComputeChecksums: true,
 				FixLengths:       true,
 			},
-			// udp, gopacket.Payload(PacketTestMessageClient),
 			e2e, udp, gopacket.Payload(PacketTestMessageClient),
 		)
 		if err != nil {

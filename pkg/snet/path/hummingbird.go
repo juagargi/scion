@@ -208,11 +208,48 @@ func (r *Reservation) setScionPath(dec *scion.Decoded) error {
 	return nil
 }
 
-func (r *Reservation) cloneScionMACsFromHummDecoded() {
-	// deleteme: this function needs that the aggregated MACs are actually just the SCION MACs.
+// cloneAggregatedMACsFromHummDecoded clones the aggregated MAC fields into the independent storage,
+// so that they are used as SCION MACs.
+// Note that if the aggregated MAC fields contained already the flyover MACs in them, they will
+// be not be de-aggregated.
+func (r *Reservation) cloneAggregatedMACsFromHummDecoded() {
 	r.scionMacs = make([][dppath.MacLen]byte, len(r.Dec.HopFields))
 	for i, hf := range r.Dec.HopFields {
 		r.scionMacs[i] = hf.HopField.Mac
+	}
+}
+
+func (r *Reservation) DeAggregateMACs(
+	originalSrcIA addr.IA,
+	pktLen uint16,
+) {
+	// The MAC fields are aggregated from the SCION MACs and Hummingbird flyover MACs.
+	// Compute the Hummingbird flyover MACs for each hop, and XOR them to the MAC field to
+	// obtain the original SCION MAC. I.e., SCION_MAC = MAC_field ^ MAC_Flyover .
+	var byteBuffer [hummingbird.FlyoverMacBufferSize]byte
+	for i, h := range r.Hops {
+		// Check if hop is xover (no hop) or non flyover (just best effort)
+		if h == nil || h.Flyover == nil {
+			continue
+		}
+		hf := &r.Dec.HopFields[i]
+
+		flyoverMac := hummingbird.FlyoverMacWithAkAesBlock(
+			r.blocksPerAk[i],
+			byteBuffer[:],
+			originalSrcIA,
+			pktLen,
+			hf.ResStartTime,
+			r.Dec.Base.PathMeta.HighResTS,
+		)
+		// XOR the first 4 bytes with the MAC field.
+		binary.BigEndian.PutUint32(r.scionMacs[i][:4],
+			binary.BigEndian.Uint32(flyoverMac[:4])^binary.BigEndian.Uint32(hf.HopField.Mac[:4]),
+		)
+		// And the remaining 2 bytes.
+		binary.BigEndian.PutUint16(r.scionMacs[i][4:],
+			binary.BigEndian.Uint16(flyoverMac[4:])^binary.BigEndian.Uint16(hf.HopField.Mac[4:]),
+		)
 	}
 }
 
@@ -249,7 +286,7 @@ func (r *Reservation) setupReservationWithHummDecoded(
 ) error {
 	r.Dec = &dphum.Decoded{}
 	r.Dec = hummDec
-	r.cloneScionMACsFromHummDecoded()
+	r.cloneAggregatedMACsFromHummDecoded()
 
 	// hopsFromDP will skip crossovers.
 	hopsFromDP, err := hummDataplaneToBaseHops(r.Dec)

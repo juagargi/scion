@@ -22,7 +22,6 @@ import (
 
 	"github.com/scionproto/scion/pkg/private/common"
 	"github.com/scionproto/scion/pkg/private/serrors"
-	"github.com/scionproto/scion/pkg/slayers"
 )
 
 // ReplyPather creates reply paths based on the incoming RawPath.
@@ -78,27 +77,11 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 		return 0, nil, err
 	}
 
-	rpath, ok := pkt.Path.(RawPath)
-	if !ok {
-		return 0, nil, serrors.New("unexpected path", "type", common.TypeOf(pkt.Path))
-	}
-
-	if statefulRP, ok := c.replyPather.(StatefulReplyPather); ok {
-		hummReverse := ContainsReversePathState(pkt.E2eExtnContents)
-		statefulRP.SetState(hummReverse)
-		// pkt.Source
-	}
-
-	replyPath, err := c.replyPather.ReplyPath(rpath)
-	if err != nil {
-		return 0, nil, serrors.Wrap("creating reply path", err)
-	}
-
+	// Check that the packet is destined to us.
 	udp, ok := pkt.Payload.(UDPPayload)
 	if !ok {
 		return 0, nil, serrors.New("unexpected payload", "type", common.TypeOf(pkt.Payload))
 	}
-
 	pktAddrPort := netip.AddrPortFrom(pkt.Destination.Host.IP(), udp.DstPort)
 	if c.local.IA != pkt.Destination.IA {
 		return 0, nil, serrors.New("packet is destined to a different IA",
@@ -130,6 +113,24 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 		}
 	}
 
+	// Obtain the packet path.
+	rpath, ok := pkt.Path.(RawPath)
+	if !ok {
+		return 0, nil, serrors.New("unexpected path", "type", common.TypeOf(pkt.Path))
+	}
+
+	// Using the reply pather, build the reverse path.
+	var replyPath DataplanePath
+	if statefulRP, ok := c.replyPather.(StatefulReplyPather); ok {
+		if err := statefulRP.SetState(pkt); err != nil {
+			return 0, nil, serrors.Wrap("cannot set the state of the reply pather", err)
+		}
+	}
+	replyPath, err = c.replyPather.ReplyPath(rpath)
+	if err != nil {
+		return 0, nil, serrors.Wrap("creating reply path", err)
+	}
+
 	// Extract remote address.
 	// Copy the address data to prevent races. See
 	// https://github.com/scionproto/scion/issues/1659.
@@ -148,15 +149,4 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 
 func (c *scionConnReader) SetReadDeadline(t time.Time) error {
 	return c.conn.SetReadDeadline(t)
-}
-
-// ContainsReversePathState extracts the reverse path information reservation option from the
-// end to end extension and returns it, or nil if none is present.
-func ContainsReversePathState(opts []*slayers.EndToEndOption) []byte {
-	for _, opt := range opts {
-		if opt.OptType == slayers.OptTypeReversePath {
-			return opt.OptData
-		}
-	}
-	return nil
 }
