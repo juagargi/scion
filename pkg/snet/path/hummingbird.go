@@ -219,6 +219,63 @@ func (r *Reservation) cloneAggregatedMACsFromHummDecoded() {
 	}
 }
 
+func (r *Reservation) SerializedLen() int {
+	return lenOfSerializedHops(r.Hops) + dppath.MacLen*len(r.scionMacs)
+}
+
+func (r *Reservation) Serialize(buff []byte) error {
+	if len(r.scionMacs) != len(r.Hops) {
+		return serrors.New("logic error, inconsistent hop and scion mac count",
+			"hop count", len(r.Hops),
+			"mac count", len(r.scionMacs),
+		)
+	}
+	serializedLen := r.SerializedLen()
+	if len(buff) < serializedLen {
+		return serrors.New("buffer too small to serialize reservation",
+			"expected", serializedLen,
+			"actual", len(buff),
+		)
+	}
+	n, err := serializeHops(buff, r.Hops)
+	if err != nil {
+		return err
+	}
+	// Copy the original SCION MACs to the serialized buffer.
+	buff = buff[n:serializedLen]
+	for _, mac := range r.scionMacs {
+		copy(buff, mac[:])
+		buff = buff[dppath.MacLen:]
+	}
+	return nil
+}
+
+func (r *Reservation) Deserialize(buff []byte) error {
+	hops, err := deserializeHops(buff)
+	if err != nil {
+		return err
+	}
+	hopsLen := lenOfSerializedHops(hops)
+	expectedLen := hopsLen + dppath.MacLen*len(hops)
+	if len(buff) != expectedLen {
+		return serrors.New("invalid serialized reservation length",
+			"expected", expectedLen,
+			"actual", len(buff),
+		)
+	}
+	buff = buff[hopsLen:]
+
+	// Copy as many original SCION MACs as hops:
+	r.scionMacs = make([][dppath.MacLen]byte, len(hops))
+	for i := range len(hops) {
+		copy(r.scionMacs[i][:], buff)
+		buff = buff[dppath.MacLen:]
+	}
+	r.Hops = hops
+	return nil
+}
+
+// deleteme TODO remove this function.
 func (r *Reservation) DeAggregateMACs(
 	originalSrcIA addr.IA,
 	pktLen uint16,
@@ -592,26 +649,32 @@ func (h *Hop) Deserialize(buff []byte, hasFlyover bool) error {
 	return nil
 }
 
-func LenOfSerializedHops(hops []*Hop) int {
-	l := 1                                   // 1 byte for the hop count.
-	l += backingBytesForHopBitset(len(hops)) // bytes to hold the flyover flags.
+func lenOfSerializedHops(hops []*Hop) int {
+	l := 1
+	bitsetBytes := backingBytesForHopBitset(len(hops))
+	l += bitsetBytes // bytes to hold the hop existence flags.
+	l += bitsetBytes // bytes to hold the flyover flags.
 	for _, h := range hops {
-		l += h.Len() // For each hop
+		if h == nil {
+			continue
+		}
+		l += h.Len()
 	}
 	return l
 }
 
-// SerializeHops serializes up to 255 hops.
+// serializeHops serializes up to 255 hops.
 // The structure of the buffer ends up as:
 // - Hop count, 1 byte.
+// - Hop existence flag bitset, for all hops; (hop count+7) / 8
 // - Flyover flag bitset, for all hops; (hop count+7) / 8
-// - Sequence of Hops.
-func SerializeHops(buff []byte, hops []*Hop) (int, error) {
+// - Sequence of non-nil Hops.
+func serializeHops(buff []byte, hops []*Hop) (int, error) {
 	if len(hops) > 255 {
 		return 0, fmt.Errorf("cannot serialize more than 255 hops, requested %d", len(hops))
 	}
 	// Check size.
-	expectedSize := LenOfSerializedHops(hops)
+	expectedSize := lenOfSerializedHops(hops)
 	if len(buff) < expectedSize {
 		return 0, fmt.Errorf("buffer with length %d is too small; required %d bytes",
 			len(buff), expectedSize)
@@ -620,16 +683,25 @@ func SerializeHops(buff []byte, hops []*Hop) (int, error) {
 	// Serialize.
 	buff[0] = byte(len(hops))
 	buff = buff[1:]
-	// This holds the flyover bitset.
-	flags := newHopBitset(buff, len(hops))
-	flags.Clear()
-	n := backingBytesForHopBitset(len(hops))
-	buff = buff[n:]
+	bitsetBytes := backingBytesForHopBitset(len(hops))
+
+	existsFlags := newHopBitset(buff[:bitsetBytes], len(hops))
+	existsFlags.Clear()
+	buff = buff[bitsetBytes:]
+
+	flyoverFlags := newHopBitset(buff[:bitsetBytes], len(hops))
+	flyoverFlags.Clear()
+	buff = buff[bitsetBytes:]
 
 	var err error
+	var n int
 	for i, h := range hops {
+		if h == nil {
+			continue
+		}
+		existsFlags.Set(i, true)
 		if h.Flyover != nil {
-			flags.Set(i, true)
+			flyoverFlags.Set(i, true)
 		}
 		n, err = h.Serialize(buff)
 		if err != nil {
@@ -640,20 +712,41 @@ func SerializeHops(buff []byte, hops []*Hop) (int, error) {
 	return expectedSize, nil
 }
 
-func DeserializeHops(buff []byte) ([]*Hop, error) {
+func deserializeHops(buff []byte) ([]*Hop, error) {
 	if len(buff) == 0 {
 		return nil, nil
 	}
 	N := int(buff[0])
 
-	expectedLen := 1 + backingBytesForHopBitset(N)
-	if len(buff) < expectedLen {
+	bitsetBytes := backingBytesForHopBitset(N)
+	headerLen := 1 + 2*bitsetBytes
+	if len(buff) < headerLen {
 		return nil, fmt.Errorf("deserialize hops: buffer too small, expected >= %d, got %d bytes",
-			expectedLen, len(buff))
+			headerLen, len(buff))
 	}
-	flags := newHopBitset(buff[1:], N)
-	hopData := buff[expectedLen:] // Starts right after the bitset.
-	expectedLen += HopWithFlyoverLen*flags.CountOnes() + HopNoFlyoverLen*flags.CountZeroes()
+	existsFlags := newHopBitset(buff[1:1+bitsetBytes], N)
+	flyoverFlags := newHopBitset(buff[1+bitsetBytes:headerLen], N)
+	hopData := buff[headerLen:]
+	expectedPayloadLen := 0
+	for i := range N {
+		exists := existsFlags.Get(i)
+		hasFlyover := flyoverFlags.Get(i)
+		if !exists {
+			if hasFlyover {
+				return nil, fmt.Errorf(
+					"deserialize hops: invalid flags at index %d: non-existent hop has flyover",
+					i,
+				)
+			}
+			continue
+		}
+		if hasFlyover {
+			expectedPayloadLen += HopWithFlyoverLen
+		} else {
+			expectedPayloadLen += HopNoFlyoverLen
+		}
+	}
+	expectedLen := headerLen + expectedPayloadLen
 
 	if len(buff) < expectedLen {
 		return nil, fmt.Errorf("deserialize hops: buffer too small, expected >= %d, got %d bytes",
@@ -662,8 +755,11 @@ func DeserializeHops(buff []byte) ([]*Hop, error) {
 
 	hops := make([]*Hop, N)
 	for i := range N {
+		if !existsFlags.Get(i) {
+			continue
+		}
 		hops[i] = &Hop{}
-		hasFlyover := flags.Get(i)
+		hasFlyover := flyoverFlags.Get(i)
 		err := hops[i].Deserialize(hopData, hasFlyover)
 		if err != nil {
 			return nil, serrors.Wrap("deserialize hops", err)

@@ -386,6 +386,27 @@ func TestSerializeDeserializeMultipleHops(t *testing.T) {
 	gotHops, err = path.DeserializeHops(buff)
 	require.NoError(t, err)
 	require.Equal(t, hops, gotHops)
+
+	// Create some hops, including nil entries. With flyover denoted by F, without by -, and
+	// nil entries by x.
+	// xF-x-Fx
+	hops = make([]*path.Hop, 7)
+	for _, i := range []int{1, 2, 4, 5} {
+		hops[i] = createHopWithFlyover(t)
+		hops[i].Ingress = uint16(i + 52)
+	}
+	hops[2].Flyover = nil
+	hops[5].Flyover = nil
+	// Serialize / deserialize.
+	buff = make([]byte, path.LenOfSerializedHops(hops))
+	n, err = path.SerializeHops(buff, hops)
+	require.NoError(t, err)
+	require.Equal(t, len(buff), n)
+	t.Logf("serialize 7 hops with nil entries: %s", hex.EncodeToString(buff))
+	// Deserialize the 7 hops with nil entries.
+	gotHops, err = path.DeserializeHops(buff)
+	require.NoError(t, err)
+	require.Equal(t, hops, gotHops)
 }
 
 // createHummingbirdPath creates a valid Hummingbird path between 111 and 112 from the tiny topo.

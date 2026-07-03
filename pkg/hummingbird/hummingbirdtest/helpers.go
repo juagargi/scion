@@ -44,6 +44,7 @@ import (
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
 	hummlib "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
+	dpscion "github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/pkg/snet"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
 	"github.com/scionproto/scion/private/keyconf"
@@ -279,7 +280,20 @@ func BuildHummingbirdRemoteWithParams(
 	if err != nil {
 		return nil, err
 	}
-	reservation, err := NewHummingbirdReservationWithParams(basePath, keysRoot, time.Now(), params, log)
+	return BuildHummingbirdRemoteWithPath(basePath, serverRemote, keysRoot, params, log)
+}
+
+// BuildHummingbirdRemoteWithPath turns a plain remote address into one that
+// carries a Hummingbird reservation over the provided base path.
+func BuildHummingbirdRemoteWithPath(
+	basePath snet.Path,
+	serverRemote *snet.UDPAddr,
+	keysRoot string,
+	params ReservationParams,
+	log Logger,
+) (*snet.UDPAddr, error) {
+	now := time.Now()
+	reservation, err := NewHummingbirdReservationWithParams(basePath, keysRoot, now, params, log)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +301,7 @@ func BuildHummingbirdRemoteWithParams(
 	if !ok {
 		return nil, serrors.New("unexpected reservation path type", "type", reflect.TypeOf(reservation))
 	}
-	if err := ValidateReservationWindow(res, time.Now()); err != nil {
+	if err := ValidateReservationWindow(res, now); err != nil {
 		return nil, err
 	}
 
@@ -312,6 +326,36 @@ func NewHummingbirdReservationWithParams(
 	log Logger,
 ) (snet.DataplanePath, error) {
 	baseHops := snetpath.InterfacesToBaseHops(basePath.Metadata().Interfaces)
+	if len(baseHops) == 0 {
+		return nil, serrors.New("base path does not contain any hops")
+	}
+
+	// Convert the path to a scion raw path.
+	scionPath, ok := basePath.Dataplane().(snetpath.SCION)
+	if !ok {
+		return nil, serrors.New("provided path must be of type scion")
+	}
+
+	return newHummingbirdReservationFromBaseHops(
+		scionPath,
+		basePath.Destination(),
+		baseHops,
+		keysRoot,
+		now,
+		params,
+		log,
+	)
+}
+
+func newHummingbirdReservationFromBaseHops(
+	scionPath snetpath.SCION,
+	dstIA addr.IA,
+	baseHops []snetpath.BaseHop,
+	keysRoot string,
+	now time.Time,
+	params ReservationParams,
+	log Logger,
+) (*snetpath.Reservation, error) {
 	if len(baseHops) == 0 {
 		return nil, serrors.New("base path does not contain any hops")
 	}
@@ -364,20 +408,78 @@ func NewHummingbirdReservationWithParams(
 		})
 	}
 
-	// Convert the path to a scion raw path.
-	scionPath, ok := basePath.Dataplane().(snetpath.SCION)
-	if !ok {
-		return nil, serrors.New("provided path must be of type scion")
-	}
-
 	reservation, err := snetpath.NewReservation(
 		snetpath.WithNow(func() time.Time { return now }),
-		snetpath.WithDataplanePath(scionPath, basePath.Destination(), flyovers),
+		snetpath.WithDataplanePath(scionPath, dstIA, flyovers),
 	)
 	if err != nil {
 		return nil, serrors.Wrap("building reservation path", err)
 	}
 	return reservation, nil
+}
+
+func serializedReverseReservationState(
+	basePath snet.Path,
+	keysRoot string,
+	now time.Time,
+	params ReservationParams,
+	log Logger,
+) ([]byte, error) {
+	scionPath, ok := basePath.Dataplane().(snetpath.SCION)
+	if !ok {
+		return nil, serrors.New("provided path must be of type scion")
+	}
+	reverseScionPath, err := reverseSCIONPath(scionPath)
+	if err != nil {
+		return nil, err
+	}
+	reverseHops := reverseBaseHops(snetpath.InterfacesToBaseHops(basePath.Metadata().Interfaces))
+	reservation, err := newHummingbirdReservationFromBaseHops(
+		reverseScionPath,
+		basePath.Source(),
+		reverseHops,
+		keysRoot,
+		now,
+		params,
+		log,
+	)
+	if err != nil {
+		return nil, err
+	}
+	state := make([]byte, reservation.SerializedLen())
+	if err := reservation.Serialize(state); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func reverseSCIONPath(scionPath snetpath.SCION) (snetpath.SCION, error) {
+	var dec dpscion.Decoded
+	raw := append([]byte(nil), scionPath.Raw...)
+	if err := dec.DecodeFromBytes(raw); err != nil {
+		return snetpath.SCION{}, serrors.Wrap("decoding scion path", err)
+	}
+	reversed, err := dec.Reverse()
+	if err != nil {
+		return snetpath.SCION{}, serrors.Wrap("reversing scion path", err)
+	}
+	reversedDecoded, ok := reversed.(*dpscion.Decoded)
+	if !ok {
+		return snetpath.SCION{}, serrors.New("unexpected reversed path type", "type", reflect.TypeOf(reversed))
+	}
+	return snetpath.NewSCIONFromDecoded(*reversedDecoded)
+}
+
+func reverseBaseHops(hops []snetpath.BaseHop) []snetpath.BaseHop {
+	reversed := make([]snetpath.BaseHop, len(hops))
+	for i, hop := range hops {
+		reversed[len(hops)-1-i] = snetpath.BaseHop{
+			IA:      hop.IA,
+			Ingress: hop.Egress,
+			Egress:  hop.Ingress,
+		}
+	}
+	return reversed
 }
 
 // SecretValue loads the AS master key from keysRoot and derives the
@@ -493,16 +595,32 @@ func RunQUICClientRoundTrip(
 
 // RunPacketServerOnce reads one datagram, validates the fixed client payload,
 // replies once, and then returns.
-func RunPacketServerOnce(serverConn *snet.Conn) error {
+func RunPacketServerOnce(ctx context.Context, serverConn *snet.Conn) error {
+	if err := ctx.Err(); err != nil {
+		return serrors.Wrap("packet server context expired", err)
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := serverConn.SetDeadline(deadline); err != nil {
+			return serrors.Wrap("setting packet server deadline", err)
+		}
+		defer serverConn.SetDeadline(time.Time{})
+	}
+
 	buf := make([]byte, len(PacketTestMessageClient))
 	n, remote, err := serverConn.ReadFrom(buf)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return serrors.Wrap("packet server context expired", ctxErr)
+		}
 		return serrors.Wrap("reading client datagram", err)
 	}
 	if !bytes.Equal(buf[:n], PacketTestMessageClient) {
 		return serrors.New("unexpected client datagram payload")
 	}
 	if _, err := serverConn.WriteTo([]byte(PacketTestMessageReply), remote); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return serrors.Wrap("packet server context expired", ctxErr)
+		}
 		return serrors.Wrap("writing server datagram reply", err)
 	}
 	return nil
@@ -510,14 +628,34 @@ func RunPacketServerOnce(serverConn *snet.Conn) error {
 
 // RunPacketClientRoundTrip sends one datagram to remote and verifies the fixed
 // server reply.
-func RunPacketClientRoundTrip(clientConn *snet.Conn, remote *snet.UDPAddr) error {
+func RunPacketClientRoundTrip(
+	ctx context.Context,
+	clientConn *snet.Conn,
+	remote *snet.UDPAddr,
+) error {
+	if err := ctx.Err(); err != nil {
+		return serrors.Wrap("packet client context expired", err)
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := clientConn.SetDeadline(deadline); err != nil {
+			return serrors.Wrap("setting packet client deadline", err)
+		}
+		defer clientConn.SetDeadline(time.Time{})
+	}
+
 	if _, err := clientConn.WriteTo(PacketTestMessageClient, remote); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return serrors.Wrap("packet client context expired", ctxErr)
+		}
 		return serrors.Wrap("writing client datagram", err)
 	}
 
 	reply := make([]byte, len(PacketTestMessageReply))
 	n, _, err := clientConn.ReadFrom(reply)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return serrors.Wrap("packet client context expired", ctxErr)
+		}
 		return serrors.Wrap("reading server datagram reply", err)
 	}
 	if string(reply[:n]) != PacketTestMessageReply {
@@ -527,11 +665,22 @@ func RunPacketClientRoundTrip(clientConn *snet.Conn, remote *snet.UDPAddr) error
 }
 
 func RunPacketClientWithE2eRoundTrip(
+	ctx context.Context,
 	srcAddr snet.UDPAddr,
 	dstAddr snet.UDPAddr,
 	clientConn *snet.Conn,
 	remote *snet.UDPAddr,
+	reversePathState []byte,
 ) error {
+	if err := ctx.Err(); err != nil {
+		return serrors.Wrap("packet client context expired", err)
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := clientConn.SetDeadline(deadline); err != nil {
+			return serrors.Wrap("setting packet client deadline", err)
+		}
+		defer clientConn.SetDeadline(time.Time{})
+	}
 
 	useRawPacket := true
 	if useRawPacket {
@@ -557,7 +706,7 @@ func RunPacketClientWithE2eRoundTrip(
 			Options: []*slayers.EndToEndOption{
 				{
 					OptType: slayers.OptTypeReversePath,
-					OptData: []byte("end2end data"),
+					OptData: reversePathState,
 				},
 			},
 		}
@@ -566,9 +715,6 @@ func RunPacketClientWithE2eRoundTrip(
 		// We don't set the payload, as we are using gopacket directly.
 		// But we need the payload length.
 		udp := &slayers.UDP{
-			// SrcPort: 32767,
-			// SrcPort: uint16(srcAddr.Host.Port),
-
 			// Use the same port where the clientConn is listening:
 			SrcPort: uint16(clientConn.LocalAddr().(*snet.UDPAddr).Host.Port),
 			DstPort: uint16(dstAddr.Host.Port),
@@ -624,12 +770,18 @@ func RunPacketClientWithE2eRoundTrip(
 		n, err := udpSock.WriteToUDP(rawBuf, remote.NextHop)
 		fmt.Printf("deleteme written %d bytes to UDP socket\n", n)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return serrors.Wrap("packet client context expired", ctxErr)
+			}
 			return err
 		}
 	} else {
 		// With regular snet:
 		fmt.Printf("deleteme local socket address is: %s\n", clientConn.LocalAddr().String())
 		if _, err := clientConn.WriteTo(PacketTestMessageClient, remote); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return serrors.Wrap("packet client context expired", ctxErr)
+			}
 			return serrors.Wrap("writing client datagram", err)
 		}
 	}
@@ -637,6 +789,9 @@ func RunPacketClientWithE2eRoundTrip(
 	reply := make([]byte, len(PacketTestMessageReply))
 	n, _, err := clientConn.ReadFrom(reply)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return serrors.Wrap("packet client context expired", ctxErr)
+		}
 		return serrors.Wrap("reading server datagram reply", err)
 	}
 	if string(reply[:n]) != PacketTestMessageReply {
@@ -645,7 +800,7 @@ func RunPacketClientWithE2eRoundTrip(
 	return nil
 }
 
-func RunPacketServer(
+func CreatePacketServerConn(
 	ctx context.Context,
 	daemonAddr string,
 	localAddr *snet.UDPAddr,
@@ -662,11 +817,8 @@ func RunPacketServer(
 	if err != nil {
 		return nil, serrors.Wrap("loading server topology", err)
 	}
-	serverBasePath, err := BasePath(ctx, serverDaemon, localAddr.IA, peerIA, log)
-	if err != nil {
-		return nil, err
-	}
-	replyPather := FixedReplyPather{Path: serverBasePath.Dataplane()}
+	replyPather := &snetpath.HummReplyPather{}
+
 	return NewSCIONConn(ctx, serverTopo, localAddr.Host, replyPather, true)
 }
 
@@ -679,7 +831,7 @@ func RunQuicServer(
 	peerIA addr.IA,
 	log Logger,
 ) error {
-	serverConn, err := RunPacketServer(ctx, daemonAddr, localAddr, peerIA, log)
+	serverConn, err := CreatePacketServerConn(ctx, daemonAddr, localAddr, peerIA, log)
 	if err != nil {
 		return err
 	}
@@ -819,7 +971,7 @@ func RunPacketClientWithParams(
 		return serrors.New("expected hummingbird reservation path", "type", reflect.TypeOf(remote.Path))
 	}
 
-	return RunPacketClientRoundTrip(clientConn, remote)
+	return RunPacketClientRoundTrip(ctx, clientConn, remote)
 }
 
 func RunPacketClientWithParamsAndE2E(
@@ -848,8 +1000,11 @@ func RunPacketClientWithParamsAndE2E(
 	defer clientConn.Close()
 	fmt.Printf("deleteme clientConn created as: %s\n", clientConn.LocalAddr().String())
 
-	remote, err := BuildHummingbirdRemoteWithParams(
-		ctx, clientDaemon, localAddr, remoteAddr, keysRoot, params, log)
+	basePath, err := BasePath(ctx, clientDaemon, localAddr.IA, remoteAddr.IA, log)
+	if err != nil {
+		return err
+	}
+	remote, err := BuildHummingbirdRemoteWithPath(basePath, remoteAddr, keysRoot, params, log)
 	if err != nil {
 		return err
 	}
@@ -857,10 +1012,24 @@ func RunPacketClientWithParamsAndE2E(
 		return serrors.New("expected hummingbird reservation path", "type", reflect.TypeOf(remote.Path))
 	}
 
+	reversePathState, err := serializedReverseReservationState(
+		basePath,
+		keysRoot,
+		time.Now(),
+		params,
+		log,
+	)
+	if err != nil {
+		return err
+	}
+
 	return RunPacketClientWithE2eRoundTrip(
+		ctx,
 		*localAddr,
 		*remoteAddr,
-		clientConn, remote)
+		clientConn,
+		remote,
+		reversePathState)
 }
 
 // MustParseUDPAddr parses a SCION UDP address string and returns a wrapped

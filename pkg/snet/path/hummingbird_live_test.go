@@ -52,12 +52,12 @@ func TestPacketOverHummingbirdTinyTopology(t *testing.T) {
 	serverRemote, err := hummingbirdtest.MustParseUDPAddr(tinyServerRemoteAddr)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverConn, err := hummingbirdtest.RunPacketServer(
+		serverConn, err := hummingbirdtest.CreatePacketServerConn(
 			ctx,
 			tinyServerDaemonAddr,
 			serverLocal,
@@ -69,8 +69,9 @@ func TestPacketOverHummingbirdTinyTopology(t *testing.T) {
 			return
 		}
 		defer serverConn.Close()
-
-		serverErr <- hummingbirdtest.RunPacketServerOnce(serverConn)
+		err = hummingbirdtest.RunPacketServerOnce(ctx, serverConn)
+		t.Logf("Server got error?: %v", err)
+		serverErr <- err
 	}()
 
 	params := hummingbirdtest.ReservationParams{

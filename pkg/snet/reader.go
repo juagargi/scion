@@ -15,6 +15,7 @@
 package snet
 
 import (
+	"fmt"
 	"net"
 	"net/netip"
 	"sync"
@@ -120,11 +121,15 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 	}
 
 	// Using the reply pather, build the reverse path.
+	fmt.Printf("checking if reply pather is stateful... ")
 	var replyPath DataplanePath
 	if statefulRP, ok := c.replyPather.(StatefulReplyPather); ok {
+		fmt.Print("yes\n")
 		if err := statefulRP.SetState(pkt); err != nil {
 			return 0, nil, serrors.Wrap("cannot set the state of the reply pather", err)
 		}
+	} else {
+		fmt.Print("no\n")
 	}
 	replyPath, err = c.replyPather.ReplyPath(rpath)
 	if err != nil {

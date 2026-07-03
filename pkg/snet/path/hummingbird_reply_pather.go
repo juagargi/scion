@@ -15,6 +15,9 @@
 package path
 
 import (
+	"crypto/cipher"
+	"time"
+
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
@@ -30,28 +33,27 @@ type HummReplyPather struct {
 	reservation *Reservation
 }
 
+var _ snet.StatefulReplyPather = (*HummReplyPather)(nil)
+
 // SetState stores the necessary information for the Hummingbird reply pather to create a
 // reservation. Being this reply pather run at AS A, the state is set when a packet is received
 // by A from B, i.e. B->A. This packet contains some end2end extension options with the necessary
-// hops to reconstruct a valid Reservation.
-//
-// The MAC de-aggregation is done by recomputing the Hummingbird validation keys and XORing them
-// to the current MAC fields.
+// serialized reservation state to reconstruct a valid reverse Reservation.
 func (p *HummReplyPather) SetState(pkt snet.Packet) error {
 	// Record the sender.
 	p.origSrcIA = pkt.Source.IA
 
 	// Check if there is any bidirectional reservation information in this packet.
-	serializedHops := containedReversePathState(pkt.E2eExtnContents)
-	if serializedHops == nil {
+	serializedReservation := containedReversePathState(pkt.E2eExtnContents)
+	if serializedReservation == nil {
 		// No bidirectional reservation information. Bail.
 		return nil
 	}
 
-	// 1. Deserialize the state into []Hop.
-	hopSeq, err := DeserializeHops(serializedHops)
-	if err != nil {
-		return err
+	// 1. Deserialize the serialized reverse reservation state.
+	reverseReservation := &Reservation{}
+	if err := reverseReservation.Deserialize(serializedReservation); err != nil {
+		return serrors.Wrap("cannot deserialize reverse reservation state", err)
 	}
 
 	// 2. Deserialize the return path
@@ -65,29 +67,36 @@ func (p *HummReplyPather) SetState(pkt snet.Packet) error {
 		return serrors.Wrap("bidirectional reservation, decoding humm. path", err)
 	}
 	// Reverse in place.
-	if _, err = dec.Reverse(); err != nil {
+	if _, err := dec.Reverse(); err != nil {
 		return serrors.Wrap("cannot reverse hummingbird path", err)
 	}
-	snetHumm := &Reservation{
-		Dec: &dec,
+	if len(reverseReservation.Hops) != len(dec.HopFields) {
+		return serrors.New("reverse reservation state does not match reversed dataplane path",
+			"reservation_hops", len(reverseReservation.Hops),
+			"hop_fields", len(dec.HopFields),
+		)
 	}
 
-	// 3. Build the reservation (with wrong, aggregated MACs)
-	r, err := NewReservation(
-		WithDataplanePath(snetHumm, pkt.Source.IA, hopSeq),
-	)
-	if err != nil {
-		return serrors.Wrap("cannot build reservation", err)
+	// 3. Rebind the reversed dataplane path onto the serialized reverse reservation state.
+	reverseReservation.Dec = &dec
+	reverseReservation.DstIA = pkt.Source.IA
+	reverseReservation.Now = time.Now
+	reverseReservation.blocksPerAk = make([]cipher.Block, len(reverseReservation.Hops))
+	for i, hop := range reverseReservation.Hops {
+		if hop == nil {
+			continue
+		}
+		if err := reverseReservation.SetHopAndFlyover(uint8(i), hop); err != nil {
+			return serrors.Wrap("cannot bind reverse reservation hop to dataplane path", err,
+				"index", i)
+		}
 	}
 
-	// 4. De-aggregate MACs
-	r.DeAggregateMACs(pkt.Destination.IA, uint16(len(pkt.Bytes)))
-
-	p.reservation = r
+	p.reservation = reverseReservation
 	return nil
 }
 
-func (r HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, error) {
+func (r *HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, error) {
 	// If we have a valid reversed reservation, return it already without reversing the current
 	// passed path. This reversed reservation might have been constructed many packets ago.
 	if r.reservation != nil {
@@ -117,15 +126,6 @@ func (r HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, erro
 	return NewReservation(
 		WithDataplanePath(snetHumm, r.origSrcIA, nil),
 	)
-}
-
-type HummReplyPath struct {
-	OriginalPath snet.RawPath
-	Reversed     *Reservation
-}
-
-func (p HummReplyPath) SetPath(s *slayers.SCION) error {
-	return p.Reversed.SetPath(s)
 }
 
 // containedReversePathState extracts the reverse path information reservation option from the

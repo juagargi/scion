@@ -36,3 +36,15 @@ func (r *Reservation) AesBlocks() *[]cipher.Block {
 func NewHopBitSet(buff []byte, nBits int) hopBitset {
 	return newHopBitset(buff, nBits)
 }
+
+func LenOfSerializedHops(hops []*Hop) int {
+	return lenOfSerializedHops(hops)
+}
+
+func SerializeHops(buff []byte, hops []*Hop) (int, error) {
+	return serializeHops(buff, hops)
+}
+
+func DeserializeHops(buff []byte) ([]*Hop, error) {
+	return deserializeHops(buff)
+}
