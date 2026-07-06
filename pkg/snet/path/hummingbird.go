@@ -27,6 +27,7 @@ import (
 	dppath "github.com/scionproto/scion/pkg/slayers/path"
 	"github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 	dphum "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
+	dphumm "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 	"github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/pkg/snet"
 )
@@ -192,6 +193,57 @@ func WithDataplanePath(p snet.DataplanePath, dstIA addr.IA, seq FlyoverSequence)
 				"type", fmt.Sprintf("%T", p),
 			)
 		}
+	}
+}
+
+func WithReverseFromBidirectional(
+	serializedReservation []byte,
+	carrierPath snet.RawPath,
+	otherIA addr.IA,
+) ReservationModFcn {
+	return func(r *Reservation) error {
+		// 1. Deserialize the return path
+		originalPath := carrierPath
+		if originalPath.PathType != dphumm.PathType {
+			return serrors.New("bidirectional reservations supported only on hummingbird paths",
+				"type", originalPath.PathType.String())
+		}
+		var dec dphumm.Decoded
+		if err := dec.DecodeFromBytes(originalPath.Raw); err != nil {
+			return serrors.Wrap("bidirectional reservation, decoding humm. path", err)
+		}
+		// Reverse in place.
+		if _, err := dec.Reverse(); err != nil {
+			return serrors.Wrap("cannot reverse hummingbird path", err)
+		}
+
+		// 2. Deserialize the reservation.
+		if err := r.Deserialize(serializedReservation); err != nil {
+			return serrors.Wrap("cannot deserialize reverse reservation state", err)
+		}
+		if len(r.Hops) != len(dec.HopFields) {
+			return serrors.New("reverse reservation state does not match reversed dataplane path",
+				"reservation_hops", len(r.Hops),
+				"hop_fields", len(dec.HopFields),
+			)
+		}
+
+		// 3. Rebind the reversed dataplane path onto the serialized reverse reservation state.
+		r.Dec = &dec
+		r.DstIA = otherIA
+		r.Now = time.Now
+		r.blocksPerAk = make([]cipher.Block, len(r.Hops))
+		for i, hop := range r.Hops {
+			if hop == nil {
+				continue
+			}
+			if err := r.SetHopAndFlyover(uint8(i), hop); err != nil {
+				return serrors.Wrap("cannot bind reverse reservation hop to dataplane path", err,
+					"index", i)
+			}
+		}
+
+		return nil
 	}
 }
 
@@ -775,18 +827,6 @@ func deserializeHops(buff []byte) ([]*Hop, error) {
 
 // FlyoverSequence represents a sequence of hops. These hops may contain flyovers.
 type FlyoverSequence []*Hop
-
-// FlyoverMap is a map between a flyover <IA,ingress,egress> and its corresponding data.
-type FlyoverMap map[BaseHop]*FlyoverData
-
-func FlyoversToMap(hops []*Hop) FlyoverMap {
-	ret := make(FlyoverMap)
-	for _, hop := range hops {
-		k := hop.BaseHop
-		ret[k] = hop.Flyover
-	}
-	return ret
-}
 
 // InterfacesToBaseHops maps path metadata interfaces to per-AS ingress/egress hop tuples.
 func InterfacesToBaseHops(ifaces []snet.PathInterface) []BaseHop {

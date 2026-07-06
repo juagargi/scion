@@ -289,7 +289,7 @@ func buildReservationWithSecretValues(
 	}
 	return snetpath.NewReservation(
 		snetpath.WithNow(returnNow),
-		snetpath.WithScionPath(path, snetpath.FlyoversToMap(flyovers)),
+		snetpath.WithDataplanePath(path.Dataplane(), path.Destination(), flyovers),
 	)
 }
 

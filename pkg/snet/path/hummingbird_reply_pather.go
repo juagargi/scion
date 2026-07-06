@@ -15,8 +15,7 @@
 package path
 
 import (
-	"crypto/cipher"
-	"time"
+	"fmt"
 
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/private/serrors"
@@ -40,78 +39,56 @@ var _ snet.StatefulReplyPather = (*HummReplyPather)(nil)
 // by A from B, i.e. B->A. This packet contains some end2end extension options with the necessary
 // serialized reservation state to reconstruct a valid reverse Reservation.
 func (p *HummReplyPather) SetState(pkt snet.Packet) error {
+	fmt.Println("deleteme humm reply pather SetState")
 	// Record the sender.
 	p.origSrcIA = pkt.Source.IA
+	fmt.Printf("deleteme humm reply pather SetState orig src IA = %s\n", p.origSrcIA)
 
 	// Check if there is any bidirectional reservation information in this packet.
 	serializedReservation := containedReversePathState(pkt.E2eExtnContents)
 	if serializedReservation == nil {
+		fmt.Println("deleteme humm reply pather SetState no bidirectional reservation")
 		// No bidirectional reservation information. Bail.
 		return nil
 	}
+	fmt.Println("deleteme humm reply pather SetState we have a bidirectional reservation")
 
-	// 1. Deserialize the serialized reverse reservation state.
-	reverseReservation := &Reservation{}
-	if err := reverseReservation.Deserialize(serializedReservation); err != nil {
-		return serrors.Wrap("cannot deserialize reverse reservation state", err)
-	}
-
-	// 2. Deserialize the return path
+	// Build the reverse reservation.
 	originalPath := pkt.Path.(snet.RawPath) // Can't fail, it was checked by the caller.
-	if originalPath.PathType != dphumm.PathType {
-		return serrors.New("bidirectional reservations supported only on hummingbird paths",
-			"type", originalPath.PathType.String())
+	var err error
+	p.reservation, err = NewReservation(
+		WithReverseFromBidirectional(serializedReservation, originalPath, p.origSrcIA))
+	if err != nil {
+		return err
 	}
-	var dec dphumm.Decoded
-	if err := dec.DecodeFromBytes(originalPath.Raw); err != nil {
-		return serrors.Wrap("bidirectional reservation, decoding humm. path", err)
-	}
-	// Reverse in place.
-	if _, err := dec.Reverse(); err != nil {
-		return serrors.Wrap("cannot reverse hummingbird path", err)
-	}
-	if len(reverseReservation.Hops) != len(dec.HopFields) {
-		return serrors.New("reverse reservation state does not match reversed dataplane path",
-			"reservation_hops", len(reverseReservation.Hops),
-			"hop_fields", len(dec.HopFields),
-		)
-	}
-
-	// 3. Rebind the reversed dataplane path onto the serialized reverse reservation state.
-	reverseReservation.Dec = &dec
-	reverseReservation.DstIA = pkt.Source.IA
-	reverseReservation.Now = time.Now
-	reverseReservation.blocksPerAk = make([]cipher.Block, len(reverseReservation.Hops))
-	for i, hop := range reverseReservation.Hops {
-		if hop == nil {
-			continue
-		}
-		if err := reverseReservation.SetHopAndFlyover(uint8(i), hop); err != nil {
-			return serrors.Wrap("cannot bind reverse reservation hop to dataplane path", err,
-				"index", i)
-		}
-	}
-
-	p.reservation = reverseReservation
 	return nil
 }
 
 func (r *HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, error) {
+	fmt.Println("deleteme humm reply pather ReplyPath 1")
 	// If we have a valid reversed reservation, return it already without reversing the current
 	// passed path. This reversed reservation might have been constructed many packets ago.
 	if r.reservation != nil {
+		fmt.Println("deleteme humm reply pather ReplyPath using existing reservation")
 		return r.reservation, nil
 	}
+
+	fmt.Println("deleteme humm reply pather ReplyPath 2")
 
 	// Otherwise, reverse the hummingbird path.
 	if rpath.PathType != dphumm.PathType {
 		return nil, serrors.New("non hummingbird path type for a hummingbird reply pather",
 			"path_type", rpath.PathType)
 	}
+
+	fmt.Println("deleteme humm reply pather ReplyPath 3")
+
 	var dec dphumm.Decoded
 	if err := dec.DecodeFromBytes(rpath.Raw); err != nil {
 		return nil, serrors.Wrap("cannot decode hummingbird raw path", err)
 	}
+
+	fmt.Println("deleteme humm reply pather ReplyPath 4")
 
 	// Reverse in place.
 	_, err := dec.Reverse()
@@ -121,6 +98,8 @@ func (r *HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, err
 	snetHumm := &Reservation{
 		Dec: &dec,
 	}
+
+	fmt.Println("deleteme humm reply pather ReplyPath 5")
 
 	// Construct a Reservation, with no flyovers.
 	return NewReservation(
