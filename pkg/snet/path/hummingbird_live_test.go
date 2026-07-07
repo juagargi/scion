@@ -63,6 +63,7 @@ func TestPacketOverHummingbirdTinyTopology(t *testing.T) {
 			serverLocal,
 			clientLocal.IA,
 			t.Logf,
+			true, // With a Bidirectional reply pather.
 		)
 		if err != nil {
 			serverErr <- err

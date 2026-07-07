@@ -18,9 +18,7 @@ import (
 	"fmt"
 
 	"github.com/scionproto/scion/pkg/addr"
-	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
-	dphumm "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 	"github.com/scionproto/scion/pkg/snet"
 )
 
@@ -29,10 +27,19 @@ type HummReplyPather struct {
 	// state of the reply pather via a packet).
 	origSrcIA addr.IA
 	// reservation is the Hummingbird path in the already reversed direction, src IA is this IA.
-	reservation *Reservation
+	reservation      *Reservation
+	BackupRepyPather snet.ReplyPather // Used if no bidirectional reservation is available.
 }
 
 var _ snet.StatefulReplyPather = (*HummReplyPather)(nil)
+
+// NewHummReplyPather returns a HummReplyPather with its backup reply pather set to a regular
+// DefaultReplyPather.
+func NewHummReplyPather() *HummReplyPather {
+	return &HummReplyPather{
+		BackupRepyPather: snet.DefaultReplyPather{},
+	}
+}
 
 // SetState stores the necessary information for the Hummingbird reply pather to create a
 // reservation. Being this reply pather run at AS A, the state is set when a packet is received
@@ -73,38 +80,9 @@ func (r *HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, err
 		return r.reservation, nil
 	}
 
+	// Otherwise, just reverse the hummingbird path.
 	fmt.Println("deleteme humm reply pather ReplyPath 2")
-
-	// Otherwise, reverse the hummingbird path.
-	if rpath.PathType != dphumm.PathType {
-		return nil, serrors.New("non hummingbird path type for a hummingbird reply pather",
-			"path_type", rpath.PathType)
-	}
-
-	fmt.Println("deleteme humm reply pather ReplyPath 3")
-
-	var dec dphumm.Decoded
-	if err := dec.DecodeFromBytes(rpath.Raw); err != nil {
-		return nil, serrors.Wrap("cannot decode hummingbird raw path", err)
-	}
-
-	fmt.Println("deleteme humm reply pather ReplyPath 4")
-
-	// Reverse in place.
-	_, err := dec.Reverse()
-	if err != nil {
-		return nil, serrors.Wrap("cannot reverse hummingbird path", err)
-	}
-	snetHumm := &Reservation{
-		Dec: &dec,
-	}
-
-	fmt.Println("deleteme humm reply pather ReplyPath 5")
-
-	// Construct a Reservation, with no flyovers.
-	return NewReservation(
-		WithDataplanePath(snetHumm, r.origSrcIA, nil),
-	)
+	return r.BackupRepyPather.ReplyPath(rpath)
 }
 
 // containedReversePathState extracts the reverse path information reservation option from the

@@ -806,6 +806,7 @@ func CreatePacketServerConn(
 	localAddr *snet.UDPAddr,
 	peerIA addr.IA,
 	log Logger,
+	withBidirectionalReplier bool,
 ) (*snet.Conn, error) {
 	serverDaemon, err := ConnectDaemon(ctx, daemonAddr)
 	if err != nil {
@@ -817,7 +818,12 @@ func CreatePacketServerConn(
 	if err != nil {
 		return nil, serrors.Wrap("loading server topology", err)
 	}
-	replyPather := &snetpath.HummReplyPather{}
+	var replyPather snet.ReplyPather
+	if withBidirectionalReplier {
+		replyPather = snetpath.NewHummReplyPather()
+	} else {
+		replyPather = &snet.DefaultReplyPather{}
+	}
 
 	return NewSCIONConn(ctx, serverTopo, localAddr.Host, replyPather, true)
 }
@@ -831,7 +837,7 @@ func RunQuicServer(
 	peerIA addr.IA,
 	log Logger,
 ) error {
-	serverConn, err := CreatePacketServerConn(ctx, daemonAddr, localAddr, peerIA, log)
+	serverConn, err := CreatePacketServerConn(ctx, daemonAddr, localAddr, peerIA, log, false)
 	if err != nil {
 		return err
 	}
