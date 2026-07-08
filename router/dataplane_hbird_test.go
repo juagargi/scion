@@ -32,6 +32,7 @@ import (
 	"github.com/scionproto/scion/pkg/slayers"
 	"github.com/scionproto/scion/pkg/slayers/path"
 	"github.com/scionproto/scion/pkg/slayers/path/hummingbird"
+	"github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/private/topology"
 	"github.com/scionproto/scion/router"
 	pr "github.com/scionproto/scion/router/priority"
@@ -661,6 +662,51 @@ func TestProcessHbirdPacket(t *testing.T) {
 				dpath.Base.PathMeta.SegLen[0] = 6 + 5 // 2 hops + 1 flyover
 				dpath.Base.NumLines = 6 + 5
 				dpath.Base.PathMeta.CurrHF = 6
+				dpath.HopFields[2].HopField.Mac = computeAggregateMac(t, key, hbirdKey, spkt, dpath,
+					dpath.InfoFields[0], dpath.HopFields[2], dpath.PathMeta)
+				var dstAddr *net.UDPAddr
+				ingress := uint16(1)
+				egress := uint16(0)
+				if afterProcessing {
+					dpath.HopFields[2].HopField.Mac = computeMAC(t, key, dpath.InfoFields[0],
+						dpath.HopFields[2].HopField)
+					dstAddr = &net.UDPAddr{IP: dst.IP().AsSlice(), Port: dstUDPPort}
+				}
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
+					pr.WithPriority)
+			},
+			assertFunc: notDiscarded,
+		},
+		"inbound flyover from reversed scion path": {
+			prepareDP: func(ctrl *gomock.Controller) *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					mockExternalInterfaces,
+					nil,
+					nil,
+					mockInternalNextHops,
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockMsg: func(afterProcessing bool, _ *router.DataPlane) *router.Packet {
+				spkt, _ := prepHbirdMsg(now)
+				spkt.DstIA = addr.MustParseIA("1-ff00:0:110")
+				dst := addr.MustParseHost("10.0.100.100")
+				assert.NoError(t, spkt.SetDstAddr(dst))
+
+				scionPath := prepReversedScionPathForInboundFlyover(t, now)
+				dpath := &hummingbird.Decoded{}
+				dpath.ConvertFromScionDecoded(scionPath)
+				dpath.Base.PathMeta.BaseTS = util.TimeToSecs(now)
+				dpath.Base.PathMeta.HighResTS = 500 << 22
+				dpath.Base.PathMeta.SegLen[0] = 6 + 5
+				dpath.Base.NumLines = 6 + 5
+				dpath.Base.PathMeta.CurrHF = 6
+				dpath.HopFields[2] = hummingbird.FlyoverHopField{
+					HopField:     path.HopField{ConsIngress: 1, ConsEgress: 0},
+					Flyover:      true,
+					ResStartTime: 123,
+					Duration:     304,
+					Bw:           129,
+				}
 				dpath.HopFields[2].HopField.Mac = computeAggregateMac(t, key, hbirdKey, spkt, dpath,
 					dpath.InfoFields[0], dpath.HopFields[2], dpath.PathMeta)
 				var dstAddr *net.UDPAddr
@@ -3895,6 +3941,32 @@ func prepHbirdMsg(now time.Time) (*slayers.SCION, *hummingbird.Decoded) {
 		HopFields: []hummingbird.FlyoverHopField{},
 	}
 	return spkt, dpath
+}
+
+func prepReversedScionPathForInboundFlyover(t *testing.T, now time.Time) *scion.Decoded {
+	t.Helper()
+
+	sp := &scion.Decoded{
+		Base: scion.Base{
+			PathMeta: scion.MetaHdr{
+				CurrHF: 0,
+				SegLen: [3]uint8{3, 0, 0},
+			},
+			NumINF:  1,
+			NumHops: 3,
+		},
+		InfoFields: []path.InfoField{
+			{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)},
+		},
+		HopFields: []path.HopField{
+			{ConsIngress: 1, ConsEgress: 0},
+			{ConsIngress: 31, ConsEgress: 30},
+			{ConsIngress: 41, ConsEgress: 40},
+		},
+	}
+	reversed, err := sp.Reverse()
+	require.NoError(t, err)
+	return reversed.(*scion.Decoded)
 }
 
 func prepHbirdSlayers(src, dst addr.IA) *slayers.SCION {
