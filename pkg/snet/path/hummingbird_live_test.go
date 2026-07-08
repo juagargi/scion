@@ -34,6 +34,8 @@ const (
 	tinyServerRemoteAddr = "1-ff00:0:111,127.0.0.20:12345"
 )
 
+// TestPacketOverHummingbirdTinyTopology sends a Hummingbird packet from 112 to 111 of the
+// tiny topology. This test won't run unless the SCION_RUN_LIVE_TESTS env var is set to something.
 func TestPacketOverHummingbirdTinyTopology(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping live tiny-topology test in short mode")

@@ -121,7 +121,8 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 	}
 
 	// Using the reply pather, build the reverse path.
-	fmt.Printf("checking if reply pather is stateful... ")
+	fmt.Printf("deleteme checking if reply pather is stateful... ")
+
 	var replyPath DataplanePath
 	if statefulRP, ok := c.replyPather.(StatefulReplyPather); ok {
 		fmt.Print("yes\n")
