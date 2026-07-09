@@ -23,6 +23,7 @@ import (
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/private/util"
 	"github.com/scionproto/scion/pkg/segment/iface"
+	"github.com/scionproto/scion/pkg/slayers"
 	dppath "github.com/scionproto/scion/pkg/slayers/path"
 	"github.com/scionproto/scion/pkg/slayers/path/epic"
 	dphumm "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
@@ -162,6 +163,65 @@ func TestWithHummDataplane(t *testing.T) {
 	checkHop(t, r.Hops[1], "", 1, 2, true)
 	checkHop(t, r.Hops[2], "", 999, 999, false)
 	checkHop(t, r.Hops[3], "", 1, 0, true)
+}
+
+func TestReservationEndToEndExtn(t *testing.T) {
+	const referenceEpochTime uint32 = 123456
+	referenceTime := util.SecsToTime(referenceEpochTime)
+	seq := createFlyoverSequence(t, referenceEpochTime)
+
+	scionDec := createScionPath(referenceTime)
+	snetScion := path.SCION{
+		Raw: make([]byte, scionDec.Len()),
+	}
+	require.NoError(t, scionDec.SerializeTo(snetScion.Raw))
+
+	reservation, err := path.NewReservation(
+		path.WithDataplanePath(snetScion, addr.MustParseIA("1-ff00:0:112"), seq),
+	)
+	require.NoError(t, err)
+
+	extn, err := reservation.EndToEndExtn()
+	require.NoError(t, err)
+	require.Nil(t, extn)
+
+	first := &slayers.EndToEndExtn{
+		Options: []*slayers.EndToEndOption{
+			{
+				OptType: slayers.OptTypeReversePath,
+				OptData: []byte{1, 2, 3, 4},
+			},
+		},
+	}
+	reservation.SetReverseReservationExtn(first)
+
+	extn, err = reservation.EndToEndExtn()
+	require.NoError(t, err)
+	require.Same(t, first, extn)
+	require.Len(t, extn.Options, 1)
+	require.Equal(t, slayers.OptTypeReversePath, extn.Options[0].OptType)
+	require.Equal(t, []byte{1, 2, 3, 4}, extn.Options[0].OptData)
+
+	extn, err = reservation.EndToEndExtn()
+	require.NoError(t, err)
+	require.Nil(t, extn)
+
+	second := &slayers.EndToEndExtn{
+		Options: []*slayers.EndToEndOption{
+			{
+				OptType: slayers.OptTypeReversePath,
+				OptData: []byte{5, 6, 7, 8},
+			},
+		},
+	}
+	reservation.SetReverseReservationExtn(second)
+
+	extn, err = reservation.EndToEndExtn()
+	require.NoError(t, err)
+	require.Same(t, second, extn)
+	require.Len(t, extn.Options, 1)
+	require.Equal(t, slayers.OptTypeReversePath, extn.Options[0].OptType)
+	require.Equal(t, []byte{5, 6, 7, 8}, extn.Options[0].OptData)
 }
 
 func TestWithRawPath(t *testing.T) {

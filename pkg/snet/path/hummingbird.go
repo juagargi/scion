@@ -42,12 +42,15 @@ type Reservation struct {
 	Dec   *dphum.Decoded   // The Hummingbird path.
 	Hops  []*Hop           // Same length as `Dec`. Hops[i]==nil iff no hop at i (eg. xover hop).
 
-	blocksPerAk []cipher.Block        // Same length as Hops.
-	scionMacs   [][dppath.MacLen]byte // Original MAC fields from the SCION path.
-	counter     uint32                // duplicate detection counter.
+	reverseReservation     *slayers.EndToEndExtn
+	sentToPacketReverseRsv *slayers.EndToEndExtn
+	blocksPerAk            []cipher.Block        // Same length as Hops.
+	scionMacs              [][dppath.MacLen]byte // Original MAC fields from the SCION path.
+	counter                uint32                // duplicate detection counter.
 }
 
 var _ snet.DataplanePath = (*Reservation)(nil)
+var _ snet.DataplanePacketExtender = (*Reservation)(nil)
 
 // NewReservation builds a new Hummingbird Reservation based on the destination IA and the
 // options passed.
@@ -89,6 +92,28 @@ func (r *Reservation) SetPath(s *slayers.SCION) error {
 	// The correct dataplane path in the SCION layer is still r.Dec (pointer to path),
 	// nothing else to do.
 	return nil
+}
+
+// SetReverseReservationExtn installs the reverse-reservation E2E extension to
+// advertise on the next packet serialized over this reservation.
+func (r *Reservation) SetReverseReservationExtn(extn *slayers.EndToEndExtn) {
+	r.reverseReservation = extn
+	r.sentToPacketReverseRsv = nil
+}
+
+// EndToEndExtn returns the reverse-reservation extension to be serialized with
+// the next packet, if any.
+func (r *Reservation) EndToEndExtn() (*slayers.EndToEndExtn, error) {
+	if r.reverseReservation == nil {
+		return nil, nil
+	}
+	if r.reverseReservation == r.sentToPacketReverseRsv {
+		r.reverseReservation = nil
+		r.sentToPacketReverseRsv = nil
+		return nil, nil
+	}
+	r.sentToPacketReverseRsv = r.reverseReservation
+	return r.reverseReservation, nil
 }
 
 // deriveDataPlanePath sets pathmeta timestamps and increments the duplicate detection counter and

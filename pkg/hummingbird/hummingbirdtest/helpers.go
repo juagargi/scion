@@ -304,6 +304,11 @@ func BuildHummingbirdRemoteWithPath(
 	if err := ValidateReservationWindow(res, now); err != nil {
 		return nil, err
 	}
+	reverseReservation, err := reverseReservationExtn(basePath, keysRoot, now, params, log)
+	if err != nil {
+		return nil, err
+	}
+	res.SetReverseReservationExtn(reverseReservation)
 
 	remote := serverRemote.Copy()
 	remote.Path = reservation
@@ -418,13 +423,13 @@ func newHummingbirdReservationFromBaseHops(
 	return reservation, nil
 }
 
-func serializedReverseReservationState(
+func reverseReservationExtn(
 	basePath snet.Path,
 	keysRoot string,
 	now time.Time,
 	params ReservationParams,
 	log Logger,
-) ([]byte, error) {
+) (*slayers.EndToEndExtn, error) {
 	scionPath, ok := basePath.Dataplane().(snetpath.SCION)
 	if !ok {
 		return nil, serrors.New("provided path must be of type scion")
@@ -450,7 +455,14 @@ func serializedReverseReservationState(
 	if err := reservation.Serialize(state); err != nil {
 		return nil, err
 	}
-	return state, nil
+	return &slayers.EndToEndExtn{
+		Options: []*slayers.EndToEndOption{
+			{
+				OptType: slayers.OptTypeReversePath,
+				OptData: state,
+			},
+		},
+	}, nil
 }
 
 func reverseSCIONPath(scionPath snetpath.SCION) (snetpath.SCION, error) {
@@ -670,7 +682,6 @@ func RunPacketClientWithE2eRoundTrip(
 	dstAddr snet.UDPAddr,
 	clientConn *snet.Conn,
 	remote *snet.UDPAddr,
-	reversePathState []byte,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return serrors.Wrap("packet client context expired", err)
@@ -703,14 +714,16 @@ func RunPacketClientWithE2eRoundTrip(
 		// scn.NextHdr = slayers.L4UDP
 		scn.NextHdr = slayers.End2EndClass
 
-		//
-		e2e := &slayers.EndToEndExtn{
-			Options: []*slayers.EndToEndOption{
-				{
-					OptType: slayers.OptTypeReversePath,
-					OptData: reversePathState,
-				},
-			},
+		extender, ok := remote.Path.(snet.DataplanePacketExtender)
+		if !ok {
+			return serrors.New("expected dataplane packet extender", "type", reflect.TypeOf(remote.Path))
+		}
+		e2e, err := extender.EndToEndExtn()
+		if err != nil {
+			return err
+		}
+		if e2e == nil {
+			return serrors.New("missing reverse reservation extension")
 		}
 		e2e.NextHdr = slayers.L4UDP
 
@@ -725,7 +738,7 @@ func RunPacketClientWithE2eRoundTrip(
 
 		// Serialize the payload:
 		upperLayer := gopacket.NewSerializeBuffer()
-		err := gopacket.SerializeLayers(upperLayer,
+		err = gopacket.SerializeLayers(upperLayer,
 			gopacket.SerializeOptions{
 				ComputeChecksums: true,
 				FixLengths:       true,
@@ -1020,24 +1033,12 @@ func RunPacketClientWithParamsAndE2E(
 		return serrors.New("expected hummingbird reservation path", "type", reflect.TypeOf(remote.Path))
 	}
 
-	reversePathState, err := serializedReverseReservationState(
-		basePath,
-		keysRoot,
-		time.Now(),
-		params,
-		log,
-	)
-	if err != nil {
-		return err
-	}
-
 	return RunPacketClientWithE2eRoundTrip(
 		ctx,
 		*localAddr,
 		*remoteAddr,
 		clientConn,
-		remote,
-		reversePathState)
+		remote)
 }
 
 // MustParseUDPAddr parses a SCION UDP address string and returns a wrapped
