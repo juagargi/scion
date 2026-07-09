@@ -41,6 +41,14 @@ type DataplanePath interface {
 	SetPath(scion *slayers.SCION) error
 }
 
+// DataplanePacketExtender optionally augments packets emitted on a dataplane
+// path with an end-to-end extension header.
+type DataplanePacketExtender interface {
+	// EndToEndExtn returns the E2E extension to serialize for the current
+	// packet. A nil extension means no E2E extension should be emitted.
+	EndToEndExtn() (*slayers.EndToEndExtn, error)
+}
+
 // Path is an abstract representation of a path. Most applications do not need
 // access to the raw internals.
 //

@@ -682,7 +682,9 @@ func RunPacketClientWithE2eRoundTrip(
 		defer clientConn.SetDeadline(time.Time{})
 	}
 
-	useRawPacket := true
+	// deleteme TODO this manual code should be integrated within snet.
+	// useRawPacket := true
+	useRawPacket := false
 	if useRawPacket {
 		fmt.Println("!!! deleteme sending client packet as raw layers")
 		srcIP, _ := netip.AddrFromSlice(srcAddr.Host.IP)

@@ -15,8 +15,10 @@
 package snet_test
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/gopacket/gopacket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -328,4 +330,142 @@ func TestPacketSerialize(t *testing.T) {
 			tc.assertErr(t, tc.input.Serialize())
 		})
 	}
+}
+
+func TestPacketSerializeWithOptionalEndToEndExtn(t *testing.T) {
+	basePacket := func(path snet.DataplanePath) snet.Packet {
+		return snet.Packet{
+			PacketInfo: snet.PacketInfo{
+				Destination: snet.SCIONAddress{
+					IA:   addr.MustParseIA("1-ff00:0:110"),
+					Host: addr.HostSVC(addr.SvcCS),
+				},
+				Source: snet.SCIONAddress{
+					IA:   addr.MustParseIA("1-ff00:0:112"),
+					Host: addr.MustParseHost("127.0.0.1"),
+				},
+				Path: path,
+				Payload: snet.UDPPayload{
+					SrcPort: 25,
+					DstPort: 1925,
+					Payload: []byte("hello packet"),
+				},
+			},
+		}
+	}
+
+	t.Run("extender returning nil matches non extender", func(t *testing.T) {
+		t.Parallel()
+
+		rawPath := mustRawSCIONPath(t)
+		withoutExt := basePacket(snetpath.SCION{Raw: rawPath})
+		withNilExt := basePacket(extendingPath{
+			DataplanePath: snetpath.SCION{Raw: rawPath},
+		})
+
+		require.NoError(t, withoutExt.Serialize())
+		require.NoError(t, withNilExt.Serialize())
+		assert.Equal(t, withoutExt.Bytes, withNilExt.Bytes)
+	})
+
+	t.Run("valid e2e extension is serialized before udp", func(t *testing.T) {
+		t.Parallel()
+
+		optData := []byte{1, 2, 3, 4}
+		pkt := basePacket(extendingPath{
+			DataplanePath: snetpath.SCION{Raw: mustRawSCIONPath(t)},
+			extn: &slayers.EndToEndExtn{
+				Options: []*slayers.EndToEndOption{
+					{
+						OptType: slayers.OptTypeReversePath,
+						OptData: append([]byte(nil), optData...),
+					},
+				},
+			},
+		})
+
+		require.NoError(t, pkt.Serialize())
+
+		var decoded snet.Packet
+		decoded.Bytes = append(decoded.Bytes[:0], pkt.Bytes...)
+		require.NoError(t, decoded.Decode())
+
+		require.Len(t, decoded.E2eExtnContents, 1)
+		assert.Equal(t, slayers.OptTypeReversePath, decoded.E2eExtnContents[0].OptType)
+		assert.Equal(t, optData, decoded.E2eExtnContents[0].OptData)
+
+		var scionLayer slayers.SCION
+		var e2eLayer slayers.EndToEndExtn
+		var udpLayer slayers.UDP
+		parser := gopacket.NewDecodingLayerParser(
+			slayers.LayerTypeSCION,
+			&scionLayer,
+			&e2eLayer,
+			&udpLayer,
+		)
+		parser.IgnoreUnsupported = true
+		decodedTypes := make([]gopacket.LayerType, 0, 3)
+		require.NoError(t, parser.DecodeLayers(pkt.Bytes, &decodedTypes))
+		assert.Equal(t, slayers.End2EndClass, scionLayer.NextHdr)
+		assert.Equal(t, slayers.L4UDP, e2eLayer.NextHdr)
+		assert.Equal(t, uint16(len(udpLayer.LayerContents())+len(udpLayer.LayerPayload())+e2eLayer.ActualLen),
+			scionLayer.PayloadLen)
+	})
+
+	t.Run("extender errors are propagated", func(t *testing.T) {
+		t.Parallel()
+
+		pkt := basePacket(extendingPath{
+			DataplanePath: snetpath.SCION{Raw: mustRawSCIONPath(t)},
+			err:           errors.New("boom"),
+		})
+		err := pkt.Serialize()
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "building end-to-end extension")
+		assert.ErrorContains(t, err, "boom")
+	})
+
+	t.Run("empty e2e extension is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		pkt := basePacket(extendingPath{
+			DataplanePath: snetpath.SCION{Raw: mustRawSCIONPath(t)},
+			extn:          &slayers.EndToEndExtn{},
+		})
+		err := pkt.Serialize()
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "must contain at least one option")
+	})
+}
+
+type extendingPath struct {
+	snet.DataplanePath
+	extn *slayers.EndToEndExtn
+	err  error
+}
+
+func (p extendingPath) EndToEndExtn() (*slayers.EndToEndExtn, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return p.extn, nil
+}
+
+func mustRawSCIONPath(t *testing.T) []byte {
+	t.Helper()
+
+	scionP := scion.Decoded{
+		Base: scion.Base{
+			PathMeta: scion.MetaHdr{
+				SegLen: [3]uint8{2, 0, 0},
+			},
+			NumINF:  1,
+			NumHops: 2,
+		},
+		InfoFields: []path.InfoField{{ConsDir: true}},
+		HopFields:  []path.HopField{{ConsEgress: 4}, {ConsIngress: 1}},
+	}
+	raw := make([]byte, scionP.Len())
+	require.NoError(t, scionP.SerializeTo(raw))
+	return raw
 }
