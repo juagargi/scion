@@ -157,7 +157,14 @@ func (c *RedemptionClient) RedeemPathWithRequest(
 	if err != nil {
 		return nil, err
 	}
+	return c.RedeemHopsWithRequest(ctx, hops, commonRequest)
+}
 
+func (c *RedemptionClient) RedeemHopsWithRequest(
+	ctx context.Context,
+	hops []path.BaseHop,
+	commonRequest humm.RedemptionRequestNoHop,
+) ([]*path.Hop, error) {
 	// Replace requests with new ones from all on-path ASes.
 	c.requestMap = getRequestsForHops(hops, commonRequest)
 

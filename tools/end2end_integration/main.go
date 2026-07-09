@@ -127,7 +127,8 @@ func addFlags() {
 	flag.StringVar(&features, "features", "",
 		fmt.Sprintf("enable development features (%v)", feature.String(&feature.Default{}, "|")))
 	flag.BoolVar(&epic, "epic", false, "Enable EPIC.")
-	flag.StringVar(&hummingbird, "hummingbird", "", "Enable Hummingbird with BW,dur (e.g. '3,5s')")
+	flag.StringVar(&hummingbird, "hummingbird", "",
+		"Enable Hummingbird with BW,dur[,reverseBW] (e.g. '3,5s' or '3,5s,2')")
 	flag.BoolVar(&useSciond, "sciond", false,
 		"Use remote SCION daemon instead of standalone daemon. "+
 			"By default, standalone daemon with topology file is used.")

@@ -221,6 +221,14 @@ func WithDataplanePath(p snet.DataplanePath, dstIA addr.IA, seq FlyoverSequence)
 	}
 }
 
+// WithReverseFromBidirectional constructs a Reservation given the necessary data from a
+// reverse reservation. This is used to create a bidirectional reservation,
+// and this option is usually applied at the server side, who receives the reverse reservation
+// that was created by the client.
+// - serializedReservation is the end to end extension bytes serialized, which represent the hops
+// and SCION MACs of the reverse reservation.
+// - carrierPath is the path used to send the end to end extension, aka client to server.
+// - otherIA is the IA source of carrierPath, aka the client.
 func WithReverseFromBidirectional(
 	serializedReservation []byte,
 	carrierPath snet.RawPath,
