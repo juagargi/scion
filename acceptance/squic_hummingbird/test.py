@@ -56,7 +56,7 @@ class Test(base.TestTopogen):
             "bash",
             "-lc",
             f"squic-hummingbird server --daemon '{server_daemon}' --local '{server_local}' "
-            "--peer-ia '1-ff00:0:112' --timeout 15s",
+            "--timeout 15s",
         )
         time.sleep(3)
 

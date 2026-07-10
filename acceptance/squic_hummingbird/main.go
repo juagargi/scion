@@ -22,7 +22,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/hummingbird/hummingbirdtest"
 )
 
@@ -51,31 +50,25 @@ func runServer(args []string) error {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	var daemonAddr string
 	var localAddr string
-	var peerIARaw string
 	var timeout time.Duration
 	fs.StringVar(&daemonAddr, "daemon", "", "SCION daemon address")
 	fs.StringVar(&localAddr, "local", "", "Local SCION UDP address")
-	fs.StringVar(&peerIARaw, "peer-ia", "", "Remote IA used to derive the reply path")
 	fs.DurationVar(&timeout, "timeout", 15*time.Second, "Server timeout")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if daemonAddr == "" || localAddr == "" || peerIARaw == "" {
-		return fmt.Errorf("server requires --daemon, --local, and --peer-ia")
+	if daemonAddr == "" || localAddr == "" {
+		return fmt.Errorf("server requires --daemon and --local")
 	}
 
 	local, err := hummingbirdtest.MustParseUDPAddr(localAddr)
 	if err != nil {
 		return err
 	}
-	peerIA, err := addr.ParseIA(peerIARaw)
-	if err != nil {
-		return err
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return hummingbirdtest.RunQuicServer(ctx, daemonAddr, local, peerIA, log.Printf)
+	return hummingbirdtest.RunQuicServer(ctx, daemonAddr, local)
 }
 
 func runClient(args []string) error {

@@ -20,15 +20,11 @@ go_library(
 
 go_test(
     name = "go_default_test",
-    srcs = [
-        "hummingbird_live_test.go",
-        "net_test.go",
-    ],
+    srcs = ["net_test.go"],
     data = glob(["testdata/**"]),
     tags = ["exclusive"],
     deps = [
         ":go_default_library",
-        "//pkg/hummingbird/hummingbirdtest:go_default_library",
         "//pkg/proto/control_plane:go_default_library",
         "//pkg/proto/control_plane/mock_control_plane:go_default_library",
         "@com_github_golang_mock//gomock:go_default_library",

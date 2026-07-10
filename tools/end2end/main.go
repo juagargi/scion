@@ -181,9 +181,10 @@ func (s server) run() {
 		PacketConnMetrics: scionPacketConnMetrics,
 		Topology:          topo,
 	}
-	if hummingbird != "" {
-		sn.ReplyPather = snetpath.NewHummReplyPather()
-	}
+	// The HummReplyPather handles regular replies like a DefaultReplyPather,
+	// but also bidirectional Hummingbird reservations.
+	sn.ReplyPather = snetpath.NewHummReplyPather()
+
 	conn, err := sn.Listen(context.Background(), "udp", integration.Local.Host)
 	if err != nil {
 		integration.LogFatal("Error listening", "err", err)

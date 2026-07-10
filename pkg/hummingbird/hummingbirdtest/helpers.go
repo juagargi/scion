@@ -27,15 +27,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"net"
-	"net/netip"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
 
-	"github.com/gopacket/gopacket"
 	"github.com/quic-go/quic-go"
 
 	"github.com/scionproto/scion/pkg/addr"
@@ -65,11 +61,6 @@ const (
 	QUICTestMessageSize = 20 * 1024
 	// QUICTestMessageReply is the fixed server response for the round trip.
 	QUICTestMessageReply = "pong over scion"
-	// PacketTestMessageSize keeps the packet payload comfortably below the tiny
-	// topology MTU while still exercising non-trivial Hummingbird traffic.
-	PacketTestMessageSize = 1024
-	// PacketTestMessageReply is the fixed datagram reply for the round trip.
-	PacketTestMessageReply = "pong over hummingbird"
 )
 
 // ReservationParams configures synthetic Hummingbird reservation values used by
@@ -97,11 +88,6 @@ func DefaultReservationParams() ReservationParams {
 // packets instead of succeeding on only a few packets.
 var QUICTestMessageClient = bytes.Repeat([]byte("ping over hummingbird|"), 1024)[:QUICTestMessageSize]
 
-// PacketTestMessageClient is the fixed datagram payload used by the packet
-// round-trip tests.
-// var PacketTestMessageClient = bytes.Repeat([]byte("packet over hummingbird|"), 64)[:PacketTestMessageSize]
-var PacketTestMessageClient = ([]byte)("packet over hummingbird")
-
 //go:embed tls.pem
 var tlsPEM []byte
 
@@ -110,16 +96,6 @@ var tlsKey []byte
 
 // Logger matches testing-style logging functions such as t.Logf and log.Printf.
 type Logger func(string, ...any)
-
-// FixedReplyPather always returns a preselected dataplane reply path.
-type FixedReplyPather struct {
-	Path snet.DataplanePath
-}
-
-// ReplyPath implements snet.ReplyPather.
-func (p FixedReplyPather) ReplyPath(snet.RawPath) (snet.DataplanePath, error) {
-	return p.Path, nil
-}
 
 type ignoreSCMP struct{}
 
@@ -139,33 +115,6 @@ func NewTLSConfig() (*tls.Config, error) {
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"SCION"},
 	}, nil
-}
-
-// FindTinyTopologyAssets verifies that root contains the generated tiny-topology
-// files needed to derive Hummingbird reservation keys.
-func FindTinyTopologyAssets(root string) (string, error) {
-	if HasTinyTopologyAssets(root) {
-		return root, nil
-	}
-	return "", serrors.New("tiny topology assets not found", "root", root)
-}
-
-// HasTinyTopologyAssets reports whether root contains the minimum generated
-// tiny-topology files required by the Hummingbird tests.
-func HasTinyTopologyAssets(root string) bool {
-	required := []string{
-		filepath.Join(root, "ASff00_0_110", "keys", "master0.key"),
-		filepath.Join(root, "ASff00_0_111", "keys", "master0.key"),
-		filepath.Join(root, "ASff00_0_112", "keys", "master0.key"),
-		filepath.Join(root, "ASff00_0_111", "topology.json"),
-		filepath.Join(root, "ASff00_0_112", "topology.json"),
-	}
-	for _, path := range required {
-		if _, err := os.Stat(path); err != nil {
-			return false
-		}
-	}
-	return true
 }
 
 // ConnectDaemon establishes a daemon connector and verifies that it is usable.
@@ -217,51 +166,24 @@ func BasePath(
 func NewSCIONConn(
 	ctx context.Context,
 	topology snet.Topology,
-	local *net.UDPAddr,
+	local *snet.UDPAddr,
 	replyPather snet.ReplyPather,
-	ignoreServerSCMP bool,
 ) (*snet.Conn, error) {
 	var handler snet.SCMPHandler = snet.SCMPPropagationStopper{
 		Handler: ignoreSCMP{},
 		Log: func(string, ...any) {
 		},
 	}
-	if ignoreServerSCMP {
-		// The one-shot test server should not fail just because the network emits
-		// an SCMP packet while the client is still establishing the flow.
-		handler = ignoreSCMP{}
-	}
 	network := &snet.SCIONNetwork{
 		Topology:    topology,
 		ReplyPather: replyPather,
 		SCMPHandler: handler,
 	}
-	conn, err := network.Listen(ctx, "udp", local)
+	conn, err := network.Listen(ctx, "udp", local.Host)
 	if err != nil {
 		return nil, serrors.Wrap("listening on scion network", err, "local", local)
 	}
 	return conn, nil
-}
-
-// BuildHummingbirdRemote turns a plain remote address into one that carries a
-// Hummingbird reservation path and the matching next hop.
-func BuildHummingbirdRemote(
-	ctx context.Context,
-	conn daemon.Connector,
-	clientLocal *snet.UDPAddr,
-	serverRemote *snet.UDPAddr,
-	keysRoot string,
-	log Logger,
-) (*snet.UDPAddr, error) {
-	return BuildHummingbirdRemoteWithParams(
-		ctx,
-		conn,
-		clientLocal,
-		serverRemote,
-		keysRoot,
-		DefaultReservationParams(),
-		log,
-	)
 }
 
 // BuildHummingbirdRemoteWithParams turns a plain remote address into one that
@@ -605,254 +527,24 @@ func RunQUICClientRoundTrip(
 	return nil
 }
 
-// RunPacketServerOnce reads one datagram, validates the fixed client payload,
-// replies once, and then returns.
-func RunPacketServerOnce(ctx context.Context, serverConn *snet.Conn) error {
-	if err := ctx.Err(); err != nil {
-		return serrors.Wrap("packet server context expired", err)
-	}
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := serverConn.SetDeadline(deadline); err != nil {
-			return serrors.Wrap("setting packet server deadline", err)
-		}
-		defer serverConn.SetDeadline(time.Time{})
-	}
-
-	buf := make([]byte, len(PacketTestMessageClient))
-	n, remote, err := serverConn.ReadFrom(buf)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return serrors.Wrap("packet server context expired", ctxErr)
-		}
-		return serrors.Wrap("reading client datagram", err)
-	}
-	if !bytes.Equal(buf[:n], PacketTestMessageClient) {
-		return serrors.New("unexpected client datagram payload")
-	}
-	if _, err := serverConn.WriteTo([]byte(PacketTestMessageReply), remote); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return serrors.Wrap("packet server context expired", ctxErr)
-		}
-		return serrors.Wrap("writing server datagram reply", err)
-	}
-	return nil
-}
-
-// RunPacketClientRoundTrip sends one datagram to remote and verifies the fixed
-// server reply.
-func RunPacketClientRoundTrip(
-	ctx context.Context,
-	clientConn *snet.Conn,
-	remote *snet.UDPAddr,
-) error {
-	if err := ctx.Err(); err != nil {
-		return serrors.Wrap("packet client context expired", err)
-	}
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := clientConn.SetDeadline(deadline); err != nil {
-			return serrors.Wrap("setting packet client deadline", err)
-		}
-		defer clientConn.SetDeadline(time.Time{})
-	}
-
-	if _, err := clientConn.WriteTo(PacketTestMessageClient, remote); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return serrors.Wrap("packet client context expired", ctxErr)
-		}
-		return serrors.Wrap("writing client datagram", err)
-	}
-
-	reply := make([]byte, len(PacketTestMessageReply))
-	n, _, err := clientConn.ReadFrom(reply)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return serrors.Wrap("packet client context expired", ctxErr)
-		}
-		return serrors.Wrap("reading server datagram reply", err)
-	}
-	if string(reply[:n]) != PacketTestMessageReply {
-		return serrors.New("unexpected server datagram reply", "reply", string(reply[:n]))
-	}
-	return nil
-}
-
-func RunPacketClientWithE2eRoundTrip(
-	ctx context.Context,
-	srcAddr snet.UDPAddr,
-	dstAddr snet.UDPAddr,
-	clientConn *snet.Conn,
-	remote *snet.UDPAddr,
-) error {
-	if err := ctx.Err(); err != nil {
-		return serrors.Wrap("packet client context expired", err)
-	}
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := clientConn.SetDeadline(deadline); err != nil {
-			return serrors.Wrap("setting packet client deadline", err)
-		}
-		defer clientConn.SetDeadline(time.Time{})
-	}
-
-	// deleteme TODO this manual code should be integrated within snet.
-	// useRawPacket := true
-	useRawPacket := false
-	if useRawPacket {
-		fmt.Println("!!! deleteme sending client packet as raw layers")
-		srcIP, _ := netip.AddrFromSlice(srcAddr.Host.IP)
-		dstIP, _ := netip.AddrFromSlice(dstAddr.Host.IP)
-		scn := &slayers.SCION{
-			SrcIA: srcAddr.IA,
-			DstIA: dstAddr.IA,
-		}
-		if err := scn.SetSrcAddr(addr.HostIP(srcIP)); err != nil {
-			return err
-		}
-		if err := scn.SetDstAddr(addr.HostIP(dstIP)); err != nil {
-			return err
-		}
-
-		// scn.NextHdr = slayers.L4UDP
-		scn.NextHdr = slayers.End2EndClass
-
-		extender, ok := remote.Path.(snet.DataplanePacketExtender)
-		if !ok {
-			return serrors.New("expected dataplane packet extender", "type", reflect.TypeOf(remote.Path))
-		}
-		e2e, err := extender.EndToEndExtn()
-		if err != nil {
-			return err
-		}
-		if e2e == nil {
-			return serrors.New("missing reverse reservation extension")
-		}
-		e2e.NextHdr = slayers.L4UDP
-
-		// We don't set the payload, as we are using gopacket directly.
-		// But we need the payload length.
-		udp := &slayers.UDP{
-			// Use the same port where the clientConn is listening:
-			SrcPort: uint16(clientConn.LocalAddr().(*snet.UDPAddr).Host.Port),
-			DstPort: uint16(dstAddr.Host.Port),
-		}
-		udp.SetNetworkLayerForChecksum(scn)
-
-		// Serialize the payload:
-		upperLayer := gopacket.NewSerializeBuffer()
-		err = gopacket.SerializeLayers(upperLayer,
-			gopacket.SerializeOptions{
-				ComputeChecksums: true,
-				FixLengths:       true,
-			},
-			e2e, udp, gopacket.Payload(PacketTestMessageClient),
-		)
-		if err != nil {
-			return err
-		}
-		scn.PayloadLen = uint16(len(upperLayer.Bytes()))
-
-		// With the correct size, we can now set the path and path type:
-		if err := remote.Path.SetPath(scn); err != nil {
-			return err
-		}
-		//
-		//
-
-		//
-		// Write message.
-		//
-
-		// With raw UDP and slayers:
-		buf := gopacket.NewSerializeBuffer()
-		err = gopacket.SerializeLayers(buf,
-			gopacket.SerializeOptions{
-				ComputeChecksums: true,
-				FixLengths:       true,
-			},
-			// scn, udp, gopacket.Payload(PacketTestMessageClient),
-			scn, e2e, udp, gopacket.Payload(PacketTestMessageClient),
-		)
-		if err != nil {
-			return err
-		}
-		rawBuf := buf.Bytes()
-
-		udpSock, err := net.ListenUDP("udp", srcAddr.Host)
-		if err != nil {
-			return err
-		}
-		defer udpSock.Close()
-
-		n, err := udpSock.WriteToUDP(rawBuf, remote.NextHop)
-		fmt.Printf("deleteme written %d bytes to UDP socket\n", n)
-		if err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return serrors.Wrap("packet client context expired", ctxErr)
-			}
-			return err
-		}
-	} else {
-		// With regular snet:
-		fmt.Printf("deleteme local socket address is: %s\n", clientConn.LocalAddr().String())
-		if _, err := clientConn.WriteTo(PacketTestMessageClient, remote); err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return serrors.Wrap("packet client context expired", ctxErr)
-			}
-			return serrors.Wrap("writing client datagram", err)
-		}
-	}
-
-	reply := make([]byte, len(PacketTestMessageReply))
-	n, _, err := clientConn.ReadFrom(reply)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return serrors.Wrap("packet client context expired", ctxErr)
-		}
-		return serrors.Wrap("reading server datagram reply", err)
-	}
-	if string(reply[:n]) != PacketTestMessageReply {
-		return serrors.New("unexpected server datagram reply", "reply", string(reply[:n]))
-	}
-	return nil
-}
-
-func CreatePacketServerConn(
-	ctx context.Context,
-	daemonAddr string,
-	localAddr *snet.UDPAddr,
-	peerIA addr.IA,
-	log Logger,
-	withBidirectionalReplier bool,
-) (*snet.Conn, error) {
-	serverDaemon, err := ConnectDaemon(ctx, daemonAddr)
-	if err != nil {
-		return nil, err
-	}
-	defer serverDaemon.Close()
-
-	serverTopo, err := daemon.LoadTopology(ctx, serverDaemon)
-	if err != nil {
-		return nil, serrors.Wrap("loading server topology", err)
-	}
-	var replyPather snet.ReplyPather
-	if withBidirectionalReplier {
-		replyPather = snetpath.NewHummReplyPather()
-	} else {
-		replyPather = &snet.DefaultReplyPather{}
-	}
-
-	return NewSCIONConn(ctx, serverTopo, localAddr.Host, replyPather, true)
-}
-
 // RunQuicServer runs the one-shot QUIC server side of the Hummingbird test against
 // the provided daemon and local address.
 func RunQuicServer(
 	ctx context.Context,
 	daemonAddr string,
 	localAddr *snet.UDPAddr,
-	peerIA addr.IA,
-	log Logger,
 ) error {
-	serverConn, err := CreatePacketServerConn(ctx, daemonAddr, localAddr, peerIA, log, false)
+	serverDaemon, err := ConnectDaemon(ctx, daemonAddr)
+	if err != nil {
+		return err
+	}
+	defer serverDaemon.Close()
+
+	serverTopo, err := daemon.LoadTopology(ctx, serverDaemon)
+	if err != nil {
+		return serrors.Wrap("loading server topology", err)
+	}
+	serverConn, err := NewSCIONConn(ctx, serverTopo, localAddr, nil)
 	if err != nil {
 		return err
 	}
@@ -913,7 +605,7 @@ func RunClientWithParams(
 	if err != nil {
 		return serrors.Wrap("loading client topology", err)
 	}
-	clientConn, err := NewSCIONConn(ctx, clientTopo, localAddr.Host, nil, false)
+	clientConn, err := NewSCIONConn(ctx, clientTopo, localAddr, nil)
 	if err != nil {
 		return err
 	}
@@ -933,112 +625,6 @@ func RunClientWithParams(
 		return err
 	}
 	return RunQUICClientRoundTrip(ctx, clientConn, remote, tlsConfig)
-}
-
-// RunPacketClient runs the client side of the packet-based Hummingbird test,
-// including reservation construction and a single datagram round trip.
-func RunPacketClient(
-	ctx context.Context,
-	daemonAddr string,
-	localAddr *snet.UDPAddr,
-	remoteAddr *snet.UDPAddr,
-	keysRoot string,
-	log Logger,
-) error {
-	return RunPacketClientWithParams(
-		ctx,
-		daemonAddr,
-		localAddr,
-		remoteAddr,
-		keysRoot,
-		DefaultReservationParams(),
-		log,
-	)
-}
-
-// RunPacketClientWithParams runs the packet-based client side with
-// caller-provided reservation parameters.
-func RunPacketClientWithParams(
-	ctx context.Context,
-	daemonAddr string,
-	localAddr *snet.UDPAddr,
-	remoteAddr *snet.UDPAddr,
-	keysRoot string,
-	params ReservationParams,
-	log Logger,
-) error {
-	clientDaemon, err := ConnectDaemon(ctx, daemonAddr)
-	if err != nil {
-		return err
-	}
-	defer clientDaemon.Close()
-
-	clientTopo, err := daemon.LoadTopology(ctx, clientDaemon)
-	if err != nil {
-		return serrors.Wrap("loading client topology", err)
-	}
-	clientConn, err := NewSCIONConn(ctx, clientTopo, localAddr.Host, nil, false)
-	if err != nil {
-		return err
-	}
-	defer clientConn.Close()
-
-	remote, err := BuildHummingbirdRemoteWithParams(
-		ctx, clientDaemon, localAddr, remoteAddr, keysRoot, params, log)
-	if err != nil {
-		return err
-	}
-	if _, ok := remote.Path.(*snetpath.Reservation); !ok {
-		return serrors.New("expected hummingbird reservation path", "type", reflect.TypeOf(remote.Path))
-	}
-
-	return RunPacketClientRoundTrip(ctx, clientConn, remote)
-}
-
-func RunPacketClientWithParamsAndE2E(
-	ctx context.Context,
-	daemonAddr string,
-	localAddr *snet.UDPAddr,
-	remoteAddr *snet.UDPAddr,
-	keysRoot string,
-	params ReservationParams,
-	log Logger,
-) error {
-	clientDaemon, err := ConnectDaemon(ctx, daemonAddr)
-	if err != nil {
-		return err
-	}
-	defer clientDaemon.Close()
-
-	clientTopo, err := daemon.LoadTopology(ctx, clientDaemon)
-	if err != nil {
-		return serrors.Wrap("loading client topology", err)
-	}
-	clientConn, err := NewSCIONConn(ctx, clientTopo, localAddr.Host, nil, false)
-	if err != nil {
-		return err
-	}
-	defer clientConn.Close()
-	fmt.Printf("deleteme clientConn created as: %s\n", clientConn.LocalAddr().String())
-
-	basePath, err := BasePath(ctx, clientDaemon, localAddr.IA, remoteAddr.IA, log)
-	if err != nil {
-		return err
-	}
-	remote, err := BuildHummingbirdRemoteWithPath(basePath, remoteAddr, keysRoot, params, log)
-	if err != nil {
-		return err
-	}
-	if _, ok := remote.Path.(*snetpath.Reservation); !ok {
-		return serrors.New("expected hummingbird reservation path", "type", reflect.TypeOf(remote.Path))
-	}
-
-	return RunPacketClientWithE2eRoundTrip(
-		ctx,
-		*localAddr,
-		*remoteAddr,
-		clientConn,
-		remote)
 }
 
 // MustParseUDPAddr parses a SCION UDP address string and returns a wrapped
