@@ -29,6 +29,7 @@ import (
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/scrypto"
 	"github.com/scionproto/scion/pkg/slayers"
+	"github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 	"github.com/scionproto/scion/private/keyconf"
 	"github.com/scionproto/scion/tools/braccept/cases"
 	"github.com/scionproto/scion/tools/braccept/runner"
@@ -68,6 +69,11 @@ func realMain() int {
 	hfMAC, err := loadKey(artifactsDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Loading keys failed: %v\n", err)
+		return 1
+	}
+	hbirdSV, err := loadHbirdSV(artifactsDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Loading Hummingbird secret value failed: %v\n", err)
 		return 1
 	}
 
@@ -135,6 +141,12 @@ func realMain() int {
 		cases.JumboPacket(artifactsDir, hfMAC),
 		cases.ChildToPeer(artifactsDir, hfMAC),
 		cases.PeerToChild(artifactsDir, hfMAC),
+		cases.HummingbirdBestEffortChildToParent(artifactsDir, hfMAC),
+		cases.HummingbirdFlyoverChildToParent(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdFlyoverInbound(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdFlyoverOutbound(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdBestEffortChildToChildXover(artifactsDir, hfMAC),
+		cases.HummingbirdBadFlyoverMAC(artifactsDir, hfMAC, hbirdSV),
 	}
 
 	if *bfd {
@@ -167,6 +179,19 @@ func loadKey(artifactsDir string) (hash.Hash, error) {
 		return nil, err
 	}
 	return macGen(), nil
+}
+
+// loadHbirdSV derives the Hummingbird AS secret value from the same master key
+// the router uses (see router/control/conf.go: DeriveSecretValue(MasterKeys.Key0)).
+// The router derives this value unconditionally whenever a master key is present,
+// so the Hummingbird cases work against the standard router_multi configuration.
+func loadHbirdSV(artifactsDir string) ([]byte, error) {
+	keysDir := filepath.Join(artifactsDir, "conf", "keys")
+	mk, err := keyconf.LoadMaster(keysDir)
+	if err != nil {
+		return nil, err
+	}
+	return hummingbird.DeriveSecretValue(mk.Key0), nil
 }
 
 // registerScionPorts registers the following UDP ports in gopacket such as SCION is the
