@@ -55,16 +55,20 @@ func realMain() int {
 	}
 	defer log.HandlePanic()
 
-	artifactsDir, err := os.MkdirTemp("", "braccept_")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
-		return 1
-	}
+	var artifactsDir string
 	if *dir != "" {
 		artifactsDir = *dir
 	}
 	if v := os.Getenv("TEST_ARTIFACTS_DIR"); v != "" {
 		artifactsDir = v
+	}
+	if artifactsDir == "" {
+		var err error
+		artifactsDir, err = os.MkdirTemp("", "braccept_")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			return 1
+		}
 	}
 	hfMAC, err := loadKey(artifactsDir)
 	if err != nil {
