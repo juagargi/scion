@@ -151,6 +151,15 @@ func realMain() int {
 		cases.HummingbirdFlyoverOutbound(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdBestEffortChildToChildXover(artifactsDir, hfMAC),
 		cases.HummingbirdBadFlyoverMAC(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdBestEffortInbound(artifactsDir, hfMAC),
+		cases.HummingbirdBestEffortOutbound(artifactsDir, hfMAC),
+		cases.HummingbirdBestEffortChildToInternalParent(artifactsDir, hfMAC),
+		cases.HummingbirdFlyoverChildToParentNonConsDir(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdFlyoverChildToChildXover(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdFlyoverXoverASTransitIngress(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdFlyoverXoverASTransitEgress(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdFlyoverChildToPeer(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdFlyoverPeerToChild(artifactsDir, hfMAC, hbirdSV),
 	}
 
 	if *bfd {

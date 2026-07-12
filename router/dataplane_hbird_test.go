@@ -638,6 +638,66 @@ func TestProcessHbirdPacket(t *testing.T) {
 			},
 			assertFunc: notDiscarded,
 		},
+		"brtransit xover": {
+			// Cross-over (up->down shortcut) handled entirely on this BR: the
+			// packet enters and leaves on external child links of the same BR.
+			// Wire-level analogue: HummingbirdBestEffortChildToChildXover.
+			prepareDP: func(ctrl *gomock.Controller) *router.DataPlane {
+				return router.NewDP(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{
+						1: topology.Child,
+						2: topology.Child,
+					},
+					nil, // No special connOpener.
+					mockInternalNextHops,
+					addr.MustParseIA("1-ff00:0:110"), nil, key)
+			},
+			mockMsg: func(afterProcessing bool, _ *router.DataPlane) *router.Packet {
+				spkt, _ := prepHbirdMsg(now)
+				dpath := &hummingbird.Decoded{
+					Base: hummingbird.Base{
+						PathMeta: hummingbird.MetaHdr{
+							CurrINF: 0,
+							CurrHF:  3,
+							SegLen:  [3]uint8{6, 6, 0},
+							BaseTS:  util.TimeToSecs(now),
+						},
+						NumINF:   2,
+						NumLines: 12,
+					},
+					InfoFields: []path.InfoField{
+						// up seg
+						{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)},
+						// down seg
+						{SegID: 0x222, ConsDir: true, Timestamp: util.TimeToSecs(now)},
+					},
+					HopFields: []hummingbird.FlyoverHopField{
+						{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}},
+						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1}},
+						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 2}},
+						{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
+					},
+				}
+				dpath.HopFields[1].HopField.Mac =
+					computeMAC(t, key, dpath.InfoFields[0], dpath.HopFields[1].HopField)
+				dpath.HopFields[2].HopField.Mac =
+					computeMAC(t, key, dpath.InfoFields[1], dpath.HopFields[2].HopField)
+				ingress := uint16(1)
+				egress := uint16(0)
+				if afterProcessing {
+					require.NoError(t, dpath.IncPath(hummingbird.HopLines))
+					require.NoError(t, dpath.IncPath(hummingbird.HopLines))
+					dpath.InfoFields[1].UpdateSegID(dpath.HopFields[2].HopField.Mac)
+					egress = 2
+				} else {
+					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
+				}
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithBestEffort)
+			},
+			assertFunc: notDiscarded,
+		},
 		"inbound flyover": {
 			prepareDP: func(ctrl *gomock.Controller) *router.DataPlane {
 				return router.NewDPWithHummingbirdKey(
@@ -1130,6 +1190,73 @@ func TestProcessHbirdPacket(t *testing.T) {
 				// sibling border router link is stored at the ingress on the AS (previous hop).
 				pkt.Link = ifaces[51]
 				return pkt
+			},
+			assertFunc: notDiscarded,
+		},
+		"brtransit xover flyover": {
+			// Cross-over (up->down shortcut) handled entirely on this BR, with a
+			// flyover on the up-segment cross-over hop. Exercises doHbirdXoverFlyover
+			// in the external-egress branch. Wire-level analogue:
+			// HummingbirdFlyoverChildToChildXover.
+			prepareDP: func(ctrl *gomock.Controller) *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{
+						1: topology.Child,
+						2: topology.Child,
+					},
+					nil, // No special connOpener.
+					mockInternalNextHops,
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockMsg: func(afterProcessing bool, _ *router.DataPlane) *router.Packet {
+				spkt, _ := prepHbirdMsg(now)
+				dpath := &hummingbird.Decoded{
+					Base: hummingbird.Base{
+						PathMeta: hummingbird.MetaHdr{
+							CurrINF:   0,
+							CurrHF:    3,
+							SegLen:    [3]uint8{3 + 5, 6, 0},
+							BaseTS:    util.TimeToSecs(now),
+							HighResTS: 500 << 22,
+						},
+						NumINF:   2,
+						NumLines: 3 + 5 + 6,
+					},
+					InfoFields: []path.InfoField{
+						// up seg
+						{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)},
+						// down seg
+						{SegID: 0x222, ConsDir: true, Timestamp: util.TimeToSecs(now)},
+					},
+					HopFields: []hummingbird.FlyoverHopField{
+						{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}},
+						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1},
+							Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
+						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 2}},
+						{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
+					},
+				}
+				// Reservation spans ingress 1 (incoming hop) and egress 2 (outgoing hop).
+				scionMac1 := computeMAC(t, key, dpath.InfoFields[0], dpath.HopFields[1].HopField)
+				dpath.HopFields[1].HopField.Mac = computeAggregateMacExplicitInEg(
+					t, key, hbirdKey, spkt, dpath, 2, 1,
+					dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
+				dpath.HopFields[2].HopField.Mac =
+					computeMAC(t, key, dpath.InfoFields[1], dpath.HopFields[2].HopField)
+				ingress := uint16(1)
+				egress := uint16(0)
+				if afterProcessing {
+					dpath.HopFields[1].HopField.Mac = scionMac1
+					require.NoError(t, dpath.IncPath(hummingbird.FlyoverLines))
+					require.NoError(t, dpath.IncPath(hummingbird.HopLines))
+					dpath.InfoFields[1].UpdateSegID(dpath.HopFields[2].HopField.Mac)
+					egress = 2
+				} else {
+					dpath.InfoFields[0].UpdateSegID(scionMac1)
+				}
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
+					pr.WithPriority)
 			},
 			assertFunc: notDiscarded,
 		},
