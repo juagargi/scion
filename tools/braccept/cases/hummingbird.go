@@ -1,4 +1,4 @@
-// Copyright 2025 SCION Association
+// Copyright 2026 SCION Association
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -164,7 +164,7 @@ func HummingbirdBestEffortChildToParent(artifactsDir string, mac hash.Hash) runn
 				HighResTS: 500 << 22,
 			},
 			NumINF:   1,
-			NumLines: 9,
+			NumLines: 9, // Three best-effort hops.
 		},
 		InfoFields: []path.InfoField{
 			{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)},

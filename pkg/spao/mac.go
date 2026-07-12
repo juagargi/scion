@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	// FixAuthDataInputLen is the unvariable fields length for the
+	// FixAuthDataInputLen is the invariable fields length for the
 	// authenticated data. It consists of the Authenticator Option Metadata
 	// length and the SCION Common Header without the second row.
 	fixAuthDataInputLen = slayers.PacketAuthOptionMetadataLen +
@@ -193,8 +193,26 @@ func zeroOutMutablePath(orig path.Path, buf []byte) error {
 	}
 }
 
-// zeroOutHbird zeroes the mutable fields of a serialized Hummingbird path so
-// that the SPAO authenticator only covers the immutable parts. The fields a
+func zeroOutWithBase(base scion.Base, buf []byte) {
+	// Zero out CurrInf && CurrHF
+	offset := 0
+	buf[offset] = 0
+	offset += 4
+	for i := 0; i < base.NumINF; i++ {
+		// Zero out IF.SegID
+		binary.BigEndian.PutUint16(buf[offset+2:], 0)
+		offset += 8
+	}
+	for i := 0; i < base.NumINF; i++ {
+		for j := 0; j < int(base.PathMeta.SegLen[i]); j++ {
+			// Zero out HF.Flags&&Alerts
+			buf[offset] = 0
+			offset += 12
+		}
+	}
+}
+
+// zeroOutHbird zeroes the mutable fields of a Hummingbird path. The fields a
 // transit router mutates are the current info/hop pointers (CurrINF, CurrHF),
 // the per-segment SegID and the hop-field flags/router-alerts.
 //
@@ -221,25 +239,6 @@ func zeroOutHbird(p *hummingbird.Decoded, buf []byte) {
 			offset += hummingbird.FlyoverLines * hummingbird.LineLen
 		} else {
 			offset += hummingbird.HopLines * hummingbird.LineLen
-		}
-	}
-}
-
-func zeroOutWithBase(base scion.Base, buf []byte) {
-	// Zero out CurrInf && CurrHF
-	offset := 0
-	buf[offset] = 0
-	offset += 4
-	for i := 0; i < base.NumINF; i++ {
-		// Zero out IF.SegID
-		binary.BigEndian.PutUint16(buf[offset+2:], 0)
-		offset += 8
-	}
-	for i := 0; i < base.NumINF; i++ {
-		for j := 0; j < int(base.PathMeta.SegLen[i]); j++ {
-			// Zero out HF.Flags&&Alerts
-			buf[offset] = 0
-			offset += 12
 		}
 	}
 }
