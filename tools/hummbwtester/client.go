@@ -1,0 +1,637 @@
+// Copyright 2026 ETH Zurich
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"errors"
+	"fmt"
+	"net"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/scionproto/scion/pkg/addr"
+	"github.com/scionproto/scion/pkg/daemon"
+	daemontypes "github.com/scionproto/scion/pkg/daemon/types"
+	hummpkg "github.com/scionproto/scion/pkg/hummingbird"
+	"github.com/scionproto/scion/pkg/hummingbird/redemption"
+	"github.com/scionproto/scion/pkg/log"
+	"github.com/scionproto/scion/pkg/private/serrors"
+	hummlib "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
+	"github.com/scionproto/scion/pkg/snet"
+	snetpath "github.com/scionproto/scion/pkg/snet/path"
+	"github.com/scionproto/scion/private/keyconf"
+)
+
+// hummReservationID is the reservation ID used for all flyovers this client requests.
+const hummReservationID = uint32(1)
+
+// hummStartOffset shifts the requested reservation start time slightly into the past, giving
+// the flyover derivation (and the redemption service, if used) slack against clock skew.
+const hummStartOffset = -3 * time.Second
+
+// fillerSeed is the fixed seed used to generate the deterministic payload filler pattern, known
+// to both client and server so the server can optionally verify integrity.
+const fillerSeed = 0xC0FFEE1234ABCDEF
+
+// bidirectionalFirstPacketLen is the total packet size (header + filler) used for the one
+// Payload packet sent immediately after attaching a bidirectional reservation (initial dial or
+// renewal), since that packet also carries the reverse-reservation E2E extension option and
+// must stay small.
+const bidirectionalFirstPacketLen = HeaderLen + bidirectionalFirstPacketPayload
+
+// clientConfig collects every value runClient needs, populated from CLI flags in main.go.
+type clientConfig struct {
+	local  snet.UDPAddr
+	remote snet.UDPAddr
+	sdConn daemon.Connector
+
+	bandwidthBps    float64
+	duration        time.Duration
+	payloadSize     int
+	pongRateHz      float64
+	humm            hummingbirdParameters
+	hummKeysDir     string
+	reportInterval  time.Duration
+	renewalFraction float64
+}
+
+// bidirectional reports whether the client requested a reverse-direction reservation.
+func (c clientConfig) bidirectional() bool {
+	return c.humm.ReverseBw > 0
+}
+
+// client holds the mutable state of one client run.
+type client struct {
+	cfg     clientConfig
+	sn      *snet.SCIONNetwork
+	metrics *clientMetrics
+
+	svMu       sync.Mutex
+	hummSVByIA map[addr.IA][]byte
+
+	// currentAddr is the *snet.UDPAddr (including the current DataplanePath) that the sender
+	// loop must use for the next send. It is swapped atomically by the renewal goroutine;
+	// the sender never mutates the reservation it points to in place.
+	currentAddr atomic.Pointer[snet.UDPAddr]
+	// forceSmallNextPayload is set whenever a new reservation carrying a pending
+	// reverse-reservation E2E extension has just been published, and consumed (cleared) by the
+	// very next Payload send, which must then be capped to bidirectionalFirstPacketLen.
+	forceSmallNextPayload atomic.Bool
+
+	rateMu sync.Mutex
+	rate   *RateTracker
+}
+
+func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int {
+	c := &client{
+		cfg:        cfg,
+		sn:         sn,
+		metrics:    newClientMetrics(),
+		hummSVByIA: make(map[addr.IA][]byte),
+		rate:       NewRateTracker(time.Now()),
+	}
+
+	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA)
+	if err != nil {
+		log.Error("Selecting path", "err", err)
+		return 1
+	}
+
+	now := time.Now()
+	reservation, nextHop, err := c.buildReservation(ctx, path, now)
+	if err != nil {
+		log.Error("Building initial Hummingbird reservation", "err", err)
+		return 1
+	}
+
+	remoteAddr := &snet.UDPAddr{
+		IA:      cfg.remote.IA,
+		Host:    cfg.remote.Host,
+		Path:    reservation,
+		NextHop: nextHop,
+	}
+	c.currentAddr.Store(remoteAddr)
+	c.forceSmallNextPayload.Store(c.cfg.bidirectional())
+
+	conn, err := sn.Dial(ctx, "udp", cfg.local.Host, remoteAddr)
+	if err != nil {
+		log.Error("Dialing", "err", err)
+		return 1
+	}
+	defer conn.Close()
+
+	log.Info("Client started",
+		"local", cfg.local, "remote", cfg.remote,
+		"bandwidth_bps", cfg.bandwidthBps, "payload_size", cfg.payloadSize,
+		"pong_rate_hz", cfg.pongRateHz, "bidirectional", cfg.bidirectional())
+
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+
+	var wg sync.WaitGroup
+	tracker := newPongTracker()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.renewalLoop(runCtx, path, reservation.Expiry())
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.pongReceiveLoop(runCtx, conn, tracker)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.reportLoop(runCtx, tracker)
+	}()
+
+	c.sendLoop(ctx, conn, tracker)
+
+	// Sending is done (duration elapsed or ctx cancelled). Give in-flight pong replies a grace
+	// period to arrive before tearing down the receiver/renewal goroutines.
+	grace, cancelGrace := context.WithTimeout(context.Background(), 2*time.Second)
+	select {
+	case <-ctx.Done():
+	case <-grace.Done():
+	}
+	cancelGrace()
+	cancelRun()
+	wg.Wait()
+
+	log.Info("Client finished")
+	return 0
+}
+
+// selectPath queries the daemon for paths to dst and returns the first candidate.
+func selectPath(
+	ctx context.Context, sdConn daemon.Connector, src, dst addr.IA,
+) (snet.Path, error) {
+	paths, err := sdConn.Paths(ctx, dst, src, daemontypes.PathReqFlags{})
+	if err != nil {
+		return nil, serrors.Wrap("requesting paths", err)
+	}
+	if len(paths) == 0 {
+		return nil, serrors.New("no path found", "src", src, "dst", dst)
+	}
+	return paths[0], nil
+}
+
+// buildReservation redeems a fresh forward (and, if configured, reverse) Hummingbird
+// reservation for path, either through the redemption RPC service or, if -hummKeysDir is set,
+// directly from local AS master keys (for testing, bypassing the redemption service).
+func (c *client) buildReservation(
+	ctx context.Context, path snet.Path, now time.Time,
+) (*snetpath.Reservation, *net.UDPAddr, error) {
+	if c.cfg.hummKeysDir != "" {
+		rsv, err := c.buildReservationWithSecretValues(path, now)
+		return rsv, path.UnderlayNextHop(), err
+	}
+	rsv, err := redemption.OneShotReservation(ctx, c.cfg.sdConn, c.cfg.local.Host.IP, path,
+		hummpkg.RedemptionRequestNoHop{
+			StartTime: uint32(now.Unix()),
+			Bw:        c.cfg.humm.Bw,
+			Duration:  c.cfg.humm.Duration,
+		},
+		c.cfg.humm.ReverseBw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return rsv, path.UnderlayNextHop(), nil
+}
+
+func (c *client) buildReservationWithSecretValues(
+	path snet.Path, now time.Time,
+) (*snetpath.Reservation, error) {
+	baseHops := snetpath.InterfacesToBaseHops(path.Metadata().Interfaces)
+	scionPath, ok := path.Dataplane().(snetpath.SCION)
+	if !ok {
+		return nil, serrors.New("provided path must be of type scion")
+	}
+	flyovers, err := c.deriveFlyoversFromSecretValues(baseHops, c.cfg.humm.Bw, now)
+	if err != nil {
+		return nil, err
+	}
+	reservation, err := snetpath.NewReservation(
+		snetpath.WithNow(func() time.Time { return now }),
+		snetpath.WithDataplanePath(scionPath, path.Destination(), flyovers),
+	)
+	if err != nil || c.cfg.humm.ReverseBw == 0 {
+		return reservation, err
+	}
+	reverseFlyovers, err := c.deriveFlyoversFromSecretValues(
+		reverseBaseHops(baseHops), c.cfg.humm.ReverseBw, now)
+	if err != nil {
+		return nil, err
+	}
+	extn, err := redemption.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
+	if err != nil {
+		return nil, err
+	}
+	reservation.SetReverseReservationExtn(extn)
+	return reservation, nil
+}
+
+func (c *client) hummSecretValue(ia addr.IA) ([]byte, error) {
+	c.svMu.Lock()
+	defer c.svMu.Unlock()
+	if sv, ok := c.hummSVByIA[ia]; ok {
+		return sv, nil
+	}
+	asDir := addr.FormatAS(ia.AS(), addr.WithDefaultPrefix(), addr.WithFileSeparator())
+	keysDir := filepath.Join(c.cfg.hummKeysDir, asDir, "keys")
+	master, err := keyconf.LoadMaster(keysDir)
+	if err != nil {
+		return nil, serrors.Wrap("loading humm master key", err, "ia", ia, "dir", keysDir)
+	}
+	sv := hummlib.DeriveSecretValue(master.Key0)
+	c.hummSVByIA[ia] = sv
+	return sv, nil
+}
+
+func (c *client) deriveFlyoversFromSecretValues(
+	baseHops []snetpath.BaseHop, bandwidth uint16, now time.Time,
+) ([]*snetpath.Hop, error) {
+	flyovers := make([]*snetpath.Hop, 0, len(baseHops))
+	startTime := uint32(now.Add(hummStartOffset).Unix())
+	aesByIA := make(map[addr.IA]cipher.Block)
+	buffer := make([]byte, hummlib.AkBufferSize)
+
+	for _, baseHop := range baseHops {
+		block, ok := aesByIA[baseHop.IA]
+		if !ok {
+			sv, err := c.hummSecretValue(baseHop.IA)
+			if err != nil {
+				return nil, err
+			}
+			block, err = aes.NewCipher(sv)
+			if err != nil {
+				return nil, serrors.Wrap("creating aes cipher", err, "ia", baseHop.IA)
+			}
+			aesByIA[baseHop.IA] = block
+		}
+		akRaw := hummlib.DeriveAuthKey(
+			block, hummReservationID, bandwidth, baseHop.Ingress, baseHop.Egress,
+			startTime, c.cfg.humm.Duration, buffer)
+		var ak [hummlib.AkBufferSize]byte
+		copy(ak[:], akRaw)
+		flyovers = append(flyovers, &snetpath.Hop{
+			BaseHop: baseHop,
+			Flyover: &snetpath.FlyoverData{
+				ResID:     hummReservationID,
+				Ak:        ak,
+				Bw:        bandwidth,
+				StartTime: startTime,
+				Duration:  c.cfg.humm.Duration,
+			},
+		})
+	}
+	return flyovers, nil
+}
+
+func reverseBaseHops(hops []snetpath.BaseHop) []snetpath.BaseHop {
+	reversed := make([]snetpath.BaseHop, len(hops))
+	for i, hop := range hops {
+		reversed[len(hops)-1-i] = snetpath.BaseHop{
+			IA:      hop.IA,
+			Ingress: hop.Egress,
+			Egress:  hop.Ingress,
+		}
+	}
+	return reversed
+}
+
+// renewalLoop renews the active reservation shortly before it expires, for as long as runCtx is
+// alive. See the design doc section 4 for the rationale behind the renewal margin.
+func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time.Time) {
+	totalWindow := time.Duration(c.cfg.humm.Duration) * time.Second
+	renewAt := expiry.Add(-time.Duration(float64(totalWindow) * (1 - c.cfg.renewalFraction)))
+
+	for {
+		c.metrics.reservationExpiry.Set(time.Until(expiry).Seconds())
+		select {
+		case <-runCtx.Done():
+			return
+		case <-time.After(time.Until(renewAt)):
+		}
+		if runCtx.Err() != nil {
+			return
+		}
+
+		newRsv, newNextHop, ok := c.renewWithRetry(runCtx, path, expiry)
+		if !ok {
+			// Exhausted retries for this window; keep sending on the old reservation and try
+			// again shortly, until it actually expires.
+			if time.Now().After(expiry) {
+				log.Error("Reservation expired without a successful renewal")
+				return
+			}
+			renewAt = time.Now().Add(1 * time.Second)
+			continue
+		}
+
+		old := c.currentAddr.Load()
+		newAddr := &snet.UDPAddr{
+			IA:      old.IA,
+			Host:    old.Host,
+			Path:    newRsv,
+			NextHop: newNextHop,
+		}
+		c.currentAddr.Store(newAddr)
+		if c.cfg.bidirectional() {
+			c.forceSmallNextPayload.Store(true)
+		}
+		expiry = newRsv.Expiry()
+		renewAt = expiry.Add(-time.Duration(float64(totalWindow) * (1 - c.cfg.renewalFraction)))
+		log.Info("Renewed Hummingbird reservation", "new_expiry", expiry)
+	}
+}
+
+// renewWithRetry attempts to build a fresh reservation with a small bounded number of retries
+// and exponential backoff, reporting the outcome via metrics.
+func (c *client) renewWithRetry(
+	runCtx context.Context, path snet.Path, oldExpiry time.Time,
+) (*snetpath.Reservation, *net.UDPAddr, bool) {
+	const maxAttempts = 5
+	backoff := 500 * time.Millisecond
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if runCtx.Err() != nil {
+			return nil, nil, false
+		}
+		ctx, cancel := context.WithTimeout(runCtx, 5*time.Second)
+		rsv, nextHop, err := c.buildReservation(ctx, path, time.Now())
+		cancel()
+		if err == nil {
+			c.metrics.reservationRenewals.WithLabelValues("ok").Inc()
+			return rsv, nextHop, true
+		}
+		log.Error("Renewing Hummingbird reservation failed",
+			"attempt", attempt+1, "err", err, "time_until_expiry", time.Until(oldExpiry))
+		c.metrics.reservationRenewals.WithLabelValues("error").Inc()
+		select {
+		case <-runCtx.Done():
+			return nil, nil, false
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	return nil, nil, false
+}
+
+// pongTracker tracks outstanding pong requests awaiting a reply, evicting (and counting as
+// lost) any that go unanswered for too long.
+type pongTracker struct {
+	mu          sync.Mutex
+	outstanding map[uint64]time.Time
+	lastRTT     time.Duration
+	jitter      JitterEstimator
+}
+
+func newPongTracker() *pongTracker {
+	return &pongTracker{
+		outstanding: make(map[uint64]time.Time),
+		lastRTT:     500 * time.Millisecond,
+	}
+}
+
+func (t *pongTracker) recordSent(seq uint64, now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.outstanding[seq] = now
+}
+
+// recordReplied removes seq from the outstanding table (if present) and returns whether it was
+// found (i.e. this reply is not a duplicate/late-beyond-eviction reply).
+func (t *pongTracker) recordReplied(seq uint64, rtt time.Duration) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, ok := t.outstanding[seq]; !ok {
+		return false
+	}
+	delete(t.outstanding, seq)
+	t.lastRTT = rtt
+	return true
+}
+
+// evictTimedOut removes and returns the count of outstanding requests older than the current
+// timeout (a small multiple of the last observed RTT, with a floor).
+func (t *pongTracker) evictTimedOut(now time.Time) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	timeout := 4 * t.lastRTT
+	if timeout < time.Second {
+		timeout = time.Second
+	}
+	lost := 0
+	for seq, sentAt := range t.outstanding {
+		if now.Sub(sentAt) > timeout {
+			delete(t.outstanding, seq)
+			lost++
+		}
+	}
+	return lost
+}
+
+// sendLoop is the single writer goroutine: it merges the Payload and PongRequest schedules by
+// absolute deadline (per design doc section 3) and writes every packet through conn.WriteTo,
+// always reading the latest reservation pointer so renewal and pacing never race.
+func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTracker) {
+	payloadInterval := time.Duration(float64(time.Second) * float64(c.cfg.payloadSize*8) / c.cfg.bandwidthBps)
+	if payloadInterval <= 0 {
+		payloadInterval = time.Millisecond
+	}
+	pongInterval := time.Duration(float64(time.Second) / c.cfg.pongRateHz)
+	if pongInterval <= 0 {
+		pongInterval = time.Second
+	}
+
+	var deadline time.Time
+	if c.cfg.duration > 0 {
+		deadline = time.Now().Add(c.cfg.duration)
+	}
+
+	buf := make([]byte, c.cfg.payloadSize)
+	pongBuf := make([]byte, HeaderLen)
+
+	var payloadSeq, pongSeq uint64
+	now := time.Now()
+	nextPayload := now
+	nextPong := now
+
+	const pacingViolationThreshold = -100 * time.Millisecond
+	var overrunsSinceLog int
+	lastOverrunLog := now
+
+	for {
+		if !deadline.IsZero() && !now.Before(deadline) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		var target time.Time
+		isPayload := nextPayload.Before(nextPong) || nextPayload.Equal(nextPong)
+		if isPayload {
+			target = nextPayload
+		} else {
+			target = nextPong
+		}
+
+		wait := time.Until(target)
+		if wait > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+		} else if wait <= pacingViolationThreshold {
+			c.metrics.pacingOverrunTotal.Inc()
+			c.metrics.pacingDelay.Observe((-wait).Seconds())
+			overrunsSinceLog++
+			if time.Since(lastOverrunLog) >= time.Second {
+				log.Error("Pacing overruns", "count_since_last_log", overrunsSinceLog)
+				overrunsSinceLog = 0
+				lastOverrunLog = time.Now()
+			}
+		}
+
+		now = time.Now()
+		addr := c.currentAddr.Load()
+		if isPayload {
+			size := c.cfg.payloadSize
+			if c.forceSmallNextPayload.CompareAndSwap(true, false) {
+				size = bidirectionalFirstPacketLen
+			}
+			EncodePayload(buf[:size], payloadSeq, now.UnixNano(), fillerSeed)
+			if _, err := conn.WriteTo(buf[:size], addr); err != nil {
+				log.Error("Sending payload packet", "err", err)
+			} else {
+				c.metrics.payloadPacketsSent.Inc()
+				c.metrics.payloadBytesSent.Add(float64(size))
+				c.rateMu.Lock()
+				c.rate.Add(size)
+				c.rateMu.Unlock()
+			}
+			payloadSeq++
+			nextPayload = nextPayload.Add(payloadInterval)
+		} else {
+			EncodePongRequest(pongBuf, pongSeq, now.UnixNano())
+			if _, err := conn.WriteTo(pongBuf, addr); err != nil {
+				log.Error("Sending pong request", "err", err)
+			} else {
+				c.metrics.pongRequestsSent.Inc()
+				tracker.recordSent(pongSeq, now)
+			}
+			pongSeq++
+			nextPong = nextPong.Add(pongInterval)
+		}
+	}
+}
+
+// pongReceiveLoop reads PongReply packets and feeds RTT/jitter measurements into tracker and
+// the Prometheus metrics.
+func (c *client) pongReceiveLoop(ctx context.Context, conn *snet.Conn, tracker *pongTracker) {
+	buf := make([]byte, PongReplyLen)
+	go c.pongSweepLoop(ctx, tracker)
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+			log.Error("Setting read deadline", "err", err)
+			return
+		}
+		n, _, err := conn.ReadFrom(buf)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				continue
+			}
+			log.Error("Reading from conn", "err", err)
+			continue
+		}
+		reply, err := DecodePongReply(buf[:n])
+		if err != nil {
+			log.Error("Decoding pong reply", "err", err)
+			continue
+		}
+		now := time.Now()
+		rtt := time.Duration(now.UnixNano() - reply.SendTimestampNanos)
+		if !tracker.recordReplied(reply.SequenceNumber, rtt) {
+			continue // Duplicate, or already evicted as timed out.
+		}
+		c.metrics.pongRepliesReceived.Inc()
+		c.metrics.rtt.Observe(rtt.Seconds())
+		tracker.jitter.Sample(
+			time.Duration(reply.SendTimestampNanos),
+			time.Duration(now.UnixNano()),
+		)
+		c.metrics.jitter.Set(tracker.jitter.Jitter.Seconds())
+	}
+}
+
+func (c *client) pongSweepLoop(ctx context.Context, tracker *pongTracker) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if lost := tracker.evictTimedOut(now); lost > 0 {
+				c.metrics.pongLost.Add(float64(lost))
+			}
+		}
+	}
+}
+
+// reportLoop prints periodic interval reports to stdout, mirroring iperf -i, and updates the
+// achieved send-rate gauge.
+func (c *client) reportLoop(ctx context.Context, tracker *pongTracker) {
+	ticker := time.NewTicker(c.cfg.reportInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			c.rateMu.Lock()
+			res := c.rate.Snapshot(now)
+			c.rateMu.Unlock()
+			tracker.mu.Lock()
+			jitter := tracker.jitter.Jitter
+			tracker.mu.Unlock()
+			c.metrics.sendRateBps.Set(res.BitsPerSec)
+			fmt.Printf("[client] interval=%s payload_bytes=%d rate=%.2f Mbps jitter=%s\n",
+				res.Duration.Round(time.Millisecond), res.Bytes,
+				res.BitsPerSec/1e6, jitter.Round(time.Microsecond))
+		}
+	}
+}
