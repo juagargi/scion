@@ -161,6 +161,23 @@ func (r *Reservation) deriveDataPlanePath(
 	}
 }
 
+// Expiry returns the earliest time at which one of this reservation's flyovers stops being
+// valid. It returns the zero Time if the reservation has no flyovers, i.e. it does not expire
+// on its own.
+func (r *Reservation) Expiry() time.Time {
+	var earliest time.Time
+	for _, h := range r.Hops {
+		if h == nil || h.Flyover == nil {
+			continue
+		}
+		end := time.Unix(int64(h.Flyover.StartTime)+int64(h.Flyover.Duration), 0)
+		if earliest.IsZero() || end.Before(earliest) {
+			earliest = end
+		}
+	}
+	return earliest
+}
+
 // ReservationModFcn is a options setting function for a reservation.
 type ReservationModFcn func(*Reservation) error
 
