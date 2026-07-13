@@ -44,6 +44,9 @@ type HummReplyPather struct {
 	mu sync.Mutex
 	// reservations maintains a Hummingbird Reservation to each source who has sent a reverse
 	// reservation to reach them. It is populated by SetState and consumed by ReplyPathTo.
+	// SetState only ever stores entries with a non-zero expiry (see reservationEntry.expiry);
+	// a reverse reservation with no flyovers is rejected before it would be cached, since it
+	// offers nothing beyond letting ReplyPathTo fall back to reversing the transport path.
 	reservations map[snet.SourceIdentifier]reservationEntry
 	// expirations is a min-heap of (source, expiry) pairs ordered by expiry time, used to
 	// evict entries from reservations once they are no longer valid. It may contain stale
@@ -52,10 +55,11 @@ type HummReplyPather struct {
 	expirations expiryHeap
 }
 
-// reservationEntry is the value type stored in HummReplyPather.reservations.
+// reservationEntry is the value type stored in HummReplyPather.reservations. expiry is always
+// non-zero: SetState never caches a reservation whose own Expiry() is zero.
 type reservationEntry struct {
 	rsv    *Reservation
-	expiry time.Time // expiration + slack. Zero if it never expires (e.g. no flyovers)
+	expiry time.Time // expiration + slack.
 }
 
 var _ snet.StatefulReplyPather = (*HummReplyPather)(nil)
@@ -86,6 +90,8 @@ func WithCleanupSlack(slack time.Duration) HummReplyPatherOption {
 	}
 }
 
+// WithClock overrides the function HummReplyPather uses to obtain the current time. It is
+// intended for testing the cleanup logic deterministically.
 func WithClock(now func() time.Time) HummReplyPatherOption {
 	return func(p *HummReplyPather) {
 		p.Now = now
@@ -113,20 +119,29 @@ func (p *HummReplyPather) SetState(sourceId snet.SourceIdentifier, pkt snet.Pack
 	}
 
 	expiry := rsv.Expiry()
-	if !expiry.IsZero() {
-		expiry = expiry.Add(p.CleanupSlack)
+	if expiry.IsZero() {
+		// No flyovers: a reversed Reservation with no flyovers offers nothing beyond
+		// reversing the transport path directly, so don't cache it. ReplyPathTo will fall
+		// back to the default reply pather, yielding a similar result.
+		// If a previously cached reservation exists for this source, remove it: this
+		// SetState call reflects the source's current reservation state, which supersedes
+		// whatever was cached before, so keeping the old entry around would only serve a
+		// now-outdated reservation until it happens to expire on its own.
+		p.mu.Lock()
+		delete(p.reservations, sourceId)
+		p.mu.Unlock()
+		return nil
 	}
+
 	entry := reservationEntry{
 		rsv:    rsv,
-		expiry: expiry,
+		expiry: expiry.Add(p.CleanupSlack),
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.reservations[sourceId] = entry
-	if !entry.expiry.IsZero() {
-		heap.Push(&p.expirations, expiryItem{srcId: sourceId, expiry: entry.expiry})
-	}
+	heap.Push(&p.expirations, expiryItem{srcId: sourceId, expiry: entry.expiry})
 	// Cleanup is tied to insertion rather than lookup: this is the only place the map can
 	// grow, so sweeping every globally-expired entry here (irrespective of the current
 	// source ID) bounds its size relative to how often reservations are set up, regardless
