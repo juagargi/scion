@@ -15,7 +15,6 @@
 package snet
 
 import (
-	"fmt"
 	"net"
 	"net/netip"
 	"sync"
@@ -98,7 +97,6 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 	// If this were ever to change, we would always fall into the following if statement, then
 	// we would like to replace this logic (e.g., using IP_PKTINFO, with its caveats).
 	if c.local.Host.AddrPort() != pktAddrPort {
-
 		// If the client is behind a NAT, the SCION packet will hold the mapped external address,
 		// which is expected to be different from the local address. To handle this case, we check
 		// whether the underlying connection is a stunConn, which indicates that NAT traversal
@@ -121,18 +119,20 @@ func (c *scionConnReader) read(b []byte) (int, *UDPAddr, error) {
 	}
 
 	// Using the reply pather, build the reverse path.
-	fmt.Printf("deleteme checking if reply pather is stateful... ")
-
 	var replyPath DataplanePath
 	if statefulRP, ok := c.replyPather.(StatefulReplyPather); ok {
-		fmt.Print("yes\n")
-		if err := statefulRP.SetState(pkt); err != nil {
+		sourceId := SourceIdentifier{
+			IA:   pkt.Source.IA,
+			IP:   pkt.Source.Host.IP(),
+			Port: udp.SrcPort,
+		}
+		if err := statefulRP.SetState(sourceId, pkt); err != nil {
 			return 0, nil, serrors.Wrap("cannot set the state of the reply pather", err)
 		}
+		replyPath, err = statefulRP.ReplyPathTo(sourceId, rpath)
 	} else {
-		fmt.Print("no\n")
+		replyPath, err = c.replyPather.ReplyPath(rpath)
 	}
-	replyPath, err = c.replyPather.ReplyPath(rpath)
 	if err != nil {
 		return 0, nil, serrors.Wrap("creating reply path", err)
 	}

@@ -15,6 +15,9 @@
 package snet
 
 import (
+	"net/netip"
+
+	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
 	"github.com/scionproto/scion/pkg/slayers/path"
@@ -60,8 +63,18 @@ func (p RawReplyPath) SetPath(s *slayers.SCION) error {
 }
 
 // StatefulReplyPather represents a reply pather that can contain state.
+// The ReplyPather is kept as a singleton per SCION network and Connection.
+// all necessary state should be either independent of the
 type StatefulReplyPather interface {
 	ReplyPather
-	// SetState(srcIA addr.IA, pathFromSrc RawPath, state []byte) error
-	SetState(pkt Packet) error
+	SetState(srcId SourceIdentifier, pkt Packet) error
+	ReplyPathTo(srcId SourceIdentifier, rpath RawPath) (DataplanePath, error)
+}
+
+// SourceIdentifier is the type used to identify a particular source.
+// Two sources A and B are the same iff their IA, IP, and port are the same.
+type SourceIdentifier struct {
+	IA   addr.IA
+	IP   netip.Addr
+	Port uint16
 }

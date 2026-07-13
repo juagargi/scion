@@ -15,18 +15,18 @@
 package path
 
 import (
-	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/slayers"
 	"github.com/scionproto/scion/pkg/snet"
 )
 
 type HummReplyPather struct {
-	// origSrcIA is the original source IA of the packet (the "sender" when setting the
-	// state of the reply pather via a packet).
-	origSrcIA addr.IA
-	// reservation is the Hummingbird path in the already reversed direction, src IA is this IA.
-	reservation      *Reservation
 	BackupRepyPather snet.ReplyPather // Used if no bidirectional reservation is available.
+
+	// reservations maintains a Hummingbird Reservation to each source who has sent a reverse
+	// reservation to reach them. It is populated by SetState.
+	reservations map[snet.SourceIdentifier]*Reservation
+
+	// TODO clean the reservation map via a configurable callback.
 }
 
 var _ snet.StatefulReplyPather = (*HummReplyPather)(nil)
@@ -36,6 +36,7 @@ var _ snet.StatefulReplyPather = (*HummReplyPather)(nil)
 func NewHummReplyPather() *HummReplyPather {
 	return &HummReplyPather{
 		BackupRepyPather: snet.DefaultReplyPather{},
+		reservations:     make(map[snet.SourceIdentifier]*Reservation),
 	}
 }
 
@@ -43,10 +44,7 @@ func NewHummReplyPather() *HummReplyPather {
 // reservation. Being this reply pather run at AS A, the state is set when a packet is received
 // by A from B, i.e. B->A. This packet contains some end2end extension options with the necessary
 // serialized reservation state to reconstruct a valid reverse Reservation.
-func (p *HummReplyPather) SetState(pkt snet.Packet) error {
-	// Record the sender.
-	p.origSrcIA = pkt.Source.IA
-
+func (p *HummReplyPather) SetState(sourceId snet.SourceIdentifier, pkt snet.Packet) error {
 	// Check if there is any bidirectional reservation information in this packet.
 	serializedReservation := containedReversePathState(pkt.E2eExtnContents)
 	if serializedReservation == nil {
@@ -56,23 +54,33 @@ func (p *HummReplyPather) SetState(pkt snet.Packet) error {
 
 	// Build the reverse reservation.
 	originalPath := pkt.Path.(snet.RawPath) // Can't fail, it was checked by the caller.
-	var err error
-	p.reservation, err = NewReservation(
-		WithReverseFromBidirectional(serializedReservation, originalPath, p.origSrcIA))
+	rsv, err := NewReservation(
+		WithReverseFromBidirectional(serializedReservation, originalPath, pkt.Source.IA))
 	if err != nil {
 		return err
 	}
+
+	p.reservations[sourceId] = rsv
 	return nil
 }
 
-func (r *HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, error) {
-	// If we have a valid reversed reservation, return it already without reversing the current
-	// passed path. This reversed reservation might have been constructed many packets ago.
-	if r.reservation != nil {
-		return r.reservation, nil
+func (r *HummReplyPather) ReplyPathTo(
+	sourceId snet.SourceIdentifier,
+	rpath snet.RawPath,
+) (snet.DataplanePath, error) {
+	// If we have a valid reversed reservation for this source,
+	// return it already without reversing the current passed path.
+	// This reversed reservation might have been constructed many packets ago.
+	if rsv, ok := r.reservations[sourceId]; ok {
+		return rsv, nil
 	}
 
 	// Otherwise, just reverse the hummingbird path.
+	return r.ReplyPath(rpath)
+}
+
+// ReplyPath uses the embedded backup DefaultReplyPather to return the reply path.
+func (r *HummReplyPather) ReplyPath(rpath snet.RawPath) (snet.DataplanePath, error) {
 	return r.BackupRepyPather.ReplyPath(rpath)
 }
 

@@ -15,6 +15,7 @@
 package path_test
 
 import (
+	"net/netip"
 	"reflect"
 	"testing"
 	"time"
@@ -38,7 +39,11 @@ import (
 // snet.DefaultReplyPather for reply-path construction.
 func TestHummReplyPather(t *testing.T) {
 	timestamp := util.SecsToTime(123456)
-	srcIA := addr.MustParseIA("1-ff00:0:111")
+	srcId := snet.SourceIdentifier{
+		IA:   addr.MustParseIA("1-ff00:0:111"),
+		IP:   mustParseIp(t, "10.0.0.2"),
+		Port: 12345,
+	}
 	carrierPath := mustRawHummingbirdPathForReplyPather(t, timestamp)
 	validReverseState := mustSerializedReverseReservationState(t, timestamp)
 
@@ -55,26 +60,35 @@ func TestHummReplyPather(t *testing.T) {
 	// expected to install a cached reverse reservation.
 	cases := map[string]struct {
 		packet                *snet.Packet
+		srcId                 snet.SourceIdentifier
 		wantSetStateErr       bool
 		wantCachedReservation bool
 	}{
 		"never_set_state": {},
 		"set_state_invalid_packet/no_reverse_option": {
-			packet:                packetWithoutReverseState(srcIA, carrierPath),
+			packet:                packetWithoutReverseState(srcId, carrierPath),
+			srcId:                 srcId,
 			wantCachedReservation: false,
 		},
 		"set_state_invalid_packet/non_hummingbird_carrier": {
-			packet:                packetWithReverseState(srcIA, mustRawSCIONPathForReplyPather(t, timestamp), validReverseState),
+			packet: packetWithReverseState(
+				srcId,
+				mustRawSCIONPathForReplyPather(t, timestamp),
+				validReverseState),
+			srcId:                 srcId,
 			wantSetStateErr:       true,
 			wantCachedReservation: false,
 		},
 		"set_state_invalid_packet/bad_serialized_state": {
-			packet:                packetWithReverseState(srcIA, carrierPath, []byte{0xde, 0xad, 0xbe, 0xef}),
+			packet: packetWithReverseState(srcId,
+				carrierPath, []byte{0xde, 0xad, 0xbe, 0xef}),
+			srcId:                 srcId,
 			wantSetStateErr:       true,
 			wantCachedReservation: false,
 		},
 		"set_state_valid_packet": {
-			packet:                packetWithReverseState(srcIA, carrierPath, validReverseState),
+			packet:                packetWithReverseState(srcId, carrierPath, validReverseState),
+			srcId:                 srcId,
 			wantCachedReservation: true,
 		},
 	}
@@ -84,7 +98,7 @@ func TestHummReplyPather(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			rp := path.NewHummReplyPather()
 			if tc.packet != nil {
-				err := rp.SetState(*tc.packet)
+				err := rp.SetState(tc.srcId, *tc.packet)
 				if tc.wantSetStateErr {
 					require.Error(t, err)
 				} else {
@@ -95,7 +109,7 @@ func TestHummReplyPather(t *testing.T) {
 			for replyName, input := range replyInputs {
 				replyName, input := replyName, input
 				t.Run(replyName, func(t *testing.T) {
-					got, err := rp.ReplyPath(cloneRawPath(input))
+					got, err := rp.ReplyPathTo(tc.srcId, cloneRawPath(input))
 					if tc.wantCachedReservation {
 						// Once a valid reverse reservation is cached, reply-path
 						// selection should no longer depend on the incoming path type.
@@ -103,7 +117,11 @@ func TestHummReplyPather(t *testing.T) {
 						gotReservation, ok := got.(*path.Reservation)
 						require.True(t, ok, "expected cached reservation, got %T", got)
 
-						wantReservation := mustReservationFromReverseState(t, carrierPath, validReverseState, srcIA)
+						wantReservation := mustReservationFromReverseState(
+							t,
+							carrierPath,
+							validReverseState,
+							tc.srcId.IA)
 						require.Equal(t, wantReservation.DstIA, gotReservation.DstIA)
 						require.Len(t, gotReservation.Hops, len(wantReservation.Hops))
 						require.Equal(t, wantReservation.Dec.Type(), gotReservation.Dec.Type())
@@ -136,30 +154,26 @@ func TestHummReplyPather(t *testing.T) {
 			}
 		})
 	}
-
-	// Nil receivers are currently unsupported; document the panic contract
-	// explicitly so future changes are intentional.
-	t.Run("nil_receiver", func(t *testing.T) {
-		var rp *path.HummReplyPather
-		pkt := *packetWithoutReverseState(srcIA, carrierPath)
-		rpath := mustRawSCIONPathForReplyPather(t, timestamp)
-
-		require.Panics(t, func() {
-			_ = rp.SetState(pkt)
-		})
-		require.Panics(t, func() {
-			_, _ = rp.ReplyPath(rpath)
-		})
-	})
 }
 
 // packetWithoutReverseState builds a packet whose SetState call should behave
 // like a no-op for reverse-reservation caching.
-func packetWithoutReverseState(srcIA addr.IA, carrierPath snet.RawPath) *snet.Packet {
+func packetWithoutReverseState(
+	srcId snet.SourceIdentifier,
+	carrierPath snet.RawPath,
+) *snet.Packet {
 	return &snet.Packet{
 		PacketInfo: snet.PacketInfo{
-			Source: snet.SCIONAddress{IA: srcIA},
-			Path:   carrierPath,
+			Source: snet.SCIONAddress{
+				IA:   srcId.IA,
+				Host: addr.HostIP(srcId.IP),
+			},
+			Path: carrierPath,
+			Payload: snet.UDPPayload{
+				SrcPort: srcId.Port,
+				DstPort: 42,
+				Payload: ([]byte)("mock payload"),
+			},
 		},
 	}
 }
@@ -174,19 +188,19 @@ func cloneRawPath(rpath snet.RawPath) snet.RawPath {
 
 // packetWithReverseState builds a packet that carries reverse reservation state
 // in an end-to-end option.
-func packetWithReverseState(srcIA addr.IA, carrierPath snet.RawPath, state []byte) *snet.Packet {
-	return &snet.Packet{
-		PacketInfo: snet.PacketInfo{
-			Source: snet.SCIONAddress{IA: srcIA},
-			Path:   carrierPath,
-			E2eExtnContents: []*slayers.EndToEndOption{
-				{
-					OptType: slayers.OptTypeReversePath,
-					OptData: append([]byte(nil), state...),
-				},
-			},
+func packetWithReverseState(
+	srcId snet.SourceIdentifier,
+	carrierPath snet.RawPath,
+	state []byte,
+) *snet.Packet {
+	pkt := packetWithoutReverseState(srcId, carrierPath)
+	pkt.E2eExtnContents = []*slayers.EndToEndOption{
+		{
+			OptType: slayers.OptTypeReversePath,
+			OptData: append([]byte(nil), state...),
 		},
 	}
+	return pkt
 }
 
 // mustRawSCIONPathForReplyPather serializes the synthetic SCION path fixture
@@ -483,4 +497,10 @@ func createFlyoverForReplyPather(startTime uint32) *path.FlyoverData {
 		Bw:        64,
 		Ak:        [16]byte{1, 2, 3, 4},
 	}
+}
+
+func mustParseIp(t *testing.T, ip string) netip.Addr {
+	a, err := netip.ParseAddr(ip)
+	require.NoError(t, err)
+	return a
 }
