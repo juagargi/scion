@@ -1,0 +1,43 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: "hummbwtester-server"
+    static_configs:
+      - targets:
+          - "127.0.0.1:9090"
+        labels:
+          mode: "server"
+
+  - job_name: "hummbwtester-client"
+    static_configs:
+      - targets:
+          - "127.0.0.1:9091"
+        labels:
+          mode: "client"
+
+  - job_name: "scion-border-routers"
+    static_configs:
+      - targets:
+          - "127.0.0.9:30442"
+        labels:
+          as: "ff00_0_110"
+          br: "br1-ff00_0_110-1"
+
+      - targets:
+          - "127.0.0.10:30442"
+        labels:
+          as: "ff00_0_110"
+          br: "br1-ff00_0_110-2"
+
+      - targets:
+          - "127.0.0.17:30442"
+        labels:
+          as: "ff00_0_111"
+          br: "br1-ff00_0_111-1"
+
+      - targets:
+          - "[fd00:f00d:cafe::7f00:9]:30442"
+        labels:
+          as: "ff00_0_112"
+          br: "br1-ff00_0_112-1"

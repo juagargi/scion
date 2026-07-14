@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: "hummbwtester"
+    orgId: 1
+    folder: "hummbwtester"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/dashboards
