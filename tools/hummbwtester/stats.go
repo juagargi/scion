@@ -24,6 +24,8 @@ import "time"
 //
 // where R is the receiver's relative arrival time and S is the sender's relative send time
 // for consecutive samples.
+//
+// Note that monotonic clocks are expected and required.
 type JitterEstimator struct {
 	have     bool
 	prevSend time.Duration
