@@ -22,18 +22,30 @@ import (
 // clientMetrics holds every Prometheus metric emitted by the client, as listed in the design
 // doc's metrics section.
 type clientMetrics struct {
-	payloadPacketsSent  prometheus.Counter
-	payloadBytesSent    prometheus.Counter
-	pongRequestsSent    prometheus.Counter
+	// payloadPacketsSent counts payload packets sent by the client.
+	payloadPacketsSent prometheus.Counter
+	// payloadBytesSent counts payload bytes sent by the client.
+	payloadBytesSent prometheus.Counter
+	// pongRequestsSent counts pong-request packets sent by the client.
+	pongRequestsSent prometheus.Counter
+	// pongRepliesReceived counts pong-reply packets received by the client.
 	pongRepliesReceived prometheus.Counter
-	pongLost            prometheus.Counter
-	rtt                 prometheus.Histogram
-	jitter              prometheus.Gauge
-	sendRateBps         prometheus.Gauge
-	pacingOverrunTotal  prometheus.Counter
-	pacingDelay         prometheus.Histogram
+	// pongLost counts pong requests that timed out without a reply.
+	pongLost prometheus.Counter
+	// rtt records round-trip time measurements from pong requests and replies.
+	rtt prometheus.Histogram
+	// jitter tracks the current RFC 3550 interarrival jitter estimate for pong replies.
+	jitter prometheus.Gauge
+	// sendRateBps tracks the achieved payload send rate over the last report interval.
+	sendRateBps prometheus.Gauge
+	// pacingOverrunTotal counts scheduled sends that were already late when reached.
+	pacingOverrunTotal prometheus.Counter
+	// pacingDelay records the lateness of pacing overruns.
+	pacingDelay prometheus.Histogram
+	// reservationRenewals counts Hummingbird reservation renewal attempts by result.
 	reservationRenewals *prometheus.CounterVec
-	reservationExpiry   prometheus.Gauge
+	// reservationExpiry tracks seconds until the currently active reservation expires.
+	reservationExpiry prometheus.Gauge
 }
 
 func newClientMetrics() *clientMetrics {
@@ -133,7 +145,8 @@ func newServerMetrics() *serverMetrics {
 		}, clientLabels),
 		receiveRateBps: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hummbwtester_server_receive_rate_bps",
-			Help: "Achieved payload receive rate, in bits per second, over the last report interval, by client.",
+			Help: "Achieved payload receive rate, in bits per second, over the last report " +
+				"interval, by client.",
 		}, clientLabels),
 		activeClients: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_server_active_clients",

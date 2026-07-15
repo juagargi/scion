@@ -55,6 +55,10 @@ type server struct {
 	cfg     serverConfig
 	metrics *serverMetrics
 
+	// pongReplyBuf is reused across calls to handlePongRequest, which only ever runs on the
+	// single receiveLoop goroutine.
+	pongReplyBuf []byte
+
 	mu      sync.Mutex
 	clients map[string]*clientState
 }
@@ -73,9 +77,10 @@ func runServer(ctx context.Context, sn *snet.SCIONNetwork, cfg serverConfig) int
 	log.Info("Server listening", "local", conn.LocalAddr())
 
 	s := &server{
-		cfg:     cfg,
-		metrics: newServerMetrics(),
-		clients: make(map[string]*clientState),
+		cfg:          cfg,
+		metrics:      newServerMetrics(),
+		pongReplyBuf: make([]byte, PongReplyLen),
+		clients:      make(map[string]*clientState),
 	}
 
 	var wg sync.WaitGroup
@@ -95,9 +100,7 @@ func runServer(ctx context.Context, sn *snet.SCIONNetwork, cfg serverConfig) int
 }
 
 // receiveLoop is the server's single receive goroutine: it reads every incoming packet,
-// dispatches by PacketType, and replies to PongRequests inline (from the same iteration) so
-// that all writes to conn happen from one goroutine — this sidesteps any need to synchronize
-// concurrent conn.WriteTo calls against the (unsynchronized) HummReplyPather-selected path.
+// dispatches by PacketType, and replies to PongRequests inline (from the same iteration).
 func (s *server) receiveLoop(ctx context.Context, conn *snet.Conn) {
 	buf := make([]byte, PongReplyLen+4096)
 	for {
@@ -193,9 +196,8 @@ func (s *server) handlePongRequest(
 	s.mu.Unlock()
 	s.metrics.pongRequestsReceived.WithLabelValues(key).Inc()
 
-	buf := make([]byte, PongReplyLen)
 	sendTime := time.Now()
-	EncodePongReply(buf, PongReply{
+	EncodePongReply(s.pongReplyBuf, PongReply{
 		Header: Header{
 			Type:               PacketTypePongReply,
 			SequenceNumber:     h.SequenceNumber,
@@ -204,7 +206,7 @@ func (s *server) handlePongRequest(
 		ServerRecvTimestampNanos: recvTime.UnixNano(),
 		ServerSendTimestampNanos: sendTime.UnixNano(),
 	})
-	if _, err := conn.WriteTo(buf, from); err != nil {
+	if _, err := conn.WriteTo(s.pongReplyBuf, from); err != nil {
 		log.Error("Sending pong reply", "client", key, "err", err)
 		return
 	}
