@@ -64,6 +64,21 @@ func (t *TokenBucket) SetBurstSize(burstSize int64) {
 func (t *TokenBucket) Apply(size int, now time.Time) bool {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+	return t.apply(size, now)
+}
+
+// ReconfigureAndApply atomically updates the rate and burst size before applying
+// a packet to the bucket. This is used when a reservation identifier is reused
+// with a different bandwidth while packets may be processed concurrently.
+func (t *TokenBucket) ReconfigureAndApply(size int, now time.Time, rate, burstSize int64) bool {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.CIR = rate
+	t.CBS = burstSize
+	return t.apply(size, now)
+}
+
+func (t *TokenBucket) apply(size int, now time.Time) bool {
 	// Increase available tokens according to time passed since last call
 	// Apply() is expected to be called from different threads
 	// As a consequence, it is possible for now to be older than LastTimeApplied

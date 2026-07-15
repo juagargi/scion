@@ -91,6 +91,23 @@ func realMain() int {
 
 	log.Info("BR V2 acceptance tests:")
 
+	// Hummingbird coverage map (acceptance case -> router unit case):
+	//
+	//   BestEffort{Inbound,Outbound}             -> inbound, outbound
+	//   BestEffort{ChildToParent,ParentToChild}  -> brtransit non consdir, brtransit
+	//   BestEffortChildToInternalParent          -> astransit direct
+	//   BestEffortChildToChildXover              -> brtransit xover
+	//   Flyover{Inbound,Outbound}                 -> inbound flyover, outbound flyover
+	//   Flyover{ParentToChild,ChildToParent...}   -> brtransit flyover variants
+	//   FlyoverChildToChildXover                 -> brtransit xover flyover
+	//   FlyoverXoverASTransit{Ingress,Egress}    -> split-BR xover flyover variants
+	//   Flyover{ChildToPeer,PeerToChild}          -> peering boundary flyover variants
+	//   Bad{Flyover,BestEffort}MAC/Invalid*IA     -> Hummingbird SCMP failures
+	//   MalformedCurrentHopAlignment              -> malformed CurrHF rejection
+	//
+	// Key lifecycle, token-bucket identity/concurrency, and priority-label
+	// demotion remain unit-only because the byte-comparison runner cannot observe
+	// those internal states.
 	multi := []runner.Case{
 		cases.ParentToChild(artifactsDir, hfMAC),
 		cases.ParentToInternalHost(artifactsDir, hfMAC),
@@ -146,11 +163,18 @@ func realMain() int {
 		cases.ChildToPeer(artifactsDir, hfMAC),
 		cases.PeerToChild(artifactsDir, hfMAC),
 		cases.HummingbirdBestEffortChildToParent(artifactsDir, hfMAC),
-		cases.HummingbirdFlyoverChildToParent(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdBestEffortParentToChild(artifactsDir, hfMAC),
+		cases.HummingbirdMalformedCurrentHopAlignment(artifactsDir, hfMAC),
+		cases.HummingbirdFlyoverParentToChild(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdFlyoverInbound(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdFlyoverOutbound(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdExpiredReservation(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdBandwidthExceeded(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdBestEffortChildToChildXover(artifactsDir, hfMAC),
 		cases.HummingbirdBadFlyoverMAC(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdBadBestEffortMAC(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdInvalidSourceIA(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdInvalidDestinationIA(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdBestEffortInbound(artifactsDir, hfMAC),
 		cases.HummingbirdBestEffortOutbound(artifactsDir, hfMAC),
 		cases.HummingbirdBestEffortChildToInternalParent(artifactsDir, hfMAC),

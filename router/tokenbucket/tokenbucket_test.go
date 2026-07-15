@@ -144,6 +144,18 @@ func TestTokenBucketAlgorithm(t *testing.T) {
 	}
 }
 
+func TestReconfigureAndApply(t *testing.T) {
+	start := time.Unix(0, 0)
+	bucket := tokenbucket.NewTokenBucket(start, 64, 64)
+	require.True(t, bucket.Apply(64, start))
+	require.False(t, bucket.Apply(1, start))
+
+	// Reconfiguration is applied atomically with the packet. Advancing the clock
+	// by one second refills at the new rate and observes the new burst limit.
+	require.True(t, bucket.ReconfigureAndApply(128, start.Add(time.Second), 128, 128))
+	require.False(t, bucket.Apply(1, start.Add(time.Second)))
+}
+
 // TestConvertBW checks that ConvertBW(BW uint16) works as expected.
 // The 10 bits of BW are divided into 5 for mantissa, and 5 for exponent.
 // Always positive and integer.

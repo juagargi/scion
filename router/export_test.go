@@ -323,6 +323,15 @@ func (d *DataPlane) MockStart() {
 	d.setRunning()
 }
 
+func HummingbirdTokenBucketCount(d *DataPlane) int {
+	count := 0
+	d.tokenBuckets.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
+}
+
 func (d *DataPlane) ProcessPkt(pkt *Packet) Disposition {
 
 	p := newPacketProcessor(&d.dataPlane)

@@ -409,23 +409,11 @@ func (p *scionPacketProcessor) checkReservationBandwidth(sc sizeClass) dispositi
 		return pForward
 	}
 
-	// Check bandwidth
-	if tb.CIR != resBw {
-		log.Debug("hummingbird checking BW: reconfiguring bucket",
-			"CIR", tb.CIR,
-			"ResBW", resBw)
-		// It is possible for different reservations to share a resID
-		// if they do not overlap in time.
-		tb.SetRate(resBw)
-		tb.SetBurstSize(resBw)
-	}
-
-	log.Debug("hummingbird checking BW token bucket status",
-		"current_tokens", tb.CurrentTokens,
-		"last_used", tb.LastTimeApplied)
-
 	// Up to this point the packet is flagged with priority. Remove the priority if too much BW:
-	if !tb.Apply(int(p.scionLayer.PayloadLen), time.Now()) {
+	// It is possible for different reservations to share a reservation key if
+	// they do not overlap in time. Reconfiguration and application must be one
+	// atomic operation because packets are processed concurrently.
+	if !tb.ReconfigureAndApply(int(p.scionLayer.PayloadLen), time.Now(), resBw, resBw) {
 		log.Debug("hummingbird packet exceeding allowed bandwidth token bucket",
 			"resID", fmt.Sprintf("%x", p.flyoverField.ResID))
 		p.pkt.PriorityLabel = pr.WithBestEffort
