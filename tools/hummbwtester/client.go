@@ -67,6 +67,7 @@ type clientConfig struct {
 	payloadSize     int
 	pongRateHz      float64
 	humm            hummingbirdParameters
+	hummEnabled     bool
 	hummKeysDir     string
 	reportInterval  time.Duration
 	renewalFraction float64
@@ -114,18 +115,28 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 		return 1
 	}
 
-	now := time.Now()
-	reservation, nextHop, err := c.buildReservation(ctx, path, now)
-	if err != nil {
-		log.Error("Building initial Hummingbird reservation", "err", err)
-		return 1
-	}
-
-	remoteAddr := &snet.UDPAddr{
-		IA:      cfg.remote.IA,
-		Host:    cfg.remote.Host,
-		Path:    reservation,
-		NextHop: nextHop,
+	var remoteAddr *snet.UDPAddr
+	var reservation *snetpath.Reservation
+	if cfg.hummEnabled {
+		var nextHop *net.UDPAddr
+		reservation, nextHop, err = c.buildReservation(ctx, path, time.Now())
+		if err != nil {
+			log.Error("Building initial Hummingbird reservation", "err", err)
+			return 1
+		}
+		remoteAddr = &snet.UDPAddr{
+			IA:      cfg.remote.IA,
+			Host:    cfg.remote.Host,
+			Path:    reservation,
+			NextHop: nextHop,
+		}
+	} else {
+		remoteAddr = &snet.UDPAddr{
+			IA:      cfg.remote.IA,
+			Host:    cfg.remote.Host,
+			Path:    path.Dataplane(),
+			NextHop: path.UnderlayNextHop(),
+		}
 	}
 	c.currentAddr.Store(remoteAddr)
 	c.forceSmallNextPayload.Store(c.cfg.bidirectional())
@@ -140,7 +151,8 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	log.Info("Client started",
 		"local", cfg.local, "remote", cfg.remote,
 		"bandwidth_bps", cfg.bandwidthBps, "payload_size", cfg.payloadSize,
-		"pong_rate_hz", cfg.pongRateHz, "bidirectional", cfg.bidirectional())
+		"pong_rate_hz", cfg.pongRateHz, "hummingbird_enabled", cfg.hummEnabled,
+		"bidirectional", cfg.bidirectional())
 
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
@@ -148,11 +160,13 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	var wg sync.WaitGroup
 	tracker := newPongTracker()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		c.renewalLoop(runCtx, path, reservation.Expiry())
-	}()
+	if cfg.hummEnabled {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.renewalLoop(runCtx, path, reservation.Expiry())
+		}()
+	}
 
 	wg.Add(1)
 	go func() {

@@ -139,10 +139,13 @@ func realMain() int {
 		}
 		return runServer(ctx, sn, scfg)
 	case modeClient:
-		hummParams, err := parseHummingbirdFlag(hummingbirdFlag)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing -hummingbird:", err)
-			return 1
+		var hummParams hummingbirdParameters
+		if hummingbirdFlag != "" {
+			hummParams, err = parseHummingbirdFlag(hummingbirdFlag)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error parsing -hummingbird:", err)
+				return 1
+			}
 		}
 		bandwidthBps, err := parseBandwidth(bandwidthFlag)
 		if err != nil {
@@ -158,6 +161,7 @@ func realMain() int {
 			payloadSize:     payloadSize,
 			pongRateHz:      pongRateHz,
 			humm:            hummParams,
+			hummEnabled:     hummingbirdFlag != "",
 			hummKeysDir:     hummKeysDir,
 			reportInterval:  reportInterval,
 			renewalFraction: renewalFraction,
@@ -186,7 +190,8 @@ func addFlags() {
 	flag.Float64Var(&pongRateHz, "pong-rate", defaultPongRateHz,
 		"(Client only) rate, in Hz, at which to send latency probe (pong-request) packets")
 	flag.StringVar(&hummingbirdFlag, "hummingbird", "",
-		"(Client only, mandatory) Hummingbird reservation spec: BW,dur[,reverseBW] (e.g. \"3,5s\" or \"3,5s,2\")")
+		"(Client only, optional) Hummingbird reservation spec: BW,dur[,reverseBW] "+
+			"(e.g. \"3,5s\" or \"3,5s,2\"); if omitted, the client runs best-effort over plain SCION")
 	flag.StringVar(&hummKeysDir, "hummKeysDir", "",
 		"(Client only, testing) root dir containing AS*/keys/master0.key, bypasses the redemption service")
 	flag.Float64Var(&renewalFraction, "renewal-fraction", 0.7,
@@ -212,9 +217,6 @@ func validateFlags() error {
 	if mode == modeClient {
 		if remoteFlag.Host == nil {
 			return serrors.New("missing -remote")
-		}
-		if hummingbirdFlag == "" {
-			return serrors.New("missing -hummingbird")
 		}
 		if payloadSize < HeaderLen {
 			return serrors.New("payload-size too small, must be at least the header size",
