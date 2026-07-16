@@ -306,7 +306,7 @@ func (p *scionPacketProcessor) validateHbirdSrcDstIA() disposition {
 			return p.respInvalidSrcIA()
 		}
 		if dstIsLocal {
-			return p.respInvalidSrcIA()
+			return p.respInvalidDstIA()
 		}
 	} else {
 		// Inbound
