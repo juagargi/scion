@@ -1513,8 +1513,34 @@ func hummingbirdDirectASTransit(
 	now := time.Now()
 	hopLines := uint8(hummingbird.HopLines)
 	advance := hummingbird.HopLines
+
+	// The router process under test is brA, which owns interface 141 (child) but
+	// not 191 (parent, owned by sibling brD). A direct AS transit spans two BRs,
+	// so which one is under test determines the direction that keeps brA on the
+	// interface it actually owns:
+	//   ingress BR: the packet enters externally on brA's 141 (child) and, since
+	//     the egress 191 is on the sibling brD, brA forwards it internally toward
+	//     brD. Direction is child(AS4) -> parent(AS9).
+	//   egress BR: the packet enters internally from the sibling ingress BR (brD)
+	//     and leaves externally on brA's 141 (child), so brA must own the egress.
+	//     Direction is therefore parent(AS9) -> child(AS4): the transit hop is
+	//     191 (ingress, from brD) -> 141 (egress, brA), and the surrounding hops
+	//     and endpoint IAs are mirrored accordingly.
+	consIn, consEg := uint16(141), uint16(191)
+	firstHop := path.HopField{ConsIngress: 0, ConsEgress: 411}
+	lastHop := path.HopField{ConsIngress: 911, ConsEgress: 0}
+	srcIA, dstIA := "1-ff00:0:4", "1-ff00:0:9"
+	srcHost, dstHost := "172.16.4.1", "174.16.9.1"
+	if egressBR {
+		consIn, consEg = 191, 141
+		firstHop = path.HopField{ConsIngress: 0, ConsEgress: 911}
+		lastHop = path.HopField{ConsIngress: 411, ConsEgress: 0}
+		srcIA, dstIA = "1-ff00:0:9", "1-ff00:0:4"
+		srcHost, dstHost = "172.16.9.1", "174.16.4.1"
+	}
+
 	current := hummingbird.FlyoverHopField{
-		HopField: path.HopField{ConsIngress: 141, ConsEgress: 191},
+		HopField: path.HopField{ConsIngress: consIn, ConsEgress: consEg},
 	}
 	if flyover {
 		hopLines = hummingbird.FlyoverLines
@@ -1537,17 +1563,16 @@ func hummingbirdDirectASTransit(
 			{SegID: 0x111, ConsDir: true, Timestamp: util.TimeToSecs(now)},
 		},
 		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 411}},
+			{HopField: firstHop},
 			current,
-			{HopField: path.HopField{ConsIngress: 911, ConsEgress: 0}},
+			{HopField: lastHop},
 		},
 	}
-	scionL := hbirdSCION(
-		"1-ff00:0:4", "1-ff00:0:9", "172.16.4.1", "174.16.9.1", dpath)
+	scionL := hbirdSCION(srcIA, dstIA, srcHost, dstHost, dpath)
 	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
 	if flyover {
 		dpath.HopFields[1].HopField.Mac = hbirdAggregateMACForInterfaces(
-			mac, sv, scionL, dpath, 141, 191, dpath.InfoFields[0], dpath.HopFields[1],
+			mac, sv, scionL, dpath, consIn, consEg, dpath.InfoFields[0], dpath.HopFields[1],
 			dpath.PathMeta)
 	} else {
 		dpath.HopFields[1].HopField.Mac =
