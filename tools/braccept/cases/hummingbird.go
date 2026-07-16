@@ -32,11 +32,8 @@ import (
 	"github.com/scionproto/scion/tools/braccept/runner"
 )
 
-// This file contains the Hummingbird (path type 5) border-router acceptance
-// cases. They are the wire-level analogue of the unit tests in
-// router/dataplane_hbird_test.go: a crafted Hummingbird packet is injected on
-// one veth and the emitted packet is compared byte-for-byte against the
-// expected result.
+// Hummingbird acceptance cases inject packets on one veth and compare
+// the router output byte-for-byte with the expected packet.
 //
 // The AS under test is 1-ff00:0:1. The relevant interfaces (see
 // acceptance/router_multi/conf/topology.json) are:
@@ -47,14 +44,43 @@ import (
 //	151 -> CHILD  (veth_151_host, 192.168.15.x)
 //	internal      (veth_int_host, 192.168.0.x)
 //
-// The router derives its Hummingbird secret value unconditionally from the AS
-// master key (router/control/conf.go). The cases receive that secret value
-// (sv) from main.go via loadHbirdSV and use it to build the flyover MAC, so no
-// router configuration change is required.
+// Flyover cases receive the router-derived secret from main.go. The MAC helpers
+// mirror router/dataplane_hbird_test.go and must remain in sync with the router.
 //
-// The flyover MAC helpers below are ports of computeAggregateMac /
-// packetLenFromRouterView from router/dataplane_hbird_test.go. They must stay
-// in sync with the router's MAC computation.
+//
+// Hummingbird acceptance coverage.
+//
+//	Behavior                              Best-effort  Flyover
+//	Inbound delivery                      x            x
+//	Inbound, converted reversed path      N/A          N/A
+//	Outbound forwarding                   x            x
+//	BR transit, construction direction    x            x
+//	BR transit, reverse direction         x            x
+//	Direct AS transit, ingress BR         x            missing
+//	Direct AS transit, egress BR          missing      missing
+//	AS-transit cross-over, ingress BR     missing      x
+//	AS-transit cross-over, egress BR      missing      x
+//	Same-BR cross-over                    x            x
+//	Peering boundary, construction dir.   missing      x
+//	Peering boundary, reverse dir.        missing      x
+//	After peering, downstream             missing      missing
+//	Before peering, upstream              missing      missing
+//	Malformed current-hop alignment       x            missing
+//	Invalid hop MAC / SCMP                x            x
+//	Invalid source IA / SCMP              x            missing
+//	Invalid destination IA / SCMP         x            missing
+//	Invalid outbound source IA / SCMP     missing      missing
+//	Invalid outbound destination IA/SCMP  missing      missing
+//	Ingress router alert                  missing      missing
+//	Egress router alert                   missing      missing
+//	Expired reservation                   N/A          x
+//	Stale/future packet freshness         N/A          missing
+//	Reservation exceeds bandwidth         N/A          x
+//
+// Notes on other not present test cases from router/dataplane_hbird_test.go:
+// Reversed-path conversion is a test-fixture operation, not behavior visible on the wire.
+// Key lifecycle, token-bucket identity and concurrency, priority labels, and token accounting
+// remain unit-only as they are internal state rather than distinct wire behavior.
 
 const hbirdPayload = "actualpayloadbytes"
 

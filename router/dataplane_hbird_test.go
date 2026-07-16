@@ -1216,12 +1216,8 @@ func TestProcessHbirdPacket(t *testing.T) {
 					// The BR is going to update the segment ID based on the regular SCION MAC,
 					// not the flyover one. Since both are XOR-aggregated into the mac field,
 					// we need to de-aggregate the flyover first.
-					dpath.InfoFields[0].UpdateSegID(deaggregateFlyoverFromMac(
-						t,
-						key,
-						dpath.InfoFields[0],
-						dpath.HopFields[1],
-					))
+					dpath.InfoFields[0].UpdateSegID(computeMAC(
+						t, key, dpath.InfoFields[0], dpath.HopFields[1].HopField))
 				}
 				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
 					pr.WithPriority)
@@ -2516,21 +2512,6 @@ func routerAlertPkt(
 	return pkt
 }
 
-func prepHbirdSlayers(src, dst addr.IA) *slayers.SCION {
-	spkt := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		DstIA:        dst,
-		SrcIA:        src,
-		Path:         &hummingbird.Raw{},
-		PayloadLen:   26, // scionudpLayer + len("actualpayloadbytes")
-	}
-	return spkt
-}
-
 func computeAggregateMac(
 	t *testing.T,
 	key []byte,
@@ -2583,40 +2564,6 @@ func computeAggregateMacForInterfaces(
 		scionMac[i] = b ^ flyoverMac[i]
 	}
 	return scionMac
-}
-
-// deaggregateFlyoverFromMac removes the flyover from the SCION MAC.
-func deaggregateFlyoverFromMac(
-	t *testing.T,
-	key []byte,
-	info path.InfoField,
-	flyover hummingbird.FlyoverHopField,
-) [6]byte {
-	return computeMAC(t, key, info, flyover.HopField)
-}
-
-// Computes flyovermac and aggregates it to existing mac in hopfield
-func aggregateOntoScionMac(t *testing.T, sv []byte, spkt *slayers.SCION, dpath *hummingbird.Decoded,
-	hin, heg uint16,
-	info path.InfoField, hf *hummingbird.FlyoverHopField, meta hummingbird.MetaHdr) {
-	block, err := aes.NewCipher(sv)
-	require.NoError(t, err)
-	ingress, egress := hin, heg
-
-	akBuffer := make([]byte, hummingbird.AkBufferSize)
-	macBuffer := make([]byte, hummingbird.FlyoverMacBufferSize)
-	xkBuffer := make([]uint32, hummingbird.XkBufferSize)
-
-	ak := hummingbird.DeriveAuthKey(block, hf.ResID, hf.Bw, ingress, egress,
-		meta.BaseTS-uint32(hf.ResStartTime), hf.Duration, akBuffer)
-	flyoverMac := hummingbird.FullFlyoverMac(ak, spkt.DstIA,
-		packetLenFromRouterView(t, spkt, dpath),
-		hf.ResStartTime,
-		meta.HighResTS, macBuffer, xkBuffer)
-
-	for i := range hf.HopField.Mac {
-		hf.HopField.Mac[i] ^= flyoverMac[i]
-	}
 }
 
 func packetLenFromRouterView(
