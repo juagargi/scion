@@ -81,6 +81,8 @@ import (
 // changes CurrINF. The up->down fixtures therefore exercise the same dataplane
 // branch as an up->core transition without duplicating the topology matrix.
 
+// TestDataPlaneSetHbirdKey checks the lifecycle rules of DataPlane.SetHbirdKey: it must be set
+// before the dataplane starts serving, rejects a nil key, and rejects being set twice.
 func TestDataPlaneSetHbirdKey(t *testing.T) {
 	t.Run("fails after serve", func(t *testing.T) {
 		d := router.NewDPRaw(router.RunConfig{}, false)
@@ -103,6 +105,10 @@ func TestDataPlaneSetHbirdKey(t *testing.T) {
 	})
 }
 
+// TestProcessHbirdPacket drives DataPlane.ProcessPkt with one crafted Hummingbird packet per
+// forwarding scenario (see the coverage table above) and checks the packet is transformed
+// exactly as an independently constructed "after processing" packet, or discarded, as declared
+// by each case's assertFunc.
 func TestProcessHbirdPacket(t *testing.T) {
 
 	key := []byte("testkey_xxxxxxxx")
@@ -1688,6 +1694,10 @@ func TestProcessHbirdPacket(t *testing.T) {
 	}
 }
 
+// TestHbirdTokenBucketReservationIdentityAndConcurrency checks that the per-reservation token
+// bucket used by checkReservationBandwidth is keyed by reservation ID and ingress/egress
+// interfaces (not bandwidth), and that concurrent packets for the same reservation are
+// accounted for safely.
 func TestHbirdTokenBucketReservationIdentityAndConcurrency(t *testing.T) {
 	key := []byte("testkey_xxxxxxxx")
 	hbirdKey := []byte("test_secretvalue")
@@ -1760,6 +1770,10 @@ func TestHbirdTokenBucketReservationIdentityAndConcurrency(t *testing.T) {
 	})
 }
 
+// TestProcessHbirdSCMP checks that invalid Hummingbird packets (bad MAC, invalid source or
+// destination IA, both inbound and outbound, both best-effort and flyover) are diverted to the
+// slow path with the expected SCMP type/code/pointer, and produce a correctly addressed
+// ParameterProblem reply quoting the offending packet.
 func TestProcessHbirdSCMP(t *testing.T) {
 
 	key := []byte("testkey_xxxxxxxx")
@@ -2121,6 +2135,9 @@ func TestProcessHbirdRouterAlert(t *testing.T) {
 	}
 }
 
+// prepHbirdMsg builds a minimal, otherwise-empty Hummingbird SCION header and decoded path
+// (with a single info field and no hop fields) for callers to fill in with their own hop fields
+// and path metadata.
 func prepHbirdMsg(now time.Time) (*slayers.SCION, *hummingbird.Decoded) {
 	spkt := &slayers.SCION{
 		Version:      0,
@@ -2154,6 +2171,9 @@ func prepHbirdMsg(now time.Time) (*slayers.SCION, *hummingbird.Decoded) {
 	return spkt, dpath
 }
 
+// prepReversedScionPathForInbound builds a plain SCION path already reversed into construction
+// direction, for the "inbound_reversed_scion_path_*" cases that check delivery of a packet
+// converted from a SCION reply path into a Hummingbird one.
 func prepReversedScionPathForInbound(t *testing.T, now time.Time) *scion.Decoded {
 	t.Helper()
 
@@ -2180,6 +2200,9 @@ func prepReversedScionPathForInbound(t *testing.T, now time.Time) *scion.Decoded
 	return reversed.(*scion.Decoded)
 }
 
+// prepMalformedHbirdPath builds a Hummingbird path whose CurrHF points into the middle of a
+// hop (a three-line regular hop, or an eleven-line encoding with a five-line flyover hop when
+// flyover is true), which the router must reject as a malformed path.
 func prepMalformedHbirdPath(now time.Time, flyover bool) *hummingbird.Decoded {
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
@@ -2208,6 +2231,10 @@ func prepMalformedHbirdPath(now time.Time, flyover bool) *hummingbird.Decoded {
 	return dpath
 }
 
+// prepASTransitXoverEgressPath builds a two-segment Hummingbird path positioned at the
+// down-segment hop of an AS-transit segment crossover, as seen by the egress BR: the packet
+// arrives internally from the sibling ingress BR and is about to leave externally. If flyover
+// is true, the down-segment hop carries the flyover moved there by the ingress BR.
 func prepASTransitXoverEgressPath(now time.Time, flyover bool) *hummingbird.Decoded {
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
@@ -2341,6 +2368,8 @@ func directASTransitPkt(
 	return pkt
 }
 
+// invalidHbirdPosition selects where in the path invalidHbirdPkt places the packet's current
+// hop.
 type invalidHbirdPosition uint8
 
 const (
@@ -2348,6 +2377,7 @@ const (
 	invalidHbirdOutbound
 )
 
+// invalidHbirdField selects which field invalidHbirdPkt corrupts.
 type invalidHbirdField uint8
 
 const (
@@ -2512,6 +2542,10 @@ func routerAlertPkt(
 	return pkt
 }
 
+// computeAggregateMac computes an aggregate MAC (SCION MAC XORed with flyover MAC) for hf,
+// deriving the reservation's ingress/egress interfaces from hf's ConsIngress/ConsEgress and
+// info's construction direction. Use computeAggregateMacForInterfaces directly when the
+// reservation's interfaces differ from the hop field's (e.g. at a crossover).
 func computeAggregateMac(
 	t *testing.T,
 	key []byte,
@@ -2566,6 +2600,9 @@ func computeAggregateMacForInterfaces(
 	return scionMac
 }
 
+// packetLenFromRouterView returns the total packet length as the router computes it for the
+// flyover MAC (via slayers.SCION.PacketLen), by round-tripping dpath through its raw encoding
+// exactly as the router would see it on the wire.
 func packetLenFromRouterView(
 	t *testing.T,
 	spkt *slayers.SCION,

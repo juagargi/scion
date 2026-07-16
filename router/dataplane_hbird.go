@@ -64,6 +64,8 @@ func (d *dataPlane) SetHbirdKey(key []byte) error {
 	return nil
 }
 
+// parseHbirdPath decodes the current Hummingbird hop and info field into p, and marks the
+// packet as priority if the current hop carries a flyover.
 func (p *scionPacketProcessor) parseHbirdPath(sc sizeClass) disposition {
 	var err error
 	if !p.hbirdPath.CurrHFIsHopStart() || !p.hbirdPath.CurrINFMatchesCurrHF() {
@@ -87,6 +89,10 @@ func (p *scionPacketProcessor) parseHbirdPath(sc sizeClass) disposition {
 	return pForward
 }
 
+// determinePeerHbird reports whether the current hop, identified by pathMeta.CurrHF, is the
+// peering hop of a well-formed peering path (a two-segment path where inf.Peer is set on the
+// current info field). It returns an error if inf.Peer is set but the path's segment lengths
+// are inconsistent with a peering path.
 func determinePeerHbird(pathMeta hummingbird.MetaHdr, inf path.InfoField) (bool, error) {
 	if !inf.Peer {
 		return false, nil
@@ -114,6 +120,8 @@ func determinePeerHbird(pathMeta hummingbird.MetaHdr, inf path.InfoField) (bool,
 	return peer, nil
 }
 
+// determinePeerHbird sets p.peering boolean values to true or false from this hop being a
+// peering hop or not.
 func (p *scionPacketProcessor) determinePeerHbird() disposition {
 	peer, err := determinePeerHbird(p.hbirdPath.PathMeta, p.infoField)
 	p.peering = peer
@@ -123,6 +131,9 @@ func (p *scionPacketProcessor) determinePeerHbird() disposition {
 	return pForward
 }
 
+// validateHopExpiryHbird checks the current hop field's plain SCION expiration time (unrelated
+// to any flyover reservation window) and diverts the packet to the slow path for an SCMP
+// PathExpired response if it has expired.
 func (p *scionPacketProcessor) validateHopExpiryHbird() disposition {
 	expiration := util.SecsToTime(p.infoField.Timestamp).
 		Add(path.ExpTimeToDuration(p.hopField.ExpTime))
@@ -141,6 +152,9 @@ func (p *scionPacketProcessor) validateHopExpiryHbird() disposition {
 	return pSlowPath
 }
 
+// validateReservationExpiry checks whether the current flyover's reservation window covers the
+// present time. If it does not, the packet is demoted to best-effort (rather than discarded or
+// sent to the slow path) and forwarding proceeds as usual.
 func (p *scionPacketProcessor) validateReservationExpiry(sc sizeClass) disposition {
 	startTime := util.SecsToTime(p.hbirdPath.PathMeta.BaseTS - uint32(p.flyoverField.ResStartTime))
 	endTime := startTime.Add(time.Duration(p.flyoverField.Duration) * time.Second)
@@ -156,11 +170,15 @@ func (p *scionPacketProcessor) validateReservationExpiry(sc sizeClass) dispositi
 	return pForward
 }
 
+// currentHbirdInfoPointer returns the byte offset of the current Hummingbird info field within
+// the packet, for use as an SCMP quote pointer.
 func (p *scionPacketProcessor) currentHbirdInfoPointer() uint16 {
 	return uint16(slayers.CmnHdrLen + p.scionLayer.AddrHdrLen() +
 		hummingbird.MetaLen + path.InfoLen*int(p.hbirdPath.PathMeta.CurrINF))
 }
 
+// currentHbirdHopPointer returns the byte offset of the current Hummingbird hop field within
+// the packet, for use as an SCMP quote pointer.
 func (p *scionPacketProcessor) currentHbirdHopPointer() uint16 {
 	return uint16(slayers.CmnHdrLen + p.scionLayer.AddrHdrLen() +
 		hummingbird.MetaLen + path.InfoLen*p.hbirdPath.NumINF +
@@ -193,6 +211,9 @@ func (p *scionPacketProcessor) getFlyoverInterfaces() (uint16, uint16, dispositi
 	return ingress, egress, pForward
 }
 
+// verifyHbirdScionMac checks the current hop field's plain SCION MAC (the one shared by the
+// SCION path type), diverting to the slow path for an SCMP InvalidHopFieldMAC response on
+// mismatch.
 func (p *scionPacketProcessor) verifyHbirdScionMac() disposition {
 	scionMac := path.FullMAC(p.mac, p.infoField, p.hopField, p.macInputBuffer[:path.MACBufferSize])
 	verified := subtle.ConstantTimeCompare(p.hopField.Mac[:path.MacLen], scionMac[:path.MacLen])
@@ -213,6 +234,10 @@ func (p *scionPacketProcessor) verifyHbirdScionMac() disposition {
 	return pForward
 }
 
+// verifyHbirdFlyoverMac derives the flyover's authentication key and checks the current hop
+// field's aggregate MAC (SCION MAC XORed with the flyover MAC), diverting to the slow path for
+// an SCMP InvalidHopFieldMAC response on mismatch. On success it caches the plain SCION MAC in
+// p.cachedMac for later de-aggregation.
 func (p *scionPacketProcessor) verifyHbirdFlyoverMac() disposition {
 	var flyoverMac []byte
 	var verified int
@@ -294,6 +319,10 @@ func (p *scionPacketProcessor) verifyHbirdFlyoverMac() disposition {
 	return pForward
 }
 
+// validateHbirdSrcDstIA checks that the packet's source and destination IAs are consistent with
+// the local IA and with the packet's position in the path (first hop / last hop, inbound /
+// outbound), responding with the corresponding SCMP InvalidSourceAddress or
+// InvalidDestinationAddress error on mismatch.
 func (p *scionPacketProcessor) validateHbirdSrcDstIA() disposition {
 	srcIsLocal := (p.scionLayer.SrcIA == p.d.localIA)
 	dstIsLocal := (p.scionLayer.DstIA == p.d.localIA)
@@ -320,6 +349,10 @@ func (p *scionPacketProcessor) validateHbirdSrcDstIA() disposition {
 	return pForward
 }
 
+// ingressInterfaceHbird returns the interface through which the packet is expected to have
+// entered this AS. For a non-peering hop right after a segment crossover, this is looked up on
+// the previous (non-flyover) hop field rather than the current one, since a flyover is moved to
+// the second hop field on crossover.
 func (p *scionPacketProcessor) ingressInterfaceHbird() uint16 {
 	info := p.infoField
 	hop := p.flyoverField
@@ -378,6 +411,10 @@ func (p *scionPacketProcessor) validatePathMetaTimestamp(sc sizeClass) {
 	}
 }
 
+// checkReservationBandwidth enforces the flyover's reserved bandwidth via a per-reservation
+// token bucket, keyed by reservation ID and ingress/egress interfaces. It only applies to
+// packets currently flagged priority; if the packet exceeds the reservation's bandwidth it is
+// demoted to best-effort rather than discarded.
 func (p *scionPacketProcessor) checkReservationBandwidth(sc sizeClass) disposition {
 	// Only check bandwidth if packet is given priority.
 	// Bandwidth check is NOT performed for late packets that have flyover but no priority.
@@ -424,6 +461,9 @@ func (p *scionPacketProcessor) checkReservationBandwidth(sc sizeClass) dispositi
 	return pForward
 }
 
+// handleHbirdIngressRouterAlert diverts the packet to the slow path (to produce a traceroute
+// reply) if it arrived externally and the current hop field's ingress router-alert flag is set,
+// clearing the flag first so the eventual reply is not misread as another alert.
 func (p *scionPacketProcessor) handleHbirdIngressRouterAlert() disposition {
 	if p.ingressFromLink == 0 {
 		return pForward
@@ -444,6 +484,10 @@ func (p *scionPacketProcessor) handleHbirdIngressRouterAlert() disposition {
 	return pSlowPath
 }
 
+// handleHbirdEgressRouterAlert diverts the packet to the slow path (to produce a traceroute
+// reply) if the current hop field's egress router-alert flag is set and this router owns the
+// egress interface, clearing the flag first so the eventual reply is not misread as another
+// alert.
 func (p *scionPacketProcessor) handleHbirdEgressRouterAlert() disposition {
 	alert := p.egressRouterAlertFlag()
 	if !*alert {
@@ -506,6 +550,9 @@ func macXor(d, a, b []byte) {
 	}
 }
 
+// deAggregateMac restores the current hop field's MAC to the plain SCION MAC cached by
+// verifyHbirdFlyoverMac, undoing the flyover XOR aggregation. It is a no-op for a non-flyover
+// hop field.
 func (p *scionPacketProcessor) deAggregateMac() disposition {
 	if !p.flyoverField.Flyover {
 		return pForward
@@ -554,6 +601,9 @@ func (p *scionPacketProcessor) xoverMoveFlyoverToNext() disposition {
 	return pForward
 }
 
+// xoverMoveFlyoverToPrevious is called at the egress BR of an AS-transit crossover: it moves
+// the flyover from the current (down-segment) hop field back to the previous (up-segment) one,
+// which is where the wire encoding expects it to live once both hops belong to the same packet.
 func (p *scionPacketProcessor) xoverMoveFlyoverToPrevious() disposition {
 	if err := p.hbirdPath.MoveFlyoverToPrevious(); err != nil {
 		return errorDiscard("error", err)
@@ -563,6 +613,9 @@ func (p *scionPacketProcessor) xoverMoveFlyoverToPrevious() disposition {
 	return pForward
 }
 
+// doHbirdXoverFlyover performs a flyover-aware segment crossover: it de-aggregates and caches
+// the outgoing MAC of the current (flyover) hop field, advances the path past it, and loads the
+// new current hop and info fields for the following segment.
 func (p *scionPacketProcessor) doHbirdXoverFlyover() disposition {
 	p.effectiveXover = true
 	p.isFlyoverXover = true
@@ -586,6 +639,9 @@ func (p *scionPacketProcessor) doHbirdXoverFlyover() disposition {
 	return pForward
 }
 
+// doHbirdXoverBestEffort performs a plain (non-flyover) segment crossover: it advances the path
+// past the current hop field and loads the new current hop and info fields for the following
+// segment.
 func (p *scionPacketProcessor) doHbirdXoverBestEffort() disposition {
 	p.effectiveXover = true
 
@@ -607,6 +663,9 @@ func (p *scionPacketProcessor) doHbirdXoverBestEffort() disposition {
 	return pForward
 }
 
+// processHbirdEgress finishes processing at the AS's egress hop: it updates the SegID (unless
+// this is a peering hop) and advances the path past the current hop field, by a flyover-sized
+// or regular-sized increment as appropriate.
 func (p *scionPacketProcessor) processHbirdEgress() disposition {
 	// We are the egress router and if we go in construction direction we
 	// need to update the SegID (unless we are effecting a peering hop).
@@ -632,6 +691,9 @@ func (p *scionPacketProcessor) processHbirdEgress() disposition {
 	return pForward
 }
 
+// processHummingbird is the entry point for processing a packet on a Hummingbird path: it
+// decodes the current hop, determines peering, validates hop expiry/ingress/length/transit
+// source/endpoint IAs, and dispatches to the flyover or best-effort processing branch.
 func (p *scionPacketProcessor) processHummingbird() disposition {
 	// Increment the counter of received Hummingbird packets.
 	sc := ClassOfSize(len(p.pkt.RawPacket))
@@ -676,6 +738,10 @@ func (p *scionPacketProcessor) processHummingbird() disposition {
 	return p.processHBIRDBestEffort()
 }
 
+// processHBIRDFlyover processes a packet whose current hop carries a flyover: it checks the
+// reservation's validity window, aggregate MAC, freshness, and bandwidth, then either delivers
+// the packet locally (inbound) or forwards it, performing a crossover, de-aggregation, and
+// egress processing as needed.
 func (p *scionPacketProcessor) processHBIRDFlyover(sc sizeClass) disposition {
 
 	if disp := p.validateReservationExpiry(sc); disp != pForward {
@@ -780,6 +846,9 @@ func (p *scionPacketProcessor) processHBIRDFlyover(sc sizeClass) disposition {
 	return pForward
 }
 
+// processHBIRDBestEffort processes a packet whose current hop carries no flyover: it verifies
+// the plain SCION MAC, then either delivers the packet locally (inbound) or forwards it,
+// performing a crossover and egress processing as needed.
 func (p *scionPacketProcessor) processHBIRDBestEffort() disposition {
 	if disp := p.updateHbirdNonConsDirIngressSegID(); disp != pForward {
 		return disp
@@ -861,6 +930,11 @@ func (p *scionPacketProcessor) processHBIRDBestEffort() disposition {
 
 // Functions for SCMP packets preparation
 
+// prepareHbirdSCMP builds an SCMP reply for a Hummingbird packet: it reverses the path (which
+// drops any flyovers, since a reservation is unidirectional), reverts any crossover performed
+// during forward processing, advances the path by one hop if replying externally, and
+// serializes the resulting SCION+SCMP packet, optionally with SPAO authentication and a quote of
+// the offending packet.
 func (p *slowPathPacketProcessor) prepareHbirdSCMP(
 	typ slayers.SCMPType,
 	code slayers.SCMPCode,
