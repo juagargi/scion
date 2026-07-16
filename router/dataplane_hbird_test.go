@@ -81,12 +81,12 @@ func TestProcessHbirdPacket(t *testing.T) {
 	}{
 		"inbound": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					mockExternalInterfaces,
 					nil,
 					nil,
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
@@ -114,14 +114,14 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"outbound": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1},
 					map[uint16]topology.LinkType{
 						1: topology.Child,
 					},
 					nil, // No special connOpener.
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
@@ -148,7 +148,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"brtransit": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						1: topology.Parent,
@@ -156,7 +156,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					},
 					nil, // No special connOpener.
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
@@ -182,7 +182,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"brtransit non consdir": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						2: topology.Parent,
@@ -190,7 +190,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					},
 					nil, // No special connOpener.
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
@@ -218,12 +218,12 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"discard malformed current hop alignment": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					mockExternalInterfaces,
 					nil,
 					nil,
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
@@ -248,7 +248,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"brtransit peering consdir": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						1: topology.Peer,
@@ -256,7 +256,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					},
 					nil, // No special connOpener.
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				// Story: the packet just left segment 0 which ends at
@@ -316,7 +316,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"brtransit peering non consdir": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						1: topology.Peer,
@@ -324,7 +324,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					},
 					nil, // No special connOpener.
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				// Story: the packet lands on the last (peering) hop of
@@ -391,7 +391,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 			// Similar to previous test case but looking at what
 			// happens on the next hop.
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						1: topology.Peer,
@@ -399,7 +399,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					},
 					nil, // No special connOpener.
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				// Story: the packet just left hop 1 (the first hop
@@ -463,7 +463,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"peering non consdir upstream": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						1: topology.Peer,
@@ -471,7 +471,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					},
 					nil, // No special connOpener.
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				// Story: the packet lands on the second (non-peering) hop of
@@ -543,7 +543,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"astransit direct": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1}, // Interface 3 is in the external interfaces of a sibling router
 					map[uint16]topology.LinkType{
 						1: topology.Core,
@@ -552,7 +552,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					nil, // No special connOpener.
 					map[uint16]netip.AddrPort{
 						uint16(3): netip.MustParseAddrPort("10.0.200.200:30043"),
-					}, addr.MustParseIA("1-ff00:0:110"), nil, key)
+					}, addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
@@ -578,16 +578,16 @@ func TestProcessHbirdPacket(t *testing.T) {
 		},
 		"astransit xover": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
-					[]uint16{51},
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1},
 					map[uint16]topology.LinkType{
-						51: topology.Child,
-						3:  topology.Core,
+						1: topology.Child,
+						2: topology.Child,
 					},
 					nil, // No special connOpener.
 					map[uint16]netip.AddrPort{
-						uint16(3): netip.MustParseAddrPort("10.0.200.200:30043"),
-					}, addr.MustParseIA("1-ff00:0:110"), nil, key)
+						uint16(2): netip.MustParseAddrPort("10.0.200.200:30042"),
+					}, addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, _ := prepHbirdMsg(now)
@@ -604,14 +604,14 @@ func TestProcessHbirdPacket(t *testing.T) {
 					InfoFields: []path.InfoField{
 						// up seg
 						{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)},
-						// core seg
-						{SegID: 0x222, ConsDir: false, Timestamp: util.TimeToSecs(now)},
+						// down seg
+						{SegID: 0x222, ConsDir: true, Timestamp: util.TimeToSecs(now)},
 					},
 					HopFields: []hummingbird.FlyoverHopField{
-						{HopField: path.HopField{ConsIngress: 31, ConsEgress: 0}}, // Src,
-						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 51}}, // IA 110
-						{HopField: path.HopField{ConsIngress: 3, ConsEgress: 0}},  // IA 110
-						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1}},  // Dst
+						{HopField: path.HopField{ConsIngress: 41, ConsEgress: 0}}, // AS 111
+						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1}},  // AS 110 ingress BR
+						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 2}},  // AS 110 egress BR
+						{HopField: path.HopField{ConsIngress: 41, ConsEgress: 0}}, // AS 112
 					},
 				}
 				dpath.HopFields[1].HopField.Mac =
@@ -619,19 +619,16 @@ func TestProcessHbirdPacket(t *testing.T) {
 				dpath.HopFields[2].HopField.Mac =
 					computeMAC(t, key, dpath.InfoFields[1], dpath.HopFields[2].HopField)
 
-				var dstAddr *net.UDPAddr
-				ingress := uint16(51) // == consEgress, bc non-consdir
-				egress := uint16(0)   // To check that it is updated
+				ingress := uint16(1) // == consEgress, bc non-consdir
+				egress := uint16(0)  // To check that it is updated
 				if afterProcessing {
 					require.NoError(t, dpath.IncPath(hummingbird.HopLines))
-					egress = uint16(3) // Internal hop => egress points at sibling router.
-					// The link is specific to the sibling. It has the address. So we don't expect:
-					// dstAddr = &net.UDPAddr{IP: net.ParseIP("10.0.200.200").To4(), Port: 30043}
+					egress = uint16(2) // Internal hop => egress points at sibling router.
 				} else {
 					dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
 				}
 
-				return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, ingress, egress,
+				return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, ingress, egress,
 					pr.WithBestEffort)
 			},
 			assertFunc: notDiscarded,
@@ -641,7 +638,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 			// packet enters and leaves on external child links of the same BR.
 			// Wire-level analogue: HummingbirdBestEffortChildToChildXover.
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						1: topology.Child,
@@ -649,7 +646,7 @@ func TestProcessHbirdPacket(t *testing.T) {
 					},
 					nil, // No special connOpener.
 					mockInternalNextHops,
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, _ := prepHbirdMsg(now)
@@ -671,10 +668,10 @@ func TestProcessHbirdPacket(t *testing.T) {
 						{SegID: 0x222, ConsDir: true, Timestamp: util.TimeToSecs(now)},
 					},
 					HopFields: []hummingbird.FlyoverHopField{
-						{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}},
+						{HopField: path.HopField{ConsIngress: 41, ConsEgress: 0}},
 						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1}},
 						{HopField: path.HopField{ConsIngress: 0, ConsEgress: 2}},
-						{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
+						{HopField: path.HopField{ConsIngress: 41, ConsEgress: 0}},
 					},
 				}
 				dpath.HopFields[1].HopField.Mac =
@@ -684,6 +681,9 @@ func TestProcessHbirdPacket(t *testing.T) {
 				ingress := uint16(1)
 				egress := uint16(0)
 				if afterProcessing {
+					// This BR owns both hop fields at the segment boundary. The first
+					// increment crosses from its up-segment hop to its down-segment hop;
+					// normal egress processing advances once more to the next AS.
 					require.NoError(t, dpath.IncPath(hummingbird.HopLines))
 					require.NoError(t, dpath.IncPath(hummingbird.HopLines))
 					dpath.InfoFields[1].UpdateSegID(dpath.HopFields[2].HopField.Mac)
@@ -1662,12 +1662,11 @@ func TestProcessHbirdSCMP(t *testing.T) {
 	now := time.Now()
 
 	testCases := map[string]struct {
-		prepareDP            func() *router.DataPlane
-		mockPkt              func(*testing.T, *router.DataPlane) (*router.Packet, []byte)
-		expectedSlowPath     router.SlowPathRequestView
-		expectedSCMPTypeCode slayers.SCMPTypeCode
-		expectedLayerType    gopacket.LayerType
-		assertReply          func(*testing.T, gopacket.Packet, []byte)
+		prepareDP         func() *router.DataPlane
+		mockPkt           func(*testing.T, *router.DataPlane) (*router.Packet, []byte)
+		expectedSlowPath  router.SlowPathRequestView
+		expectedLayerType gopacket.LayerType
+		assertReply       func(*testing.T, gopacket.Packet, []byte)
 	}{
 		"invalid flyover aggregate MAC on inbound packet": {
 			prepareDP: func() *router.DataPlane {
@@ -1679,7 +1678,7 @@ func TestProcessHbirdSCMP(t *testing.T) {
 					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockPkt: func(t *testing.T, dp *router.DataPlane) (*router.Packet, []byte) {
-				// Start from the valid inbound flyover case used in TestProcessHbirdPacket,
+				// Start from the valid "inbound flyover" case in TestProcessHbirdPacket,
 				// then corrupt only the aggregate MAC so the rest of the path remains
 				// well-formed and the failure is unambiguously a MAC verification error.
 				spkt, dpath := prepHbirdMsg(now)
@@ -1716,10 +1715,6 @@ func TestProcessHbirdSCMP(t *testing.T) {
 			},
 			// The slow-path response should be an SCMP Parameter Problem reporting the
 			// invalid hop/flyover MAC.
-			expectedSCMPTypeCode: slayers.CreateSCMPTypeCode(
-				slayers.SCMPTypeParameterProblem,
-				slayers.SCMPCodeInvalidHopFieldMAC,
-			),
 			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
 			assertReply: func(t *testing.T, packet gopacket.Packet, original []byte) {
 				scionLayer := packet.Layer(slayers.LayerTypeSCION)
@@ -1750,7 +1745,8 @@ func TestProcessHbirdSCMP(t *testing.T) {
 					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockPkt: func(t *testing.T, dp *router.DataPlane) (*router.Packet, []byte) {
-				// A best-effort (non-flyover) Hummingbird packet carries a plain SCION
+				// Start from the valid "inbound" case in TestProcessHbirdPacket. A
+				// best-effort (non-flyover) Hummingbird packet carries a plain SCION
 				// hop MAC. Corrupting it must trigger the same SCMP as the flyover case,
 				// but exercises verifyHbirdScionMac rather than verifyHbirdFlyoverMac.
 				spkt, dpath := prepHbirdMsg(now)
@@ -1779,10 +1775,6 @@ func TestProcessHbirdSCMP(t *testing.T) {
 				Code:    slayers.SCMPCodeInvalidHopFieldMAC,
 				Pointer: 80,
 			},
-			expectedSCMPTypeCode: slayers.CreateSCMPTypeCode(
-				slayers.SCMPTypeParameterProblem,
-				slayers.SCMPCodeInvalidHopFieldMAC,
-			),
 			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
 		},
 		"invalid source IA on inbound packet": {
@@ -1795,8 +1787,9 @@ func TestProcessHbirdSCMP(t *testing.T) {
 					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockPkt: func(t *testing.T, dp *router.DataPlane) (*router.Packet, []byte) {
-				// A packet received from an external link must not claim the local AS as
-				// its source. validateHbirdSrcDstIA rejects it before MAC verification.
+				// Start from the valid "inbound" case in TestProcessHbirdPacket, then
+				// make its source IA local. An external packet must not claim the local
+				// AS as its source, so validation rejects it before MAC verification.
 				spkt, dpath := prepHbirdMsg(now)
 				spkt.SrcIA = addr.MustParseIA("1-ff00:0:110") // sneaky: local AS
 				spkt.DstIA = addr.MustParseIA("1-ff00:0:110")
@@ -1822,10 +1815,6 @@ func TestProcessHbirdSCMP(t *testing.T) {
 				Code:    slayers.SCMPCodeInvalidSourceAddress,
 				Pointer: uint16(slayers.CmnHdrLen + addr.IABytes),
 			},
-			expectedSCMPTypeCode: slayers.CreateSCMPTypeCode(
-				slayers.SCMPTypeParameterProblem,
-				slayers.SCMPCodeInvalidSourceAddress,
-			),
 			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
 		},
 		"invalid destination IA on inbound packet": {
@@ -1838,8 +1827,9 @@ func TestProcessHbirdSCMP(t *testing.T) {
 					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockPkt: func(t *testing.T, dp *router.DataPlane) (*router.Packet, []byte) {
-				// The path ends in this AS (last hop) but the destination IA is not the
-				// local AS: validateHbirdSrcDstIA must reject it.
+				// Start from the valid "inbound" case in TestProcessHbirdPacket, but
+				// leave its destination IA non-local even though the path ends here.
+				// Destination validation must reject it.
 				spkt, dpath := prepHbirdMsg(now)
 				// DstIA left as the non-local default from prepHbirdMsg (4-ff00:0:411).
 				dst := addr.MustParseHost("10.0.100.100")
@@ -1864,10 +1854,6 @@ func TestProcessHbirdSCMP(t *testing.T) {
 				Code:    slayers.SCMPCodeInvalidDestinationAddress,
 				Pointer: uint16(slayers.CmnHdrLen),
 			},
-			expectedSCMPTypeCode: slayers.CreateSCMPTypeCode(
-				slayers.SCMPTypeParameterProblem,
-				slayers.SCMPCodeInvalidDestinationAddress,
-			),
 			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
 		},
 	}
@@ -1890,7 +1876,9 @@ func TestProcessHbirdSCMP(t *testing.T) {
 			scmpLayer := packet.Layer(slayers.LayerTypeSCMP)
 			require.NotNil(t, scmpLayer)
 			scmp := scmpLayer.(*slayers.SCMP)
-			assert.Equal(t, tc.expectedSCMPTypeCode, scmp.TypeCode)
+			expectedTypeCode := slayers.CreateSCMPTypeCode(
+				slayers.SCMPType(tc.expectedSlowPath.SPType), tc.expectedSlowPath.Code)
+			assert.Equal(t, expectedTypeCode, scmp.TypeCode)
 			assert.NotNil(t, packet.Layer(tc.expectedLayerType))
 
 			if tc.assertReply != nil {
@@ -1906,6 +1894,7 @@ func TestProcessHbirdSCMP(t *testing.T) {
 func TestProcessHbirdRouterAlert(t *testing.T) {
 
 	key := []byte("testkey_xxxxxxxx")
+	hbirdKey := []byte("test_secretvalue")
 	now := time.Now()
 
 	// slowPathRouterAlert{Ingress,Egress} are -1 and -2 respectively (see dataplane.go).
@@ -1921,7 +1910,7 @@ func TestProcessHbirdRouterAlert(t *testing.T) {
 	}{
 		"ingress router alert": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						1: topology.Parent,
@@ -1929,7 +1918,7 @@ func TestProcessHbirdRouterAlert(t *testing.T) {
 					},
 					nil,
 					map[uint16]netip.AddrPort{},
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockPkt: func(t *testing.T, dp *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
@@ -1951,7 +1940,7 @@ func TestProcessHbirdRouterAlert(t *testing.T) {
 		},
 		"egress router alert": {
 			prepareDP: func() *router.DataPlane {
-				return router.NewDP(
+				return router.NewDPWithHummingbirdKey(
 					[]uint16{1, 2},
 					map[uint16]topology.LinkType{
 						1: topology.Parent,
@@ -1959,7 +1948,7 @@ func TestProcessHbirdRouterAlert(t *testing.T) {
 					},
 					nil,
 					map[uint16]netip.AddrPort{},
-					addr.MustParseIA("1-ff00:0:110"), nil, key)
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
 			},
 			mockPkt: func(t *testing.T, dp *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
