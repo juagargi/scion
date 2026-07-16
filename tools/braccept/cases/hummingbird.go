@@ -154,7 +154,7 @@ func HummingbirdBestEffortChildToParent(artifactsDir string, mac hash.Hash) runn
 }
 
 // HummingbirdBestEffortParentToChild is the construction-direction counterpart
-// of HummingbirdBestEffortChildToParent. It mirrors unit test "brtransit".
+// of HummingbirdBestEffortChildToParent. It mirrors unit test "brtransit_consdir_best-effort".
 func HummingbirdBestEffortParentToChild(artifactsDir string, mac hash.Hash) runner.Case {
 	return hummingbirdBestEffortTransit(
 		artifactsDir, mac, true, 3, true, "HummingbirdBestEffortParentToChild")
@@ -1286,7 +1286,8 @@ func HummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash) runner.Ca
 // BR of this AS, so it is forwarded internally to the sibling router. Analogue
 // of ChildToInternalParent. This case covers the ingress BR: it reverses the
 // non-consdir SegID and forwards without advancing the path, leaving advancement
-// to the sibling egress BR.
+// to the sibling egress BR. It corresponds to the ingress-BR half in unit test
+// "astransit_direct_ingress_best-effort".
 func HummingbirdBestEffortChildToInternalParent(artifactsDir string, mac hash.Hash) runner.Case {
 	options := gopacket.SerializeOptions{
 		FixLengths:       true,
@@ -1398,7 +1399,7 @@ func HummingbirdBestEffortChildToInternalParent(artifactsDir string, mac hash.Ha
 // packet with a flyover on the current hop, against the construction direction
 // (child to parent). It complements HummingbirdFlyoverParentToChild (which is in
 // construction direction) and exercises the non-consdir SegID handling together
-// with flyover de-aggregation. See unit test "brtransit non consdir flyover".
+// with flyover de-aggregation. See unit test "brtransit_non_consdir_flyover".
 func HummingbirdFlyoverChildToParentNonConsDir(
 	artifactsDir string,
 	mac hash.Hash,
@@ -1526,7 +1527,7 @@ func HummingbirdFlyoverChildToParentNonConsDir(
 // HummingbirdFlyoverChildToChildXover tests a Hummingbird cross-over (up→down
 // segment) on the same BR, from a child to another child, with a flyover on the
 // up-segment cross-over hop. Exercises doHbirdXoverFlyover in the external-egress
-// branch; the unit-test analogue is "brtransit xover flyover" in
+// branch; the unit-test analogue is "brtransit_xover_flyover" in
 // router/dataplane_hbird_test.go. The reservation spans the ingress of the
 // incoming hop (151) and the egress of the outgoing hop (141), so the flyover
 // MAC uses those interfaces explicitly.
@@ -1666,7 +1667,7 @@ func HummingbirdFlyoverChildToChildXover(
 // switches segments, and its egress interface belongs to a sibling BR, so it is
 // forwarded internally. The flyover sits on the incoming (up-seg) hop and the
 // router moves it to the outgoing hop for the egress BR (xoverMoveFlyoverToNext).
-// Mirrors unit test "astransit xover flyover ingress".
+// Mirrors unit test "astransit_xover_ingress_flyover".
 func HummingbirdFlyoverXoverASTransitIngress(
 	artifactsDir string,
 	mac hash.Hash,
@@ -1809,7 +1810,7 @@ func HummingbirdFlyoverXoverASTransitIngress(
 // BR that handled the up segment, and this BR egresses it externally on a child.
 // The flyover sits on the outgoing (down-seg) hop; the router de-aggregates it
 // and moves it back to the incoming (up-seg) hop (xoverMoveFlyoverToPrevious).
-// Mirrors unit test "astransit xover flyover egress".
+// Mirrors unit test "astransit_xover_egress_flyover".
 func HummingbirdFlyoverXoverASTransitEgress(
 	artifactsDir string,
 	mac hash.Hash,
@@ -1950,7 +1951,7 @@ func HummingbirdFlyoverXoverASTransitEgress(
 // HummingbirdFlyoverChildToPeer tests a Hummingbird packet with a flyover on a
 // peering hop, entering on a child link and leaving on a peering link from the
 // same BR (against construction direction). Analogue of ChildToPeer; mirrors
-// unit test "brtransit peering non consdir flyovers". At a peering hop the SegID
+// unit test "brtransit_peering_non_consdir_flyover". At a peering hop the SegID
 // is not updated and the reservation interfaces are the plain (swapped) hop
 // interfaces.
 func HummingbirdFlyoverChildToPeer(
@@ -2081,8 +2082,8 @@ func HummingbirdFlyoverChildToPeer(
 
 // HummingbirdFlyoverPeerToChild tests a Hummingbird packet with a flyover on a
 // peering hop, entering on a peering link and leaving on a child link (in
-// construction direction). Analogue of PeerToChild; mirrors unit test "brtransit
-// peering consdir flyovers". The peering hop is the first hop of the down
+// construction direction). Analogue of PeerToChild; mirrors unit test
+// "brtransit_peering_consdir_flyover". The peering hop is the first hop of the down
 // segment; SegID is not updated.
 func HummingbirdFlyoverPeerToChild(
 	artifactsDir string,

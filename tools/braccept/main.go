@@ -95,7 +95,7 @@ func realMain() int {
 	//
 	//   BestEffort{Inbound,Outbound}             -> inbound, outbound
 	//   BestEffort{ChildToParent,ParentToChild}  -> brtransit non consdir, brtransit
-	//   BestEffortChildToInternalParent          -> astransit direct
+	//   BestEffortChildToInternalParent          -> astransit_direct_ingress_best-effort
 	//   BestEffortChildToChildXover              -> brtransit xover
 	//   Flyover{Inbound,Outbound}                 -> inbound flyover, outbound flyover
 	//   Flyover{ParentToChild,ChildToParent...}   -> brtransit flyover variants
@@ -107,7 +107,8 @@ func realMain() int {
 	//
 	// Key lifecycle, token-bucket identity/concurrency, and priority-label
 	// demotion remain unit-only because the byte-comparison runner cannot observe
-	// those internal states.
+	// those internal states. Direct AS-transit egress (internal -> external,
+	// without crossover) is currently router-unit-only.
 	multi := []runner.Case{
 		cases.ParentToChild(artifactsDir, hfMAC),
 		cases.ParentToInternalHost(artifactsDir, hfMAC),
