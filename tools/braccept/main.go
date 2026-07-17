@@ -171,6 +171,8 @@ func realMain() int {
 		cases.HummingbirdFlyoverChildToChildXover(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdFlyoverXoverASTransitIngress(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdFlyoverXoverASTransitEgress(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdBestEffortXoverASTransitIngress(artifactsDir, hfMAC),
+		cases.HummingbirdBestEffortXoverASTransitEgress(artifactsDir, hfMAC),
 		cases.HummingbirdFlyoverChildToPeer(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdFlyoverPeerToChild(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdBestEffortChildToPeer(artifactsDir, hfMAC),
@@ -181,6 +183,14 @@ func realMain() int {
 		cases.HummingbirdFlyoverPeeringUpstream(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdStaleFlyover(artifactsDir, hfMAC, hbirdSV),
 		cases.HummingbirdFutureFlyover(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdInvalidSourceIAOutbound(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdInvalidDestinationIAOutbound(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdInvalidSourceIAOutboundFlyover(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdInvalidDestinationIAOutboundFlyover(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdIngressRouterAlert(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdEgressRouterAlert(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdIngressRouterAlertFlyover(artifactsDir, hfMAC, hbirdSV),
+		cases.HummingbirdEgressRouterAlertFlyover(artifactsDir, hfMAC, hbirdSV),
 	}
 
 	if *bfd {

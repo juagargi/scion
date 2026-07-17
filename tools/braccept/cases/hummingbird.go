@@ -58,8 +58,8 @@ import (
 //	BR transit, reverse direction         x            x
 //	Direct AS transit, ingress BR         x            x
 //	Direct AS transit, egress BR          x            x
-//	AS-transit cross-over, ingress BR     missing      x
-//	AS-transit cross-over, egress BR      missing      x
+//	AS-transit cross-over, ingress BR     x            x
+//	AS-transit cross-over, egress BR      x            x
 //	Same-BR cross-over                    x            x
 //	Peering boundary, construction dir.   x            x
 //	Peering boundary, reverse dir.        x            x
@@ -69,10 +69,10 @@ import (
 //	Invalid hop MAC / SCMP                x            x
 //	Invalid source IA / SCMP              x            x
 //	Invalid destination IA / SCMP         x            x
-//	Invalid outbound source IA / SCMP     missing      missing
-//	Invalid outbound destination IA/SCMP  missing      missing
-//	Ingress router alert                  missing      missing
-//	Egress router alert                   missing      missing
+//	Invalid outbound source IA / SCMP     x            x
+//	Invalid outbound destination IA/SCMP  x            x
+//	Ingress router alert                  x            x
+//	Egress router alert                   x            x
 //	Expired reservation                   N/A          x
 //	Stale/future packet freshness         N/A          x
 //	Reservation exceeds bandwidth         N/A          x
@@ -92,23 +92,23 @@ const hbirdScionUDPPayloadLen = 8 + len(hbirdPayload)
 // HummingbirdBestEffortChildToParent checks BR transit, reverse direction, best-effort.
 // It matches TestProcessHbirdPacket/brtransit_non_consdir_best-effort.
 func HummingbirdBestEffortChildToParent(artifactsDir string, mac hash.Hash) runner.Case {
-	return hummingbirdBestEffortTransit(
-		artifactsDir, mac, false, 3, true, "HummingbirdBestEffortChildToParent")
+	return hummingbirdBRTransit(
+		artifactsDir, mac, nil, false, false, 3, true, "HummingbirdBestEffortChildToParent")
 }
 
 // HummingbirdBestEffortParentToChild checks BR transit, construction direction, best-effort.
 // It matches TestProcessHbirdPacket/brtransit_consdir_best-effort.
 func HummingbirdBestEffortParentToChild(artifactsDir string, mac hash.Hash) runner.Case {
-	return hummingbirdBestEffortTransit(
-		artifactsDir, mac, true, 3, true, "HummingbirdBestEffortParentToChild")
+	return hummingbirdBRTransit(
+		artifactsDir, mac, nil, false, true, 3, true, "HummingbirdBestEffortParentToChild")
 }
 
 // HummingbirdMalformedCurrentHopAlignment checks malformed current-hop alignment, best-effort.
 // CurrHF points into the middle of a three-line hop.
 // It matches TestProcessHbirdPacket/malformed_current_hop_alignment_best-effort.
 func HummingbirdMalformedCurrentHopAlignment(artifactsDir string, mac hash.Hash) runner.Case {
-	return hummingbirdBestEffortTransit(
-		artifactsDir, mac, true, 4, false, "HummingbirdMalformedCurrentHopAlignment")
+	return hummingbirdBRTransit(
+		artifactsDir, mac, nil, false, true, 4, false, "HummingbirdMalformedCurrentHopAlignment")
 }
 
 // HummingbirdMalformedCurrentHopAlignmentFlyover checks malformed current-hop alignment, flyover.
@@ -129,7 +129,8 @@ func HummingbirdFlyoverParentToChild(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverParentToChild(artifactsDir, mac, sv)
+	return hummingbirdBRTransit(
+		artifactsDir, mac, sv, true, true, 3, true, "HummingbirdFlyoverParentToChild")
 }
 
 // HummingbirdFlyoverInbound checks inbound delivery, flyover.
@@ -139,7 +140,7 @@ func HummingbirdFlyoverInbound(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverInbound(artifactsDir, mac, sv)
+	return hummingbirdInbound(artifactsDir, mac, sv, true, "HummingbirdFlyoverInbound")
 }
 
 // HummingbirdFlyoverOutbound checks outbound forwarding, flyover.
@@ -149,44 +150,45 @@ func HummingbirdFlyoverOutbound(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverOutbound(
-		artifactsDir, mac, sv, 0, 301, 129, []byte(hbirdPayload), "HummingbirdFlyoverOutbound")
+	return hummingbirdOutbound(
+		artifactsDir, mac, sv, true, 0, 301, 129, []byte(hbirdPayload), "HummingbirdFlyoverOutbound")
 }
 
 // HummingbirdExpiredReservation checks an expired reservation, flyover.
 // It matches TestProcessHbirdPacket/reservation_expired_flyover.
 func HummingbirdExpiredReservation(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdFlyoverOutbound(
-		artifactsDir, mac, sv, 0, 2, 129, []byte(hbirdPayload), "HummingbirdExpiredReservation")
+	return hummingbirdOutbound(
+		artifactsDir, mac, sv, true, 0, 2, 129, []byte(hbirdPayload), "HummingbirdExpiredReservation")
 }
 
 // HummingbirdBandwidthExceeded checks reservation bandwidth exceeded, flyover.
 // It matches TestProcessHbirdPacket/reservation_exceeds_bandwidth_flyover.
 func HummingbirdBandwidthExceeded(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdFlyoverOutbound(
-		artifactsDir, mac, sv, 0, 301, 1, make([]byte, 512), "HummingbirdBandwidthExceeded")
+	return hummingbirdOutbound(
+		artifactsDir, mac, sv, true, 0, 301, 1, make([]byte, 512), "HummingbirdBandwidthExceeded")
 }
 
 // HummingbirdStaleFlyover checks stale packet freshness, flyover.
 // It matches TestProcessHbirdPacket/freshness_stale_flyover.
 func HummingbirdStaleFlyover(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdFlyoverOutbound(
-		artifactsDir, mac, sv, -6*time.Second, 301, 129, []byte(hbirdPayload),
+	return hummingbirdOutbound(
+		artifactsDir, mac, sv, true, -6*time.Second, 301, 129, []byte(hbirdPayload),
 		"HummingbirdStaleFlyover")
 }
 
 // HummingbirdFutureFlyover checks future packet freshness, flyover.
 // It matches TestProcessHbirdPacket/freshness_future_flyover.
 func HummingbirdFutureFlyover(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdFlyoverOutbound(
-		artifactsDir, mac, sv, 6*time.Second, 301, 129, []byte(hbirdPayload),
+	return hummingbirdOutbound(
+		artifactsDir, mac, sv, true, 6*time.Second, 301, 129, []byte(hbirdPayload),
 		"HummingbirdFutureFlyover")
 }
 
 // HummingbirdBestEffortChildToChildXover checks same-BR cross-over, best-effort.
 // It matches TestProcessHbirdPacket/brtransit_xover_best-effort.
 func HummingbirdBestEffortChildToChildXover(artifactsDir string, mac hash.Hash) runner.Case {
-	return hummingbirdBestEffortChildToChildXover(artifactsDir, mac)
+	return hummingbirdChildToChildXover(
+		artifactsDir, mac, nil, false, "HummingbirdBestEffortChildToChildXover")
 }
 
 // HummingbirdBadFlyoverMAC checks invalid hop MAC / SCMP, flyover.
@@ -243,16 +245,79 @@ func HummingbirdInvalidDestinationIAFlyover(
 		hbirdInvalidDestinationIAFlyover, "HummingbirdInvalidDestinationIAFlyover")
 }
 
+// HummingbirdInvalidSourceIAOutbound checks invalid outbound source IA / SCMP, best-effort.
+// It matches TestProcessHbirdSCMP/invalid_source_ia_outbound_best-effort.
+func HummingbirdInvalidSourceIAOutbound(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdOutboundSCMPFailureCase(
+		artifactsDir, mac, sv, hbirdInvalidSourceIA, "HummingbirdInvalidSourceIAOutbound")
+}
+
+// HummingbirdInvalidDestinationIAOutbound checks invalid outbound destination IA / SCMP,
+// best-effort. It matches TestProcessHbirdSCMP/invalid_destination_ia_outbound_best-effort.
+func HummingbirdInvalidDestinationIAOutbound(
+	artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdOutboundSCMPFailureCase(
+		artifactsDir, mac, sv, hbirdInvalidDestinationIA, "HummingbirdInvalidDestinationIAOutbound")
+}
+
+// HummingbirdInvalidSourceIAOutboundFlyover checks invalid outbound source IA / SCMP, flyover.
+// It matches TestProcessHbirdSCMP/invalid_source_ia_outbound_flyover.
+func HummingbirdInvalidSourceIAOutboundFlyover(
+	artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdOutboundSCMPFailureCase(artifactsDir, mac, sv,
+		hbirdInvalidSourceIAFlyover, "HummingbirdInvalidSourceIAOutboundFlyover")
+}
+
+// HummingbirdInvalidDestinationIAOutboundFlyover checks invalid outbound destination IA /
+// SCMP, flyover. It matches TestProcessHbirdSCMP/invalid_destination_ia_outbound_flyover.
+func HummingbirdInvalidDestinationIAOutboundFlyover(
+	artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdOutboundSCMPFailureCase(artifactsDir, mac, sv,
+		hbirdInvalidDestinationIAFlyover, "HummingbirdInvalidDestinationIAOutboundFlyover")
+}
+
+// HummingbirdIngressRouterAlert checks ingress router alert, best-effort.
+// It matches TestProcessHbirdRouterAlert/ingress_router_alert_best-effort.
+func HummingbirdIngressRouterAlert(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdRouterAlertCase(
+		artifactsDir, mac, sv, false, true, "HummingbirdIngressRouterAlert")
+}
+
+// HummingbirdEgressRouterAlert checks egress router alert, best-effort.
+// It matches TestProcessHbirdRouterAlert/egress_router_alert_best-effort.
+func HummingbirdEgressRouterAlert(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdRouterAlertCase(
+		artifactsDir, mac, sv, false, false, "HummingbirdEgressRouterAlert")
+}
+
+// HummingbirdIngressRouterAlertFlyover checks ingress router alert, flyover.
+// It matches TestProcessHbirdRouterAlert/ingress_router_alert_flyover.
+func HummingbirdIngressRouterAlertFlyover(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdRouterAlertCase(
+		artifactsDir, mac, sv, true, true, "HummingbirdIngressRouterAlertFlyover")
+}
+
+// HummingbirdEgressRouterAlertFlyover checks egress router alert, flyover.
+// It matches TestProcessHbirdRouterAlert/egress_router_alert_flyover.
+func HummingbirdEgressRouterAlertFlyover(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdRouterAlertCase(
+		artifactsDir, mac, sv, true, false, "HummingbirdEgressRouterAlertFlyover")
+}
+
 // HummingbirdBestEffortInbound checks inbound delivery, best-effort.
 // It matches TestProcessHbirdPacket/inbound_best-effort.
 func HummingbirdBestEffortInbound(artifactsDir string, mac hash.Hash) runner.Case {
-	return hummingbirdBestEffortInbound(artifactsDir, mac)
+	return hummingbirdInbound(artifactsDir, mac, nil, false, "HummingbirdBestEffortInbound")
 }
 
 // HummingbirdBestEffortOutbound checks outbound forwarding, best-effort.
 // It matches TestProcessHbirdPacket/outbound_best-effort.
 func HummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash) runner.Case {
-	return hummingbirdBestEffortOutbound(artifactsDir, mac)
+	return hummingbirdOutbound(
+		artifactsDir, mac, nil, false, 0, 0, 0, []byte(hbirdPayload), "HummingbirdBestEffortOutbound")
 }
 
 // HummingbirdBestEffortChildToInternalParent checks direct AS transit, ingress BR, best-effort.
@@ -301,7 +366,8 @@ func HummingbirdFlyoverChildToParentNonConsDir(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverChildToParentNonConsDir(artifactsDir, mac, sv)
+	return hummingbirdBRTransit(
+		artifactsDir, mac, sv, true, false, 3, true, "HummingbirdFlyoverChildToParentNonConsDir")
 }
 
 // HummingbirdFlyoverChildToChildXover checks same-BR cross-over, flyover.
@@ -311,7 +377,8 @@ func HummingbirdFlyoverChildToChildXover(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverChildToChildXover(artifactsDir, mac, sv)
+	return hummingbirdChildToChildXover(
+		artifactsDir, mac, sv, true, "HummingbirdFlyoverChildToChildXover")
 }
 
 // HummingbirdFlyoverXoverASTransitIngress checks AS-transit cross-over, ingress BR, flyover.
@@ -321,7 +388,8 @@ func HummingbirdFlyoverXoverASTransitIngress(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverXoverASTransitIngress(artifactsDir, mac, sv)
+	return hummingbirdXoverASTransitIngress(
+		artifactsDir, mac, sv, true, "HummingbirdFlyoverXoverASTransitIngress")
 }
 
 // HummingbirdFlyoverXoverASTransitEgress checks AS-transit cross-over, egress BR, flyover.
@@ -331,7 +399,22 @@ func HummingbirdFlyoverXoverASTransitEgress(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverXoverASTransitEgress(artifactsDir, mac, sv)
+	return hummingbirdXoverASTransitEgress(
+		artifactsDir, mac, sv, true, "HummingbirdFlyoverXoverASTransitEgress")
+}
+
+// HummingbirdBestEffortXoverASTransitIngress checks AS-transit cross-over, ingress BR,
+// best-effort. It matches TestProcessHbirdPacket/astransit_xover_ingress_best-effort.
+func HummingbirdBestEffortXoverASTransitIngress(artifactsDir string, mac hash.Hash) runner.Case {
+	return hummingbirdXoverASTransitIngress(
+		artifactsDir, mac, nil, false, "HummingbirdBestEffortXoverASTransitIngress")
+}
+
+// HummingbirdBestEffortXoverASTransitEgress checks AS-transit cross-over, egress BR,
+// best-effort. It matches TestProcessHbirdPacket/astransit_xover_egress_best-effort.
+func HummingbirdBestEffortXoverASTransitEgress(artifactsDir string, mac hash.Hash) runner.Case {
+	return hummingbirdXoverASTransitEgress(
+		artifactsDir, mac, nil, false, "HummingbirdBestEffortXoverASTransitEgress")
 }
 
 // HummingbirdFlyoverChildToPeer checks peering boundary, reverse direction, flyover.
@@ -341,7 +424,8 @@ func HummingbirdFlyoverChildToPeer(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverChildToPeer(artifactsDir, mac, sv)
+	return hummingbirdPeeringCase(
+		artifactsDir, mac, sv, true, false, false, "HummingbirdFlyoverChildToPeer")
 }
 
 // HummingbirdFlyoverPeerToChild checks peering boundary, construction direction, flyover.
@@ -351,7 +435,8 @@ func HummingbirdFlyoverPeerToChild(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdFlyoverPeerToChild(artifactsDir, mac, sv)
+	return hummingbirdPeeringCase(
+		artifactsDir, mac, sv, true, true, false, "HummingbirdFlyoverPeerToChild")
 }
 
 // HummingbirdBestEffortChildToPeer checks peering boundary, reverse direction, best-effort.
@@ -400,143 +485,112 @@ func HummingbirdFlyoverPeeringUpstream(
 		"HummingbirdFlyoverPeeringUpstream")
 }
 
-// hummingbirdBestEffortTransit builds best-effort BR-transit and malformed-hop cases.
-func hummingbirdBestEffortTransit(
+// hummingbirdBRTransit builds BR-transit cases: a single-segment path whose
+// middle hop is the current hop, entering on one external interface (child 141 /
+// parent 131) and leaving on the other. With flyover the current hop carries a
+// reservation the router verifies and de-aggregates, advancing by a flyover hop;
+// best-effort forwards with the plain SCION MAC and advances by a regular hop.
+// Against construction direction the ingress SegID is derived from the SCION MAC.
+// currHF/expectPacket support the malformed-alignment best-effort case, where
+// CurrHF points into the middle of the hop and no packet is expected. The
+// best-effort and flyover fixtures use different (never-verified) surrounding
+// hops, preserved here per mode.
+func hummingbirdBRTransit(
 	artifactsDir string,
 	mac hash.Hash,
+	sv []byte,
+	flyover bool,
 	consDir bool,
 	currHF uint8,
 	expectPacket bool,
 	name string,
 ) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 14, 3},
-		DstIP:    net.IP{192, 168, 14, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-	writeTo, readFrom := "veth_141_host", "veth_131_host"
-	srcIA, dstIA := "1-ff00:0:4", "1-ff00:0:3"
-	srcHost, dstHost := "172.16.4.1", "174.16.3.1"
-	if consDir {
-		ethernet.DstMAC[5] = 0x13
-		ip.SrcIP, ip.DstIP = net.IP{192, 168, 13, 3}, net.IP{192, 168, 13, 2}
-		writeTo, readFrom = "veth_131_host", "veth_141_host"
-		srcIA, dstIA = "1-ff00:0:3", "1-ff00:0:4"
-		srcHost, dstHost = "172.16.3.1", "174.16.4.1"
-	}
-
 	// Up segment (against construction direction): enter on child 141, exit on
 	// parent 131. Current hop is the middle hop (line 3).
 	now := time.Now()
+	current := hummingbird.FlyoverHopField{
+		HopField: path.HopField{ConsIngress: 131, ConsEgress: 141},
+	}
+	first := path.HopField{ConsIngress: 411, ConsEgress: 0}
+	last := path.HopField{ConsIngress: 0, ConsEgress: 311}
+	segLines := uint8(9) // Three best-effort hops.
+	advance := hummingbird.HopLines
+	if flyover {
+		current.Flyover = true
+		current.ResID = 42
+		current.Bw = 129
+		current.ResStartTime = 5
+		current.Duration = 301
+		first = path.HopField{ConsIngress: 0, ConsEgress: 311}
+		last = path.HopField{ConsIngress: 411, ConsEgress: 0}
+		segLines = 3 + hummingbird.FlyoverLines + 3
+		advance = hummingbird.FlyoverLines
+	}
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
 			PathMeta: hummingbird.MetaHdr{
 				CurrHF:    currHF,
-				SegLen:    [3]uint8{9, 0, 0},
+				SegLen:    [3]uint8{segLines, 0, 0},
 				BaseTS:    util.TimeToSecs(now),
 				HighResTS: 500 << 22,
 			},
 			NumINF:   1,
-			NumLines: 9, // Three best-effort hops.
+			NumLines: int(segLines),
 		},
 		InfoFields: []path.InfoField{
 			{SegID: 0x111, ConsDir: consDir, Timestamp: util.TimeToSecs(now)},
 		},
 		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
-			{HopField: path.HopField{ConsIngress: 131, ConsEgress: 141}},
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 311}},
+			{HopField: first},
+			current,
+			{HopField: last},
 		},
 	}
-	dpath.HopFields[1].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
+
+	srcIA, dstIA := "1-ff00:0:4", "1-ff00:0:3"
+	srcHost, dstHost := "172.16.4.1", "174.16.3.1"
+	inputLink, outputLink := hbirdExternalInput(141), hbirdExternalOutput(131)
+	if consDir {
+		srcIA, dstIA = "1-ff00:0:3", "1-ff00:0:4"
+		srcHost, dstHost = "172.16.3.1", "174.16.4.1"
+		inputLink, outputLink = hbirdExternalInput(131), hbirdExternalOutput(141)
+	}
+	scionL := hbirdSCION(srcIA, dstIA, srcHost, dstHost, dpath)
+
+	// The plain SCION MAC is reused for both the de-aggregated value and the SegID
+	// update, so it is never recomputed against a mutated SegID.
+	scionMac := path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
+	if flyover {
+		// The aggregate MAC must be computed with the packet length the router sees.
+		scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
+		dpath.HopFields[1].HopField.Mac = hbirdAggregateMAC(
+			mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
+	} else {
+		dpath.HopFields[1].HopField.Mac = scionMac
+	}
 	if !consDir {
-		dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
+		// Against construction direction: the ingress SegID is derived from the SCION MAC.
+		dpath.InfoFields[0].UpdateSegID(scionMac)
 	}
 
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA(srcIA),
-		DstIA:        addr.MustParseIA(dstIA),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost(srcHost)); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost(dstHost)); err != nil {
-		panic(err)
-	}
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
+	input := hbirdSerializeUDP(inputLink, scionL, []byte(hbirdPayload))
 	if !expectPacket {
 		return runner.Case{
-			Name: name, WriteTo: writeTo, ReadFrom: "no_pkt_expected",
-			Input: input.Bytes(), Want: nil, StoreDir: filepath.Join(artifactsDir, name),
+			Name: name, WriteTo: inputLink.device, ReadFrom: "no_pkt_expected",
+			Input: input, Want: nil, StoreDir: filepath.Join(artifactsDir, name),
 		}
 	}
 
-	// Expected: forwarded to parent 131, path advanced by one regular hop.
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x13}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 13, 2}
-	ip.DstIP = net.IP{192, 168, 13, 3}
-	if consDir {
-		ethernet.SrcMAC[5] = 0x14
-		ip.SrcIP, ip.DstIP = net.IP{192, 168, 14, 2}, net.IP{192, 168, 14, 3}
-	}
-	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
-	if err := dpath.IncPath(hummingbird.HopLines); err != nil {
+	// Expected: forwarded to the far interface, path advanced by one hop; SegID
+	// updated with the SCION MAC (against construction direction this is a second,
+	// self-canceling XOR). Flyover de-aggregates the current hop MAC.
+	dpath.HopFields[1].HopField.Mac = scionMac
+	if err := dpath.IncPath(advance); err != nil {
 		panic(err)
 	}
-	dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     name,
-		WriteTo:  writeTo,
-		ReadFrom: readFrom,
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, name),
-	}
+	dpath.InfoFields[0].UpdateSegID(scionMac)
+	want := hbirdSerializeUDP(outputLink, scionL, []byte(hbirdPayload))
+	return hbirdRunnerCase(artifactsDir, name, inputLink.device, outputLink.device, input, want)
 }
 
 // hummingbirdMalformedFlyover builds a valid flyover encoding whose CurrHF
@@ -579,137 +633,17 @@ func hummingbirdMalformedFlyover(
 		inputLink.device, "no_pkt_expected", input, nil)
 }
 
-// hummingbirdFlyoverParentToChild tests transit of a Hummingbird packet whose
-// current hop carries a flyover (reservation), in construction direction from a
-// parent to a child. The router must verify the aggregate MAC (flyover XOR
-// SCION), de-aggregate it back to the plain SCION MAC and forward, advancing the
-// path by a flyover hop (5 lines).
-func hummingbirdFlyoverParentToChild(
+// hummingbirdInbound tests a Hummingbird packet with the last (destination-AS)
+// hop as the current hop, arriving from a child and delivered to a local host.
+// Analogue of ChildToInternalHost. With flyover, the router verifies the
+// aggregate MAC and de-aggregates it; best-effort delivers with the plain SCION
+// MAC. In both cases the path is not advanced.
+func hummingbirdInbound(
 	artifactsDir string,
 	mac hash.Hash,
 	sv []byte,
-) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	// Construction direction: enter on parent 131, exit on child 141.
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x13},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 13, 3},
-		DstIP:    net.IP{192, 168, 13, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
-	now := time.Now()
-	dpath := &hummingbird.Decoded{
-		Base: hummingbird.Base{
-			PathMeta: hummingbird.MetaHdr{
-				CurrHF:    3, // second hop (first hop is a regular 3-line hop)
-				SegLen:    [3]uint8{3 + 5 + 3, 0, 0},
-				BaseTS:    util.TimeToSecs(now),
-				HighResTS: 500 << 22,
-			},
-			NumINF:   1,
-			NumLines: 3 + 5 + 3,
-		},
-		InfoFields: []path.InfoField{
-			{SegID: 0x111, ConsDir: true, Timestamp: util.TimeToSecs(now)},
-		},
-		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 311}},
-			{HopField: path.HopField{ConsIngress: 131, ConsEgress: 141},
-				Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
-			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
-		},
-	}
-
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:3"),
-		DstIA:        addr.MustParseIA("1-ff00:0:4"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.3.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.4.1")); err != nil {
-		panic(err)
-	}
-	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
-
-	// The aggregate MAC must be computed with the packet length the router sees.
-	dpath.HopFields[1].HopField.Mac = hbirdAggregateMAC(
-		mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	// Expected: forwarded to child 141; MAC de-aggregated to the SCION MAC; path
-	// advanced by a flyover hop; SegID updated (construction direction).
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 14, 2}
-	ip.DstIP = net.IP{192, 168, 14, 3}
-	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
-	dpath.HopFields[1].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
-	if err := dpath.IncPath(hummingbird.FlyoverLines); err != nil {
-		panic(err)
-	}
-	dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdFlyoverParentToChild",
-		WriteTo:  "veth_131_host",
-		ReadFrom: "veth_141_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdFlyoverParentToChild"),
-	}
-}
-
-// hummingbirdFlyoverInbound tests a Hummingbird packet with a flyover on the
-// last (destination-AS) hop, arriving from a child and delivered to a local
-// host. The router verifies the aggregate MAC, de-aggregates it and delivers
-// the packet on the internal network. Analogue of ChildToInternalHost.
-func hummingbirdFlyoverInbound(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
+	flyover bool,
+	name string,
 ) runner.Case {
 	const endhostPort = 21000
 	options := gopacket.SerializeOptions{
@@ -717,35 +651,30 @@ func hummingbirdFlyoverInbound(
 		ComputeChecksums: true,
 	}
 
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 14, 3},
-		DstIP:    net.IP{192, 168, 14, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
 	// Construction direction, last hop enters this AS on child 141 (ConsIngress).
 	now := time.Now()
+	lastHopLines := uint8(hummingbird.HopLines)
+	last := hummingbird.FlyoverHopField{
+		HopField: path.HopField{ConsIngress: 141, ConsEgress: 0},
+	}
+	if flyover {
+		lastHopLines = hummingbird.FlyoverLines
+		last.Flyover = true
+		last.ResID = 42
+		last.Bw = 129
+		last.ResStartTime = 5
+		last.Duration = 301
+	}
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
 			PathMeta: hummingbird.MetaHdr{
 				CurrHF:    6, // third hop (two regular hops precede it)
-				SegLen:    [3]uint8{3 + 3 + 5, 0, 0},
+				SegLen:    [3]uint8{3 + 3 + lastHopLines, 0, 0},
 				BaseTS:    util.TimeToSecs(now),
 				HighResTS: 500 << 22,
 			},
 			NumINF:   1,
-			NumLines: 3 + 3 + 5,
+			NumLines: 3 + 3 + int(lastHopLines),
 		},
 		InfoFields: []path.InfoField{
 			{SegID: 0x111, ConsDir: true, Timestamp: util.TimeToSecs(now)},
@@ -753,31 +682,20 @@ func hummingbirdFlyoverInbound(
 		HopFields: []hummingbird.FlyoverHopField{
 			{HopField: path.HopField{ConsIngress: 41, ConsEgress: 40}},
 			{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
-			{HopField: path.HopField{ConsIngress: 141, ConsEgress: 0},
-				Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
+			last,
 		},
 	}
 
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:4"),
-		DstIA:        addr.MustParseIA("1-ff00:0:1"),
-		Path:         dpath,
+	scionL := hbirdSCION("1-ff00:0:4", "1-ff00:0:1", "172.16.4.1", "192.168.0.51", dpath)
+	if flyover {
+		// The aggregate MAC depends on the packet length the router sees.
+		scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
+		dpath.HopFields[2].HopField.Mac = hbirdAggregateMAC(
+			mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[2], dpath.PathMeta)
+	} else {
+		dpath.HopFields[2].HopField.Mac =
+			path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[2].HopField, nil)
 	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.4.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("192.168.0.51")); err != nil {
-		panic(err)
-	}
-	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
-
-	dpath.HopFields[2].HopField.Mac = hbirdAggregateMAC(
-		mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[2], dpath.PathMeta)
 
 	scionudp := &slayers.UDP{}
 	scionudp.SrcPort = 2345
@@ -786,201 +704,158 @@ func hummingbirdFlyoverInbound(
 
 	payload := []byte(hbirdPayload)
 
+	inputLink := hbirdExternalInput(141)
 	input := gopacket.NewSerializeBuffer()
 	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
+		inputLink.ethernet, inputLink.ip, inputLink.udp, scionL, scionudp, gopacket.Payload(payload),
 	); err != nil {
 		panic(err)
 	}
 
 	// Expected: delivered to the local host 192.168.0.51 on the internal
-	// interface; the current hop MAC is de-aggregated; the path is not advanced.
+	// interface; the path is not advanced. Flyover de-aggregates the current hop
+	// MAC; best-effort leaves it unchanged.
+	if flyover {
+		dpath.HopFields[2].HopField.Mac =
+			path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[2].HopField, nil)
+	}
+	outputLink := hbirdInternalOutput(51, endhostPort)
 	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x1}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 0, 11}
-	ip.DstIP = net.IP{192, 168, 0, 51}
-	udp.SrcPort, udp.DstPort = 30001, layers.UDPPort(scionudp.DstPort)
-	dpath.HopFields[2].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[2].HopField, nil)
-
 	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
+		outputLink.ethernet, outputLink.ip, outputLink.udp,
+		scionL, scionudp, gopacket.Payload(payload),
 	); err != nil {
 		panic(err)
 	}
 
-	return runner.Case{
-		Name:     "HummingbirdFlyoverInbound",
-		WriteTo:  "veth_141_host",
-		ReadFrom: "veth_int_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdFlyoverInbound"),
-	}
+	return hbirdRunnerCase(
+		artifactsDir, name, inputLink.device, outputLink.device, input.Bytes(), want.Bytes())
 }
 
-// hummingbirdFlyoverOutbound builds outbound flyover and demotion cases.
-func hummingbirdFlyoverOutbound(
+// hummingbirdOutbound builds outbound forwarding cases originating in this AS
+// (first hop), sent out to a child. Analogue of InternalHostToChild. With
+// flyover it also covers the demotion cases (expired/stale/future/bandwidth
+// exceeded): the router verifies and de-aggregates the aggregate MAC and
+// advances by a flyover hop. Best-effort forwards with the plain SCION MAC and
+// advances by a regular hop. timestampOffset/duration/bw shape the flyover
+// reservation and are ignored when flyover is false.
+func hummingbirdOutbound(
 	artifactsDir string,
 	mac hash.Hash,
 	sv []byte,
+	flyover bool,
 	timestampOffset time.Duration,
 	duration uint16,
 	bw uint16,
 	payload []byte,
 	name string,
 ) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x1},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 0, 51},
-		DstIP:    net.IP{192, 168, 0, 11},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 30041, DstPort: 30001}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
 	// First hop in construction direction: egress to child 141.
 	now := time.Now().Add(timestampOffset)
+	currentLines := uint8(hummingbird.HopLines)
+	advance := hummingbird.HopLines
+	current := hummingbird.FlyoverHopField{
+		HopField: path.HopField{ConsIngress: 0, ConsEgress: 141},
+	}
+	if flyover {
+		currentLines = hummingbird.FlyoverLines
+		advance = hummingbird.FlyoverLines
+		current.Flyover = true
+		current.ResID = 42
+		current.Bw = bw
+		current.ResStartTime = 5
+		current.Duration = duration
+	}
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
 			PathMeta: hummingbird.MetaHdr{
 				CurrHF:    0,
-				SegLen:    [3]uint8{5 + 3, 0, 0},
+				SegLen:    [3]uint8{currentLines + 3, 0, 0},
 				BaseTS:    util.TimeToSecs(now),
 				HighResTS: 500 << 22,
 			},
 			NumINF:   1,
-			NumLines: 5 + 3,
+			NumLines: int(currentLines) + 3,
 		},
 		InfoFields: []path.InfoField{
 			{SegID: 0x111, ConsDir: true, Timestamp: util.TimeToSecs(now)},
 		},
 		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 141},
-				Flyover: true, ResID: 42, Bw: bw, ResStartTime: 5, Duration: duration},
+			current,
 			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
 		},
 	}
 
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:1"),
-		DstIA:        addr.MustParseIA("1-ff00:0:4"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("192.168.0.51")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.4.1")); err != nil {
-		panic(err)
-	}
-	scionL.PayloadLen = uint16(8 + len(payload))
-
-	dpath.HopFields[0].HopField.Mac = hbirdAggregateMAC(
-		mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[0], dpath.PathMeta)
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
+	scionL := hbirdSCION("1-ff00:0:1", "1-ff00:0:4", "192.168.0.51", "174.16.4.1", dpath)
+	if flyover {
+		// The aggregate MAC depends on the packet length the router sees.
+		scionL.PayloadLen = uint16(8 + len(payload))
+		dpath.HopFields[0].HopField.Mac = hbirdAggregateMAC(
+			mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[0], dpath.PathMeta)
+	} else {
+		dpath.HopFields[0].HopField.Mac =
+			path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[0].HopField, nil)
 	}
 
-	// Expected: forwarded to child 141; MAC de-aggregated; path advanced by a
-	// flyover hop; SegID updated (construction direction).
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 14, 2}
-	ip.DstIP = net.IP{192, 168, 14, 3}
-	udp.SrcPort, udp.DstPort = 50000, 40000
-	dpath.HopFields[0].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[0].HopField, nil)
-	if err := dpath.IncPath(hummingbird.FlyoverLines); err != nil {
+	inputLink := hbirdInternalInput(51, 30041)
+	input := hbirdSerializeUDP(inputLink, scionL, payload)
+
+	// Expected: forwarded to child 141; path advanced by one hop; SegID updated
+	// (construction direction). Flyover de-aggregates the current hop MAC.
+	if flyover {
+		dpath.HopFields[0].HopField.Mac =
+			path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[0].HopField, nil)
+	}
+	if err := dpath.IncPath(advance); err != nil {
 		panic(err)
 	}
 	dpath.InfoFields[0].UpdateSegID(dpath.HopFields[0].HopField.Mac)
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     name,
-		WriteTo:  "veth_int_host",
-		ReadFrom: "veth_141_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, name),
-	}
+	outputLink := hbirdExternalOutput(141)
+	want := hbirdSerializeUDP(outputLink, scionL, payload)
+	return hbirdRunnerCase(artifactsDir, name, inputLink.device, outputLink.device, input, want)
 }
 
-// hummingbirdBestEffortChildToChildXover tests a best-effort Hummingbird packet
-// that crosses over from an up segment to a down segment on the same BR, from a
-// child to another child. Analogue of ChildToChildXover; exercises the
-// Hummingbird cross-over handling (doHbirdXoverBestEffort). The flyover
-// cross-over variants are covered by HummingbirdFlyoverChildToChildXover and the
-// HummingbirdFlyoverXoverASTransit{Ingress,Egress} cases below.
-func hummingbirdBestEffortChildToChildXover(artifactsDir string, mac hash.Hash) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x15},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 15, 3},
-		DstIP:    net.IP{192, 168, 15, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
+// hummingbirdChildToChildXover tests a Hummingbird packet that crosses over from
+// an up segment to a down segment on the same BR, from a child to another child.
+// Analogue of ChildToChildXover; exercises the Hummingbird cross-over handling
+// (doHbirdXoverBestEffort / doHbirdXoverFlyover). With flyover the up-segment
+// cross-over hop carries a reservation spanning ingress 151 (incoming hop) and
+// egress 141 (outgoing hop), which the router verifies and de-aggregates; the AS
+// -transit cross-over variants are covered by the
+// hummingbirdXoverASTransit{Ingress,Egress} cases.
+func hummingbirdChildToChildXover(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+	flyover bool,
+	name string,
+) runner.Case {
 	now := time.Now()
+	currentLines := uint8(hummingbird.HopLines)
+	firstAdvance := hummingbird.HopLines
+	current := hummingbird.FlyoverHopField{
+		HopField: path.HopField{ConsIngress: 0, ConsEgress: 151},
+	}
+	if flyover {
+		currentLines = hummingbird.FlyoverLines
+		firstAdvance = hummingbird.FlyoverLines
+		current.Flyover = true
+		current.ResID = 42
+		current.Bw = 129
+		current.ResStartTime = 5
+		current.Duration = 301
+	}
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
 			PathMeta: hummingbird.MetaHdr{
 				CurrHF:    3, // last hop of the up segment (the cross-over hop)
 				CurrINF:   0,
-				SegLen:    [3]uint8{6, 6, 0},
+				SegLen:    [3]uint8{3 + currentLines, 6, 0},
 				BaseTS:    util.TimeToSecs(now),
 				HighResTS: 500 << 22,
 			},
 			NumINF:   2,
-			NumLines: 12,
+			NumLines: 3 + int(currentLines) + 6,
 		},
 		InfoFields: []path.InfoField{
 			// up segment (against construction direction)
@@ -990,79 +865,47 @@ func hummingbirdBestEffortChildToChildXover(artifactsDir string, mac hash.Hash) 
 		},
 		HopFields: []hummingbird.FlyoverHopField{
 			{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}},
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 151}},
+			current,
 			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 141}},
 			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
 		},
 	}
-	dpath.HopFields[1].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
-	dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
+
+	scionL := hbirdSCION("1-ff00:0:5", "1-ff00:0:4", "172.16.5.1", "174.16.4.1", dpath)
+
+	// Up-segment hop MAC computed with the base SegID (reused, not recomputed).
+	scionMac1 := path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
+	if flyover {
+		scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
+		// Reservation spans ingress 151 (incoming hop) and egress 141 (outgoing hop).
+		dpath.HopFields[1].HopField.Mac = hbirdAggregateMACForInterfaces(
+			mac, sv, scionL, dpath, 151, 141,
+			dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
+	} else {
+		dpath.HopFields[1].HopField.Mac = scionMac1
+	}
+	dpath.InfoFields[0].UpdateSegID(scionMac1)
 	dpath.HopFields[2].HopField.Mac =
 		path.MAC(mac, dpath.InfoFields[1], dpath.HopFields[2].HopField, nil)
 
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:5"),
-		DstIA:        addr.MustParseIA("1-ff00:0:4"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.5.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.4.1")); err != nil {
-		panic(err)
-	}
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
+	inputLink := hbirdExternalInput(151)
+	input := hbirdSerializeUDP(inputLink, scionL, []byte(hbirdPayload))
 
 	// Expected: forwarded to child 141 after switching to the down segment; both
-	// SegIDs updated and the path advanced past the cross-over.
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 14, 2}
-	ip.DstIP = net.IP{192, 168, 14, 3}
-	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
-	if err := dpath.IncPath(hummingbird.HopLines); err != nil {
+	// SegIDs updated and the path advanced past the cross-over. Flyover
+	// de-aggregates the up-segment hop MAC.
+	dpath.HopFields[1].HopField.Mac = scionMac1
+	if err := dpath.IncPath(firstAdvance); err != nil {
 		panic(err)
 	}
 	if err := dpath.IncPath(hummingbird.HopLines); err != nil {
 		panic(err)
 	}
-	dpath.InfoFields[0].UpdateSegID(dpath.HopFields[1].HopField.Mac)
+	dpath.InfoFields[0].UpdateSegID(scionMac1)
 	dpath.InfoFields[1].UpdateSegID(dpath.HopFields[2].HopField.Mac)
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdBestEffortChildToChildXover",
-		WriteTo:  "veth_151_host",
-		ReadFrom: "veth_141_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdBestEffortChildToChildXover"),
-	}
+	outputLink := hbirdExternalOutput(141)
+	want := hbirdSerializeUDP(outputLink, scionL, []byte(hbirdPayload))
+	return hbirdRunnerCase(artifactsDir, name, inputLink.device, outputLink.device, input, want)
 }
 
 // hbirdFailureMode selects the validation failure built by the shared SCMP case.
@@ -1279,125 +1122,27 @@ func hummingbirdSCMPFailureCase(
 	}
 }
 
-// hummingbirdBestEffortInbound tests a best-effort (non-flyover) Hummingbird
-// packet arriving from a child and delivered to a local host. Analogue of
-// ChildToInternalHost; the counterpart of HummingbirdFlyoverInbound without the
-// flyover (plain SCION MAC, no de-aggregation).
-func hummingbirdBestEffortInbound(artifactsDir string, mac hash.Hash) runner.Case {
-	const endhostPort = 21000
+// hummingbirdOutboundSCMPFailureCase builds a locally originated (first-hop) validation
+// failure and its expected SCMP Parameter Problem response. Unlike
+// hummingbirdSCMPFailureCase (inbound), the invalid IA is caught before an egress
+// interface is ever chosen, so the reply is sent back internally rather than out an
+// external link. Only the two invalid-IA modes (best-effort and flyover) apply here;
+// invalid-MAC modes are not, since IA validation happens before MAC verification and thus
+// would mask a MAC-only failure.
+func hummingbirdOutboundSCMPFailureCase(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+	mode hbirdFailureMode,
+	name string,
+) runner.Case {
+	flyover := mode == hbirdInvalidSourceIAFlyover || mode == hbirdInvalidDestinationIAFlyover
 	options := gopacket.SerializeOptions{
 		FixLengths:       true,
 		ComputeChecksums: true,
 	}
 
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 14, 3},
-		DstIP:    net.IP{192, 168, 14, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
-	// Construction direction, last hop enters this AS on child 141 (ConsIngress).
-	now := time.Now()
-	dpath := &hummingbird.Decoded{
-		Base: hummingbird.Base{
-			PathMeta: hummingbird.MetaHdr{
-				CurrHF:    6, // third hop (two regular hops precede it)
-				SegLen:    [3]uint8{9, 0, 0},
-				BaseTS:    util.TimeToSecs(now),
-				HighResTS: 500 << 22,
-			},
-			NumINF:   1,
-			NumLines: 9,
-		},
-		InfoFields: []path.InfoField{
-			{SegID: 0x111, ConsDir: true, Timestamp: util.TimeToSecs(now)},
-		},
-		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 41, ConsEgress: 40}},
-			{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
-			{HopField: path.HopField{ConsIngress: 141, ConsEgress: 0}},
-		},
-	}
-	dpath.HopFields[2].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[2].HopField, nil)
-
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:4"),
-		DstIA:        addr.MustParseIA("1-ff00:0:1"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.4.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("192.168.0.51")); err != nil {
-		panic(err)
-	}
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 2345
-	scionudp.DstPort = uint16(endhostPort)
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	// Expected: delivered to the local host on the internal interface; the path
-	// and MAC are unchanged (best-effort, delivered without advancing).
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x1}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 0, 11}
-	ip.DstIP = net.IP{192, 168, 0, 51}
-	udp.SrcPort, udp.DstPort = 30001, layers.UDPPort(scionudp.DstPort)
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdBestEffortInbound",
-		WriteTo:  "veth_141_host",
-		ReadFrom: "veth_int_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdBestEffortInbound"),
-	}
-}
-
-// hummingbirdBestEffortOutbound tests a best-effort Hummingbird packet
-// originating in this AS (first hop), sent out to a child. Analogue of
-// InternalHostToChild; the counterpart of HummingbirdFlyoverOutbound without
-// the flyover.
-func hummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
+	// Injected as if from the internal host 192.168.0.51, leaving via child 141.
 	ethernet := &layers.Ethernet{
 		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
 		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x1},
@@ -1415,13 +1160,12 @@ func hummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash) runner.Ca
 	udp := &layers.UDP{SrcPort: 30041, DstPort: 30001}
 	_ = udp.SetNetworkLayerForChecksum(ip)
 
-	// First hop in construction direction: egress to child 141.
 	now := time.Now()
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
 			PathMeta: hummingbird.MetaHdr{
 				CurrHF:    0,
-				SegLen:    [3]uint8{6, 0, 0},
+				SegLen:    [3]uint8{3 + 3, 0, 0},
 				BaseTS:    util.TimeToSecs(now),
 				HighResTS: 500 << 22,
 			},
@@ -1436,9 +1180,17 @@ func hummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash) runner.Ca
 			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
 		},
 	}
-	dpath.HopFields[0].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[0].HopField, nil)
+	if flyover {
+		dpath.PathMeta.SegLen[0] += 2
+		dpath.NumLines += 2
+		dpath.HopFields[0].Flyover = true
+		dpath.HopFields[0].ResID = 42
+		dpath.HopFields[0].Bw = 129
+		dpath.HopFields[0].ResStartTime = 5
+		dpath.HopFields[0].Duration = 301
+	}
 
+	srcA := addr.MustParseHost("192.168.0.51")
 	scionL := &slayers.SCION{
 		Version:      0,
 		TrafficClass: 0xb8,
@@ -1449,11 +1201,28 @@ func hummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash) runner.Ca
 		DstIA:        addr.MustParseIA("1-ff00:0:4"),
 		Path:         dpath,
 	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("192.168.0.51")); err != nil {
+	if mode == hbirdInvalidSourceIA || mode == hbirdInvalidSourceIAFlyover {
+		// Not local: fails "IsFirstHop && !srcIsLocal".
+		scionL.SrcIA = addr.MustParseIA("1-ff00:0:2")
+	}
+	if mode == hbirdInvalidDestinationIA || mode == hbirdInvalidDestinationIAFlyover {
+		// Local: fails "dstIsLocal" on an outbound (locally originated) packet.
+		scionL.DstIA = addr.MustParseIA("1-ff00:0:1")
+	}
+	if err := scionL.SetSrcAddr(srcA); err != nil {
 		panic(err)
 	}
 	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.4.1")); err != nil {
 		panic(err)
+	}
+	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
+
+	if flyover {
+		dpath.HopFields[0].HopField.Mac = hbirdAggregateMAC(
+			mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[0], dpath.PathMeta)
+	} else {
+		dpath.HopFields[0].HopField.Mac =
+			path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[0].HopField, nil)
 	}
 
 	scionudp := &slayers.UDP{}
@@ -1463,6 +1232,13 @@ func hummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash) runner.Ca
 
 	payload := []byte(hbirdPayload)
 
+	code := slayers.SCMPCodeInvalidSourceAddress
+	pointer := slayers.CmnHdrLen + addr.IABytes
+	if mode == hbirdInvalidDestinationIA || mode == hbirdInvalidDestinationIAFlyover {
+		code = slayers.SCMPCodeInvalidDestinationAddress
+		pointer = slayers.CmnHdrLen
+	}
+
 	input := gopacket.NewSerializeBuffer()
 	if err := gopacket.SerializeLayers(input, options,
 		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
@@ -1470,32 +1246,59 @@ func hummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash) runner.Ca
 		panic(err)
 	}
 
-	// Expected: forwarded to child 141; path advanced by a regular hop; SegID
-	// updated (construction direction).
+	// Expected: SCMP ParameterProblem returned internally to the originating host,
+	// since the invalid IA is caught before an egress interface is ever chosen. See
+	// prepareHbirdSCMP in router/dataplane_hbird.go: replying on an internal link
+	// skips the "external egress" SegID update/path increment.
 	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 14, 2}
-	ip.DstIP = net.IP{192, 168, 14, 3}
-	udp.SrcPort, udp.DstPort = 50000, 40000
-	if err := dpath.IncPath(hummingbird.HopLines); err != nil {
+	ethernet.SrcMAC, ethernet.DstMAC = ethernet.DstMAC, ethernet.SrcMAC
+	ip.SrcIP, ip.DstIP = ip.DstIP, ip.SrcIP
+	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
+
+	scionL.DstIA = scionL.SrcIA
+	scionL.SrcIA = addr.MustParseIA("1-ff00:0:1")
+	if err := scionL.SetDstAddr(srcA); err != nil {
 		panic(err)
 	}
-	dpath.InfoFields[0].UpdateSegID(dpath.HopFields[0].HopField.Mac)
+	if err := scionL.SetSrcAddr(addr.MustParseHost("192.168.0.11")); err != nil {
+		panic(err)
+	}
 
+	revTmp, err := dpath.Reverse()
+	if err != nil {
+		panic(err)
+	}
+	scionL.Path = revTmp
+	scionL.PathType = revTmp.Type()
+
+	scionL.NextHdr = slayers.End2EndClass
+	e2e := normalizedSCMPPacketAuthEndToEndExtn()
+	e2e.NextHdr = slayers.L4SCMP
+	scmpH := &slayers.SCMP{
+		TypeCode: slayers.CreateSCMPTypeCode(slayers.SCMPTypeParameterProblem, code),
+	}
+	scmpH.SetNetworkLayerForChecksum(scionL)
+	scmpP := &slayers.SCMPParameterProblem{
+		Pointer: uint16(pointer),
+	}
+
+	// Skip Ethernet + IPv4 + UDP to obtain the quoted SCION packet.
+	quoteStart := 14 + 20 + 8
+	quote := input.Bytes()[quoteStart:]
 	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
+		ethernet, ip, udp, scionL, e2e, scmpH, scmpP, gopacket.Payload(quote),
 	); err != nil {
 		panic(err)
 	}
 
 	return runner.Case{
-		Name:     "HummingbirdBestEffortOutbound",
-		WriteTo:  "veth_int_host",
-		ReadFrom: "veth_141_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdBestEffortOutbound"),
+		Name:            name,
+		WriteTo:         "veth_int_host",
+		ReadFrom:        "veth_int_host",
+		Input:           input.Bytes(),
+		Want:            want.Bytes(),
+		StoreDir:        filepath.Join(artifactsDir, name),
+		NormalizePacket: scmpNormalizePacket,
 	}
 }
 
@@ -1599,319 +1402,45 @@ func hummingbirdDirectASTransit(
 	return hbirdRunnerCase(artifactsDir, name, inputLink.device, outputLink.device, input, want)
 }
 
-// hummingbirdFlyoverChildToParentNonConsDir tests transit of a Hummingbird
-// packet with a flyover on the current hop, against the construction direction
-// (child to parent). It complements HummingbirdFlyoverParentToChild (which is in
-// construction direction) and exercises the non-consdir SegID handling together
-// with flyover de-aggregation. See unit test "brtransit_non_consdir_flyover".
-func hummingbirdFlyoverChildToParentNonConsDir(
+// hummingbirdXoverASTransitIngress tests the ingress BR of an AS-transit
+// cross-over: the packet arrives on an external child link (151), switches
+// segments, and its egress interface belongs to a sibling BR, so it is forwarded
+// internally to brC (192.168.0.13). With flyover the reservation sits on the
+// incoming (up-seg) hop and the router moves it to the outgoing hop for the
+// egress BR (xoverMoveFlyoverToNext), shifting the SegLens by 2 lines and
+// re-aggregating the MAC; best-effort forwards unchanged apart from the advance.
+// Mirrors unit tests "astransit_xover_ingress_{flyover,best-effort}".
+func hummingbirdXoverASTransitIngress(
 	artifactsDir string,
 	mac hash.Hash,
 	sv []byte,
+	flyover bool,
+	name string,
 ) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 14, 3},
-		DstIP:    net.IP{192, 168, 14, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
-	// Against construction direction: enter on child 141, exit on parent 131.
 	now := time.Now()
-	dpath := &hummingbird.Decoded{
-		Base: hummingbird.Base{
-			PathMeta: hummingbird.MetaHdr{
-				CurrHF:    3,
-				SegLen:    [3]uint8{3 + 5 + 3, 0, 0},
-				BaseTS:    util.TimeToSecs(now),
-				HighResTS: 500 << 22,
-			},
-			NumINF:   1,
-			NumLines: 3 + 5 + 3,
-		},
-		InfoFields: []path.InfoField{
-			{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)},
-		},
-		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 311}},
-			{HopField: path.HopField{ConsIngress: 131, ConsEgress: 141},
-				Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
-			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
-		},
+	currentLines := uint8(hummingbird.HopLines)
+	current := hummingbird.FlyoverHopField{
+		HopField: path.HopField{ConsIngress: 0, ConsEgress: 151},
 	}
-
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:4"),
-		DstIA:        addr.MustParseIA("1-ff00:0:3"),
-		Path:         dpath,
+	if flyover {
+		currentLines = hummingbird.FlyoverLines
+		current.Flyover = true
+		current.ResID = 42
+		current.Bw = 129
+		current.ResStartTime = 5
+		current.Duration = 301
 	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.4.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.3.1")); err != nil {
-		panic(err)
-	}
-	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
-
-	// The SCION hop MAC is computed with the base SegID; it is reused for both the
-	// SegID update and the de-aggregated value, so it is never recomputed against a
-	// mutated SegID (which would yield a different MAC).
-	scionMac := path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
-	dpath.HopFields[1].HopField.Mac = hbirdAggregateMAC(
-		mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
-	// Non-consdir: the ingress SegID is derived from the SCION MAC.
-	dpath.InfoFields[0].UpdateSegID(scionMac)
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	// Expected: forwarded to parent 131; MAC de-aggregated; path advanced by a
-	// flyover hop. The router reverses the non-consdir SegID on ingress.
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x13}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 13, 2}
-	ip.DstIP = net.IP{192, 168, 13, 3}
-	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
-	dpath.HopFields[1].HopField.Mac = scionMac
-	// The router reverses the non-consdir SegID on ingress (XOR by the SCION MAC),
-	// bringing it back to the base value.
-	dpath.InfoFields[0].UpdateSegID(scionMac)
-	if err := dpath.IncPath(hummingbird.FlyoverLines); err != nil {
-		panic(err)
-	}
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdFlyoverChildToParentNonConsDir",
-		WriteTo:  "veth_141_host",
-		ReadFrom: "veth_131_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdFlyoverChildToParentNonConsDir"),
-	}
-}
-
-// hummingbirdFlyoverChildToChildXover tests a Hummingbird cross-over (up→down
-// segment) on the same BR, from a child to another child, with a flyover on the
-// up-segment cross-over hop. Exercises doHbirdXoverFlyover in the external-egress
-// branch; the unit-test analogue is "brtransit_xover_flyover" in
-// router/dataplane_hbird_test.go. The reservation spans the ingress of the
-// incoming hop (151) and the egress of the outgoing hop (141), so the flyover
-// MAC uses those interfaces explicitly.
-func hummingbirdFlyoverChildToChildXover(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x15},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 15, 3},
-		DstIP:    net.IP{192, 168, 15, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
-	now := time.Now()
-	dpath := &hummingbird.Decoded{
-		Base: hummingbird.Base{
-			PathMeta: hummingbird.MetaHdr{
-				CurrHF:    3, // up-seg cross-over hop (flyover, lines 3..7)
-				CurrINF:   0,
-				SegLen:    [3]uint8{3 + 5, 6, 0},
-				BaseTS:    util.TimeToSecs(now),
-				HighResTS: 500 << 22,
-			},
-			NumINF:   2,
-			NumLines: 3 + 5 + 6,
-		},
-		InfoFields: []path.InfoField{
-			// up segment (against construction direction)
-			{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)},
-			// down segment (construction direction)
-			{SegID: 0x222, ConsDir: true, Timestamp: util.TimeToSecs(now)},
-		},
-		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}},
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 151},
-				Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 141}},
-			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
-		},
-	}
-
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:5"),
-		DstIA:        addr.MustParseIA("1-ff00:0:4"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.5.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.4.1")); err != nil {
-		panic(err)
-	}
-	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
-
-	// Up-segment hop MAC computed with the base SegID (reused, not recomputed).
-	scionMac1 := path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
-	// Reservation spans ingress 151 (incoming hop) and egress 141 (outgoing hop).
-	dpath.HopFields[1].HopField.Mac = hbirdAggregateMACForInterfaces(
-		mac, sv, scionL, dpath, 151, 141, dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
-	dpath.InfoFields[0].UpdateSegID(scionMac1)
-	dpath.HopFields[2].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[1], dpath.HopFields[2].HopField, nil)
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	// Expected: forwarded to child 141 after switching to the down segment; the
-	// up-seg flyover MAC is de-aggregated; both SegIDs updated; path advanced past
-	// the flyover hop and the down-seg hop.
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 14, 2}
-	ip.DstIP = net.IP{192, 168, 14, 3}
-	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
-	dpath.HopFields[1].HopField.Mac = scionMac1
-	if err := dpath.IncPath(hummingbird.FlyoverLines); err != nil {
-		panic(err)
-	}
-	if err := dpath.IncPath(hummingbird.HopLines); err != nil {
-		panic(err)
-	}
-	dpath.InfoFields[0].UpdateSegID(scionMac1)
-	dpath.InfoFields[1].UpdateSegID(dpath.HopFields[2].HopField.Mac)
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdFlyoverChildToChildXover",
-		WriteTo:  "veth_151_host",
-		ReadFrom: "veth_141_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdFlyoverChildToChildXover"),
-	}
-}
-
-// hummingbirdFlyoverXoverASTransitIngress tests the ingress BR of an AS-transit
-// cross-over carrying a flyover: the packet arrives on an external child link,
-// switches segments, and its egress interface belongs to a sibling BR, so it is
-// forwarded internally. The flyover sits on the incoming (up-seg) hop and the
-// router moves it to the outgoing hop for the egress BR (xoverMoveFlyoverToNext).
-// Mirrors unit test "astransit_xover_ingress_flyover".
-func hummingbirdFlyoverXoverASTransitIngress(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	// Arrives on child 151.
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x15},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 15, 3},
-		DstIP:    net.IP{192, 168, 15, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
-	now := time.Now()
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
 			PathMeta: hummingbird.MetaHdr{
 				CurrINF:   0,
-				CurrHF:    3, // up-seg cross-over hop (flyover)
-				SegLen:    [3]uint8{3 + 5, 6, 0},
+				CurrHF:    3, // up-seg cross-over hop
+				SegLen:    [3]uint8{3 + currentLines, 6, 0},
 				BaseTS:    util.TimeToSecs(now),
 				HighResTS: 500 << 22,
 			},
 			NumINF:   2,
-			NumLines: 3 + 5 + 6,
+			NumLines: 3 + int(currentLines) + 6,
 		},
 		InfoFields: []path.InfoField{
 			{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)}, // up seg
@@ -1919,142 +1448,101 @@ func hummingbirdFlyoverXoverASTransitIngress(
 		},
 		HopFields: []hummingbird.FlyoverHopField{
 			{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}},
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 151},
-				Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
+			current,
 			// xover here (up->down shortcut); egress 181 is a child on sibling brC.
 			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 181}},
 			{HopField: path.HopField{ConsIngress: 811, ConsEgress: 0}},
 		},
 	}
 
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:5"),
-		DstIA:        addr.MustParseIA("1-ff00:0:8"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.5.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("172.16.8.1")); err != nil {
-		panic(err)
-	}
+	scionL := hbirdSCION("1-ff00:0:5", "1-ff00:0:8", "172.16.5.1", "172.16.8.1", dpath)
 	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
 
 	// Reservation spans ingress 151 (incoming hop) and egress 181 (outgoing hop).
 	scionMac1 := path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
-	dpath.HopFields[1].HopField.Mac = hbirdAggregateMACForInterfaces(
-		mac, sv, scionL, dpath, 151, 181, dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
+	if flyover {
+		dpath.HopFields[1].HopField.Mac = hbirdAggregateMACForInterfaces(
+			mac, sv, scionL, dpath, 151, 181,
+			dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
+	} else {
+		dpath.HopFields[1].HopField.Mac = scionMac1
+	}
 	dpath.InfoFields[0].UpdateSegID(scionMac1)
 	dpath.HopFields[2].HopField.Mac =
 		path.MAC(mac, dpath.InfoFields[1], dpath.HopFields[2].HopField, nil)
 
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
+	inputLink := hbirdExternalInput(151)
+	input := hbirdSerializeUDP(inputLink, scionL, []byte(hbirdPayload))
 
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
+	// Expected: forwarded internally to sibling brC; the path advances by one
+	// regular hop. Flyover de-aggregates the up-seg hop and moves the reservation
+	// to the down-seg hop, re-aggregating its MAC and shifting the SegLens. For
+	// best-effort the router's own non-consdir-ingress SegID update is a second,
+	// self-canceling XOR with the same MAC.
+	if flyover {
+		dpath.HopFields[1].Flyover = false
+		dpath.HopFields[1].HopField.Mac = scionMac1
+		dpath.HopFields[2].Flyover = true
+		dpath.HopFields[2].ResID = 42
+		dpath.HopFields[2].Bw = 129
+		dpath.HopFields[2].ResStartTime = 5
+		dpath.HopFields[2].Duration = 301
+		dpath.PathMeta.SegLen[0] -= 2
+		dpath.PathMeta.SegLen[1] += 2
+		dpath.HopFields[2].HopField.Mac = hbirdAggregateMACForInterfaces(
+			mac, sv, scionL, dpath, 151, 181,
+			dpath.InfoFields[1], dpath.HopFields[2], dpath.PathMeta)
 	}
-
-	// Expected: forwarded internally to sibling brC (192.168.0.13); the flyover is
-	// moved from the up-seg hop to the core-seg hop and re-aggregated onto its MAC;
-	// SegLens shift by 2 lines; the path advances by one regular hop.
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x1}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 0, 11}
-	ip.DstIP = net.IP{192, 168, 0, 13}
-	udp.SrcPort, udp.DstPort = 30001, 30003
-	// De-aggregate the up-seg hop and move the flyover to the down-seg hop.
-	dpath.HopFields[1].Flyover = false
-	dpath.HopFields[1].HopField.Mac = scionMac1
-	dpath.HopFields[2].Flyover = true
-	dpath.HopFields[2].ResID = 42
-	dpath.HopFields[2].Bw = 129
-	dpath.HopFields[2].ResStartTime = 5
-	dpath.HopFields[2].Duration = 301
-	dpath.PathMeta.SegLen[0] -= 2
-	dpath.PathMeta.SegLen[1] += 2
-	dpath.HopFields[2].HopField.Mac = hbirdAggregateMACForInterfaces(
-		mac, sv, scionL, dpath, 151, 181, dpath.InfoFields[1], dpath.HopFields[2], dpath.PathMeta)
 	dpath.InfoFields[0].UpdateSegID(scionMac1)
 	if err := dpath.IncPath(hummingbird.HopLines); err != nil {
 		panic(err)
 	}
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdFlyoverXoverASTransitIngress",
-		WriteTo:  "veth_151_host",
-		ReadFrom: "veth_int_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdFlyoverXoverASTransitIngress"),
-	}
+	outputLink := hbirdInternalOutput(13, 30003)
+	want := hbirdSerializeUDP(outputLink, scionL, []byte(hbirdPayload))
+	return hbirdRunnerCase(artifactsDir, name, inputLink.device, outputLink.device, input, want)
 }
 
-// hummingbirdFlyoverXoverASTransitEgress tests the egress BR of an AS-transit
-// cross-over carrying a flyover: the packet arrives internally from the sibling
-// BR that handled the up segment, and this BR egresses it externally on a child.
-// The flyover sits on the outgoing (down-seg) hop; the router de-aggregates it
-// and moves it back to the incoming (up-seg) hop (xoverMoveFlyoverToPrevious).
-// Mirrors unit test "astransit_xover_egress_flyover".
-func hummingbirdFlyoverXoverASTransitEgress(
+// hummingbirdXoverASTransitEgress tests the egress BR of an AS-transit
+// cross-over: the packet arrives internally from the sibling BR (brC) that
+// handled the up segment, and this BR egresses it externally on child 141. With
+// flyover the reservation sits on the outgoing (down-seg) hop; the router
+// de-aggregates it and moves it back to the incoming (up-seg) hop
+// (xoverMoveFlyoverToPrevious), shifting the SegLens by 2 lines; best-effort just
+// advances past the current hop. Mirrors unit tests
+// "astransit_xover_egress_{flyover,best-effort}".
+func hummingbirdXoverASTransitEgress(
 	artifactsDir string,
 	mac hash.Hash,
 	sv []byte,
+	flyover bool,
+	name string,
 ) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	// Arrives internally from sibling brC (192.168.0.13).
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x1},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 0, 13},
-		DstIP:    net.IP{192, 168, 0, 11},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 30003, DstPort: 30001}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
 	now := time.Now()
+	currentLines := uint8(hummingbird.HopLines)
+	advance := hummingbird.HopLines
+	current := hummingbird.FlyoverHopField{
+		HopField: path.HopField{ConsIngress: 0, ConsEgress: 141},
+	}
+	if flyover {
+		currentLines = hummingbird.FlyoverLines
+		advance = hummingbird.FlyoverLines
+		current.Flyover = true
+		current.ResID = 42
+		current.Bw = 129
+		current.ResStartTime = 5
+		current.Duration = 301
+	}
 	dpath := &hummingbird.Decoded{
 		Base: hummingbird.Base{
 			PathMeta: hummingbird.MetaHdr{
 				CurrINF:   1,
-				CurrHF:    6, // down-seg cross-over hop (flyover), lines 6..10
-				SegLen:    [3]uint8{6, 3 + 5, 0},
+				CurrHF:    6, // down-seg cross-over hop
+				SegLen:    [3]uint8{6, 3 + currentLines, 0},
 				BaseTS:    util.TimeToSecs(now),
 				HighResTS: 500 << 22,
 			},
 			NumINF:   2,
-			NumLines: 6 + 3 + 5,
+			NumLines: 6 + 3 + int(currentLines),
 		},
 		InfoFields: []path.InfoField{
 			{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)}, // up seg
@@ -2064,354 +1552,53 @@ func hummingbirdFlyoverXoverASTransitEgress(
 			{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}},
 			// up-seg hop; its real ingress is 181 (on sibling brC).
 			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 181}},
-			// xover; down-seg hop, egress on this BR's child 141 (flyover, current).
-			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 141},
-				Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
+			// xover; down-seg hop, egress on this BR's child 141 (current).
+			current,
 			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
 		},
 	}
 
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:5"),
-		DstIA:        addr.MustParseIA("1-ff00:0:4"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.5.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.4.1")); err != nil {
-		panic(err)
-	}
+	scionL := hbirdSCION("1-ff00:0:5", "1-ff00:0:4", "172.16.5.1", "174.16.4.1", dpath)
 	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
 
 	// The up-seg hop keeps its plain SCION MAC (never verified or changed here).
 	dpath.HopFields[1].HopField.Mac =
 		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
-	// The down-seg flyover reservation spans ingress 181 (previous hop) and egress 141.
+	// The down-seg reservation spans ingress 181 (previous hop) and egress 141.
 	scionMac2 := path.MAC(mac, dpath.InfoFields[1], dpath.HopFields[2].HopField, nil)
-	dpath.HopFields[2].HopField.Mac = hbirdAggregateMACForInterfaces(
-		mac, sv, scionL, dpath, 181, 141, dpath.InfoFields[1], dpath.HopFields[2], dpath.PathMeta)
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
+	if flyover {
+		dpath.HopFields[2].HopField.Mac = hbirdAggregateMACForInterfaces(
+			mac, sv, scionL, dpath, 181, 141,
+			dpath.InfoFields[1], dpath.HopFields[2], dpath.PathMeta)
+	} else {
+		dpath.HopFields[2].HopField.Mac = scionMac2
 	}
 
-	// Expected: egressed on child 141; the down-seg flyover is de-aggregated and
-	// moved back to the up-seg hop; SegLens shift by 2 lines; the down-seg SegID is
-	// updated (construction direction); the path advances past the flyover.
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x14}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 14, 2}
-	ip.DstIP = net.IP{192, 168, 14, 3}
-	udp.SrcPort, udp.DstPort = 50000, 40000
-	// Move the flyover from the down-seg hop back to the up-seg hop; de-aggregate
-	// the down-seg hop MAC. The up-seg hop keeps its (unchanged) MAC.
-	dpath.HopFields[2].Flyover = false
-	dpath.HopFields[2].HopField.Mac = scionMac2
-	dpath.HopFields[1].Flyover = true
-	dpath.HopFields[1].ResID = 42
-	dpath.HopFields[1].Bw = 129
-	dpath.HopFields[1].ResStartTime = 5
-	dpath.HopFields[1].Duration = 301
-	dpath.PathMeta.SegLen[0] += 2
-	dpath.PathMeta.SegLen[1] -= 2
+	inputLink := hbirdInternalInput(13, 30003)
+	input := hbirdSerializeUDP(inputLink, scionL, []byte(hbirdPayload))
+
+	// Expected: egressed on child 141; the down-seg SegID is updated (construction
+	// direction); the path advances past the current hop. Flyover de-aggregates the
+	// down-seg hop and moves the reservation back to the up-seg hop, shifting the
+	// SegLens by 2 lines.
+	if flyover {
+		dpath.HopFields[2].Flyover = false
+		dpath.HopFields[2].HopField.Mac = scionMac2
+		dpath.HopFields[1].Flyover = true
+		dpath.HopFields[1].ResID = 42
+		dpath.HopFields[1].Bw = 129
+		dpath.HopFields[1].ResStartTime = 5
+		dpath.HopFields[1].Duration = 301
+		dpath.PathMeta.SegLen[0] += 2
+		dpath.PathMeta.SegLen[1] -= 2
+	}
 	dpath.InfoFields[1].UpdateSegID(scionMac2)
-	if err := dpath.IncPath(hummingbird.FlyoverLines); err != nil {
+	if err := dpath.IncPath(advance); err != nil {
 		panic(err)
 	}
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdFlyoverXoverASTransitEgress",
-		WriteTo:  "veth_int_host",
-		ReadFrom: "veth_141_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdFlyoverXoverASTransitEgress"),
-	}
-}
-
-// hummingbirdFlyoverChildToPeer tests a Hummingbird packet with a flyover on a
-// peering hop, entering on a child link and leaving on a peering link from the
-// same BR (against construction direction). Analogue of ChildToPeer; mirrors
-// unit test "brtransit_peering_non_consdir_flyover". At a peering hop the SegID
-// is not updated and the reservation interfaces are the plain (swapped) hop
-// interfaces.
-func hummingbirdFlyoverChildToPeer(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	// Injected at A's child 151 as if coming from AS 5.
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x15},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 15, 3},
-		DstIP:    net.IP{192, 168, 15, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
-	// Up seg ends at the peering hop (HF[1]); a one-hop down seg follows.
-	now := time.Now()
-	dpath := &hummingbird.Decoded{
-		Base: hummingbird.Base{
-			PathMeta: hummingbird.MetaHdr{
-				CurrHF:    3, // peering hop (flyover), lines 3..7
-				CurrINF:   0,
-				SegLen:    [3]uint8{3 + 5, 3, 0},
-				BaseTS:    util.TimeToSecs(now),
-				HighResTS: 500 << 22,
-			},
-			NumINF:   2,
-			NumLines: 3 + 5 + 3,
-		},
-		InfoFields: []path.InfoField{
-			{SegID: 0x111, ConsDir: false, Peer: true, Timestamp: util.TimeToSecs(now)},
-			{SegID: 0x222, ConsDir: true, Peer: true, Timestamp: util.TimeToSecs(now)},
-		},
-		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}}, // at AS 5
-			{HopField: path.HopField{ConsIngress: 121, ConsEgress: 151}, // peering hop at A
-				Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
-			{HopField: path.HopField{ConsIngress: 211, ConsEgress: 0}}, // at AS 2
-		},
-	}
-
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:5"),
-		DstIA:        addr.MustParseIA("1-ff00:0:2"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.5.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.2.1")); err != nil {
-		panic(err)
-	}
-	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
-
-	// HF[0] and HF[2] are signed by other ASes and never checked here.
-	dpath.HopFields[0].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[0].HopField, nil)
-	dpath.HopFields[2].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[1], dpath.HopFields[2].HopField, nil)
-	// The peering-hop MAC uses the up-seg info; reservation spans ingress 151,
-	// egress 121 (the plain non-consdir swap; peering skips the xover adjustment).
-	scionMac1 := path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
-	dpath.HopFields[1].HopField.Mac = hbirdAggregateMAC(
-		mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	// Expected: forwarded out the peering link 121; the peering-hop MAC is
-	// de-aggregated; the path crosses into the down segment; SegID is NOT updated.
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x12}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 12, 2}
-	ip.DstIP = net.IP{192, 168, 12, 3}
-	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
-	dpath.HopFields[1].HopField.Mac = scionMac1
-	if err := dpath.IncPath(hummingbird.FlyoverLines); err != nil {
-		panic(err)
-	}
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdFlyoverChildToPeer",
-		WriteTo:  "veth_151_host",
-		ReadFrom: "veth_121_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdFlyoverChildToPeer"),
-	}
-}
-
-// hummingbirdFlyoverPeerToChild tests a Hummingbird packet with a flyover on a
-// peering hop, entering on a peering link and leaving on a child link (in
-// construction direction). Analogue of PeerToChild; mirrors unit test
-// "brtransit_peering_consdir_flyover". The peering hop is the first hop of the down
-// segment; SegID is not updated.
-func hummingbirdFlyoverPeerToChild(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	options := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	// Injected at A's peering 121 as if coming from AS 2.
-	ethernet := &layers.Ethernet{
-		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
-		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x12},
-		EthernetType: layers.EthernetTypeIPv4,
-	}
-	ip := &layers.IPv4{
-		Version:  4,
-		IHL:      5,
-		TTL:      64,
-		SrcIP:    net.IP{192, 168, 12, 3},
-		DstIP:    net.IP{192, 168, 12, 2},
-		Protocol: layers.IPProtocolUDP,
-		Flags:    layers.IPv4DontFragment,
-	}
-	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
-	_ = udp.SetNetworkLayerForChecksum(ip)
-
-	// One-hop up seg; the peering hop (HF[1]) is the first hop of the down seg.
-	now := time.Now()
-	dpath := &hummingbird.Decoded{
-		Base: hummingbird.Base{
-			PathMeta: hummingbird.MetaHdr{
-				CurrHF:    3, // peering hop (flyover), lines 3..7
-				CurrINF:   1,
-				SegLen:    [3]uint8{3, 3 + 5, 0},
-				BaseTS:    util.TimeToSecs(now),
-				HighResTS: 500 << 22,
-			},
-			NumINF:   2,
-			NumLines: 3 + 3 + 5,
-		},
-		InfoFields: []path.InfoField{
-			{SegID: 0x111, ConsDir: false, Timestamp: util.TimeToSecs(now)},
-			{SegID: 0x222, ConsDir: true, Peer: true, Timestamp: util.TimeToSecs(now)},
-		},
-		HopFields: []hummingbird.FlyoverHopField{
-			{HopField: path.HopField{ConsIngress: 211, ConsEgress: 0}}, // at AS 2
-			{HopField: path.HopField{ConsIngress: 121, ConsEgress: 151}, // peering hop at A
-				Flyover: true, ResID: 42, Bw: 129, ResStartTime: 5, Duration: 301},
-			{HopField: path.HopField{ConsIngress: 511, ConsEgress: 0}}, // at AS 5
-		},
-	}
-
-	scionL := &slayers.SCION{
-		Version:      0,
-		TrafficClass: 0xb8,
-		FlowID:       0xdead,
-		NextHdr:      slayers.L4UDP,
-		PathType:     hummingbird.PathType,
-		SrcIA:        addr.MustParseIA("1-ff00:0:2"),
-		DstIA:        addr.MustParseIA("1-ff00:0:5"),
-		Path:         dpath,
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("172.16.2.1")); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.5.1")); err != nil {
-		panic(err)
-	}
-	scionL.PayloadLen = uint16(hbirdScionUDPPayloadLen)
-
-	dpath.HopFields[0].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[0].HopField, nil)
-	dpath.HopFields[2].HopField.Mac =
-		path.MAC(mac, dpath.InfoFields[1], dpath.HopFields[2].HopField, nil)
-	// The peering-hop MAC uses the down-seg info; reservation spans ingress 121,
-	// egress 151 (consdir, no swap).
-	scionMac1 := path.MAC(mac, dpath.InfoFields[1], dpath.HopFields[1].HopField, nil)
-	dpath.HopFields[1].HopField.Mac = hbirdAggregateMAC(
-		mac, sv, scionL, dpath, dpath.InfoFields[1], dpath.HopFields[1], dpath.PathMeta)
-
-	scionudp := &slayers.UDP{}
-	scionudp.SrcPort = 40111
-	scionudp.DstPort = 40222
-	scionudp.SetNetworkLayerForChecksum(scionL)
-
-	payload := []byte(hbirdPayload)
-
-	input := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(input, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	// Expected: forwarded out the child link 151; the peering-hop MAC is
-	// de-aggregated; the path advances past the flyover; SegID is NOT updated.
-	want := gopacket.NewSerializeBuffer()
-	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x15}
-	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
-	ip.SrcIP = net.IP{192, 168, 15, 2}
-	ip.DstIP = net.IP{192, 168, 15, 3}
-	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
-	dpath.HopFields[1].HopField.Mac = scionMac1
-	if err := dpath.IncPath(hummingbird.FlyoverLines); err != nil {
-		panic(err)
-	}
-
-	if err := gopacket.SerializeLayers(want, options,
-		ethernet, ip, udp, scionL, scionudp, gopacket.Payload(payload),
-	); err != nil {
-		panic(err)
-	}
-
-	return runner.Case{
-		Name:     "HummingbirdFlyoverPeerToChild",
-		WriteTo:  "veth_121_host",
-		ReadFrom: "veth_151_host",
-		Input:    input.Bytes(),
-		Want:     want.Bytes(),
-		StoreDir: filepath.Join(artifactsDir, "HummingbirdFlyoverPeerToChild"),
-	}
+	outputLink := hbirdExternalOutput(141)
+	want := hbirdSerializeUDP(outputLink, scionL, []byte(hbirdPayload))
+	return hbirdRunnerCase(artifactsDir, name, inputLink.device, outputLink.device, input, want)
 }
 
 // hummingbirdPeeringCase builds peering-boundary cases and the ordinary hops
@@ -2527,6 +1714,200 @@ func hummingbirdPeeringCase(
 	}
 	want := hbirdSerializeUDP(outputLink, scionL, []byte(hbirdPayload))
 	return hbirdRunnerCase(artifactsDir, name, inputLink.device, outputLink.device, input, want)
+}
+
+// hummingbirdRouterAlertCase builds a BR-transit Hummingbird packet carrying a genuine SCMP
+// traceroute request, with exactly one router-alert flag set on the current (parent->child,
+// construction-direction) hop. The router must divert it to the slow path and reply with an
+// SCMP traceroute reply reporting the alerted interface (the ingress interface 131 for an
+// ingress alert, the would-be egress interface 141 for an egress alert), sent back out the
+// same external link the request arrived on. Mirrors the plain SCION cases
+// SCMPTracerouteIngressConsDir/SCMPTracerouteEgressConsDir, adapted to the Hummingbird path and,
+// when flyover is true, an aggregate MAC on the current hop.
+func hummingbirdRouterAlertCase(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+	flyover bool,
+	ingressAlert bool,
+	name string,
+) runner.Case {
+	options := gopacket.SerializeOptions{
+		FixLengths:       true,
+		ComputeChecksums: true,
+	}
+
+	// Arrives on parent 131, construction direction.
+	ethernet := &layers.Ethernet{
+		SrcMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef},
+		DstMAC:       net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x13},
+		EthernetType: layers.EthernetTypeIPv4,
+	}
+	ip := &layers.IPv4{
+		Version:  4,
+		IHL:      5,
+		TTL:      64,
+		SrcIP:    net.IP{192, 168, 13, 3},
+		DstIP:    net.IP{192, 168, 13, 2},
+		Protocol: layers.IPProtocolUDP,
+		Flags:    layers.IPv4DontFragment,
+	}
+	udp := &layers.UDP{SrcPort: 40000, DstPort: 50000}
+	_ = udp.SetNetworkLayerForChecksum(ip)
+
+	now := time.Now()
+	hopLines := uint8(hummingbird.HopLines)
+	if flyover {
+		hopLines = hummingbird.FlyoverLines
+	}
+	current := hummingbird.FlyoverHopField{
+		HopField: path.HopField{
+			ConsIngress:        131,
+			ConsEgress:         141,
+			IngressRouterAlert: ingressAlert,
+			EgressRouterAlert:  !ingressAlert,
+		},
+	}
+	if flyover {
+		current.Flyover = true
+		current.ResID = 42
+		current.Bw = 129
+		current.ResStartTime = 5
+		current.Duration = 301
+	}
+	dpath := &hummingbird.Decoded{
+		Base: hummingbird.Base{
+			PathMeta: hummingbird.MetaHdr{
+				CurrHF: 3, SegLen: [3]uint8{3 + hopLines + 3, 0, 0},
+				BaseTS: util.TimeToSecs(now), HighResTS: 500 << 22,
+			},
+			NumINF: 1, NumLines: 3 + int(hopLines) + 3,
+		},
+		InfoFields: []path.InfoField{
+			{SegID: 0x111, ConsDir: true, Timestamp: util.TimeToSecs(now)},
+		},
+		HopFields: []hummingbird.FlyoverHopField{
+			{HopField: path.HopField{ConsIngress: 0, ConsEgress: 311}},
+			current,
+			{HopField: path.HopField{ConsIngress: 411, ConsEgress: 0}},
+		},
+	}
+
+	srcA := addr.MustParseHost("172.16.3.1")
+	scionL := &slayers.SCION{
+		Version:      0,
+		TrafficClass: 0xb8,
+		FlowID:       0xdead,
+		NextHdr:      slayers.L4SCMP,
+		PathType:     hummingbird.PathType,
+		SrcIA:        addr.MustParseIA("1-ff00:0:3"),
+		DstIA:        addr.MustParseIA("1-ff00:0:4"),
+		Path:         dpath,
+	}
+	if err := scionL.SetSrcAddr(srcA); err != nil {
+		panic(err)
+	}
+	if err := scionL.SetDstAddr(addr.MustParseHost("174.16.4.1")); err != nil {
+		panic(err)
+	}
+	if flyover {
+		// The aggregate MAC depends on the packet length seen by the router, so the
+		// exact length of the SCMP traceroute request must be known up front.
+		scionL.PayloadLen = uint16(slayers.ScmpHeaderSize(slayers.SCMPTypeTracerouteRequest))
+		dpath.HopFields[1].HopField.Mac = hbirdAggregateMAC(
+			mac, sv, scionL, dpath, dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
+	} else {
+		dpath.HopFields[1].HopField.Mac =
+			path.MAC(mac, dpath.InfoFields[0], dpath.HopFields[1].HopField, nil)
+	}
+
+	scmpH := &slayers.SCMP{
+		TypeCode: slayers.CreateSCMPTypeCode(slayers.SCMPTypeTracerouteRequest, 0),
+	}
+	scmpH.SetNetworkLayerForChecksum(scionL)
+	scmpP := &slayers.SCMPTraceroute{
+		Identifier: 567,
+		Sequence:   129,
+	}
+
+	input := gopacket.NewSerializeBuffer()
+	if err := gopacket.SerializeLayers(input, options,
+		ethernet, ip, udp, scionL, scmpH, scmpP,
+	); err != nil {
+		panic(err)
+	}
+
+	// Expected: an SCMP traceroute reply sent back out the same link (131), reporting
+	// the alerted interface. The alert flag is cleared before the path is reversed,
+	// mirroring handleHbirdIngressRouterAlert/handleHbirdEgressRouterAlert clearing it
+	// in place before diverting to the slow path.
+	want := gopacket.NewSerializeBuffer()
+	ethernet.SrcMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0x00, 0x13}
+	ethernet.DstMAC = net.HardwareAddr{0xf0, 0x0d, 0xca, 0xfe, 0xbe, 0xef}
+	ip.SrcIP = net.IP{192, 168, 13, 2}
+	ip.DstIP = net.IP{192, 168, 13, 3}
+	udp.SrcPort, udp.DstPort = udp.DstPort, udp.SrcPort
+
+	scionL.DstIA = scionL.SrcIA
+	scionL.SrcIA = addr.MustParseIA("1-ff00:0:1")
+	if err := scionL.SetDstAddr(srcA); err != nil {
+		panic(err)
+	}
+	if err := scionL.SetSrcAddr(addr.MustParseHost("192.168.0.11")); err != nil {
+		panic(err)
+	}
+
+	dpath.HopFields[1].HopField.IngressRouterAlert = false
+	dpath.HopFields[1].HopField.EgressRouterAlert = false
+	revTmp, err := dpath.Reverse()
+	if err != nil {
+		panic(err)
+	}
+	revPath := revTmp.(*hummingbird.Decoded)
+	infoField := &revPath.InfoFields[revPath.PathMeta.CurrINF]
+	if infoField.ConsDir {
+		hf, err := revPath.GetCurrentHopField()
+		if err != nil {
+			panic(err)
+		}
+		infoField.UpdateSegID(hf.HopField.Mac)
+	}
+	if err := revPath.IncPath(hummingbird.HopLines); err != nil {
+		panic(err)
+	}
+	scionL.Path = revPath
+	scionL.PathType = revPath.Type()
+
+	alertedInterface := uint64(131)
+	if !ingressAlert {
+		alertedInterface = 141
+	}
+	scionL.NextHdr = slayers.L4SCMP
+	scmpH = &slayers.SCMP{
+		TypeCode: slayers.CreateSCMPTypeCode(slayers.SCMPTypeTracerouteReply, 0),
+	}
+	scmpH.SetNetworkLayerForChecksum(scionL)
+	scmpP = &slayers.SCMPTraceroute{
+		Identifier: scmpP.Identifier,
+		Sequence:   scmpP.Sequence,
+		IA:         scionL.SrcIA,
+		Interface:  alertedInterface,
+	}
+
+	if err := gopacket.SerializeLayers(want, options,
+		ethernet, ip, udp, scionL, scmpH, scmpP,
+	); err != nil {
+		panic(err)
+	}
+
+	return runner.Case{
+		Name:     name,
+		WriteTo:  "veth_131_host",
+		ReadFrom: "veth_131_host",
+		Input:    input.Bytes(),
+		Want:     want.Bytes(),
+		StoreDir: filepath.Join(artifactsDir, name),
+	}
 }
 
 // hbirdUnderlay contains the layers and veth used for one underlay direction.

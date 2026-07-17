@@ -474,6 +474,9 @@ func (p *scionPacketProcessor) handleHbirdIngressRouterAlert() disposition {
 	}
 	// We have an alert.
 	*alert = false
+	// XXX: alert points to p.hopField, a copy of the original p.flyoverField.Hopfield.
+	// We need to update the original as well.
+	p.flyoverField.HopField = p.hopField
 	err := p.hbirdPath.SetHopField(p.flyoverField, int(p.hbirdPath.PathMeta.CurrHF))
 	if err != nil {
 		return errorDiscard("error", err)
@@ -498,6 +501,9 @@ func (p *scionPacketProcessor) handleHbirdEgressRouterAlert() disposition {
 		return pForward
 	}
 	*alert = false
+	// XXX: alert points to p.hopField, a copy of the original p.flyoverField.Hopfield.
+	// We need to update the original as well.
+	p.flyoverField.HopField = p.hopField
 	err := p.hbirdPath.SetHopField(p.flyoverField, int(p.hbirdPath.PathMeta.CurrHF))
 	if err != nil {
 		return errorDiscard("error", err)
