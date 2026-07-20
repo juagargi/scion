@@ -87,6 +87,8 @@ const hbirdPayload = "actualpayloadbytes"
 // MAC, which depends on the total packet length seen by the router.
 const hbirdScionUDPPayloadLen = 8 + len(hbirdPayload)
 
+// Regular forwarding cases.
+
 // HummingbirdBestEffortChildToParent checks BR transit, reverse direction, best-effort.
 // It matches TestProcessHbirdPacket/brtransit_non_consdir_best-effort.
 func HummingbirdBestEffortChildToParent(artifactsDir string, mac hash.Hash, sv []byte,
@@ -101,26 +103,6 @@ func HummingbirdBestEffortParentToChild(artifactsDir string, mac hash.Hash, sv [
 ) runner.Case {
 	return hummingbirdBRTransit(
 		artifactsDir, mac, sv, false, true, false, true, "HummingbirdBestEffortParentToChild")
-}
-
-// HummingbirdMalformedCurrentHopAlignment checks malformed current-hop alignment, best-effort.
-// CurrHF points into the middle of a three-line hop.
-// It matches TestProcessHbirdPacket/malformed_current_hop_alignment_best-effort.
-func HummingbirdMalformedCurrentHopAlignment(artifactsDir string, mac hash.Hash, sv []byte,
-) runner.Case {
-	return hummingbirdBRTransit(
-		artifactsDir, mac, sv, false, true, true, false, "HummingbirdMalformedCurrentHopAlignment")
-}
-
-// HummingbirdMalformedCurrentHopAlignmentFlyover checks malformed current-hop alignment, flyover.
-// CurrHF points into a five-line flyover.
-// It matches TestProcessHbirdPacket/malformed_current_hop_alignment_flyover.
-func HummingbirdMalformedCurrentHopAlignmentFlyover(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	return hummingbirdMalformedFlyover(artifactsDir, mac, sv)
 }
 
 // HummingbirdFlyoverParentToChild checks BR transit, construction direction, flyover.
@@ -161,126 +143,6 @@ func HummingbirdBestEffortChildToChildXover(artifactsDir string, mac hash.Hash, 
 ) runner.Case {
 	return hummingbirdChildToChildXover(
 		artifactsDir, mac, sv, false, "HummingbirdBestEffortChildToChildXover")
-}
-
-// HummingbirdBadFlyoverMAC checks invalid hop MAC / SCMP, flyover.
-// It matches TestProcessHbirdSCMP/invalid_mac_inbound_flyover.
-func HummingbirdBadFlyoverMAC(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	return hummingbirdInboundSCMPFailureCase(
-		artifactsDir, mac, sv, hbirdBadFlyoverMAC, "HummingbirdBadFlyoverMAC")
-}
-
-// HummingbirdBadBestEffortMAC checks invalid hop MAC / SCMP, best-effort.
-// It matches TestProcessHbirdSCMP/invalid_mac_inbound_best-effort.
-func HummingbirdBadBestEffortMAC(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdInboundSCMPFailureCase(
-		artifactsDir, mac, sv, hbirdBadBestEffortMAC, "HummingbirdBadBestEffortMAC")
-}
-
-// HummingbirdInvalidSourceIA checks invalid source IA / SCMP, best-effort.
-// It matches TestProcessHbirdSCMP/invalid_source_ia_inbound_best-effort.
-func HummingbirdInvalidSourceIA(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdInboundSCMPFailureCase(
-		artifactsDir, mac, sv, hbirdInvalidSourceIA, "HummingbirdInvalidSourceIA")
-}
-
-// HummingbirdInvalidDestinationIA checks invalid destination IA / SCMP, best-effort.
-// It matches TestProcessHbirdSCMP/invalid_destination_ia_inbound_best-effort.
-func HummingbirdInvalidDestinationIA(artifactsDir string, mac hash.Hash, sv []byte,
-) runner.Case {
-	return hummingbirdInboundSCMPFailureCase(
-		artifactsDir, mac, sv, hbirdInvalidDestinationIA, "HummingbirdInvalidDestinationIA")
-}
-
-// HummingbirdInvalidSourceIAFlyover checks invalid source IA / SCMP, flyover.
-// It matches TestProcessHbirdSCMP/invalid_source_ia_inbound_flyover.
-func HummingbirdInvalidSourceIAFlyover(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	return hummingbirdInboundSCMPFailureCase(
-		artifactsDir, mac, sv, hbirdInvalidSourceIAFlyover, "HummingbirdInvalidSourceIAFlyover")
-}
-
-// HummingbirdInvalidDestinationIAFlyover checks invalid destination IA / SCMP, flyover.
-// It matches TestProcessHbirdSCMP/invalid_destination_ia_inbound_flyover.
-func HummingbirdInvalidDestinationIAFlyover(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	return hummingbirdInboundSCMPFailureCase(artifactsDir, mac, sv,
-		hbirdInvalidDestinationIAFlyover, "HummingbirdInvalidDestinationIAFlyover")
-}
-
-// HummingbirdInvalidSourceIAOutbound checks invalid outbound source IA / SCMP, best-effort.
-// It matches TestProcessHbirdSCMP/invalid_source_ia_outbound_best-effort.
-func HummingbirdInvalidSourceIAOutbound(artifactsDir string, mac hash.Hash, sv []byte,
-) runner.Case {
-	return hummingbirdOutboundSCMPFailureCase(
-		artifactsDir, mac, sv, hbirdInvalidSourceIA, "HummingbirdInvalidSourceIAOutbound")
-}
-
-// HummingbirdInvalidDestinationIAOutbound checks invalid outbound destination IA / SCMP,
-// best-effort. It matches TestProcessHbirdSCMP/invalid_destination_ia_outbound_best-effort.
-func HummingbirdInvalidDestinationIAOutbound(
-	artifactsDir string, mac hash.Hash, sv []byte,
-) runner.Case {
-	return hummingbirdOutboundSCMPFailureCase(artifactsDir, mac, sv,
-		hbirdInvalidDestinationIA, "HummingbirdInvalidDestinationIAOutbound")
-}
-
-// HummingbirdInvalidSourceIAOutboundFlyover checks invalid outbound source IA / SCMP, flyover.
-// It matches TestProcessHbirdSCMP/invalid_source_ia_outbound_flyover.
-func HummingbirdInvalidSourceIAOutboundFlyover(
-	artifactsDir string, mac hash.Hash, sv []byte,
-) runner.Case {
-	return hummingbirdOutboundSCMPFailureCase(artifactsDir, mac, sv,
-		hbirdInvalidSourceIAFlyover, "HummingbirdInvalidSourceIAOutboundFlyover")
-}
-
-// HummingbirdInvalidDestinationIAOutboundFlyover checks invalid outbound destination IA /
-// SCMP, flyover. It matches TestProcessHbirdSCMP/invalid_destination_ia_outbound_flyover.
-func HummingbirdInvalidDestinationIAOutboundFlyover(
-	artifactsDir string, mac hash.Hash, sv []byte,
-) runner.Case {
-	return hummingbirdOutboundSCMPFailureCase(artifactsDir, mac, sv,
-		hbirdInvalidDestinationIAFlyover, "HummingbirdInvalidDestinationIAOutboundFlyover")
-}
-
-// HummingbirdIngressRouterAlert checks ingress router alert, best-effort.
-// It matches TestProcessHbirdRouterAlert/ingress_router_alert_best-effort.
-func HummingbirdIngressRouterAlert(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdRouterAlertCase(
-		artifactsDir, mac, sv, false, true, "HummingbirdIngressRouterAlert")
-}
-
-// HummingbirdEgressRouterAlert checks egress router alert, best-effort.
-// It matches TestProcessHbirdRouterAlert/egress_router_alert_best-effort.
-func HummingbirdEgressRouterAlert(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdRouterAlertCase(
-		artifactsDir, mac, sv, false, false, "HummingbirdEgressRouterAlert")
-}
-
-// HummingbirdIngressRouterAlertFlyover checks ingress router alert, flyover.
-// It matches TestProcessHbirdRouterAlert/ingress_router_alert_flyover.
-func HummingbirdIngressRouterAlertFlyover(artifactsDir string, mac hash.Hash, sv []byte,
-) runner.Case {
-	return hummingbirdRouterAlertCase(
-		artifactsDir, mac, sv, true, true, "HummingbirdIngressRouterAlertFlyover")
-}
-
-// HummingbirdEgressRouterAlertFlyover checks egress router alert, flyover.
-// It matches TestProcessHbirdRouterAlert/egress_router_alert_flyover.
-func HummingbirdEgressRouterAlertFlyover(artifactsDir string, mac hash.Hash, sv []byte,
-) runner.Case {
-	return hummingbirdRouterAlertCase(
-		artifactsDir, mac, sv, true, false, "HummingbirdEgressRouterAlertFlyover")
 }
 
 // HummingbirdBestEffortInbound checks inbound delivery, best-effort.
@@ -465,6 +327,152 @@ func HummingbirdFlyoverPeeringUpstream(
 		"HummingbirdFlyoverPeeringUpstream")
 }
 
+// Malformed and validation-failure cases.
+
+// HummingbirdMalformedCurrentHopAlignment checks malformed current-hop alignment, best-effort.
+// CurrHF points into the middle of a three-line hop.
+// It matches TestProcessHbirdPacket/malformed_current_hop_alignment_best-effort.
+func HummingbirdMalformedCurrentHopAlignment(artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdBRTransit(
+		artifactsDir, mac, sv, false, true, true, false, "HummingbirdMalformedCurrentHopAlignment")
+}
+
+// HummingbirdMalformedCurrentHopAlignmentFlyover checks malformed current-hop alignment, flyover.
+// CurrHF points into a five-line flyover.
+// It matches TestProcessHbirdPacket/malformed_current_hop_alignment_flyover.
+func HummingbirdMalformedCurrentHopAlignmentFlyover(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+) runner.Case {
+	return hummingbirdMalformedFlyover(artifactsDir, mac, sv)
+}
+
+// HummingbirdBadFlyoverMAC checks invalid hop MAC / SCMP, flyover.
+// It matches TestProcessHbirdSCMP/invalid_mac_inbound_flyover.
+func HummingbirdBadFlyoverMAC(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+) runner.Case {
+	return hummingbirdInboundSCMPFailureCase(
+		artifactsDir, mac, sv, hbirdBadFlyoverMAC, "HummingbirdBadFlyoverMAC")
+}
+
+// HummingbirdBadBestEffortMAC checks invalid hop MAC / SCMP, best-effort.
+// It matches TestProcessHbirdSCMP/invalid_mac_inbound_best-effort.
+func HummingbirdBadBestEffortMAC(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdInboundSCMPFailureCase(
+		artifactsDir, mac, sv, hbirdBadBestEffortMAC, "HummingbirdBadBestEffortMAC")
+}
+
+// HummingbirdInvalidSourceIA checks invalid source IA / SCMP, best-effort.
+// It matches TestProcessHbirdSCMP/invalid_source_ia_inbound_best-effort.
+func HummingbirdInvalidSourceIA(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdInboundSCMPFailureCase(
+		artifactsDir, mac, sv, hbirdInvalidSourceIA, "HummingbirdInvalidSourceIA")
+}
+
+// HummingbirdInvalidDestinationIA checks invalid destination IA / SCMP, best-effort.
+// It matches TestProcessHbirdSCMP/invalid_destination_ia_inbound_best-effort.
+func HummingbirdInvalidDestinationIA(artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdInboundSCMPFailureCase(
+		artifactsDir, mac, sv, hbirdInvalidDestinationIA, "HummingbirdInvalidDestinationIA")
+}
+
+// HummingbirdInvalidSourceIAFlyover checks invalid source IA / SCMP, flyover.
+// It matches TestProcessHbirdSCMP/invalid_source_ia_inbound_flyover.
+func HummingbirdInvalidSourceIAFlyover(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+) runner.Case {
+	return hummingbirdInboundSCMPFailureCase(
+		artifactsDir, mac, sv, hbirdInvalidSourceIAFlyover, "HummingbirdInvalidSourceIAFlyover")
+}
+
+// HummingbirdInvalidDestinationIAFlyover checks invalid destination IA / SCMP, flyover.
+// It matches TestProcessHbirdSCMP/invalid_destination_ia_inbound_flyover.
+func HummingbirdInvalidDestinationIAFlyover(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+) runner.Case {
+	return hummingbirdInboundSCMPFailureCase(artifactsDir, mac, sv,
+		hbirdInvalidDestinationIAFlyover, "HummingbirdInvalidDestinationIAFlyover")
+}
+
+// HummingbirdInvalidSourceIAOutbound checks invalid outbound source IA / SCMP, best-effort.
+// It matches TestProcessHbirdSCMP/invalid_source_ia_outbound_best-effort.
+func HummingbirdInvalidSourceIAOutbound(artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdOutboundSCMPFailureCase(
+		artifactsDir, mac, sv, hbirdInvalidSourceIA, "HummingbirdInvalidSourceIAOutbound")
+}
+
+// HummingbirdInvalidDestinationIAOutbound checks invalid outbound destination IA / SCMP,
+// best-effort. It matches TestProcessHbirdSCMP/invalid_destination_ia_outbound_best-effort.
+func HummingbirdInvalidDestinationIAOutbound(
+	artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdOutboundSCMPFailureCase(artifactsDir, mac, sv,
+		hbirdInvalidDestinationIA, "HummingbirdInvalidDestinationIAOutbound")
+}
+
+// HummingbirdInvalidSourceIAOutboundFlyover checks invalid outbound source IA / SCMP, flyover.
+// It matches TestProcessHbirdSCMP/invalid_source_ia_outbound_flyover.
+func HummingbirdInvalidSourceIAOutboundFlyover(
+	artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdOutboundSCMPFailureCase(artifactsDir, mac, sv,
+		hbirdInvalidSourceIAFlyover, "HummingbirdInvalidSourceIAOutboundFlyover")
+}
+
+// HummingbirdInvalidDestinationIAOutboundFlyover checks invalid outbound destination IA /
+// SCMP, flyover. It matches TestProcessHbirdSCMP/invalid_destination_ia_outbound_flyover.
+func HummingbirdInvalidDestinationIAOutboundFlyover(
+	artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdOutboundSCMPFailureCase(artifactsDir, mac, sv,
+		hbirdInvalidDestinationIAFlyover, "HummingbirdInvalidDestinationIAOutboundFlyover")
+}
+
+// Router-alert cases.
+
+// HummingbirdIngressRouterAlert checks ingress router alert, best-effort.
+// It matches TestProcessHbirdRouterAlert/ingress_router_alert_best-effort.
+func HummingbirdIngressRouterAlert(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdRouterAlertCase(
+		artifactsDir, mac, sv, false, true, "HummingbirdIngressRouterAlert")
+}
+
+// HummingbirdEgressRouterAlert checks egress router alert, best-effort.
+// It matches TestProcessHbirdRouterAlert/egress_router_alert_best-effort.
+func HummingbirdEgressRouterAlert(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
+	return hummingbirdRouterAlertCase(
+		artifactsDir, mac, sv, false, false, "HummingbirdEgressRouterAlert")
+}
+
+// HummingbirdIngressRouterAlertFlyover checks ingress router alert, flyover.
+// It matches TestProcessHbirdRouterAlert/ingress_router_alert_flyover.
+func HummingbirdIngressRouterAlertFlyover(artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdRouterAlertCase(
+		artifactsDir, mac, sv, true, true, "HummingbirdIngressRouterAlertFlyover")
+}
+
+// HummingbirdEgressRouterAlertFlyover checks egress router alert, flyover.
+// It matches TestProcessHbirdRouterAlert/egress_router_alert_flyover.
+func HummingbirdEgressRouterAlertFlyover(artifactsDir string, mac hash.Hash, sv []byte,
+) runner.Case {
+	return hummingbirdRouterAlertCase(
+		artifactsDir, mac, sv, true, false, "HummingbirdEgressRouterAlertFlyover")
+}
+
+// Regular forwarding helpers.
+
 // hummingbirdBRTransit builds BR-transit cases with the local AS as either an
 // up-segment or down-segment transit hop, entering on one external interface
 // (child 141 or parent 131) and leaving on the other. With flyover every hop
@@ -527,26 +535,6 @@ func hummingbirdBRTransit(
 	want := hbirdSerializeUDP(result.OutLink, scionL, []byte(hbirdPayload))
 	return hbirdRunnerCase(
 		artifactsDir, name, result.InLink.device, result.OutLink.device, input, want)
-}
-
-// hummingbirdMalformedFlyover builds a valid flyover BR-transit path, then
-// points CurrHF at the second line of the current five-line flyover. The router
-// must discard that malformed current-hop alignment.
-func hummingbirdMalformedFlyover(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-) runner.Case {
-	now := time.Now()
-	result := hbirdPath(mac, sv, hbirdDownTransit, hbirdModeBRTransit, true,
-		uint16(hbirdScionUDPPayloadLen), now)
-	dpath, scionL := result.Decoded, result.SCION
-	// The MAC is already computed against the aligned metadata; only CurrHF is
-	// malformed afterward.
-	dpath.PathMeta.CurrHF++
-	input := hbirdSerializeUDP(result.InLink, scionL, []byte(hbirdPayload))
-	return hbirdRunnerCase(artifactsDir, "HummingbirdMalformedCurrentHopAlignmentFlyover",
-		result.InLink.device, "no_pkt_expected", input, nil)
 }
 
 // hummingbirdInbound prepares a Hummingbird test with the last (destination-AS)
@@ -688,191 +676,6 @@ func hummingbirdChildToChildXover(
 	want := hbirdSerializeUDP(result.OutLink, scionL, []byte(hbirdPayload))
 	return hbirdRunnerCase(
 		artifactsDir, name, result.InLink.device, result.OutLink.device, input, want)
-}
-
-// hbirdFailureMode selects the validation failure built by the shared SCMP case.
-type hbirdFailureMode uint8
-
-const (
-	hbirdBadFlyoverMAC hbirdFailureMode = iota
-	hbirdBadBestEffortMAC
-	hbirdInvalidSourceIA
-	hbirdInvalidDestinationIA
-	hbirdInvalidSourceIAFlyover
-	hbirdInvalidDestinationIAFlyover
-)
-
-// hummingbirdInboundSCMPFailureCase builds an inbound validation failure and its
-// expected SCMP Parameter Problem response.
-func hummingbirdInboundSCMPFailureCase(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-	mode hbirdFailureMode,
-	name string,
-) runner.Case {
-	return hummingbirdSCMPFailure(artifactsDir, mac, sv, mode, name, false)
-}
-
-// hummingbirdOutboundSCMPFailureCase builds a locally originated (first-hop) validation
-// failure and its expected SCMP Parameter Problem response. Unlike
-// hummingbirdSCMPFailureCase (inbound), the invalid IA is caught before an egress
-// interface is ever chosen, so the reply is sent back internally rather than out an
-// external link. This helper is used for the invalid-source and
-// invalid-destination IA modes, in both best-effort and flyover form.
-func hummingbirdOutboundSCMPFailureCase(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-	mode hbirdFailureMode,
-	name string,
-) runner.Case {
-	return hummingbirdSCMPFailure(artifactsDir, mac, sv, mode, name, true)
-}
-
-// hummingbirdSCMPFailure builds the offending packet and expected Parameter
-// Problem reply shared by the inbound and locally originated failure cases.
-func hummingbirdSCMPFailure(
-	artifactsDir string,
-	mac hash.Hash,
-	sv []byte,
-	mode hbirdFailureMode,
-	name string,
-	outbound bool,
-) runner.Case {
-	pos, pathMode := hbirdDeliver, hbirdModeDeliver
-	replyDstHost := "172.16.4.1"
-	replyLink := hbirdExternalOutput(141)
-	if outbound {
-		pos, pathMode = hbirdOriginate, hbirdModeOriginate
-		replyDstHost = "192.168.0.51"
-		replyLink = hbirdInternalOutput(51, 30041)
-	}
-
-	result := hbirdPath(mac, sv, pos, pathMode, mode.flyover(),
-		uint16(hbirdScionUDPPayloadLen), time.Now())
-	code, pointer := applyHbirdFailure(&result, mode, outbound)
-	input := hbirdSerializeUDP(result.InLink, result.SCION, []byte(hbirdPayload))
-
-	prepareHbirdSCMPReply(&result, replyDstHost, !outbound)
-	want := hbirdSerializeSCMPParameterProblem(
-		replyLink, result.SCION, code, pointer, hbirdSCIONQuote(input))
-	testCase := hbirdRunnerCase(
-		artifactsDir, name, result.InLink.device, replyLink.device, input, want)
-	testCase.NormalizePacket = scmpNormalizePacket
-	return testCase
-}
-
-func (m hbirdFailureMode) flyover() bool {
-	return m == hbirdBadFlyoverMAC || m == hbirdInvalidSourceIAFlyover ||
-		m == hbirdInvalidDestinationIAFlyover
-}
-
-// applyHbirdFailure mutates an otherwise-valid packet and returns the SCMP code
-// and pointer expected for that validation failure.
-func applyHbirdFailure(
-	result *hbirdPathResult,
-	mode hbirdFailureMode,
-	outbound bool,
-) (slayers.SCMPCode, int) {
-	switch mode {
-	case hbirdBadFlyoverMAC, hbirdBadBestEffortMAC:
-		if outbound {
-			panic("MAC failure mode is not supported for an outbound SCMP case")
-		}
-		result.Decoded.HopFields[result.Current].HopField.Mac[0] ^= 0xff
-		pointer := slayers.CmnHdrLen + result.SCION.AddrHdrLen() + hummingbird.MetaLen +
-			path.InfoLen*result.Decoded.NumINF +
-			int(result.Decoded.PathMeta.CurrHF)*hummingbird.LineLen
-		return slayers.SCMPCodeInvalidHopFieldMAC, pointer
-	case hbirdInvalidSourceIA, hbirdInvalidSourceIAFlyover:
-		if outbound {
-			result.SCION.SrcIA = addr.MustParseIA("1-ff00:0:2")
-		} else {
-			result.SCION.SrcIA = addr.MustParseIA("1-ff00:0:1")
-		}
-		return slayers.SCMPCodeInvalidSourceAddress, slayers.CmnHdrLen + addr.IABytes
-	case hbirdInvalidDestinationIA, hbirdInvalidDestinationIAFlyover:
-		if outbound {
-			result.SCION.DstIA = addr.MustParseIA("1-ff00:0:1")
-		} else {
-			result.SCION.DstIA = addr.MustParseIA("1-ff00:0:9")
-		}
-		return slayers.SCMPCodeInvalidDestinationAddress, slayers.CmnHdrLen
-	default:
-		panic("unknown Hummingbird failure mode")
-	}
-}
-
-// prepareHbirdSCMPReply updates the SCION endpoints and reverses the path as
-// prepareHbirdSCMP does. External replies additionally update the SegID and
-// advance past the local hop.
-func prepareHbirdSCMPReply(result *hbirdPathResult, dstHost string, external bool) {
-	scionL := result.SCION
-	scionL.DstIA = scionL.SrcIA
-	scionL.SrcIA = addr.MustParseIA("1-ff00:0:1")
-	if err := scionL.SetDstAddr(addr.MustParseHost(dstHost)); err != nil {
-		panic(err)
-	}
-	if err := scionL.SetSrcAddr(addr.MustParseHost("192.168.0.11")); err != nil {
-		panic(err)
-	}
-
-	reversed, err := result.Decoded.Reverse()
-	if err != nil {
-		panic(err)
-	}
-	revPath := reversed.(*hummingbird.Decoded)
-	if external {
-		info := &revPath.InfoFields[revPath.PathMeta.CurrINF]
-		if info.ConsDir {
-			hop, err := revPath.GetCurrentHopField()
-			if err != nil {
-				panic(err)
-			}
-			info.UpdateSegID(hop.HopField.Mac)
-		}
-		if err := revPath.IncPath(hummingbird.HopLines); err != nil {
-			panic(err)
-		}
-	}
-	scionL.Path = revPath
-	scionL.PathType = revPath.Type()
-}
-
-// hbirdSerializeSCMPParameterProblem serializes a Parameter Problem reply with
-// the packet-authenticator extension used by the router's SCMP slow path.
-func hbirdSerializeSCMPParameterProblem(
-	underlay hbirdUnderlay,
-	scionL *slayers.SCION,
-	code slayers.SCMPCode,
-	pointer int,
-	quote []byte,
-) []byte {
-	scionL.NextHdr = slayers.End2EndClass
-	e2e := normalizedSCMPPacketAuthEndToEndExtn()
-	e2e.NextHdr = slayers.L4SCMP
-	scmpH := &slayers.SCMP{
-		TypeCode: slayers.CreateSCMPTypeCode(slayers.SCMPTypeParameterProblem, code),
-	}
-	scmpH.SetNetworkLayerForChecksum(scionL)
-	scmpP := &slayers.SCMPParameterProblem{Pointer: uint16(pointer)}
-
-	buffer := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{
-		FixLengths: true, ComputeChecksums: true,
-	}, underlay.ethernet, underlay.ip, underlay.udp, scionL, e2e, scmpH, scmpP,
-		gopacket.Payload(quote)); err != nil {
-		panic(err)
-	}
-	return buffer.Bytes()
-}
-
-// hbirdSCIONQuote removes the fixed Ethernet, IPv4, and underlay UDP headers
-// from a serialized input packet, leaving the SCION packet quoted by SCMP.
-func hbirdSCIONQuote(packet []byte) []byte {
-	const underlayHeaderLen = 14 + 20 + 8
-	return packet[underlayHeaderLen:]
 }
 
 // hummingbirdDirectASTransit builds either half of direct split-BR AS transit.
@@ -1125,6 +928,215 @@ func hummingbirdPeeringCase(
 	want := hbirdSerializeUDP(outputLink, scionL, []byte(hbirdPayload))
 	return hbirdRunnerCase(artifactsDir, name, inputLink.device, outputLink.device, input, want)
 }
+
+// Malformed and validation-failure helpers.
+
+// hummingbirdMalformedFlyover builds a valid flyover BR-transit path, then
+// points CurrHF at the second line of the current five-line flyover. The router
+// must discard that malformed current-hop alignment.
+func hummingbirdMalformedFlyover(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+) runner.Case {
+	now := time.Now()
+	result := hbirdPath(mac, sv, hbirdDownTransit, hbirdModeBRTransit, true,
+		uint16(hbirdScionUDPPayloadLen), now)
+	dpath, scionL := result.Decoded, result.SCION
+	// The MAC is already computed against the aligned metadata; only CurrHF is
+	// malformed afterward.
+	dpath.PathMeta.CurrHF++
+	input := hbirdSerializeUDP(result.InLink, scionL, []byte(hbirdPayload))
+	return hbirdRunnerCase(artifactsDir, "HummingbirdMalformedCurrentHopAlignmentFlyover",
+		result.InLink.device, "no_pkt_expected", input, nil)
+}
+
+// hbirdFailureMode selects the validation failure built by the shared SCMP case.
+type hbirdFailureMode uint8
+
+const (
+	hbirdBadFlyoverMAC hbirdFailureMode = iota
+	hbirdBadBestEffortMAC
+	hbirdInvalidSourceIA
+	hbirdInvalidDestinationIA
+	hbirdInvalidSourceIAFlyover
+	hbirdInvalidDestinationIAFlyover
+)
+
+// hummingbirdInboundSCMPFailureCase builds an inbound validation failure and its
+// expected SCMP Parameter Problem response.
+func hummingbirdInboundSCMPFailureCase(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+	mode hbirdFailureMode,
+	name string,
+) runner.Case {
+	return hummingbirdSCMPFailure(artifactsDir, mac, sv, mode, name, false)
+}
+
+// hummingbirdOutboundSCMPFailureCase builds a locally originated (first-hop) validation
+// failure and its expected SCMP Parameter Problem response. Unlike
+// hummingbirdSCMPFailureCase (inbound), the invalid IA is caught before an egress
+// interface is ever chosen, so the reply is sent back internally rather than out an
+// external link. This helper is used for the invalid-source and
+// invalid-destination IA modes, in both best-effort and flyover form.
+func hummingbirdOutboundSCMPFailureCase(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+	mode hbirdFailureMode,
+	name string,
+) runner.Case {
+	return hummingbirdSCMPFailure(artifactsDir, mac, sv, mode, name, true)
+}
+
+// hummingbirdSCMPFailure builds the offending packet and expected Parameter
+// Problem reply shared by the inbound and locally originated failure cases.
+func hummingbirdSCMPFailure(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+	mode hbirdFailureMode,
+	name string,
+	outbound bool,
+) runner.Case {
+	pos, pathMode := hbirdDeliver, hbirdModeDeliver
+	replyDstHost := "172.16.4.1"
+	replyLink := hbirdExternalOutput(141)
+	if outbound {
+		pos, pathMode = hbirdOriginate, hbirdModeOriginate
+		replyDstHost = "192.168.0.51"
+		replyLink = hbirdInternalOutput(51, 30041)
+	}
+
+	result := hbirdPath(mac, sv, pos, pathMode, mode.flyover(),
+		uint16(hbirdScionUDPPayloadLen), time.Now())
+	code, pointer := applyHbirdFailure(&result, mode, outbound)
+	input := hbirdSerializeUDP(result.InLink, result.SCION, []byte(hbirdPayload))
+
+	prepareHbirdSCMPReply(&result, replyDstHost, !outbound)
+	want := hbirdSerializeSCMPParameterProblem(
+		replyLink, result.SCION, code, pointer, hbirdSCIONQuote(input))
+	testCase := hbirdRunnerCase(
+		artifactsDir, name, result.InLink.device, replyLink.device, input, want)
+	testCase.NormalizePacket = scmpNormalizePacket
+	return testCase
+}
+
+func (m hbirdFailureMode) flyover() bool {
+	return m == hbirdBadFlyoverMAC || m == hbirdInvalidSourceIAFlyover ||
+		m == hbirdInvalidDestinationIAFlyover
+}
+
+// applyHbirdFailure mutates an otherwise-valid packet and returns the SCMP code
+// and pointer expected for that validation failure.
+func applyHbirdFailure(
+	result *hbirdPathResult,
+	mode hbirdFailureMode,
+	outbound bool,
+) (slayers.SCMPCode, int) {
+	switch mode {
+	case hbirdBadFlyoverMAC, hbirdBadBestEffortMAC:
+		if outbound {
+			panic("MAC failure mode is not supported for an outbound SCMP case")
+		}
+		result.Decoded.HopFields[result.Current].HopField.Mac[0] ^= 0xff
+		pointer := slayers.CmnHdrLen + result.SCION.AddrHdrLen() + hummingbird.MetaLen +
+			path.InfoLen*result.Decoded.NumINF +
+			int(result.Decoded.PathMeta.CurrHF)*hummingbird.LineLen
+		return slayers.SCMPCodeInvalidHopFieldMAC, pointer
+	case hbirdInvalidSourceIA, hbirdInvalidSourceIAFlyover:
+		if outbound {
+			result.SCION.SrcIA = addr.MustParseIA("1-ff00:0:2")
+		} else {
+			result.SCION.SrcIA = addr.MustParseIA("1-ff00:0:1")
+		}
+		return slayers.SCMPCodeInvalidSourceAddress, slayers.CmnHdrLen + addr.IABytes
+	case hbirdInvalidDestinationIA, hbirdInvalidDestinationIAFlyover:
+		if outbound {
+			result.SCION.DstIA = addr.MustParseIA("1-ff00:0:1")
+		} else {
+			result.SCION.DstIA = addr.MustParseIA("1-ff00:0:9")
+		}
+		return slayers.SCMPCodeInvalidDestinationAddress, slayers.CmnHdrLen
+	default:
+		panic("unknown Hummingbird failure mode")
+	}
+}
+
+// prepareHbirdSCMPReply updates the SCION endpoints and reverses the path as
+// prepareHbirdSCMP does. External replies additionally update the SegID and
+// advance past the local hop.
+func prepareHbirdSCMPReply(result *hbirdPathResult, dstHost string, external bool) {
+	scionL := result.SCION
+	scionL.DstIA = scionL.SrcIA
+	scionL.SrcIA = addr.MustParseIA("1-ff00:0:1")
+	if err := scionL.SetDstAddr(addr.MustParseHost(dstHost)); err != nil {
+		panic(err)
+	}
+	if err := scionL.SetSrcAddr(addr.MustParseHost("192.168.0.11")); err != nil {
+		panic(err)
+	}
+
+	reversed, err := result.Decoded.Reverse()
+	if err != nil {
+		panic(err)
+	}
+	revPath := reversed.(*hummingbird.Decoded)
+	if external {
+		info := &revPath.InfoFields[revPath.PathMeta.CurrINF]
+		if info.ConsDir {
+			hop, err := revPath.GetCurrentHopField()
+			if err != nil {
+				panic(err)
+			}
+			info.UpdateSegID(hop.HopField.Mac)
+		}
+		if err := revPath.IncPath(hummingbird.HopLines); err != nil {
+			panic(err)
+		}
+	}
+	scionL.Path = revPath
+	scionL.PathType = revPath.Type()
+}
+
+// hbirdSerializeSCMPParameterProblem serializes a Parameter Problem reply with
+// the packet-authenticator extension used by the router's SCMP slow path.
+func hbirdSerializeSCMPParameterProblem(
+	underlay hbirdUnderlay,
+	scionL *slayers.SCION,
+	code slayers.SCMPCode,
+	pointer int,
+	quote []byte,
+) []byte {
+	scionL.NextHdr = slayers.End2EndClass
+	e2e := normalizedSCMPPacketAuthEndToEndExtn()
+	e2e.NextHdr = slayers.L4SCMP
+	scmpH := &slayers.SCMP{
+		TypeCode: slayers.CreateSCMPTypeCode(slayers.SCMPTypeParameterProblem, code),
+	}
+	scmpH.SetNetworkLayerForChecksum(scionL)
+	scmpP := &slayers.SCMPParameterProblem{Pointer: uint16(pointer)}
+
+	buffer := gopacket.NewSerializeBuffer()
+	if err := gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{
+		FixLengths: true, ComputeChecksums: true,
+	}, underlay.ethernet, underlay.ip, underlay.udp, scionL, e2e, scmpH, scmpP,
+		gopacket.Payload(quote)); err != nil {
+		panic(err)
+	}
+	return buffer.Bytes()
+}
+
+// hbirdSCIONQuote removes the fixed Ethernet, IPv4, and underlay UDP headers
+// from a serialized input packet, leaving the SCION packet quoted by SCMP.
+func hbirdSCIONQuote(packet []byte) []byte {
+	const underlayHeaderLen = 14 + 20 + 8
+	return packet[underlayHeaderLen:]
+}
+
+// Router-alert helpers.
 
 // hummingbirdRouterAlertCase builds a BR-transit Hummingbird packet carrying a genuine SCMP
 // traceroute request, with exactly one router-alert flag set on the current (parent->child,
