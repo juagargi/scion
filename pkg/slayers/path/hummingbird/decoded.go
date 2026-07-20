@@ -147,7 +147,7 @@ func (s *Decoded) Reverse() (path.Path, error) {
 		return nil, serrors.New("empty decoded path is invalid and cannot be reversed")
 	}
 
-	if err := s.removeFlyovers(); err != nil {
+	if err := s.RemoveFlyovers(); err != nil {
 		return nil, err
 	}
 	// Reverse order of InfoFields and SegLens
@@ -182,7 +182,7 @@ func (s *Decoded) Reverse() (path.Path, error) {
 // RemoveFlyovers removes all reservations from a decoded path
 // Corrects SegLen and CurrHF accordingly
 // Does not affect MACs
-func (s *Decoded) removeFlyovers() error {
+func (s *Decoded) RemoveFlyovers() error {
 	var idxInf uint8 = 0
 	var offset uint8 = 0
 	var segCount uint8 = 0
