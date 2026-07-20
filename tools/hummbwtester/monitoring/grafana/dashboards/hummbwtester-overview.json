@@ -62,7 +62,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "server receive rate (60s avg.)"
+              "options": "remote receive rate (60s avg.)"
             },
             "properties": [
               {
@@ -105,8 +105,8 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum by (client) (avg_over_time(hummbwtester_server_receive_rate_bps[60s]))",
-          "legendFormat": "server receive rate (60s avg.)",
+          "expr": "avg_over_time(hummbwtester_client_remote_receive_rate_bps[60s])",
+          "legendFormat": "remote receive rate (60s avg.)",
           "range": true,
           "refId": "B"
         }
@@ -186,60 +186,6 @@
       ],
       "title": "Latency And Jitter",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 0,
-        "y": 8
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "hummbwtester_server_active_clients",
-          "refId": "A"
-        }
-      ],
-      "title": "Active Clients",
-      "type": "stat"
     },
     {
       "datasource": {
@@ -363,8 +309,8 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum by (client) (rate(hummbwtester_server_pong_replies_sent_total[1m]))",
-          "legendFormat": "server pong replies {{client}}",
+          "expr": "rate(hummbwtester_client_remote_pong_replies_sent_total[1m])",
+          "legendFormat": "remote pong replies sent",
           "range": true,
           "refId": "C"
         }
@@ -444,8 +390,8 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum by (client) (increase(hummbwtester_server_payload_lost_total[5m]))",
-          "legendFormat": "server payload lost {{client}}",
+          "expr": "increase(hummbwtester_client_remote_payload_lost_total[5m])",
+          "legendFormat": "remote payload lost",
           "range": true,
           "refId": "B"
         }

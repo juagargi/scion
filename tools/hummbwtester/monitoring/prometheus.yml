@@ -2,13 +2,6 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
-  - job_name: "hummbwtester-server"
-    static_configs:
-      - targets:
-          - "127.0.0.1:9090"
-        labels:
-          mode: "server"
-
   - job_name: "hummbwtester-client"
     static_configs:
       - targets:

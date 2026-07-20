@@ -45,7 +45,15 @@ type clientMetrics struct {
 	// reservationRenewals counts Hummingbird reservation renewal attempts by result.
 	reservationRenewals *prometheus.CounterVec
 	// reservationExpiry tracks seconds until the currently active reservation expires.
-	reservationExpiry prometheus.Gauge
+	reservationExpiry            prometheus.Gauge
+	remotePayloadPacketsReceived prometheus.Counter
+	remotePayloadBytesReceived   prometheus.Counter
+	remotePayloadLost            prometheus.Counter
+	remotePayloadOutOfOrder      prometheus.Counter
+	remotePongRequestsReceived   prometheus.Counter
+	remotePongRepliesSent        prometheus.Counter
+	remoteReceiveRateBps         prometheus.Gauge
+	remoteStatsAge               prometheus.Gauge
 }
 
 func newClientMetrics() *clientMetrics {
@@ -100,57 +108,37 @@ func newClientMetrics() *clientMetrics {
 			Name: "hummbwtester_client_reservation_seconds_until_expiry",
 			Help: "Seconds until the currently active reservation expires.",
 		}),
-	}
-}
-
-// serverMetrics holds every Prometheus metric emitted by the server, as listed in the design
-// doc's metrics section. All per-client metrics are labeled by the client's address string.
-type serverMetrics struct {
-	payloadPacketsReceived *prometheus.CounterVec
-	payloadBytesReceived   *prometheus.CounterVec
-	payloadLost            *prometheus.CounterVec
-	payloadOutOfOrder      *prometheus.CounterVec
-	pongRequestsReceived   *prometheus.CounterVec
-	pongRepliesSent        *prometheus.CounterVec
-	receiveRateBps         *prometheus.GaugeVec
-	activeClients          prometheus.Gauge
-}
-
-func newServerMetrics() *serverMetrics {
-	clientLabels := []string{"client"}
-	return &serverMetrics{
-		payloadPacketsReceived: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "hummbwtester_server_payload_packets_received_total",
-			Help: "Total number of payload packets received, by client.",
-		}, clientLabels),
-		payloadBytesReceived: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "hummbwtester_server_payload_bytes_received_total",
-			Help: "Total number of payload bytes received, by client.",
-		}, clientLabels),
-		payloadLost: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "hummbwtester_server_payload_lost_total",
-			Help: "Total number of payload packets finalized as lost, by client.",
-		}, clientLabels),
-		payloadOutOfOrder: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "hummbwtester_server_payload_out_of_order_total",
-			Help: "Total number of payload packets received out of order, by client.",
-		}, clientLabels),
-		pongRequestsReceived: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "hummbwtester_server_pong_requests_received_total",
-			Help: "Total number of pong-request packets received, by client.",
-		}, clientLabels),
-		pongRepliesSent: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "hummbwtester_server_pong_replies_sent_total",
-			Help: "Total number of pong-reply packets sent, by client.",
-		}, clientLabels),
-		receiveRateBps: promauto.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "hummbwtester_server_receive_rate_bps",
-			Help: "Achieved payload receive rate, in bits per second, over the last report " +
-				"interval, by client.",
-		}, clientLabels),
-		activeClients: promauto.NewGauge(prometheus.GaugeOpts{
-			Name: "hummbwtester_server_active_clients",
-			Help: "Number of clients with state currently tracked by the server.",
+		remotePayloadPacketsReceived: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_remote_payload_packets_received_total",
+			Help: "Total payload packets reported received by the remote server.",
+		}),
+		remotePayloadBytesReceived: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_remote_payload_bytes_received_total",
+			Help: "Total payload bytes reported received by the remote server.",
+		}),
+		remotePayloadLost: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_remote_payload_lost_total",
+			Help: "Total payload packets reported finalized as lost by the remote server.",
+		}),
+		remotePayloadOutOfOrder: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_remote_payload_out_of_order_total",
+			Help: "Total payload packets reported received out of order by the remote server.",
+		}),
+		remotePongRequestsReceived: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_remote_pong_requests_received_total",
+			Help: "Total pong requests reported received by the remote server.",
+		}),
+		remotePongRepliesSent: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_remote_pong_replies_sent_total",
+			Help: "Total pong replies reported sent by the remote server.",
+		}),
+		remoteReceiveRateBps: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "hummbwtester_client_remote_receive_rate_bps",
+			Help: "Remote payload receive rate computed over client-local reply arrival time.",
+		}),
+		remoteStatsAge: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "hummbwtester_client_remote_stats_age_seconds",
+			Help: "Seconds on the client clock since the latest accepted remote statistics snapshot; -1 before the first snapshot.",
 		}),
 	}
 }

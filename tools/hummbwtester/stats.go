@@ -14,7 +14,10 @@
 
 package main
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // JitterEstimator computes the RFC 3550 section 6.4.1 interarrival jitter estimate
 // incrementally, in O(1) time and memory per sample.
@@ -184,4 +187,86 @@ func (r *RateTracker) Snapshot(now time.Time) IntervalResult {
 	r.bytes, r.packets = 0, 0
 	r.lastTime = now
 	return res
+}
+
+// remoteStatsDelta contains the newly reported remote observations in an accepted PongReply.
+// The first accepted snapshot returns its full cumulative values so the exported Prometheus
+// counters reflect everything the server observed before that reply.
+type remoteStatsDelta struct {
+	payloadPacketsReceived uint64
+	payloadBytesReceived   uint64
+	payloadLost            uint64
+	payloadOutOfOrder      uint64
+	pongRequestsReceived   uint64
+	pongRepliesSent        uint64
+	receiveRateBps         float64
+	hasReceiveRate         bool
+}
+
+// remoteStatsTracker converts cumulative server snapshots into deltas and a receive-rate
+// estimate. All elapsed time comes from locally captured time.Time values, preserving Go's
+// monotonic clock and requiring no synchronization with the server clock.
+type remoteStatsTracker struct {
+	mu sync.Mutex
+
+	haveSnapshot bool
+	lastSequence uint64
+	lastReceived time.Time
+	last         PongReply
+}
+
+func (t *remoteStatsTracker) record(reply PongReply, receivedAt time.Time) (remoteStatsDelta, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.haveSnapshot && reply.SequenceNumber <= t.lastSequence {
+		return remoteStatsDelta{}, false
+	}
+	if t.haveSnapshot && cumulativeSnapshotRegressed(reply, t.last) {
+		return remoteStatsDelta{}, false
+	}
+
+	previous := PongReply{}
+	if t.haveSnapshot {
+		previous = t.last
+	}
+	delta := remoteStatsDelta{
+		payloadPacketsReceived: reply.PayloadPacketsReceived - previous.PayloadPacketsReceived,
+		payloadBytesReceived:   reply.PayloadBytesReceived - previous.PayloadBytesReceived,
+		payloadLost:            reply.PayloadLost - previous.PayloadLost,
+		payloadOutOfOrder:      reply.PayloadOutOfOrder - previous.PayloadOutOfOrder,
+		pongRequestsReceived:   reply.PongRequestsReceived - previous.PongRequestsReceived,
+		pongRepliesSent:        reply.PongRepliesSent - previous.PongRepliesSent,
+	}
+	if t.haveSnapshot {
+		elapsed := receivedAt.Sub(t.lastReceived)
+		if elapsed > 0 {
+			delta.receiveRateBps = float64(delta.payloadBytesReceived) * 8 / elapsed.Seconds()
+			delta.hasReceiveRate = true
+		}
+	}
+
+	t.haveSnapshot = true
+	t.lastSequence = reply.SequenceNumber
+	t.lastReceived = receivedAt
+	t.last = reply
+	return delta, true
+}
+
+func cumulativeSnapshotRegressed(current, previous PongReply) bool {
+	return current.PayloadPacketsReceived < previous.PayloadPacketsReceived ||
+		current.PayloadBytesReceived < previous.PayloadBytesReceived ||
+		current.PayloadLost < previous.PayloadLost ||
+		current.PayloadOutOfOrder < previous.PayloadOutOfOrder ||
+		current.PongRequestsReceived < previous.PongRequestsReceived ||
+		current.PongRepliesSent < previous.PongRepliesSent
+}
+
+func (t *remoteStatsTracker) age(now time.Time) time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.haveSnapshot {
+		return -1
+	}
+	return now.Sub(t.lastReceived)
 }

@@ -96,13 +96,15 @@ func realMain() int {
 		cancel()
 	}()
 
-	metricsCfg := env.Metrics{Prometheus: metricsAddr}
-	go func() {
-		defer log.HandlePanic()
-		if err := metricsCfg.ServePrometheus(ctx); err != nil {
-			log.Error("Serving prometheus metrics", "err", err)
-		}
-	}()
+	if mode == modeClient {
+		metricsCfg := env.Metrics{Prometheus: metricsAddr}
+		go func() {
+			defer log.HandlePanic()
+			if err := metricsCfg.ServePrometheus(ctx); err != nil {
+				log.Error("Serving prometheus metrics", "err", err)
+			}
+		}()
+	}
 
 	sdConn, err := daemon.NewAutoConnector(ctx,
 		daemon.WithDaemon(sciondAddr),
@@ -200,7 +202,7 @@ func addFlags() {
 		"(Server only) verify the deterministic filler pattern of received payload packets")
 
 	flag.StringVar(&metricsAddr, "metrics-addr", defaultMetricsAddr,
-		"Address to serve Prometheus /metrics on")
+		"(Client only) address to serve Prometheus /metrics on")
 	flag.DurationVar(&reportInterval, "report-interval", defaultReportInterval,
 		"Interval between periodic stdout reports")
 }

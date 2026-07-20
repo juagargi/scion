@@ -42,18 +42,18 @@ type serverConfig struct {
 // serialized through the single receive-loop goroutine plus the periodic report/eviction
 // ticker goroutine, both guarded by server.mu.
 type clientState struct {
-	addr        net.Addr
-	payloadLoss SeqLossTracker
-	rate        *RateTracker
-	pongReqs    uint64
-	pongReplies uint64
-	corrupted   uint64
-	lastSeen    time.Time
+	addr         net.Addr
+	payloadLoss  SeqLossTracker
+	rate         *RateTracker
+	payloadBytes uint64
+	pongReqs     uint64
+	pongReplies  uint64
+	corrupted    uint64
+	lastSeen     time.Time
 }
 
 type server struct {
-	cfg     serverConfig
-	metrics *serverMetrics
+	cfg serverConfig
 
 	// pongReplyBuf is reused across calls to handlePongRequest, which only ever runs on the
 	// single receiveLoop goroutine.
@@ -78,7 +78,6 @@ func runServer(ctx context.Context, sn *snet.SCIONNetwork, cfg serverConfig) int
 
 	s := &server{
 		cfg:          cfg,
-		metrics:      newServerMetrics(),
 		pongReplyBuf: make([]byte, PongReplyLen),
 		clients:      make(map[string]*clientState),
 	}
@@ -141,7 +140,6 @@ func (s *server) handlePacket(conn *snet.Conn, from net.Addr, raw []byte) {
 	if !ok {
 		cs = &clientState{addr: from, rate: NewRateTracker(now)}
 		s.clients[key] = cs
-		s.metrics.activeClients.Set(float64(len(s.clients)))
 		log.Info("New client", "client", key)
 	}
 	cs.lastSeen = now
@@ -159,22 +157,15 @@ func (s *server) handlePacket(conn *snet.Conn, from net.Addr, raw []byte) {
 
 func (s *server) handlePayload(cs *clientState, key string, h Header, raw []byte, now time.Time) {
 	s.mu.Lock()
-	outOfOrder, newlyLost := cs.payloadLoss.Received(h.SequenceNumber)
+	cs.payloadLoss.Received(h.SequenceNumber)
 	cs.rate.Add(len(raw))
-	if outOfOrder {
-		s.metrics.payloadOutOfOrder.WithLabelValues(key).Inc()
-	}
+	cs.payloadBytes += uint64(len(raw))
 	corrupted := s.cfg.verifyIntegrity && len(raw) > HeaderLen && !verifyFiller(raw[HeaderLen:])
 	if corrupted {
 		cs.corrupted++
 	}
 	s.mu.Unlock()
 
-	s.metrics.payloadPacketsReceived.WithLabelValues(key).Inc()
-	s.metrics.payloadBytesReceived.WithLabelValues(key).Add(float64(len(raw)))
-	if newlyLost > 0 {
-		s.metrics.payloadLost.WithLabelValues(key).Add(float64(newlyLost))
-	}
 	if corrupted {
 		log.Error("Payload integrity check failed", "client", key, "seq", h.SequenceNumber)
 	}
@@ -193,19 +184,28 @@ func (s *server) handlePongRequest(
 ) {
 	s.mu.Lock()
 	cs.pongReqs++
-	s.mu.Unlock()
-	s.metrics.pongRequestsReceived.WithLabelValues(key).Inc()
-
-	sendTime := time.Now()
-	EncodePongReply(s.pongReplyBuf, PongReply{
+	_, payloadPackets, payloadLost, payloadOutOfOrder := cs.payloadLoss.Stats()
+	snapshot := PongReply{
 		Header: Header{
 			Type:               PacketTypePongReply,
 			SequenceNumber:     h.SequenceNumber,
 			SendTimestampNanos: h.SendTimestampNanos,
 		},
 		ServerRecvTimestampNanos: recvTime.UnixNano(),
-		ServerSendTimestampNanos: sendTime.UnixNano(),
-	})
+		PayloadPacketsReceived:   payloadPackets,
+		PayloadBytesReceived:     cs.payloadBytes,
+		PayloadLost:              payloadLost,
+		PayloadOutOfOrder:        payloadOutOfOrder,
+		PongRequestsReceived:     cs.pongReqs,
+		// Count this reply in the advertised snapshot. The count is committed below only
+		// after WriteTo succeeds, so every snapshot a client receives is self-inclusive.
+		PongRepliesSent: cs.pongReplies + 1,
+	}
+	s.mu.Unlock()
+
+	sendTime := time.Now()
+	snapshot.ServerSendTimestampNanos = sendTime.UnixNano()
+	EncodePongReply(s.pongReplyBuf, snapshot)
 	if _, err := conn.WriteTo(s.pongReplyBuf, from); err != nil {
 		log.Error("Sending pong reply", "client", key, "err", err)
 		return
@@ -213,11 +213,10 @@ func (s *server) handlePongRequest(
 	s.mu.Lock()
 	cs.pongReplies++
 	s.mu.Unlock()
-	s.metrics.pongRepliesSent.WithLabelValues(key).Inc()
 }
 
-// reportAndEvictLoop prints periodic per-client and aggregate reports, updates the receive-rate
-// gauge, and evicts clients that have been idle too long.
+// reportAndEvictLoop prints periodic per-client and aggregate reports and evicts clients that
+// have been idle too long.
 func (s *server) reportAndEvictLoop(ctx context.Context) {
 	ticker := time.NewTicker(s.cfg.reportInterval)
 	defer ticker.Stop()
@@ -243,7 +242,6 @@ func (s *server) reportAndEvict(now time.Time) {
 			continue
 		}
 		res := cs.rate.Snapshot(now)
-		s.metrics.receiveRateBps.WithLabelValues(key).Set(res.BitsPerSec)
 		expected, received, lost, outOfOrder := cs.payloadLoss.Stats()
 		aggBytes += res.Bytes
 		fmt.Printf(
@@ -252,7 +250,6 @@ func (s *server) reportAndEvict(now time.Time) {
 			key, res.Bytes, res.BitsPerSec/1e6, expected, received, lost, outOfOrder,
 			cs.pongReqs, cs.pongReplies, cs.corrupted)
 	}
-	s.metrics.activeClients.Set(float64(len(s.clients)))
 	if len(s.clients) > 0 {
 		fmt.Printf("[server] aggregate: clients=%d interval_bytes=%d rate=%.2f Mbps\n",
 			len(s.clients), aggBytes, float64(aggBytes)*8/s.cfg.reportInterval.Seconds()/1e6)

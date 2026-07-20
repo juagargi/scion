@@ -34,14 +34,14 @@ const (
 
 // Version is the wire-format version. It changes whenever the header layout below changes,
 // so that a client and server running mismatched builds fail loudly instead of misparsing.
-const Version = 1
+const Version = 2
 
 // HeaderLen is the size in bytes of the fixed header shared by all packet types.
 const HeaderLen = 24
 
 // PongReplyExtraLen is the size in bytes of the fields appended after the fixed header on a
-// PongReply packet.
-const PongReplyExtraLen = 16
+// PongReply packet: two timestamps and six cumulative server-observation counters.
+const PongReplyExtraLen = 64
 
 // PongReplyLen is the total size in bytes of a PongReply packet.
 const PongReplyLen = HeaderLen + PongReplyExtraLen
@@ -85,6 +85,12 @@ type PongReply struct {
 	Header
 	ServerRecvTimestampNanos int64
 	ServerSendTimestampNanos int64
+	PayloadPacketsReceived   uint64
+	PayloadBytesReceived     uint64
+	PayloadLost              uint64
+	PayloadOutOfOrder        uint64
+	PongRequestsReceived     uint64
+	PongRepliesSent          uint64
 }
 
 // EncodePongReply writes reply into buf, which must be at least PongReplyLen bytes long.
@@ -92,6 +98,12 @@ func EncodePongReply(buf []byte, reply PongReply) {
 	EncodeHeader(buf, reply.Header)
 	binary.BigEndian.PutUint64(buf[24:32], uint64(reply.ServerRecvTimestampNanos))
 	binary.BigEndian.PutUint64(buf[32:40], uint64(reply.ServerSendTimestampNanos))
+	binary.BigEndian.PutUint64(buf[40:48], reply.PayloadPacketsReceived)
+	binary.BigEndian.PutUint64(buf[48:56], reply.PayloadBytesReceived)
+	binary.BigEndian.PutUint64(buf[56:64], reply.PayloadLost)
+	binary.BigEndian.PutUint64(buf[64:72], reply.PayloadOutOfOrder)
+	binary.BigEndian.PutUint64(buf[72:80], reply.PongRequestsReceived)
+	binary.BigEndian.PutUint64(buf[80:88], reply.PongRepliesSent)
 }
 
 // DecodePongReply reads a PongReply from buf.
@@ -111,6 +123,12 @@ func DecodePongReply(buf []byte) (PongReply, error) {
 		Header:                   h,
 		ServerRecvTimestampNanos: int64(binary.BigEndian.Uint64(buf[24:32])),
 		ServerSendTimestampNanos: int64(binary.BigEndian.Uint64(buf[32:40])),
+		PayloadPacketsReceived:   binary.BigEndian.Uint64(buf[40:48]),
+		PayloadBytesReceived:     binary.BigEndian.Uint64(buf[48:56]),
+		PayloadLost:              binary.BigEndian.Uint64(buf[56:64]),
+		PayloadOutOfOrder:        binary.BigEndian.Uint64(buf[64:72]),
+		PongRequestsReceived:     binary.BigEndian.Uint64(buf[72:80]),
+		PongRepliesSent:          binary.BigEndian.Uint64(buf[80:88]),
 	}, nil
 }
 

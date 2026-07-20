@@ -108,6 +108,7 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 		hummSVByIA: make(map[addr.IA][]byte),
 		rate:       NewRateTracker(time.Now()),
 	}
+	c.metrics.remoteStatsAge.Set(-1)
 
 	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA)
 	if err != nil {
@@ -418,13 +419,17 @@ type pongTracker struct {
 	mu          sync.Mutex
 	outstanding map[uint64]time.Time
 	lastRTT     time.Duration
+	startedAt   time.Time
 	jitter      JitterEstimator
+	remote      remoteStatsTracker
 }
 
 func newPongTracker() *pongTracker {
+	now := time.Now()
 	return &pongTracker{
 		outstanding: make(map[uint64]time.Time),
 		lastRTT:     500 * time.Millisecond,
+		startedAt:   now,
 	}
 }
 
@@ -434,17 +439,20 @@ func (t *pongTracker) recordSent(seq uint64, now time.Time) {
 	t.outstanding[seq] = now
 }
 
-// recordReplied removes seq from the outstanding table (if present) and returns whether it was
-// found (i.e. this reply is not a duplicate/late-beyond-eviction reply).
-func (t *pongTracker) recordReplied(seq uint64, rtt time.Duration) bool {
+// recordReplied removes seq from the outstanding table (if present), then calculates RTT and
+// jitter entirely from client-local monotonic timestamps.
+func (t *pongTracker) recordReplied(seq uint64, receivedAt time.Time) (time.Duration, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if _, ok := t.outstanding[seq]; !ok {
-		return false
+	sentAt, ok := t.outstanding[seq]
+	if !ok {
+		return 0, false
 	}
 	delete(t.outstanding, seq)
+	rtt := receivedAt.Sub(sentAt)
 	t.lastRTT = rtt
-	return true
+	t.jitter.Sample(sentAt.Sub(t.startedAt), receivedAt.Sub(t.startedAt))
+	return rtt, true
 }
 
 // evictTimedOut removes and returns the count of outstanding requests older than the current
@@ -597,18 +605,32 @@ func (c *client) pongReceiveLoop(ctx context.Context, conn *snet.Conn, tracker *
 			continue
 		}
 		now := time.Now()
-		rtt := time.Duration(now.UnixNano() - reply.SendTimestampNanos)
-		if !tracker.recordReplied(reply.SequenceNumber, rtt) {
+		rtt, ok := tracker.recordReplied(reply.SequenceNumber, now)
+		if !ok {
 			continue // Duplicate, or already evicted as timed out.
 		}
 		c.metrics.pongRepliesReceived.Inc()
 		c.metrics.rtt.Observe(rtt.Seconds())
-		tracker.jitter.Sample(
-			time.Duration(reply.SendTimestampNanos),
-			time.Duration(now.UnixNano()),
-		)
+		tracker.mu.Lock()
 		c.metrics.jitter.Set(tracker.jitter.Jitter.Seconds())
+		tracker.mu.Unlock()
+		if delta, accepted := tracker.remote.record(reply, now); accepted {
+			c.applyRemoteStats(delta)
+		}
 	}
+}
+
+func (c *client) applyRemoteStats(delta remoteStatsDelta) {
+	c.metrics.remotePayloadPacketsReceived.Add(float64(delta.payloadPacketsReceived))
+	c.metrics.remotePayloadBytesReceived.Add(float64(delta.payloadBytesReceived))
+	c.metrics.remotePayloadLost.Add(float64(delta.payloadLost))
+	c.metrics.remotePayloadOutOfOrder.Add(float64(delta.payloadOutOfOrder))
+	c.metrics.remotePongRequestsReceived.Add(float64(delta.pongRequestsReceived))
+	c.metrics.remotePongRepliesSent.Add(float64(delta.pongRepliesSent))
+	if delta.hasReceiveRate {
+		c.metrics.remoteReceiveRateBps.Set(delta.receiveRateBps)
+	}
+	c.metrics.remoteStatsAge.Set(0)
 }
 
 func (c *client) pongSweepLoop(ctx context.Context, tracker *pongTracker) {
@@ -643,6 +665,12 @@ func (c *client) reportLoop(ctx context.Context, tracker *pongTracker) {
 			jitter := tracker.jitter.Jitter
 			tracker.mu.Unlock()
 			c.metrics.sendRateBps.Set(res.BitsPerSec)
+			age := tracker.remote.age(now)
+			if age < 0 {
+				c.metrics.remoteStatsAge.Set(-1)
+			} else {
+				c.metrics.remoteStatsAge.Set(age.Seconds())
+			}
 			fmt.Printf("[client] interval=%s payload_bytes=%d rate=%.2f Mbps jitter=%s\n",
 				res.Duration.Round(time.Millisecond), res.Bytes,
 				res.BitsPerSec/1e6, jitter.Round(time.Microsecond))

@@ -6,32 +6,32 @@ exported by `./tools/hummbwtester`.
 It follows the same basic pattern as `./monitoring-prometheus-grafana/topology`: a local
 Prometheus instance scrapes metrics from the running SCION tooling, and Grafana is provided for
 interactive dashboards. For `hummbwtester`, the scrape targets are taken from
-`./run-hummbwtester.sh`:
+`./run-humm-bwtester.sh`:
 
-- server metrics: `:9090`
-- client metrics: `:9091`
+- client metrics, including observations reported by the server: `:9091`
 
 Prometheus also scrapes the border router metrics from the tiny topology, using the same BR
 targets as `./monitoring-prometheus-grafana/topology/prometheus.yml`.
 
-Prometheus runs in Docker with host networking so it can reach both the `hummbwtester` host ports
-and the BR loopback addresses. The `hummbwtester` client and server should keep running on the
-host exactly as they do today.
+Prometheus runs in Docker with host networking so it can reach the `hummbwtester` client metrics
+endpoint and the BR loopback addresses. The `hummbwtester` client and server should keep running
+on the host exactly as they do today.
 
 ## Files
 
 - `docker-compose.yml`: starts Prometheus and Grafana
-- `prometheus.yml`: scrape configuration for the `hummbwtester` server, client, and border routers
+- `prometheus.yml`: scrape configuration for the `hummbwtester` client and border routers
 - `grafana/provisioning`: auto-configures the Prometheus data source and dashboard loading
 - `grafana/dashboards/hummbwtester-overview.json`: starter Grafana dashboard for traffic,
-  latency, jitter, reservation lifetime, border router flyovers, and loss signals
+  remote receive bandwidth, latency, jitter, reservation lifetime, border router flyovers, and
+  loss signals
 
 ## Start
 
 1. Start `hummbwtester` from the repository root:
 
    ```bash
-   ./run-hummbwtester.sh
+   ./run-humm-bwtester.sh
    ```
 
 2. In another terminal, start the monitoring stack:
@@ -61,14 +61,13 @@ If you also want to remove the persisted Prometheus and Grafana data volumes:
 docker compose down -v
 ```
 
-`./run-hummbwtester.sh` stops independently from the monitoring stack, so you can interrupt it
+`./run-humm-bwtester.sh` stops independently from the monitoring stack, so you can interrupt it
 without shutting down Prometheus or Grafana.
 
 ## Use
 
 Prometheus is exposed on [http://localhost:8090](http://localhost:8090). The Prometheus UI is
-mapped to `8090` instead of `9090` so it does not collide with the `hummbwtester` server metrics
-endpoint on the host.
+mapped to `8090` instead of the Prometheus default port `9090`.
 
 Grafana is exposed on [http://localhost:3000](http://localhost:3000). The default login is
 `admin` / `admin`.
@@ -87,7 +86,7 @@ port selection on every run.
 ### In Prometheus
 
 Open `http://localhost:${PROMETHEUS_PORT:-8090}/targets` and confirm that
-`hummbwtester-server`, `hummbwtester-client`, and `scion-border-routers` are `UP`.
+`hummbwtester-client` and `scion-border-routers` are `UP`.
 
 Then use the expression browser at `http://localhost:${PROMETHEUS_PORT:-8090}/graph`.
 Useful example queries include:
@@ -96,8 +95,8 @@ Useful example queries include:
 - `hummbwtester_client_jitter_seconds`
 - `hummbwtester_client_reservation_renewals_total`
 - `histogram_quantile(0.95, sum by (le) (rate(hummbwtester_client_rtt_seconds_bucket[1m])))`
-- `hummbwtester_server_receive_rate_bps`
-- `hummbwtester_server_active_clients`
+- `hummbwtester_client_remote_receive_rate_bps`
+- `hummbwtester_client_remote_stats_age_seconds`
 - `router_humm_flyover_pkts_total`
 - `router_priority_forwarded_pkts_total`
 - `router_processed_pkts_total`
@@ -117,9 +116,9 @@ The Prometheus data source is provisioned automatically, and the dashboard
 
 That dashboard includes:
 
-- traffic rate panels for client send rate and server receive rate
+- traffic rate panels for client send rate and server-reported remote receive rate
 - RTT and jitter panels
-- client reservation success rate and active-client panels
+- client reservation success rate
 - packet rate insights with priority and best-effort packet rates
 - border router egress queue depths for priority and best-effort queues
 - total border router demotion rates by freshness, expiry, and token bucket cause

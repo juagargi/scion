@@ -70,6 +70,12 @@ func TestPongReplyRoundTrip(t *testing.T) {
 		},
 		ServerRecvTimestampNanos: 200,
 		ServerSendTimestampNanos: 300,
+		PayloadPacketsReceived:   11,
+		PayloadBytesReceived:     8800,
+		PayloadLost:              2,
+		PayloadOutOfOrder:        3,
+		PongRequestsReceived:     7,
+		PongRepliesSent:          6,
 	})
 
 	// Decode the reply to exercise the same path a receiving client uses.
@@ -81,6 +87,104 @@ func TestPongReplyRoundTrip(t *testing.T) {
 	assert.Equal(t, int64(100), got.SendTimestampNanos)
 	assert.Equal(t, int64(200), got.ServerRecvTimestampNanos)
 	assert.Equal(t, int64(300), got.ServerSendTimestampNanos)
+	assert.Equal(t, uint64(11), got.PayloadPacketsReceived)
+	assert.Equal(t, uint64(8800), got.PayloadBytesReceived)
+	assert.Equal(t, uint64(2), got.PayloadLost)
+	assert.Equal(t, uint64(3), got.PayloadOutOfOrder)
+	assert.Equal(t, uint64(7), got.PongRequestsReceived)
+	assert.Equal(t, uint64(6), got.PongRepliesSent)
+}
+
+func TestRemoteStatsTrackerUsesClientReceiveTime(t *testing.T) {
+	start := time.Unix(1_000_000, 0)
+	var tracker remoteStatsTracker
+
+	first, accepted := tracker.record(PongReply{
+		Header:                 Header{SequenceNumber: 10},
+		PayloadPacketsReceived: 10,
+		PayloadBytesReceived:   1000,
+		PongRequestsReceived:   1,
+		PongRepliesSent:        1,
+		// Deliberately unrelated server clock values must not affect the rate.
+		ServerRecvTimestampNanos: -9_000_000_000,
+		ServerSendTimestampNanos: 99_000_000_000,
+	}, start)
+	require.True(t, accepted)
+	assert.False(t, first.hasReceiveRate)
+	assert.Equal(t, uint64(1000), first.payloadBytesReceived)
+
+	second, accepted := tracker.record(PongReply{
+		Header:                   Header{SequenceNumber: 11},
+		PayloadPacketsReceived:   30,
+		PayloadBytesReceived:     5000,
+		PayloadLost:              2,
+		PayloadOutOfOrder:        1,
+		PongRequestsReceived:     2,
+		PongRepliesSent:          2,
+		ServerRecvTimestampNanos: 1,
+		ServerSendTimestampNanos: 2,
+	}, start.Add(2*time.Second))
+	require.True(t, accepted)
+	require.True(t, second.hasReceiveRate)
+	assert.InDelta(t, 16000, second.receiveRateBps, 0.001)
+	assert.Equal(t, uint64(4000), second.payloadBytesReceived)
+}
+
+func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
+	start := time.Unix(0, 0)
+	var tracker remoteStatsTracker
+	_, accepted := tracker.record(PongReply{
+		Header:                 Header{SequenceNumber: 1},
+		PayloadPacketsReceived: 1,
+		PayloadBytesReceived:   100,
+		PongRequestsReceived:   1,
+		PongRepliesSent:        1,
+	}, start)
+	require.True(t, accepted)
+
+	catchUp, accepted := tracker.record(PongReply{
+		Header:                 Header{SequenceNumber: 3},
+		PayloadPacketsReceived: 5,
+		PayloadBytesReceived:   500,
+		PongRequestsReceived:   3,
+		PongRepliesSent:        3,
+	}, start.Add(2*time.Second))
+	require.True(t, accepted)
+	assert.Equal(t, uint64(400), catchUp.payloadBytesReceived)
+	assert.InDelta(t, 1600, catchUp.receiveRateBps, 0.001)
+
+	_, accepted = tracker.record(PongReply{
+		Header:                 Header{SequenceNumber: 2},
+		PayloadPacketsReceived: 3,
+		PayloadBytesReceived:   300,
+		PongRequestsReceived:   2,
+		PongRepliesSent:        2,
+	}, start.Add(3*time.Second))
+	assert.False(t, accepted)
+	assert.Equal(t, time.Second, tracker.age(start.Add(3*time.Second)))
+}
+
+func TestRemoteStatsTrackerIgnoresNonPositiveRateInterval(t *testing.T) {
+	now := time.Unix(0, 0)
+	var tracker remoteStatsTracker
+	_, accepted := tracker.record(PongReply{
+		Header:                 Header{SequenceNumber: 1},
+		PayloadPacketsReceived: 1,
+		PayloadBytesReceived:   100,
+		PongRequestsReceived:   1,
+		PongRepliesSent:        1,
+	}, now)
+	require.True(t, accepted)
+
+	delta, accepted := tracker.record(PongReply{
+		Header:                 Header{SequenceNumber: 2},
+		PayloadPacketsReceived: 2,
+		PayloadBytesReceived:   200,
+		PongRequestsReceived:   2,
+		PongRepliesSent:        2,
+	}, now)
+	require.True(t, accepted)
+	assert.False(t, delta.hasReceiveRate)
 }
 
 // TestEncodePayloadFillerNonZeroAndDeterministic checks that payload filler
