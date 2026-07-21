@@ -9,7 +9,14 @@
       "client_id": "hummingbird-1",
       "isd_as": "1-ff00:0:111",
       "host": "172.20.0.29",
-      "port": 0
+      "port": 0,
+      "bandwidth": "5Mbps",
+      "duration": "600s",
+      "hummingbird_reservation": {
+        "bandwidth": 1000,
+        "duration": "600s",
+        "reverse_bandwidth": 1000
+      }
     }
   ],
   "best_effort_clients": [
@@ -17,7 +24,9 @@
       "client_id": "best-effort-1",
       "isd_as": "1-ff00:0:111",
       "host": "172.20.0.29",
-      "port": 0
+      "port": 0,
+      "bandwidth": "10Mbps",
+      "duration": "600s"
     }
   ],
   "tc": {

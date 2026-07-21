@@ -16,7 +16,7 @@ import shlex
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import yaml
@@ -55,11 +55,17 @@ class Endpoint:
 
 @dataclass(frozen=True)
 class Client:
-    # The runner adds the derived metric port and the client kind to the endpoint from JSON.
+    # The runner adds the derived metric port and the client kind to the JSON configuration.
     client_id: str
     endpoint: Endpoint
     hummingbird: bool
     metrics_port: int
+    bandwidth: str
+    duration: str
+    hummingbird_reservation: tuple[int, str, int] | None
+    payload_size: int | None
+    pong_rate: float | int | None
+    renewal_fraction: float | int | None
 
 
 def join_host_port(host: str, port: int) -> str:
@@ -83,13 +89,16 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def require_fields(value: dict[str, Any], expected: set[str], context: str) -> None:
-    """Require value to contain exactly expected keys, with contextual error text."""
+def require_fields(
+    value: dict[str, Any], required: set[str], context: str, optional: set[str] | None = None,
+) -> None:
+    """Require value to contain required keys and no keys outside optional, with useful errors."""
     # Exact field matching prevents stale, unsupported configuration from being silently ignored.
     got = set(value)
-    if got != expected:
-        missing = sorted(expected - got)
-        extra = sorted(got - expected)
+    allowed = required | (optional or set())
+    if not required <= got or not got <= allowed:
+        missing = sorted(required - got)
+        extra = sorted(got - allowed)
         detail = []
         if missing:
             detail.append("missing " + ", ".join(missing))
@@ -115,6 +124,65 @@ def parse_endpoint(value: dict[str, Any], context: str) -> Endpoint:
     return Endpoint(ia, host, port)
 
 
+def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Client:
+    """Validate one client configuration and retain its workload and optional tuning settings."""
+    required = {"client_id", "isd_as", "host", "port", "bandwidth", "duration"}
+    optional = {"payload_size", "pong_rate", "renewal_fraction"}
+    if hummingbird:
+        required.add("hummingbird_reservation")
+    require_fields(entry, required, context, optional)
+
+    client_id = entry["client_id"]
+    if not isinstance(client_id, str) or not CLIENT_ID_RE.fullmatch(client_id):
+        raise ConfigError(f"{context}.client_id must match {CLIENT_ID_RE.pattern}")
+    for key in ("bandwidth", "duration"):
+        if not isinstance(entry[key], str) or not entry[key]:
+            raise ConfigError(f"{context}.{key} must be a non-empty string")
+
+    reservation: tuple[int, str, int] | None = None
+    if hummingbird:
+        value = entry["hummingbird_reservation"]
+        if not isinstance(value, dict):
+            raise ConfigError(f"{context}.hummingbird_reservation must be an object")
+        require_fields(value, {"bandwidth", "duration", "reverse_bandwidth"},
+                       f"{context}.hummingbird_reservation")
+        bandwidth, duration, reverse_bandwidth = (
+            value["bandwidth"], value["duration"], value["reverse_bandwidth"])
+        if (not isinstance(bandwidth, int) or isinstance(bandwidth, bool)
+                or not 0 <= bandwidth <= 65535):
+            raise ConfigError(f"{context}.hummingbird_reservation.bandwidth must be an integer from 0 through 65535")
+        if not isinstance(duration, str) or not duration:
+            raise ConfigError(f"{context}.hummingbird_reservation.duration must be a non-empty string")
+        if (not isinstance(reverse_bandwidth, int) or isinstance(reverse_bandwidth, bool)
+                or not 0 <= reverse_bandwidth <= 65535):
+            raise ConfigError(
+                f"{context}.hummingbird_reservation.reverse_bandwidth must be an integer from 0 through 65535")
+        reservation = (bandwidth, duration, reverse_bandwidth)
+
+    payload_size = entry.get("payload_size")
+    if payload_size is not None and (not isinstance(payload_size, int) or isinstance(payload_size, bool)):
+        raise ConfigError(f"{context}.payload_size must be an integer")
+    pong_rate = entry.get("pong_rate")
+    if pong_rate is not None and (not isinstance(pong_rate, (int, float)) or isinstance(pong_rate, bool)):
+        raise ConfigError(f"{context}.pong_rate must be a number")
+    renewal_fraction = entry.get("renewal_fraction")
+    if renewal_fraction is not None and (not isinstance(renewal_fraction, (int, float))
+                                         or isinstance(renewal_fraction, bool)):
+        raise ConfigError(f"{context}.renewal_fraction must be a number")
+    return Client(
+        client_id=client_id,
+        endpoint=parse_endpoint({key: entry[key] for key in ("isd_as", "host", "port")}, context),
+        hummingbird=hummingbird,
+        metrics_port=0,
+        bandwidth=entry["bandwidth"],
+        duration=entry["duration"],
+        hummingbird_reservation=reservation,
+        payload_size=payload_size,
+        pong_rate=pong_rate,
+        renewal_fraction=renewal_fraction,
+    )
+
+
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
@@ -138,21 +206,17 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, str]]:
     if not raw_clients:
         raise ConfigError("at least one client is required")
 
-    parsed: list[tuple[str, Endpoint, bool]] = []
+    parsed: list[Client] = []
     for entry, hummingbird, context in raw_clients:
-        require_fields(entry, {"client_id", "isd_as", "host", "port"}, context)
-        client_id = entry["client_id"]
-        if not isinstance(client_id, str) or not CLIENT_ID_RE.fullmatch(client_id):
-            raise ConfigError(f"{context}.client_id must match {CLIENT_ID_RE.pattern}")
-        parsed.append((client_id, parse_endpoint({k: entry[k] for k in ("isd_as", "host", "port")}, context), hummingbird))
+        parsed.append(parse_client(entry, hummingbird, context))
     # Sorting makes a client's metrics port stable when the JSON array order changes.
-    parsed.sort(key=lambda item: item[0])
-    if len({item[0] for item in parsed}) != len(parsed):
+    parsed.sort(key=lambda item: item.client_id)
+    if len({item.client_id for item in parsed}) != len(parsed):
         raise ConfigError("client_id values must be unique")
     if METRICS_BASE_PORT + len(parsed) - 1 > 65535:
         raise ConfigError("too many clients for the derived Prometheus port range")
-    clients = [Client(client_id, endpoint, hummingbird, METRICS_BASE_PORT + index)
-               for index, (client_id, endpoint, hummingbird) in enumerate(parsed)]
+    clients = [replace(client, metrics_port=METRICS_BASE_PORT + index)
+               for index, client in enumerate(parsed)]
 
     tc = root["tc"]
     if not isinstance(tc, dict):
@@ -386,6 +450,26 @@ def stop_remote(service: str, pidfile: str) -> None:
         cwd=ROOT, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
+    """Build the hummbwtester command-line arguments for one configured client."""
+    args = ["/share/bin/hummbwtester", "-mode", "client", "-local", client.endpoint.local(),
+            "-remote", server.local(), "-sciond", sciond,
+            "-bandwidth", client.bandwidth, "-duration", client.duration,
+            "-metrics-addr", f":{client.metrics_port}"]
+    if client.payload_size is not None:
+        args.extend(["-payload-size", str(client.payload_size)])
+    if client.pong_rate is not None:
+        args.extend(["-pong-rate", str(client.pong_rate)])
+    if client.renewal_fraction is not None:
+        args.extend(["-renewal-fraction", str(client.renewal_fraction)])
+    if client.hummingbird:
+        assert client.hummingbird_reservation is not None
+        bandwidth, duration, reverse_bandwidth = client.hummingbird_reservation
+        args.extend(["-hummingbird", f"{bandwidth},{duration},{reverse_bandwidth}",
+                     "-hummKeysDir", "/share/gen"])
+    return args
+
+
 def run_experiment(config_path: Path) -> int:
     """Launch the server and all clients, then return their aggregate experiment status."""
     server, clients, _ = load_config(config_path)
@@ -407,11 +491,7 @@ def run_experiment(config_path: Path) -> int:
         time.sleep(2)
         for client in clients:
             suffix = client.client_id
-            args = ["/share/bin/hummbwtester", "-mode", "client", "-local", client.endpoint.local(),
-                    "-remote", server.local(), "-sciond", endpoint_sciond(client.endpoint, daemons),
-                    "-bandwidth", "1Mbps", "-duration", "600s", "-metrics-addr", f":{client.metrics_port}"]
-            if client.hummingbird:
-                args.extend(["-hummingbird", "1000,10s,1000", "-hummKeysDir", "/share/gen"])
+            args = client_args(client, server, endpoint_sciond(client.endpoint, daemons))
             pidfile = f"/tmp/hummbwtester-{suffix}.pid"
             processes.append((client, pidfile, launch(tester_service(client.endpoint.isd_as), pidfile, args,
                                                        log_dir / f"{suffix}.log")))

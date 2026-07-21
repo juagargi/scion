@@ -27,11 +27,8 @@ while leaving the intra-AS bridges unshaped.
 Hummingbird clients derive reservations from `/share/gen` master keys
 rather than using the redemption service.
 Each Hummingbird client chooses a random nonzero 22-bit reservation ID when
-it starts and reuses it across reservation renewals.
-
-The runner currently uses fixed experiment settings:
-1 Mbps payload rate, 600-second duration, and Hummingbird parameters `1000,10s,1000`.
-Change the runner constants if a different workload is required.
+it starts and reuses it across reservation renewals. Client workload and reservation settings
+are read from the JSON configuration.
 
 ## Configuration
 
@@ -42,9 +39,45 @@ Edit [hummbwtester.json](hummbwtester.json). It has four required top-level sect
 - `best_effort_clients`: zero or more best-effort client endpoint objects.
 - `tc`: TBF `rate`, `burst`, and `latency` values passed to `tc`.
 
-Every client object has exactly `client_id`, `isd_as`, `host`, and `port`.
+Every client requires these fields:
+
+- `client_id`: a unique identifier used as the sole custom Prometheus label.
+- `isd_as`, `host`, and `port`: the tester-container endpoint. Use port `0` for an ephemeral UDP port.
+- `bandwidth`: payload send rate passed as `-bandwidth`, such as `"1Mbps"`.
+- `duration`: test length passed as `-duration`, such as `"600s"`.
+
+Hummingbird clients additionally require `hummingbird_reservation`, an object with:
+
+- `bandwidth`: forward reservation bandwidth class, passed as the first `-hummingbird` value.
+- `duration`: reservation duration, such as `"10s"`.
+- `reverse_bandwidth`: reverse reservation bandwidth class; use `0` for no reverse reservation.
+
+Both client types may optionally set `payload_size`, `pong_rate`, and `renewal_fraction`.
+They are passed respectively as `-payload-size`, `-pong-rate`, and `-renewal-fraction`.
+When omitted, the binary's built-in defaults apply.
+
+For example, this commented dummy Hummingbird client shows every supported client field:
+
+```jsonc
+// {
+//   "client_id": "hummingbird-tuned-example",
+//   "isd_as": "1-ff00:0:111",
+//   "host": "172.20.0.29",
+//   "port": 0,
+//   "bandwidth": "2Mbps",
+//   "duration": "5m",
+//   "hummingbird_reservation": {
+//     "bandwidth": 1000,
+//     "duration": "10s",
+//     "reverse_bandwidth": 1000
+//   },
+//   "payload_size": 1200,
+//   "pong_rate": 2.0,
+//   "renewal_fraction": 0.7
+// }
+```
+
 Client IDs must be unique and match `[A-Za-z0-9._-]+`.
-Use port `0` to request an ephemeral UDP port.
 
 Daemon connectors are deliberately not configured:
 they are derived from `gen/sciond_addresses.json` for the configured AS.
