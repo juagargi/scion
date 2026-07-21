@@ -149,24 +149,33 @@ func realMain() int {
 				return 1
 			}
 		}
+		var reservationID uint32
+		if hummingbirdFlag != "" {
+			reservationID, err = randomHummReservationID()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error generating Hummingbird reservation ID:", err)
+				return 1
+			}
+		}
 		bandwidthBps, err := parseBandwidth(bandwidthFlag)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing -bandwidth:", err)
 			return 1
 		}
 		cfg := clientConfig{
-			local:           localFlag,
-			remote:          remoteFlag,
-			sdConn:          sdConn,
-			bandwidthBps:    bandwidthBps,
-			duration:        duration,
-			payloadSize:     payloadSize,
-			pongRateHz:      pongRateHz,
-			humm:            hummParams,
-			hummEnabled:     hummingbirdFlag != "",
-			hummKeysDir:     hummKeysDir,
-			reportInterval:  reportInterval,
-			renewalFraction: renewalFraction,
+			local:             localFlag,
+			remote:            remoteFlag,
+			sdConn:            sdConn,
+			bandwidthBps:      bandwidthBps,
+			duration:          duration,
+			payloadSize:       payloadSize,
+			pongRateHz:        pongRateHz,
+			humm:              hummParams,
+			hummEnabled:       hummingbirdFlag != "",
+			hummReservationID: reservationID,
+			hummKeysDir:       hummKeysDir,
+			reportInterval:    reportInterval,
+			renewalFraction:   renewalFraction,
 		}
 		return runClient(ctx, sn, cfg)
 	default:

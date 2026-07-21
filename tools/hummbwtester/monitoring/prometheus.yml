@@ -3,34 +3,11 @@ global:
 
 scrape_configs:
   - job_name: "hummbwtester-client"
-    static_configs:
-      - targets:
-          - "127.0.0.1:9091"
-        labels:
-          mode: "client"
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/clients.json
 
   - job_name: "scion-border-routers"
-    static_configs:
-      - targets:
-          - "127.0.0.9:30442"
-        labels:
-          as: "ff00_0_110"
-          br: "br1-ff00_0_110-1"
-
-      - targets:
-          - "127.0.0.10:30442"
-        labels:
-          as: "ff00_0_110"
-          br: "br1-ff00_0_110-2"
-
-      - targets:
-          - "127.0.0.17:30442"
-        labels:
-          as: "ff00_0_111"
-          br: "br1-ff00_0_111-1"
-
-      - targets:
-          - "[fd00:f00d:cafe::7f00:9]:30442"
-        labels:
-          as: "ff00_0_112"
-          br: "br1-ff00_0_112-1"
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/border_routers.json

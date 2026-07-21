@@ -15,12 +15,38 @@
 package main
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRandomHummReservationID(t *testing.T) {
+	// Replace the rand function with our own.
+	oldRead := cryptoRandRead
+	t.Cleanup(func() { cryptoRandRead = oldRead })
+
+	calls := 0
+	cryptoRandRead = func(buf []byte) (int, error) {
+		calls++
+		if calls == 1 {
+			copy(buf, []byte{0, 0, 0, 0})
+			return len(buf), nil
+		}
+		copy(buf, []byte{0xff, 0xff, 0xff, 0})
+		return len(buf), nil
+	}
+	id, err := randomHummReservationID()
+	require.NoError(t, err)
+	assert.Equal(t, uint32(maxHummReservationID), id)
+	assert.Equal(t, 2, calls) // First call returned 0, necessary to call again.
+
+	cryptoRandRead = func([]byte) (int, error) { return 0, errors.New("entropy unavailable") }
+	_, err = randomHummReservationID()
+	require.Error(t, err)
+}
 
 // TestHeaderRoundTrip checks that a packet header can be encoded and decoded
 // without losing any fields.

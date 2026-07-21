@@ -1,5 +1,7 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@scion_python_deps//:requirements.bzl", "requirement")
 load("//:scion.bzl", "scion_go_binary")
+load("//tools/lint:py.bzl", "py_library", "py_test")
 
 go_library(
     name = "go_default_library",
@@ -36,4 +38,26 @@ scion_go_binary(
     name = "hummbwtester",
     embed = [":go_default_library"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "go_default_test",
+    srcs = ["main_test.go"],
+    embed = [":go_default_library"],
+    deps = [
+        "@com_github_stretchr_testify//assert:go_default_library",
+        "@com_github_stretchr_testify//require:go_default_library",
+    ],
+)
+
+py_library(
+    name = "orchestration",
+    srcs = ["orchestration.py"],
+    deps = [requirement("pyyaml")],
+)
+
+py_test(
+    name = "orchestration_test",
+    srcs = ["orchestration_test.py"],
+    deps = [":orchestration"],
 )

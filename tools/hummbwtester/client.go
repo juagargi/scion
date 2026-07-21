@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
 	"net"
@@ -39,8 +40,25 @@ import (
 	"github.com/scionproto/scion/private/keyconf"
 )
 
-// hummReservationID is the reservation ID used for all flyovers this client requests.
-const hummReservationID = uint32(1)
+const maxHummReservationID = (1 << 22) - 1
+
+// cryptoRandRead is replaceable by tests. Reservation IDs are local client state, rather than a
+// command-line setting, so independently launched clients do not share a token bucket.
+var cryptoRandRead = cryptorand.Read
+
+func randomHummReservationID() (uint32, error) {
+	var buf [4]byte
+	for {
+		if _, err := cryptoRandRead(buf[:]); err != nil {
+			return 0, err
+		}
+		id := uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])
+		id &= maxHummReservationID
+		if id != 0 {
+			return id, nil
+		}
+	}
+}
 
 // hummStartOffset shifts the requested reservation start time slightly into the past, giving
 // the flyover derivation (and the redemption service, if used) slack against clock skew.
@@ -62,15 +80,16 @@ type clientConfig struct {
 	remote snet.UDPAddr
 	sdConn daemon.Connector
 
-	bandwidthBps    float64
-	duration        time.Duration
-	payloadSize     int
-	pongRateHz      float64
-	humm            hummingbirdParameters
-	hummEnabled     bool
-	hummKeysDir     string
-	reportInterval  time.Duration
-	renewalFraction float64
+	bandwidthBps      float64
+	duration          time.Duration
+	payloadSize       int
+	pongRateHz        float64
+	humm              hummingbirdParameters
+	hummEnabled       bool
+	hummReservationID uint32
+	hummKeysDir       string
+	reportInterval    time.Duration
+	renewalFraction   float64
 }
 
 // bidirectional reports whether the client requested a reverse-direction reservation.
@@ -153,7 +172,7 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 		"local", cfg.local, "remote", cfg.remote,
 		"bandwidth_bps", cfg.bandwidthBps, "payload_size", cfg.payloadSize,
 		"pong_rate_hz", cfg.pongRateHz, "hummingbird_enabled", cfg.hummEnabled,
-		"bidirectional", cfg.bidirectional())
+		"bidirectional", cfg.bidirectional(), "hummingbird_reservation_id", cfg.hummReservationID)
 
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
@@ -306,14 +325,14 @@ func (c *client) deriveFlyoversFromSecretValues(
 			aesByIA[baseHop.IA] = block
 		}
 		akRaw := hummlib.DeriveAuthKey(
-			block, hummReservationID, bandwidth, baseHop.Ingress, baseHop.Egress,
+			block, c.cfg.hummReservationID, bandwidth, baseHop.Ingress, baseHop.Egress,
 			startTime, c.cfg.humm.Duration, buffer)
 		var ak [hummlib.AkBufferSize]byte
 		copy(ak[:], akRaw)
 		flyovers = append(flyovers, &snetpath.Hop{
 			BaseHop: baseHop,
 			Flyover: &snetpath.FlyoverData{
-				ResID:     hummReservationID,
+				ResID:     c.cfg.hummReservationID,
 				Ak:        ak,
 				Bw:        bandwidth,
 				StartTime: startTime,

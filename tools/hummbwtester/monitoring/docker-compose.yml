@@ -9,6 +9,7 @@ services:
       - "--web.listen-address=:${PROMETHEUS_PORT:-8090}"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../../gen/hummbwtester-prometheus:/etc/prometheus/targets:ro
       - prometheus-data:/prometheus
 
   grafana:

@@ -99,14 +99,14 @@
         {
           "editorMode": "code",
           "expr": "avg_over_time(hummbwtester_client_send_rate_bps[60s])",
-          "legendFormat": "client send rate (60s avg.)",
+          "legendFormat": "{{client_id}} send rate (60s avg.)",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
           "expr": "avg_over_time(hummbwtester_client_remote_receive_rate_bps[60s])",
-          "legendFormat": "remote receive rate (60s avg.)",
+          "legendFormat": "{{client_id}} remote receive rate (60s avg.)",
           "range": true,
           "refId": "B"
         }
@@ -164,22 +164,22 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(hummbwtester_client_rtt_seconds_bucket[1m])))",
-          "legendFormat": "p50 RTT",
+          "expr": "histogram_quantile(0.5, sum by (le, client_id) (rate(hummbwtester_client_rtt_seconds_bucket[1m])))",
+          "legendFormat": "{{client_id}} p50 RTT",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(hummbwtester_client_rtt_seconds_bucket[1m])))",
-          "legendFormat": "p95 RTT",
+          "expr": "histogram_quantile(0.95, sum by (le, client_id) (rate(hummbwtester_client_rtt_seconds_bucket[1m])))",
+          "legendFormat": "{{client_id}} p95 RTT",
           "range": true,
           "refId": "B"
         },
         {
           "editorMode": "code",
           "expr": "hummbwtester_client_jitter_seconds",
-          "legendFormat": "jitter",
+          "legendFormat": "{{client_id}} jitter",
           "range": true,
           "refId": "C"
         }
@@ -239,8 +239,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(rate(hummbwtester_client_reservation_renewals_total{result=\"ok\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "reservation success",
+          "expr": "sum by (client_id) (rate(hummbwtester_client_reservation_renewals_total{result=\"ok\"}[$__rate_interval]))",
+          "legendFormat": "{{client_id}} reservation success",
           "range": true,
           "refId": "A"
         }
@@ -296,21 +296,21 @@
         {
           "editorMode": "code",
           "expr": "rate(hummbwtester_client_pong_requests_sent_total[1m])",
-          "legendFormat": "pong requests sent",
+          "legendFormat": "{{client_id}} pong requests sent",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
           "expr": "rate(hummbwtester_client_pong_replies_received_total[1m])",
-          "legendFormat": "pong replies received",
+          "legendFormat": "{{client_id}} pong replies received",
           "range": true,
           "refId": "B"
         },
         {
           "editorMode": "code",
           "expr": "rate(hummbwtester_client_remote_pong_replies_sent_total[1m])",
-          "legendFormat": "remote pong replies sent",
+          "legendFormat": "{{client_id}} remote pong replies sent",
           "range": true,
           "refId": "C"
         }
@@ -384,14 +384,14 @@
         {
           "editorMode": "code",
           "expr": "increase(hummbwtester_client_pong_lost_total[5m])",
-          "legendFormat": "lost pongs",
+          "legendFormat": "{{client_id}} lost pongs",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
           "expr": "increase(hummbwtester_client_remote_payload_lost_total[5m])",
-          "legendFormat": "remote payload lost",
+          "legendFormat": "{{client_id}} remote payload lost",
           "range": true,
           "refId": "B"
         }

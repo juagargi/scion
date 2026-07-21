@@ -6,16 +6,16 @@ exported by `./tools/hummbwtester`.
 It follows the same basic pattern as `./monitoring-prometheus-grafana/topology`: a local
 Prometheus instance scrapes metrics from the running SCION tooling, and Grafana is provided for
 interactive dashboards. For `hummbwtester`, the scrape targets are taken from
-`./run-humm-bwtester.sh`:
+`tools/hummbwtester/hummbwtester.json` and `tools/hummbwtester/run-humm-bwtester.py`:
 
-- client metrics, including observations reported by the server: `:9091`
+- client metrics, including observations reported by the server: ports derived from sorted
+  `client_id` values, beginning at `9090`
 
 Prometheus also scrapes the border router metrics from the tiny topology, using the same BR
 targets as `./monitoring-prometheus-grafana/topology/prometheus.yml`.
 
-Prometheus runs in Docker with host networking so it can reach the `hummbwtester` client metrics
-endpoint and the BR loopback addresses. The `hummbwtester` client and server should keep running
-on the host exactly as they do today.
+Prometheus runs in Docker with host networking so it can reach the Docker tester endpoints. The
+setup script generates its file-based client and BR targets under `gen/`.
 
 ## Files
 
@@ -26,18 +26,26 @@ on the host exactly as they do today.
   remote receive bandwidth, latency, jitter, reservation lifetime, border router flyovers, and
   loss signals
 
+## Configuration
+
+`tools/hummbwtester/hummbwtester.json` contains the server, Hummingbird clients, best-effort clients, and TBF
+settings. Client SCION daemon addresses are read from `gen/sciond_addresses.json`. Client metrics
+ports are assigned after sorting all client IDs: `9090`, `9091`, and so on. Prometheus attaches
+the configured `client_id` as the sole custom label on each client target.
+
 ## Start
 
-1. Start `hummbwtester` from the repository root:
+1. Set up the existing Docker topology from the repository root:
 
    ```bash
-   ./run-humm-bwtester.sh
+   ./tools/hummbwtester/setup-topology.py
+   ./tools/hummbwtester/run-humm-bwtester.py
    ```
 
 2. In another terminal, start the monitoring stack:
 
    ```bash
-   cd monitoring-prometheus-grafana/hummbwtester
+   cd tools/hummbwtester/monitoring
    docker compose up -d
    ```
 
