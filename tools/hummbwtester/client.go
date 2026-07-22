@@ -235,7 +235,9 @@ func selectPath(
 // reservation for path, either through the redemption RPC service or, if -hummKeysDir is set,
 // directly from local AS master keys (for testing, bypassing the redemption service).
 func (c *client) buildReservation(
-	ctx context.Context, path snet.Path, now time.Time,
+	ctx context.Context,
+	path snet.Path,
+	now time.Time,
 ) (*snetpath.Reservation, *net.UDPAddr, error) {
 	if c.cfg.hummKeysDir != "" {
 		rsv, err := c.buildReservationWithSecretValues(path, now)
@@ -255,7 +257,8 @@ func (c *client) buildReservation(
 }
 
 func (c *client) buildReservationWithSecretValues(
-	path snet.Path, now time.Time,
+	path snet.Path,
+	now time.Time,
 ) (*snetpath.Reservation, error) {
 	baseHops := snetpath.InterfacesToBaseHops(path.Metadata().Interfaces)
 	scionPath, ok := path.Dataplane().(snetpath.SCION)
@@ -267,7 +270,6 @@ func (c *client) buildReservationWithSecretValues(
 		return nil, err
 	}
 	reservation, err := snetpath.NewReservation(
-		snetpath.WithNow(func() time.Time { return now }),
 		snetpath.WithDataplanePath(scionPath, path.Destination(), flyovers),
 	)
 	if err != nil || c.cfg.humm.ReverseBw == 0 {
@@ -304,7 +306,9 @@ func (c *client) hummSecretValue(ia addr.IA) ([]byte, error) {
 }
 
 func (c *client) deriveFlyoversFromSecretValues(
-	baseHops []snetpath.BaseHop, bandwidth uint16, now time.Time,
+	baseHops []snetpath.BaseHop,
+	bandwidth uint16,
+	now time.Time,
 ) ([]*snetpath.Hop, error) {
 	flyovers := make([]*snetpath.Hop, 0, len(baseHops))
 	startTime := uint32(now.Add(hummStartOffset).Unix())
