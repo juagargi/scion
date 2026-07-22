@@ -13,13 +13,15 @@ including the server observations returned in probe replies.
 
 The experiment uses the generated Docker topology in `gen/`; it never generates a topology itself. `tools/hummbwtester/setup-topology.py` reads the generated Docker Compose file and topology files, then:
 
+- configures every generated border router with the experiment's send-buffer and batch settings;
 - starts the existing Docker topology;
-- discovers the Docker bridges joining BRs in different ASes;
-- applies a TBF qdisc to every veth on those bridges using the configured `tc` values;
+- discovers the border-router interfaces joining different ASes;
+- applies a TBF qdisc inside every BR network namespace using the configured `tc` values;
 - copies the statically linked `hummbwtester` artifact built by `make build-dev` to every configured tester container; and
 - generates Prometheus file-service-discovery targets in `gen/hummbwtester-prometheus/`.
 
-The cap is applied in both directions of each selected inter-AS link.
+The cap is applied in both directions of each selected inter-AS link, before packets leave each
+border router's network namespace.
 In tiny topology this shapes the `110 <-> 111` and `110 <-> 112` links,
 while leaving the intra-AS bridges unshaped.
 
@@ -32,12 +34,21 @@ are read from the JSON configuration.
 
 ## Configuration
 
-Edit [hummbwtester.json](hummbwtester.json). It has four required top-level sections:
+Edit [hummbwtester.json](hummbwtester.json). It has five required top-level sections:
 
 - `server`: the server's `isd_as`, tester `host`, and UDP `port`.
 - `hummingbird_clients`: zero or more Hummingbird client endpoint objects.
 - `best_effort_clients`: zero or more best-effort client endpoint objects.
-- `tc`: TBF `rate`, `burst`, and `latency` values passed to `tc`.
+- `router`: experiment-only `send_buffer_size` and `batch_size` settings written to every
+  generated BR TOML before startup. `batch_size` must currently be `1` so a temporary socket
+  `EAGAIN` cannot appear as a partial batch.
+- `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
+
+Linux doubles the requested `SO_SNDBUF` internally. The sample requests a 16 KiB send buffer and
+uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should stop the BR
+writer before TBF tail-drop. If either value changes, retain that relationship and confirm after
+the experiment that the TBF drop count is zero. A small send buffer and `batch_size = 1` also
+bound the already-dequeued best-effort traffic that can delay newly arrived priority packets.
 
 Every client requires these fields:
 
@@ -88,6 +99,12 @@ Prometheus adds `client_id` as the sole custom label to that client's metrics.
 
 The endpoint addresses must match the generated tester-container addresses.
 For Docker tiny, the sample configuration places the server in AS112 and both sample clients in AS111.
+
+After all clients finish, the runner waits for every in-BR TBF backlog to drain. It fails if a TBF
+dropped packets, if no TBF recorded an overlimit event, or if the BRs recorded no
+`busy_forwarder` drops. Together these checks establish that the kernel shaper exercised the
+configured link rate without silently discarding packets after the router counted them, while
+excess best-effort traffic was discarded in the router queues.
 
 ## First run
 
@@ -166,5 +183,6 @@ bazel test //tools/hummbwtester:go_default_test //tools/hummbwtester:orchestrati
 
 The Python test covers configuration validation and deterministic metrics-port assignment.
 The Go test covers random Hummingbird reservation-ID generation.
-A practical Docker smoke test is to run setup, stop SCION, rerun setup,
-and inspect the qdiscs with `tc qdisc show` on the generated inter-AS bridge veths.
+A practical Docker smoke test is to run setup, stop SCION, and rerun setup. The generated
+`hummbwtester_tc_*` helpers inspect qdiscs inside the BR network namespaces, and a completed run
+prints one `HUMMBWTESTER_TC_STATS` line per shaped interface.

@@ -29,9 +29,13 @@
       "duration": "600s"
     }
   ],
+  "router": {
+    "send_buffer_size": 16384,
+    "batch_size": 1
+  },
   "tc": {
     "rate": "10mbit",
     "burst": "50kb",
-    "latency": "1ms"
+    "limit": "256kb"
   }
 }

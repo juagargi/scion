@@ -16,6 +16,7 @@ import shlex
 import subprocess
 import sys
 import time
+import urllib.request
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -35,6 +36,10 @@ TARGET_DIR = GEN / "hummbwtester-prometheus"
 METRICS_BASE_PORT = 9090
 CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 TC_VALUE_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?(?:bit|kbit|mbit|gbit|b|kb|mb|gb|ms|us|s)?$", re.I)
+TC_HELPER_PREFIX = "hummbwtester_tc_"
+TC_STATS_RE = re.compile(
+    r"^HUMMBWTESTER_TC_STATS dev=(\S+) dropped=(\d+) overlimits=(\d+) backlog_bytes=(\d+)$",
+)
 
 
 class ConfigError(ValueError):
@@ -183,10 +188,14 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
     )
 
 
-def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, str]]:
+def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
-    require_fields(root, {"server", "hummingbird_clients", "best_effort_clients", "tc"}, "configuration")
+    require_fields(
+        root,
+        {"server", "hummingbird_clients", "best_effort_clients", "router", "tc"},
+        "configuration",
+    )
     if not isinstance(root["server"], dict):
         raise ConfigError("server must be an object")
     server = parse_endpoint(root["server"], "server")
@@ -218,14 +227,30 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, str]]:
     clients = [replace(client, metrics_port=METRICS_BASE_PORT + index)
                for index, client in enumerate(parsed)]
 
+    router = root["router"]
+    if not isinstance(router, dict):
+        raise ConfigError("router must be an object")
+    require_fields(router, {"send_buffer_size", "batch_size"}, "router")
+    for key in ("send_buffer_size", "batch_size"):
+        value = router[key]
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ConfigError(f"router.{key} must be a positive integer")
+    if router["batch_size"] != 1:
+        raise ConfigError("router.batch_size must be 1 until partial WriteBatch retries are supported")
+
     tc = root["tc"]
     if not isinstance(tc, dict):
         raise ConfigError("tc must be an object")
-    require_fields(tc, {"rate", "burst", "latency"}, "tc")
+    require_fields(tc, {"rate", "burst", "limit"}, "tc")
     for key, value in tc.items():
         if not isinstance(value, str) or not TC_VALUE_RE.fullmatch(value):
             raise ConfigError(f"tc.{key} is not a safe tc value")
-    return server, clients, {key: tc[key] for key in ("rate", "burst", "latency")}
+    return (
+        server,
+        clients,
+        {key: router[key] for key in ("send_buffer_size", "batch_size")},
+        {key: tc[key] for key in ("rate", "burst", "limit")},
+    )
 
 
 def compose_data() -> dict[str, Any]:
@@ -293,8 +318,64 @@ def br_ias() -> dict[str, str]:
     return result
 
 
-def inter_as_bridges(compose: dict[str, Any]) -> list[str]:
-    """Return Docker bridge names that have border routers from different ASes attached."""
+def br_config_paths() -> dict[str, Path]:
+    """Map generated border-router service names to their TOML configuration files."""
+    result: dict[str, Path] = {}
+    for topology in GEN.glob("AS*/topology.json"):
+        data = json.loads(topology.read_text())
+        for br in data.get("border_routers", {}):
+            path = topology.parent / f"{br}.toml"
+            if not path.is_file():
+                raise ConfigError(f"generated border-router config is missing: {path}")
+            result[br] = path
+    return result
+
+
+def patch_toml_section(path: Path, section: str, values: dict[str, int]) -> None:
+    """Idempotently replace or insert integer keys in one TOML section."""
+    text = path.read_text()
+    section_match = re.search(rf"(?m)^\[{re.escape(section)}\][ \t]*(?:#.*)?$", text)
+    rendered = [f"{key} = {value}" for key, value in values.items()]
+    if section_match is None:
+        separator = "" if not text or text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+        updated = text + separator + f"[{section}]\n" + "\n".join(rendered) + "\n"
+    else:
+        body_start = section_match.end()
+        next_section = re.search(r"(?m)^\[[^\n]+\][ \t]*(?:#.*)?$", text[body_start:])
+        body_end = body_start + next_section.start() if next_section else len(text)
+        body = text[body_start:body_end]
+        missing: list[str] = []
+        for key, value in values.items():
+            pattern = re.compile(rf"(?m)^[ \t]*{re.escape(key)}[ \t]*=.*$")
+            body, count = pattern.subn(f"{key} = {value}", body, count=1)
+            if count == 0:
+                missing.append(f"{key} = {value}")
+        if missing:
+            body = body.rstrip("\n") + "\n" + "\n".join(missing) + "\n"
+        updated = text[:body_start] + body + text[body_end:]
+    if updated != text:
+        path.write_text(updated)
+
+
+def patch_router_configs(router: dict[str, int]) -> None:
+    """Apply experiment-only socket and batch settings to every generated border router."""
+    configs = br_config_paths()
+    if not configs:
+        raise ConfigError("no generated border-router TOML files were found")
+    for path in configs.values():
+        patch_toml_section(path, "router", router)
+
+
+def compose_network_address(entry: Any, family: str) -> str | None:
+    """Return one explicitly configured Compose endpoint address for an IP family."""
+    if not isinstance(entry, dict):
+        return None
+    value = entry.get(f"{family}_address")
+    return value if isinstance(value, str) else None
+
+
+def inter_as_router_peers(compose: dict[str, Any]) -> dict[str, list[str]]:
+    """Map each BR to peer addresses reachable through its inter-AS Docker networks."""
     attached: dict[str, list[str]] = {}
     for service, entry in compose["services"].items():
         if not service.startswith("br") or not isinstance(entry, dict):
@@ -304,36 +385,58 @@ def inter_as_bridges(compose: dict[str, Any]) -> list[str]:
             for network in networks:
                 attached.setdefault(network, []).append(service)
     ia_by_br = br_ias()
-    bridges = []
+    result: dict[str, set[str]] = {}
     for network, routers in attached.items():
         # AS110 has two BRs on its internal bridge. Require different IAs to avoid shaping it.
-        if len({ia_by_br.get(router) for router in routers}) > 1:
-            bridges.append(network)
-    if not bridges:
-        raise ConfigError("no inter-AS Docker bridges were found in gen/scion-dc.yml")
-    return sorted(bridges)
+        if len({ia_by_br.get(router) for router in routers}) <= 1:
+            continue
+        for router in routers:
+            own_network = compose["services"][router]["networks"][network]
+            for peer in routers:
+                if peer == router or ia_by_br.get(peer) == ia_by_br.get(router):
+                    continue
+                peer_network = compose["services"][peer]["networks"][network]
+                for family in ("ipv4", "ipv6"):
+                    if (compose_network_address(own_network, family) is not None
+                            and (peer_address := compose_network_address(peer_network, family)) is not None):
+                        result.setdefault(router, set()).add(peer_address)
+                        break
+                else:
+                    raise ConfigError(
+                        f"{network}: {router} and {peer} have no common explicit IP address family",
+                    )
+    if not result:
+        raise ConfigError("no inter-AS border-router links were found in gen/scion-dc.yml")
+    return {router: sorted(peers) for router, peers in sorted(result.items())}
 
 
-def patch_compose(compose: dict[str, Any], bridges: list[str], tc: dict[str, str]) -> None:
-    """Add or replace the profiled host-networked tc setup service in generated Compose."""
+def tc_helper_name(router: str) -> str:
+    return TC_HELPER_PREFIX + router.replace("-", "_")
+
+
+def patch_compose(compose: dict[str, Any], peers: dict[str, list[str]], tc: dict[str, str]) -> None:
+    """Add one profiled, network-namespace-sharing tc helper per border router."""
     services = compose["services"]
-    depends = sorted({router for bridge in bridges for router, entry in services.items()
-                      if router.startswith("br") and isinstance(entry, dict) and bridge in entry.get("networks", {})})
-    # Keep the privileged, one-shot tc helper behind a profile so normal `scion.sh start` does
-    # not leave an exited setup service in the topology status output.
-    services["hummbwtester_tc_setup"] = {
-        "profiles": ["hummbwtester-setup"],
-        "image": "scion/tester:latest",
-        "user": "0:0",
-        "cap_add": ["NET_ADMIN"],
-        "network_mode": "host",
-        "depends_on": depends,
-        "volumes": [{
-            "type": "bind", "source": str(TC_SCRIPT), "target": "/share/hummbwtester_tc_setup.sh", "read_only": True,
-        }],
-        "entrypoint": ["/bin/bash", "/share/hummbwtester_tc_setup.sh"],
-        "command": [tc["rate"], tc["burst"], tc["latency"], *bridges],
-    }
+    for name in [name for name in services if name == "hummbwtester_tc_setup"
+                 or name.startswith(TC_HELPER_PREFIX)]:
+        del services[name]
+    for router, peer_addresses in peers.items():
+        # Each privileged, one-shot helper shares exactly one BR network namespace. The router
+        # image itself stays unprivileged and does not need to contain iproute2.
+        services[tc_helper_name(router)] = {
+            "profiles": ["hummbwtester-setup"],
+            "image": "scion/tester:latest",
+            "user": "0:0",
+            "cap_add": ["NET_ADMIN"],
+            "network_mode": f"service:{router}",
+            "depends_on": [router],
+            "volumes": [{
+                "type": "bind", "source": str(TC_SCRIPT),
+                "target": "/share/hummbwtester_tc_setup.sh", "read_only": True,
+            }],
+            "entrypoint": ["/bin/bash", "/share/hummbwtester_tc_setup.sh"],
+            "command": ["setup", tc["rate"], tc["burst"], tc["limit"], *peer_addresses],
+        }
     COMPOSE.write_text(yaml.safe_dump(compose, sort_keys=False))
 
 
@@ -400,19 +503,21 @@ def write_targets(compose: dict[str, Any], clients: list[Client]) -> None:
 
 def setup(config_path: Path) -> int:
     """Build, start, shape, populate, and publish targets for one configured experiment."""
-    server, clients, tc = load_config(config_path)
+    server, clients, router, tc = load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
     _ = [endpoint_sciond(endpoint, sciond_map()) for endpoint in [server, *(c.endpoint for c in clients)]]
-    bridges = inter_as_bridges(compose)
+    peers = inter_as_router_peers(compose)
     # `make build-dev` builds this Bazel target as a static binary and extracts it into bin/.
     # Reusing that artifact keeps this tool consistent with the other tester-container binaries.
     require_built_binary()
-    patch_compose(compose, bridges, tc)
+    patch_router_configs(router)
+    patch_compose(compose, peers, tc)
     # This is safe after `scion.sh stop`: Compose recreates the removed bridges before tc runs.
     run([str(ROOT / "scion.sh"), "start"], cwd=ROOT)
     wait_for_reachability(server, clients[0])
-    run(dc_args("run", "--rm", "--no-deps", "hummbwtester_tc_setup"), cwd=ROOT)
+    for router_service in peers:
+        run(dc_args("run", "--rm", "--no-deps", tc_helper_name(router_service)), cwd=ROOT)
     for client in clients:
         print(f"client_id={client.client_id} metrics_port={client.metrics_port}")
     for service in sorted({tester_service(server.isd_as), *(tester_service(c.endpoint.isd_as) for c in clients)}):
@@ -470,9 +575,63 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
     return args
 
 
+def router_metric_urls() -> list[str]:
+    """Return the generated border-router Prometheus endpoints."""
+    result: list[str] = []
+    for topology in GEN.glob("AS*/topology.json"):
+        data = json.loads(topology.read_text())
+        for entry in data.get("border_routers", {}).values():
+            internal = entry["internal_addr"]
+            host = internal.rsplit(":", 1)[0].strip("[]")
+            result.append(f"http://{join_host_port(host, 30442)}/metrics")
+    return sorted(result)
+
+
+def busy_forwarder_drops() -> float:
+    """Sum the current busy-forwarder drop counters from all generated border routers."""
+    total = 0.0
+    for url in router_metric_urls():
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                body = response.read().decode()
+        except OSError as err:
+            raise RuntimeError(f"reading border-router metrics from {url}: {err}") from err
+        for line in body.splitlines():
+            if (line.startswith("router_dropped_pkts_total{")
+                    and 'reason="busy_forwarder"' in line):
+                total += float(line.rsplit(None, 1)[1])
+    return total
+
+
+def verify_tc_qdiscs(compose: dict[str, Any]) -> None:
+    """Require every in-BR TBF to drain without drops and at least one to have shaped traffic."""
+    total_overlimits = 0
+    helpers = sorted(name for name in compose["services"] if name.startswith(TC_HELPER_PREFIX))
+    if not helpers:
+        raise RuntimeError("no hummbwtester tc helper services are configured; rerun setup")
+    for helper in helpers:
+        command = compose["services"][helper].get("command", [])
+        if len(command) < 5 or command[0] != "setup":
+            raise RuntimeError(f"invalid tc helper command for {helper}; rerun setup")
+        peers = command[4:]
+        result = run(
+            dc_args("run", "--rm", "--no-deps", helper, "verify", *peers),
+            cwd=ROOT,
+            capture_output=True,
+        )
+        print(result.stdout, end="")
+        stats = [TC_STATS_RE.fullmatch(line) for line in result.stdout.splitlines()]
+        stats = [match for match in stats if match is not None]
+        if len(stats) != len(peers):
+            raise RuntimeError(f"expected {len(peers)} tc statistics from {helper}, got {len(stats)}")
+        total_overlimits += sum(int(match.group(3)) for match in stats)
+    if total_overlimits == 0:
+        raise RuntimeError("TBF overlimits stayed at zero; the configured bottleneck was not exercised")
+
+
 def run_experiment(config_path: Path) -> int:
     """Launch the server and all clients, then return their aggregate experiment status."""
-    server, clients, _ = load_config(config_path)
+    server, clients, _, _ = load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
     daemons = sciond_map()
@@ -485,6 +644,7 @@ def run_experiment(config_path: Path) -> int:
     server_args = ["/share/bin/hummbwtester", "-mode", "server", "-local", server.local(),
                    "-sciond", endpoint_sciond(server, daemons)]
     processes: list[tuple[Client, str, subprocess.Popen[str]]] = []
+    busy_before = busy_forwarder_drops()
     server_process = launch(server_service, server_pidfile, server_args, log_dir / "server.log")
     try:
         # Give the server a predictable head start before clients begin selecting paths and dialing.
@@ -503,6 +663,14 @@ def run_experiment(config_path: Path) -> int:
                 break
             time.sleep(0.25)
         failure = failure or any(process.wait() != 0 for _, _, process in processes)
+        if not failure:
+            verify_tc_qdiscs(compose)
+            busy_delta = busy_forwarder_drops() - busy_before
+            print(f"router busy-forwarder drops during experiment: {busy_delta:g}")
+            if busy_delta <= 0:
+                raise RuntimeError(
+                    "no router busy-forwarder drops occurred; best-effort overload was not exercised",
+                )
         return 1 if failure else 0
     except KeyboardInterrupt:
         return 130
