@@ -46,8 +46,12 @@ type RouterConfig struct {
 	SendBufferSize        int `toml:"send_buffer_size,omitempty"`
 	NumProcessors         int `toml:"num_processors,omitempty"`
 	NumSlowPathProcessors int `toml:"num_slow_processors,omitempty"`
-	BatchSize             int `toml:"batch_size,omitempty"`
-	BFD                   BFD `toml:"bfd,omitempty"`
+	// BatchSize is the deprecated common fallback for the three sizing options below.
+	BatchSize        int `toml:"batch_size,omitempty"`
+	IngressBatchSize int `toml:"ingress_batch_size,omitempty"`
+	EgressBatchSize  int `toml:"egress_batch_size,omitempty"`
+	EgressQueueSize  int `toml:"egress_queue_size,omitempty"`
+	BFD              BFD `toml:"bfd,omitempty"`
 	// TODO: These two values were introduced to override the port range for
 	// configured router in the context of acceptance tests. However, this
 	// introduces two sources for the port configuration. We should remove this
@@ -76,8 +80,17 @@ func (cfg *RouterConfig) Validate() error {
 	if cfg.SendBufferSize < 0 {
 		return serrors.New("Provided router config is invalid. SendBufferSize < 0")
 	}
-	if cfg.BatchSize < 1 {
-		return serrors.New("Provided router config is invalid. BatchSize < 1")
+	if cfg.BatchSize < 0 {
+		return serrors.New("Provided router config is invalid. BatchSize < 0")
+	}
+	if cfg.IngressBatchSize < 1 {
+		return serrors.New("Provided router config is invalid. IngressBatchSize < 1")
+	}
+	if cfg.EgressBatchSize < 1 {
+		return serrors.New("Provided router config is invalid. EgressBatchSize < 1")
+	}
+	if cfg.EgressQueueSize < 1 {
+		return serrors.New("Provided router config is invalid. EgressQueueSize < 1")
 	}
 	if cfg.NumProcessors < 0 {
 		return serrors.New("Provided router config is invalid. NumProcessors < 0")
@@ -135,8 +148,25 @@ func (cfg *RouterConfig) InitDefaults() {
 	if cfg.NumSlowPathProcessors == 0 {
 		cfg.NumSlowPathProcessors = 1
 	}
-	if cfg.BatchSize == 0 {
-		cfg.BatchSize = 256
+	if cfg.BatchSize > 0 {
+		if cfg.IngressBatchSize == 0 {
+			cfg.IngressBatchSize = cfg.BatchSize
+		}
+		if cfg.EgressBatchSize == 0 {
+			cfg.EgressBatchSize = cfg.BatchSize
+		}
+		if cfg.EgressQueueSize == 0 {
+			cfg.EgressQueueSize = cfg.BatchSize
+		}
+	}
+	if cfg.IngressBatchSize == 0 {
+		cfg.IngressBatchSize = 256
+	}
+	if cfg.EgressBatchSize == 0 {
+		cfg.EgressBatchSize = 256
+	}
+	if cfg.EgressQueueSize == 0 {
+		cfg.EgressQueueSize = 256
 	}
 	if cfg.BFD.DetectMult == 0 {
 		cfg.BFD.DetectMult = 3

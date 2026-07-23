@@ -55,7 +55,9 @@ func NewConnector(config config.RouterConfig, features env.Features) *Connector 
 			RunConfig{
 				NumProcessors:         config.NumProcessors,
 				NumSlowPathProcessors: config.NumSlowPathProcessors,
-				BatchSize:             config.BatchSize,
+				IngressBatchSize:      config.IngressBatchSize,
+				EgressBatchSize:       config.EgressBatchSize,
+				EgressQueueSize:       config.EgressQueueSize,
 				ReceiveBufferSize:     config.ReceiveBufferSize,
 				SendBufferSize:        config.SendBufferSize,
 			},

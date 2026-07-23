@@ -20,6 +20,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/pkg/log/logtest"
 	"github.com/scionproto/scion/private/env/envtest"
@@ -36,6 +37,54 @@ func TestConfigSample(t *testing.T) {
 	err := toml.NewDecoder(bytes.NewReader(sample.Bytes())).DisallowUnknownFields().Decode(&cfg)
 	assert.NoError(t, err)
 	CheckTestConfig(t, &cfg, config.IDSample)
+}
+
+func TestRouterBatchSizeDefaults(t *testing.T) {
+	t.Run("production defaults", func(t *testing.T) {
+		var cfg config.RouterConfig
+		cfg.InitDefaults()
+		require.Equal(t, 256, cfg.IngressBatchSize)
+		require.Equal(t, 256, cfg.EgressBatchSize)
+		require.Equal(t, 256, cfg.EgressQueueSize)
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("legacy fallback with override", func(t *testing.T) {
+		var cfg config.RouterConfig
+		require.NoError(t, toml.Unmarshal([]byte(`
+batch_size = 64
+egress_batch_size = 1
+`), &cfg))
+		cfg.InitDefaults()
+		require.Equal(t, 64, cfg.IngressBatchSize)
+		require.Equal(t, 1, cfg.EgressBatchSize)
+		require.Equal(t, 64, cfg.EgressQueueSize)
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("new keys", func(t *testing.T) {
+		var cfg config.RouterConfig
+		require.NoError(t, toml.Unmarshal([]byte(`
+ingress_batch_size = 63
+egress_batch_size = 17
+egress_queue_size = 65
+`), &cfg))
+		cfg.InitDefaults()
+		require.Equal(t, 63, cfg.IngressBatchSize)
+		require.Equal(t, 17, cfg.EgressBatchSize)
+		require.Equal(t, 65, cfg.EgressQueueSize)
+	})
+}
+
+func TestRouterBatchSizesMustBePositive(t *testing.T) {
+	for _, name := range []string{"ingress_batch_size", "egress_batch_size", "egress_queue_size"} {
+		t.Run(name, func(t *testing.T) {
+			var cfg config.RouterConfig
+			require.NoError(t, toml.Unmarshal([]byte(name+" = -1\n"), &cfg))
+			cfg.InitDefaults()
+			require.Error(t, cfg.Validate())
+		})
+	}
 }
 
 func InitTestConfig(cfg *config.Config) {

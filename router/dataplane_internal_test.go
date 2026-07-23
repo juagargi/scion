@@ -18,18 +18,21 @@ package router
 import (
 	"bytes"
 	"context"
+	"errors"
 	mrand "math/rand/v2"
 	"net"
 	"net/netip"
 	"reflect"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
 
 	"github.com/golang/mock/gomock"
 	"github.com/gopacket/gopacket"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -48,13 +51,24 @@ import (
 
 var testKey = []byte("testkey_xxxxxxxx")
 
+type retryableTestError struct {
+	temporary bool
+	timeout   bool
+}
+
+func (e retryableTestError) Error() string   { return "retryable write error" }
+func (e retryableTestError) Temporary() bool { return e.temporary }
+func (e retryableTestError) Timeout() bool   { return e.timeout }
+
 // TestReceiver sets up a mocked batchConn, starts the receiver that reads from
 // this batchConn and forwards it to the processing routines channels. We verify
 // by directly reading from the processing routine channels that we received
 // the same number of packets as the receiver received.
 func TestReceiver(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	dp := newDataPlane(RunConfig{NumProcessors: 1, BatchSize: 64}, false)
+	dp := newDataPlane(RunConfig{
+		NumProcessors: 1, IngressBatchSize: 64, EgressBatchSize: 64, EgressQueueSize: 64,
+	}, false)
 	counter := 0
 	mInternal := mock_router.NewMockBatchConn(ctrl)
 	done := make(chan bool)
@@ -129,8 +143,211 @@ func TestReceiver(t *testing.T) {
 	dp.setStopping()
 
 	// make sure that the packet pool has the expected size after the test
-	assert.Equal(t, initialPoolSize-dp.RunConfig.BatchSize-20, len(dp.packetPool.pool))
+	assert.Equal(t, initialPoolSize-dp.RunConfig.IngressBatchSize-20, len(dp.packetPool.pool))
 	dp.underlays["udpip"].Stop()
+}
+
+func TestIndependentBatchAndQueueSizes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	dp := newDataPlane(RunConfig{
+		NumProcessors:         1,
+		NumSlowPathProcessors: 1,
+		IngressBatchSize:      64,
+		EgressBatchSize:       7,
+		EgressQueueSize:       64,
+	}, false)
+	mConn := mock_router.NewMockBatchConn(ctrl)
+	closed := make(chan struct{})
+	readObserved := make(chan int, 1)
+	writeObserved := make(chan int, 1)
+	var closeOnce sync.Once
+	mConn.EXPECT().Close().DoAndReturn(func() error {
+		closeOnce.Do(func() { close(closed) })
+		return nil
+	}).AnyTimes()
+	mConn.EXPECT().ReadBatch(gomock.Any()).DoAndReturn(
+		func(ms underlayconn.Messages) (int, error) {
+			select {
+			case readObserved <- len(ms):
+			default:
+			}
+			<-closed
+			return 0, errors.New("closed")
+		}).AnyTimes()
+	mConn.EXPECT().WriteBatch(gomock.Any(), 0).DoAndReturn(
+		func(ms underlayconn.Messages, _ int) (int, error) {
+			select {
+			case writeObserved <- len(ms):
+			default:
+			}
+			return len(ms), nil
+		}).AnyTimes()
+	dp.underlays["udpip"].SetConnOpener(MockConnOpener{Ctrl: ctrl, Conn: mConn})
+	require.NoError(t, dp.AddInternalInterface(addr.Host{}, "udpip", "127.0.0.1:0"))
+	dp.initPacketPool(64)
+	procQs, _ := dp.initQueues(64)
+
+	link := dp.interfaces[0]
+	for range 64 {
+		require.True(t, link.Send(dp.packetPool.Get()))
+	}
+	overflow := dp.packetPool.Get()
+	require.False(t, link.Send(overflow))
+	dp.packetPool.Put(overflow)
+
+	dp.setRunning()
+	dp.underlays["udpip"].Start(context.Background(), dp.packetPool, procQs)
+	require.Equal(t, 64, <-readObserved)
+	require.Equal(t, 7, <-writeObserved)
+
+	dp.setStopping()
+	dp.underlays["udpip"].Stop()
+}
+
+func TestWriteBatchSemantics(t *testing.T) {
+	testCases := map[string]struct {
+		results []struct {
+			written int
+			err     error
+		}
+		wantCalls    [][]byte
+		invalidDrops float64
+		packetCount  byte
+	}{
+		"complete": {
+			results: []struct {
+				written int
+				err     error
+			}{{3, nil}},
+			wantCalls: [][]byte{{0, 1, 2}},
+		},
+		"partial then success": {
+			results: []struct {
+				written int
+				err     error
+			}{{1, nil}, {2, nil}},
+			wantCalls: [][]byte{{0, 1, 2}, {1, 2}},
+		},
+		"temporary then success": {
+			results: []struct {
+				written int
+				err     error
+			}{{0, syscall.EAGAIN}, {3, nil}},
+			wantCalls: [][]byte{{0, 1, 2}, {0, 1, 2}},
+		},
+		"temporary interface is non-retryable": {
+			results: []struct {
+				written int
+				err     error
+			}{{0, retryableTestError{temporary: true}}, {2, nil}},
+			wantCalls:    [][]byte{{0, 1, 2}, {1, 2}},
+			invalidDrops: 1,
+		},
+		"timeout interface then success": {
+			results: []struct {
+				written int
+				err     error
+			}{{0, retryableTestError{timeout: true}}, {2, nil}},
+			wantCalls:    [][]byte{{0, 1, 2}, {1, 2}},
+			invalidDrops: 1,
+		},
+		"partial temporary then success": {
+			results: []struct {
+				written int
+				err     error
+			}{{1, syscall.ENOBUFS}, {2, nil}},
+			wantCalls: [][]byte{{0, 1, 2}, {1, 2}},
+		},
+		"zero nil then success": {
+			results: []struct {
+				written int
+				err     error
+			}{{0, nil}, {3, nil}},
+			wantCalls: [][]byte{{0, 1, 2}, {0, 1, 2}},
+		},
+		"permanent discards only offending datagram": {
+			results: []struct {
+				written int
+				err     error
+			}{{1, errors.New("invalid")}, {1, nil}},
+			wantCalls:    [][]byte{{0, 1, 2}, {2}},
+			invalidDrops: 1,
+		},
+		"wraps ring buffer": {
+			results: []struct {
+				written int
+				err     error
+			}{{3, nil}, {3, nil}},
+			wantCalls:   [][]byte{{0, 1, 2, 3}, {3, 4, 5}},
+			packetCount: 6,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			dp := newDataPlane(RunConfig{
+				NumProcessors: 1, NumSlowPathProcessors: 1,
+				IngressBatchSize: 4, EgressBatchSize: 4, EgressQueueSize: 8,
+			}, false)
+			mConn := mock_router.NewMockBatchConn(ctrl)
+			closed := make(chan struct{})
+			finished := make(chan struct{})
+			var closeOnce sync.Once
+			var calls [][]byte
+			callIndex := 0
+			mConn.EXPECT().Close().DoAndReturn(func() error {
+				closeOnce.Do(func() { close(closed) })
+				return nil
+			}).AnyTimes()
+			mConn.EXPECT().ReadBatch(gomock.Any()).DoAndReturn(
+				func(underlayconn.Messages) (int, error) {
+					<-closed
+					return 0, errors.New("closed")
+				}).AnyTimes()
+			mConn.EXPECT().WriteBatch(gomock.Any(), 0).DoAndReturn(
+				func(ms underlayconn.Messages, _ int) (int, error) {
+					ids := make([]byte, len(ms))
+					for i := range ms {
+						ids[i] = ms[i].Buffers[0][0]
+					}
+					calls = append(calls, ids)
+					result := tc.results[callIndex]
+					callIndex++
+					if callIndex == len(tc.results) {
+						close(finished)
+					}
+					return result.written, result.err
+				}).Times(len(tc.results))
+			dp.underlays["udpip"].SetConnOpener(MockConnOpener{Ctrl: ctrl, Conn: mConn})
+			require.NoError(t, dp.AddInternalInterface(addr.Host{}, "udpip", "127.0.0.1:0"))
+			dp.initPacketPool(8)
+			procQs, _ := dp.initQueues(4)
+			initialPoolSize := len(dp.packetPool.pool)
+			metric := dp.interfaces[0].Metrics()[ClassOfSize(1)].DroppedPacketsInvalid
+			initialDrops := promtest.ToFloat64(metric)
+			packetCount := tc.packetCount
+			if packetCount == 0 {
+				packetCount = 3
+			}
+			for id := range packetCount {
+				pkt := dp.packetPool.Get()
+				pkt.RawPacket = pkt.RawPacket[:1]
+				pkt.RawPacket[0] = id
+				dp.interfaces[0].SendBlocking(pkt)
+			}
+
+			dp.setRunning()
+			dp.underlays["udpip"].Start(context.Background(), dp.packetPool, procQs)
+			<-finished
+			dp.setStopping()
+			dp.underlays["udpip"].Stop()
+
+			require.Equal(t, tc.wantCalls, calls)
+			require.Equal(t, initialDrops+tc.invalidDrops, promtest.ToFloat64(metric))
+			require.Equal(t, initialPoolSize, len(dp.packetPool.pool))
+		})
+	}
 }
 
 // TestForwarder sets up a mocked batchConn, starts the forwarder that will write to
@@ -143,7 +360,10 @@ func TestForwarder(t *testing.T) {
 
 	prepareDP := func(ctrl *gomock.Controller) *dataPlane {
 		ret := newDataPlane(
-			RunConfig{NumProcessors: 20, BatchSize: 64, NumSlowPathProcessors: 1}, false)
+			RunConfig{
+				NumProcessors: 20, NumSlowPathProcessors: 1,
+				IngressBatchSize: 64, EgressBatchSize: 64, EgressQueueSize: 64,
+			}, false)
 		mConn := mock_router.NewMockBatchConn(ctrl)
 		var totalCount, expectedPktId atomic.Int32
 		closeChan := make(chan struct{})
@@ -163,12 +383,14 @@ func TestForwarder(t *testing.T) {
 				if totalCount.Load() == 255 {
 					return 0, nil
 				}
+				var writeErr error
 				for i, m := range ms {
 					totalCount.Add(1)
 					// 1/5 of the packets (randomly chosen) are errors
 					if mrand.IntN(5) == 0 {
 						expectedPktId.Add(1)
 						ms = ms[:i]
+						writeErr = errors.New("invalid datagram")
 						break
 					} else {
 						pktId := int32(m.Buffers[0][0])
@@ -193,11 +415,7 @@ func TestForwarder(t *testing.T) {
 				if totalCount.Load() == 255 {
 					done <- struct{}{}
 				}
-				if len(ms) == 0 {
-					return 0, nil
-				}
-
-				return len(ms), nil
+				return len(ms), writeErr
 			}).AnyTimes()
 
 		ret.underlays["udpip"].SetConnOpener(MockConnOpener{Ctrl: ctrl, Conn: mConn})

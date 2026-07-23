@@ -167,7 +167,9 @@ func mustMakeDP(
 	key []byte,
 	hbirdKey []byte) (dp dataPlane) {
 
-	dp = makeDataPlane(RunConfig{NumProcessors: 1, BatchSize: 64}, false)
+	dp = makeDataPlane(RunConfig{
+		NumProcessors: 1, IngressBatchSize: 64, EgressBatchSize: 64, EgressQueueSize: 64,
+	}, false)
 
 	if err := dp.SetIA(local); err != nil {
 		panic(err)

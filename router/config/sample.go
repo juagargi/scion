@@ -31,8 +31,15 @@ num_processors = 8
 # (default 1)
 num_slow_processors = 1
 
-# The batch size used by the receiver and forwarder to
-# read or write from / to the network socket.
+# The maximum number of packets read from a network socket at once.
 # (default 256)
-batch_size = 256
+ingress_batch_size = 256
+
+# The maximum number of packets written to a network socket at once.
+# (default 256)
+egress_batch_size = 256
+
+# The capacity of each egress priority queue.
+# (default 256)
+egress_queue_size = 256
 `

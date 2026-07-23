@@ -75,6 +75,25 @@ func ReadBlocking[T any](queue Queue[T]) (T, bool) {
 	}
 }
 
+// VisitEach visits all the queues in priority order, calling f for each value received.
+func VisitEach[T any](queue Queue[T], f func(T)) {
+	for _, q := range queue {
+		for {
+			select {
+			case p, ok := <-q:
+				if !ok {
+					// Channel is closed.
+					goto nextQueue
+				}
+				f(p)
+			default:
+				goto nextQueue
+			}
+		}
+	nextQueue:
+	}
+}
+
 // The following functions are left here only for reference and to test the performance of the
 // methods based on reflect logic. They are not exported and not used outside the benchmarks.
 

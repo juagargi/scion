@@ -324,7 +324,9 @@ func TestDataPlaneRun(t *testing.T) {
 				ret := router.NewDPRaw(
 					router.RunConfig{
 						NumProcessors:         8,
-						BatchSize:             256,
+						IngressBatchSize:      256,
+						EgressBatchSize:       256,
+						EgressQueueSize:       256,
 						NumSlowPathProcessors: 1,
 					},
 					false,
@@ -432,7 +434,9 @@ func TestDataPlaneRun(t *testing.T) {
 				ret := router.NewDPRaw(
 					router.RunConfig{
 						NumProcessors:         8,
-						BatchSize:             256,
+						IngressBatchSize:      256,
+						EgressBatchSize:       256,
+						EgressQueueSize:       256,
 						NumSlowPathProcessors: 1,
 					},
 					false,
@@ -546,7 +550,9 @@ func TestDataPlaneRun(t *testing.T) {
 				ret := router.NewDPRaw(
 					router.RunConfig{
 						NumProcessors:         8,
-						BatchSize:             256,
+						IngressBatchSize:      256,
+						EgressBatchSize:       256,
+						EgressQueueSize:       256,
 						NumSlowPathProcessors: 1,
 					},
 					false,
@@ -624,7 +630,9 @@ func TestDataPlaneRun(t *testing.T) {
 				ret := router.NewDPRaw(
 					router.RunConfig{
 						NumProcessors:         8,
-						BatchSize:             256,
+						IngressBatchSize:      256,
+						EgressBatchSize:       256,
+						EgressQueueSize:       256,
 						NumSlowPathProcessors: 1,
 					},
 					false,
@@ -697,7 +705,9 @@ func TestDataPlaneRun(t *testing.T) {
 				ret := router.NewDPRaw(
 					router.RunConfig{
 						NumProcessors:         8,
-						BatchSize:             256,
+						IngressBatchSize:      256,
+						EgressBatchSize:       256,
+						EgressQueueSize:       256,
 						NumSlowPathProcessors: 1,
 					},
 					false,

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/netip"
+	"syscall"
 	"testing"
 	"time"
 
@@ -40,6 +41,62 @@ import (
 var (
 	testKey = []byte("testkey_xxxxxxxx")
 )
+
+type classifiedWriteError struct {
+	temporary bool
+	timeout   bool
+}
+
+func (e classifiedWriteError) Error() string   { return "write error" }
+func (e classifiedWriteError) Temporary() bool { return e.temporary }
+func (e classifiedWriteError) Timeout() bool   { return e.timeout }
+
+func TestRetryableWriteError(t *testing.T) {
+	testCases := map[string]struct {
+		err               error
+		expectedRetryable bool
+		expectedDelay     time.Duration
+	}{
+		"no error": {
+			expectedRetryable: true,
+		},
+		"interrupted": {
+			err:               syscall.EINTR,
+			expectedRetryable: true,
+		},
+		"would block": {
+			err:               fmt.Errorf("wrapped: %w", syscall.EAGAIN),
+			expectedRetryable: true,
+			expectedDelay:     temporaryWriteErrorDelay,
+		},
+		"no buffer space": {
+			err:               syscall.ENOBUFS,
+			expectedRetryable: true,
+			expectedDelay:     temporaryWriteErrorDelay,
+		},
+		"no memory": {
+			err:               syscall.ENOMEM,
+			expectedRetryable: true,
+			expectedDelay:     temporaryWriteErrorDelay,
+		},
+		"temporary": {
+			err: classifiedWriteError{temporary: true},
+		},
+		"timeout": {
+			err: classifiedWriteError{temporary: true, timeout: true},
+		},
+		"permanent": {
+			err: fmt.Errorf("permanent write error"),
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			retryable, delay := retryableWriteError(tc.err)
+			assert.Equal(t, tc.expectedRetryable, retryable)
+			assert.Equal(t, tc.expectedDelay, delay)
+		})
+	}
+}
 
 func computeMAC(t *testing.T, key []byte, info path.InfoField, hf path.HopField) [path.MacLen]byte {
 	mac, err := scrypto.InitMac(key)
