@@ -13,7 +13,7 @@ including the server observations returned in probe replies.
 
 The experiment uses the generated Docker topology in `gen/`; it never generates a topology itself. `tools/hummbwtester/setup-topology.py` reads the generated Docker Compose file and topology files, then:
 
-- configures every generated border router with the experiment's send-buffer and batch settings;
+- configures every generated border router with the experiment's ingress and egress sizing;
 - starts the existing Docker topology;
 - discovers the border-router interfaces joining different ASes;
 - applies a TBF qdisc inside every BR network namespace using the configured `tc` values;
@@ -39,16 +39,17 @@ Edit [hummbwtester.json](hummbwtester.json). It has five required top-level sect
 - `server`: the server's `isd_as`, tester `host`, and UDP `port`.
 - `hummingbird_clients`: zero or more Hummingbird client endpoint objects.
 - `best_effort_clients`: zero or more best-effort client endpoint objects.
-- `router`: experiment-only `send_buffer_size` and `batch_size` settings written to every
-  generated BR TOML before startup. `batch_size` must currently be `1` so a temporary socket
-  `EAGAIN` cannot appear as a partial batch.
+- `router`: experiment-only socket and queue settings written to every generated BR TOML before
+  startup: `send_buffer_size`, `ingress_batch_size`, `egress_batch_size`, and
+  `egress_queue_size`.
 - `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
 
 Linux doubles the requested `SO_SNDBUF` internally. The sample requests a 16 KiB send buffer and
 uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should stop the BR
 writer before TBF tail-drop. If either value changes, retain that relationship and confirm after
-the experiment that the TBF drop count is zero. A small send buffer and `batch_size = 1` also
-bound the already-dequeued best-effort traffic that can delay newly arrived priority packets.
+the experiment that the TBF drop count is zero. Its ingress batch of 64 avoids the receive-side
+cost of one-packet batches, while its one-packet egress batch and queues of 64 bound the
+best-effort traffic already dequeued ahead of newly arrived priority packets.
 
 Every client requires these fields:
 
@@ -106,6 +107,10 @@ dropped packets, if no TBF recorded an overlimit event, or if the BRs recorded n
 configured link rate without silently discarding packets after the router counted them, while
 excess best-effort traffic was discarded in the router queues.
 
+The runner also waits for all external BFD sessions to be up before traffic starts, then fails if
+any BFD session changes state, finishes down, or stops sending or receiving BFD packets. It prints
+the observed BFD state-change and packet-counter deltas with the TBF and busy-forwarder results.
+
 ## First run
 
 From the repository root, build the Docker images and generate Docker tiny topology once:
@@ -141,10 +146,19 @@ For a configuration change, run setup again before running the experiment:
 ./tools/hummbwtester/run-humm-bwtester.py
 ```
 
-For a source change, first rebuild the standard development artifacts, then run setup:
+For a tester source change, first rebuild the standard development artifacts, then run setup:
 
 ```bash
 make build-dev
+./tools/hummbwtester/setup-topology.py
+./tools/hummbwtester/run-humm-bwtester.py
+```
+
+For a router source change, rebuild and reload the Docker images as well before setup:
+
+```bash
+make build-dev
+make docker-images
 ./tools/hummbwtester/setup-topology.py
 ./tools/hummbwtester/run-humm-bwtester.py
 ```

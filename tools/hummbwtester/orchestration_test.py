@@ -6,12 +6,15 @@ from unittest import mock
 
 from tools.hummbwtester import orchestration
 from tools.hummbwtester.orchestration import (
+    BFDHealth,
     ConfigError,
+    bfd_health_from_metrics,
     client_args,
     inter_as_router_peers,
     load_config,
     patch_compose,
     patch_toml_section,
+    verify_bfd_health,
 )
 
 
@@ -42,7 +45,12 @@ class ConfigTest(unittest.TestCase):
                 "client_id": "alpha", "isd_as": "1-ff00:0:110", "host": "172.20.0.22", "port": 0,
                 "bandwidth": "1Mbps", "duration": "30s",
             }],
-            "router": {"send_buffer_size": 16384, "batch_size": 1},
+            "router": {
+                "send_buffer_size": 16384,
+                "ingress_batch_size": 64,
+                "egress_batch_size": 1,
+                "egress_queue_size": 64,
+            },
             "tc": {"rate": "10mbit", "burst": "50kb", "limit": "256kb"},
         }
 
@@ -82,11 +90,25 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
 
-    def test_requires_positive_router_tuning_and_batch_size_one(self):
-        for key, value in (("send_buffer_size", 0), ("batch_size", 0), ("batch_size", 2)):
-            with self.subTest(key=key, value=value):
+    def test_requires_positive_router_tuning(self):
+        for key in self.base_config()["router"]:
+            with self.subTest(key=key):
                 config = self.base_config()
-                config["router"][key] = value
+                config["router"][key] = 0
+                with self.assertRaises(ConfigError):
+                    load_config(self.write_config(config))
+
+    def test_rejects_legacy_router_batch_size(self):
+        config = self.base_config()
+        config["router"]["batch_size"] = 1
+        with self.assertRaises(ConfigError):
+            load_config(self.write_config(config))
+
+    def test_requires_all_router_tuning_values(self):
+        for key in self.base_config()["router"]:
+            with self.subTest(key=key):
+                config = self.base_config()
+                del config["router"][key]
                 with self.assertRaises(ConfigError):
                     load_config(self.write_config(config))
 
@@ -129,7 +151,7 @@ class SetupPatchTest(unittest.TestCase):
         cases = {
             "without section": "[general]\nid = \"br1\"\n",
             "with section": (
-                "[general]\nid = \"br1\"\n\n[router]\nsend_buffer_size = 999\n\n"
+                "[general]\nid = \"br1\"\n\n[router]\nsend_buffer_size = 999\nbatch_size = 1\n\n"
                 "[metrics]\nprometheus = \"127.0.0.1:30442\"\n"
             ),
         }
@@ -137,14 +159,22 @@ class SetupPatchTest(unittest.TestCase):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "br.toml"
                 path.write_text(original)
-                values = {"send_buffer_size": 16384, "batch_size": 1}
-                patch_toml_section(path, "router", values)
+                values = {
+                    "send_buffer_size": 16384,
+                    "ingress_batch_size": 64,
+                    "egress_batch_size": 1,
+                    "egress_queue_size": 64,
+                }
+                patch_toml_section(path, "router", values, remove={"batch_size"})
                 once = path.read_text()
-                patch_toml_section(path, "router", values)
+                patch_toml_section(path, "router", values, remove={"batch_size"})
                 self.assertEqual(once, path.read_text())
                 self.assertEqual(once.count("[router]"), 1)
                 self.assertEqual(once.count("send_buffer_size = 16384"), 1)
-                self.assertEqual(once.count("batch_size = 1"), 1)
+                self.assertEqual(once.count("ingress_batch_size = 64"), 1)
+                self.assertEqual(once.count("egress_batch_size = 1"), 1)
+                self.assertEqual(once.count("egress_queue_size = 64"), 1)
+                self.assertNotRegex(once, r"(?m)^batch_size[ \t]*=")
                 if "[metrics]" in original:
                     self.assertIn("[metrics]", once)
 
@@ -198,6 +228,38 @@ class SetupPatchTest(unittest.TestCase):
             self.assertEqual(helper["command"], [
                 "setup", "10mbit", "50kb", "256kb", *peer_addresses,
             ])
+
+
+class BFDHealthTest(unittest.TestCase):
+    def test_aggregates_external_bfd_metrics(self):
+        snapshot = bfd_health_from_metrics([
+            '\n'.join([
+                'router_bfd_state_changes_total{interface="1"} 2',
+                'router_bfd_sent_packets_total{interface="1"} 10',
+                'router_bfd_received_packets_total{interface="1"} 9',
+                'router_interface_up{interface="1"} 1',
+            ]),
+            '\n'.join([
+                'router_bfd_state_changes_total{interface="2"} 3',
+                'router_bfd_sent_packets_total{interface="2"} 20',
+                'router_bfd_received_packets_total{interface="2"} 19',
+                'router_interface_up{interface="2"} 1',
+            ]),
+        ])
+        self.assertEqual(snapshot.state_changes, 5)
+        self.assertEqual(snapshot.packets_sent, 30)
+        self.assertEqual(snapshot.packets_received, 28)
+        self.assertEqual(len(snapshot.interface_up), 2)
+        self.assertTrue(all(value == 1 for value in snapshot.interface_up.values()))
+
+    def test_rejects_bfd_state_change_or_down_interface(self):
+        before = BFDHealth(4, 100, 100, {'router[0]{interface="1"}': 1})
+        after = BFDHealth(5, 110, 110, {'router[0]{interface="1"}': 1})
+        with mock.patch("builtins.print"), self.assertRaises(RuntimeError):
+            verify_bfd_health(before, after)
+        after = BFDHealth(4, 110, 110, {'router[0]{interface="1"}': 0})
+        with mock.patch("builtins.print"), self.assertRaises(RuntimeError):
+            verify_bfd_health(before, after)
 
 
 if __name__ == "__main__":

@@ -73,6 +73,16 @@ class Client:
     renewal_fraction: float | int | None
 
 
+@dataclass(frozen=True)
+class BFDHealth:
+    """Snapshot of the external BFD metrics exposed by all border routers."""
+
+    state_changes: float
+    packets_sent: float
+    packets_received: float
+    interface_up: dict[str, float]
+
+
 def join_host_port(host: str, port: int) -> str:
     """Format an IP address and port, adding brackets for IPv6 addresses."""
     return f"[{host}]:{port}" if ipaddress.ip_address(host).version == 6 else f"{host}:{port}"
@@ -230,13 +240,17 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     router = root["router"]
     if not isinstance(router, dict):
         raise ConfigError("router must be an object")
-    require_fields(router, {"send_buffer_size", "batch_size"}, "router")
-    for key in ("send_buffer_size", "batch_size"):
+    router_keys = {
+        "send_buffer_size",
+        "ingress_batch_size",
+        "egress_batch_size",
+        "egress_queue_size",
+    }
+    require_fields(router, router_keys, "router")
+    for key in router_keys:
         value = router[key]
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
             raise ConfigError(f"router.{key} must be a positive integer")
-    if router["batch_size"] != 1:
-        raise ConfigError("router.batch_size must be 1 until partial WriteBatch retries are supported")
 
     tc = root["tc"]
     if not isinstance(tc, dict):
@@ -248,7 +262,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     return (
         server,
         clients,
-        {key: router[key] for key in ("send_buffer_size", "batch_size")},
+        {key: router[key] for key in sorted(router_keys)},
         {key: tc[key] for key in ("rate", "burst", "limit")},
     )
 
@@ -331,8 +345,13 @@ def br_config_paths() -> dict[str, Path]:
     return result
 
 
-def patch_toml_section(path: Path, section: str, values: dict[str, int]) -> None:
-    """Idempotently replace or insert integer keys in one TOML section."""
+def patch_toml_section(
+    path: Path,
+    section: str,
+    values: dict[str, int],
+    remove: set[str] | None = None,
+) -> None:
+    """Idempotently replace, insert, and remove integer keys in one TOML section."""
     text = path.read_text()
     section_match = re.search(rf"(?m)^\[{re.escape(section)}\][ \t]*(?:#.*)?$", text)
     rendered = [f"{key} = {value}" for key, value in values.items()]
@@ -344,6 +363,9 @@ def patch_toml_section(path: Path, section: str, values: dict[str, int]) -> None
         next_section = re.search(r"(?m)^\[[^\n]+\][ \t]*(?:#.*)?$", text[body_start:])
         body_end = body_start + next_section.start() if next_section else len(text)
         body = text[body_start:body_end]
+        for key in remove or set():
+            pattern = re.compile(rf"(?m)^[ \t]*{re.escape(key)}[ \t]*=.*\n?")
+            body = pattern.sub("", body)
         missing: list[str] = []
         for key, value in values.items():
             pattern = re.compile(rf"(?m)^[ \t]*{re.escape(key)}[ \t]*=.*$")
@@ -363,7 +385,9 @@ def patch_router_configs(router: dict[str, int]) -> None:
     if not configs:
         raise ConfigError("no generated border-router TOML files were found")
     for path in configs.values():
-        patch_toml_section(path, "router", router)
+        # Earlier experiment runs added the deprecated common batch_size. Remove it so explicit
+        # ingress and egress sizing is the only active experiment configuration.
+        patch_toml_section(path, "router", router, remove={"batch_size"})
 
 
 def compose_network_address(entry: Any, family: str) -> str | None:
@@ -587,6 +611,90 @@ def router_metric_urls() -> list[str]:
     return sorted(result)
 
 
+def metric_samples(body: str, metric: str) -> dict[str, float]:
+    """Return all labeled samples for metric from one Prometheus text exposition body."""
+    samples: dict[str, float] = {}
+    prefix = f"{metric}{{"
+    for line in body.splitlines():
+        if not line.startswith(prefix):
+            continue
+        labels_end = line.find("}")
+        if labels_end == -1:
+            raise RuntimeError(f"malformed {metric} sample: {line}")
+        try:
+            value = float(line[labels_end + 1:].strip().split()[0])
+        except (IndexError, ValueError) as err:
+            raise RuntimeError(f"malformed {metric} sample: {line}") from err
+        samples[line[len(metric):labels_end + 1]] = value
+    return samples
+
+
+def bfd_health_from_metrics(metric_bodies: list[str]) -> BFDHealth:
+    """Aggregate external BFD counters and interface states from router metric bodies."""
+    state_changes = 0.0
+    packets_sent = 0.0
+    packets_received = 0.0
+    interface_up: dict[str, float] = {}
+    for index, body in enumerate(metric_bodies):
+        state_changes += sum(metric_samples(body, "router_bfd_state_changes_total").values())
+        packets_sent += sum(metric_samples(body, "router_bfd_sent_packets_total").values())
+        packets_received += sum(metric_samples(body, "router_bfd_received_packets_total").values())
+        for labels, value in metric_samples(body, "router_interface_up").items():
+            interface_up[f"router[{index}]{labels}"] = value
+    return BFDHealth(state_changes, packets_sent, packets_received, interface_up)
+
+
+def bfd_health() -> BFDHealth:
+    """Read a consistent-enough aggregate external BFD snapshot from all border routers."""
+    bodies: list[str] = []
+    for url in router_metric_urls():
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                bodies.append(response.read().decode())
+        except OSError as err:
+            raise RuntimeError(f"reading border-router metrics from {url}: {err}") from err
+    return bfd_health_from_metrics(bodies)
+
+
+def wait_for_bfd_up(timeout: float = 60) -> BFDHealth:
+    """Wait until every external BFD series is present and reports an operational interface."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        snapshot = bfd_health()
+        if snapshot.interface_up and all(value == 1 for value in snapshot.interface_up.values()):
+            return snapshot
+        time.sleep(1)
+    down = [labels for labels, value in bfd_health().interface_up.items() if value != 1]
+    raise RuntimeError("timed out waiting for BFD interfaces to become up: " + ", ".join(down))
+
+
+def verify_bfd_health(before: BFDHealth, after: BFDHealth) -> None:
+    """Require BFD to remain healthy while the experiment applies egress backpressure."""
+    if before.interface_up != after.interface_up:
+        before_labels = set(before.interface_up)
+        after_labels = set(after.interface_up)
+        changed = sorted(before_labels ^ after_labels)
+        down = sorted(labels for labels, value in after.interface_up.items() if value != 1)
+        raise RuntimeError(
+            "BFD interface set or health changed during experiment: "
+            + ", ".join(changed + down),
+        )
+    if after.state_changes < before.state_changes:
+        raise RuntimeError("BFD state-change counter decreased during experiment")
+    state_changes = after.state_changes - before.state_changes
+    packets_sent = after.packets_sent - before.packets_sent
+    packets_received = after.packets_received - before.packets_received
+    print(
+        "router BFD during experiment: "
+        f"state_changes={state_changes:g} packets_sent={packets_sent:g} "
+        f"packets_received={packets_received:g} interfaces={len(after.interface_up)}",
+    )
+    if state_changes != 0:
+        raise RuntimeError(f"BFD changed state {state_changes:g} times during experiment")
+    if packets_sent <= 0 or packets_received <= 0:
+        raise RuntimeError("BFD packet counters did not advance during experiment")
+
+
 def busy_forwarder_drops() -> float:
     """Sum the current busy-forwarder drop counters from all generated border routers."""
     total = 0.0
@@ -645,6 +753,9 @@ def run_experiment(config_path: Path) -> int:
                    "-sciond", endpoint_sciond(server, daemons)]
     processes: list[tuple[Client, str, subprocess.Popen[str]]] = []
     busy_before = busy_forwarder_drops()
+    # The topology has already converged in setup. Snapshot only after every external BFD session
+    # is up, so the load assertion excludes startup transitions and catches every later flap.
+    bfd_before = wait_for_bfd_up()
     server_process = launch(server_service, server_pidfile, server_args, log_dir / "server.log")
     try:
         # Give the server a predictable head start before clients begin selecting paths and dialing.
@@ -665,6 +776,7 @@ def run_experiment(config_path: Path) -> int:
         failure = failure or any(process.wait() != 0 for _, _, process in processes)
         if not failure:
             verify_tc_qdiscs(compose)
+            verify_bfd_health(bfd_before, bfd_health())
             busy_delta = busy_forwarder_drops() - busy_before
             print(f"router busy-forwarder drops during experiment: {busy_delta:g}")
             if busy_delta <= 0:
