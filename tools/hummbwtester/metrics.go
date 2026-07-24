@@ -57,7 +57,7 @@ type clientMetrics struct {
 }
 
 func newClientMetrics() *clientMetrics {
-	return &clientMetrics{
+	metrics := &clientMetrics{
 		payloadPacketsSent: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "hummbwtester_client_payload_packets_sent_total",
 			Help: "Total number of payload packets sent by the client.",
@@ -141,4 +141,7 @@ func newClientMetrics() *clientMetrics {
 			Help: "Seconds on the client clock since the latest accepted remote statistics snapshot; -1 before the first snapshot.",
 		}),
 	}
+	metrics.reservationRenewals.WithLabelValues("ok").Add(0)
+	metrics.reservationRenewals.WithLabelValues("error").Add(0)
+	return metrics
 }

@@ -30,24 +30,15 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "mode": "palette-classic"
           },
           "unit": "bps"
         },
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "client send rate (60s avg.)"
+              "id": "byRegexp",
+              "options": "^hummingbird-.* receive rate$"
             },
             "properties": [
               {
@@ -61,14 +52,44 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "remote receive rate (60s avg.)"
+              "id": "byRegexp",
+              "options": "^best-effort-.* receive rate$"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "green",
+                  "fixedColor": "white",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^hummingbird-.* send-receive gap$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^best-effort-.* send-receive gap$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
                   "mode": "fixed"
                 }
               }
@@ -98,15 +119,15 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "avg_over_time(hummbwtester_client_send_rate_bps[60s])",
-          "legendFormat": "{{client_id}} send rate (60s avg.)",
+          "expr": "avg_over_time(hummbwtester_client_remote_receive_rate_bps[60s])",
+          "legendFormat": "{{client_id}} receive rate",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "avg_over_time(hummbwtester_client_remote_receive_rate_bps[60s])",
-          "legendFormat": "{{client_id}} remote receive rate (60s avg.)",
+          "expr": "clamp_min(avg_over_time(hummbwtester_client_send_rate_bps[60s]) - avg_over_time(hummbwtester_client_remote_receive_rate_bps[60s]), 0)",
+          "legendFormat": "{{client_id}} send-receive gap",
           "range": true,
           "refId": "B"
         }
@@ -137,7 +158,38 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^hummingbird-.* p95 RTT$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^best-effort-.* p95 RTT$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "white",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -164,27 +216,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum by (le, client_id) (rate(hummbwtester_client_rtt_seconds_bucket[1m])))",
-          "legendFormat": "{{client_id}} p50 RTT",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum by (le, client_id) (rate(hummbwtester_client_rtt_seconds_bucket[1m])))",
           "legendFormat": "{{client_id}} p95 RTT",
           "range": true,
-          "refId": "B"
-        },
-        {
-          "editorMode": "code",
-          "expr": "hummbwtester_client_jitter_seconds",
-          "legendFormat": "{{client_id}} jitter",
-          "range": true,
-          "refId": "C"
+          "refId": "A"
         }
       ],
-      "title": "Latency And Jitter",
+      "title": "Latency",
       "type": "timeseries"
     },
     {
@@ -210,14 +248,14 @@
             "spanNulls": false
           },
           "decimals": 2,
-          "unit": "ops"
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 6,
         "w": 6,
-        "x": 6,
+        "x": 0,
         "y": 8
       },
       "id": 4,
@@ -239,8 +277,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (client_id) (rate(hummbwtester_client_reservation_renewals_total{result=\"ok\"}[$__rate_interval]))",
-          "legendFormat": "{{client_id}} reservation success",
+          "expr": "sum by (client_id) (increase(hummbwtester_client_reservation_renewals_total{client_id=~\"hummingbird-.*\", result=\"ok\"}[1m]))",
+          "legendFormat": "{{client_id}} rsv/min",
           "range": true,
           "refId": "A"
         }
@@ -269,9 +307,40 @@
             "showPoints": "auto",
             "spanNulls": false
           },
-          "unit": "pps"
+          "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^hummingbird-.* received reply gap/min$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^best-effort-.* received reply gap/min$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -282,7 +351,10 @@
       "id": 5,
       "options": {
         "legend": {
-          "calcs": [],
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
@@ -295,24 +367,17 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(hummbwtester_client_pong_requests_sent_total[1m])",
-          "legendFormat": "{{client_id}} pong requests sent",
+          "expr": "clamp_min(increase(hummbwtester_client_pong_requests_sent_total{client_id=~\"hummingbird-.*\"}[1m]) - increase(hummbwtester_client_pong_replies_received_total{client_id=~\"hummingbird-.*\"}[1m]), 0)",
+          "legendFormat": "{{client_id}} received reply gap/min",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "rate(hummbwtester_client_pong_replies_received_total[1m])",
-          "legendFormat": "{{client_id}} pong replies received",
+          "expr": "clamp_min(increase(hummbwtester_client_pong_requests_sent_total{client_id=~\"best-effort-.*\"}[1m]) - increase(hummbwtester_client_pong_replies_received_total{client_id=~\"best-effort-.*\"}[1m]), 0)",
+          "legendFormat": "{{client_id}} received reply gap/min",
           "range": true,
           "refId": "B"
-        },
-        {
-          "editorMode": "code",
-          "expr": "rate(hummbwtester_client_remote_pong_replies_sent_total[1m])",
-          "legendFormat": "{{client_id}} remote pong replies sent",
-          "range": true,
-          "refId": "C"
         }
       ],
       "title": "Pong Activity",
@@ -338,19 +403,35 @@
             "pointSize": 4,
             "showPoints": "auto",
             "spanNulls": false
-          }
+          },
+          "unit": "s"
         },
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "lost pongs"
+              "id": "byRegexp",
+              "options": "^hummingbird-.* jitter$"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "red",
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^best-effort-.* jitter$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "white",
                   "mode": "fixed"
                 }
               }
@@ -359,10 +440,10 @@
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 14
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 8
       },
       "id": 6,
       "options": {
@@ -383,20 +464,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "increase(hummbwtester_client_pong_lost_total[5m])",
-          "legendFormat": "{{client_id}} lost pongs",
+          "expr": "hummbwtester_client_jitter_seconds",
+          "legendFormat": "{{client_id}} jitter",
           "range": true,
           "refId": "A"
-        },
-        {
-          "editorMode": "code",
-          "expr": "increase(hummbwtester_client_remote_payload_lost_total[5m])",
-          "legendFormat": "{{client_id}} remote payload lost",
-          "range": true,
-          "refId": "B"
         }
       ],
-      "title": "Loss",
+      "title": "Jitter",
       "type": "timeseries"
     },
     {
@@ -503,6 +577,82 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Aggregate BFD session-state-change counts per minute.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "suffix: change/min"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^BFD state changes.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(router_bfd_state_changes_total[1m]))",
+          "legendFormat": "BFD state changes",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "BFD",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "description": "Current border router egress queue depths.",
       "fieldConfig": {
         "defaults": {
@@ -513,7 +663,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 0,
             "lineInterpolation": "linear",
             "lineWidth": 2,
             "pointSize": 4,
@@ -560,7 +710,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 24
       },
       "id": 9,
       "options": {
@@ -612,7 +762,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "drawStyle": "line",
-            "fillOpacity": 20,
+            "fillOpacity": 0,
             "lineInterpolation": "linear",
             "lineWidth": 2,
             "pointSize": 4,
@@ -624,7 +774,53 @@
           },
           "unit": "pps"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "freshness"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "white",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "expired"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "bandwidth"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -666,12 +862,12 @@
         {
           "editorMode": "code",
           "expr": "sum(rate(router_humm_demoted_tokenbucket_total[$__rate_interval])) or on() vector(0)",
-          "legendFormat": "token bucket",
+          "legendFormat": "bandwidth",
           "range": true,
           "refId": "C"
         }
       ],
-      "title": "BR Demotions",
+      "title": "Demotions",
       "type": "timeseries"
     },
     {
@@ -749,6 +945,126 @@
         }
       ],
       "title": "Demotions Detail",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "BFD sent-packet, received-packet, and session-state-change counts per minute for every external border-router interface.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "suffix:/min"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* sent$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* received$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* state changes$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (isd_as, neighbor_isd_as, interface) (increase(router_bfd_sent_packets_total[1m]))",
+          "legendFormat": "{{isd_as}} if {{interface}} to {{neighbor_isd_as}} sent",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum by (isd_as, neighbor_isd_as, interface) (increase(router_bfd_received_packets_total[1m]))",
+          "legendFormat": "{{isd_as}} if {{interface}} to {{neighbor_isd_as}} received",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum by (isd_as, neighbor_isd_as, interface) (increase(router_bfd_state_changes_total[1m]))",
+          "legendFormat": "{{isd_as}} if {{interface}} to {{neighbor_isd_as}} state changes",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "BFD Per Interface",
       "type": "timeseries"
     }
   ],

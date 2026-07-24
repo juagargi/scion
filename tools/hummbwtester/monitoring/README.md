@@ -124,14 +124,15 @@ The Prometheus data source is provisioned automatically, and the dashboard
 
 That dashboard includes:
 
-- traffic rate panels for client send rate and server-reported remote receive rate
-- RTT and jitter panels
+- traffic receive rates and send-minus-receive gaps, split by Hummingbird and best-effort client
+- p95 RTT and jitter panels
 - client reservation success rate
 - packet rate insights with priority and best-effort packet rates
 - border router egress queue depths for priority and best-effort queues
 - total border router demotion rates by freshness, expiry, and token bucket cause
 - detailed demotion rates by cause, border router, and interface
-- pong activity and loss signals
+- aggregate BFD packet-loss and state-change counts per minute, plus current per-interface counters
+- pong request-to-reply gaps for remote-sent and client-received replies
 
 If you want to build your own panels, create a new dashboard in Grafana and query the same
 metrics that appear in `./tools/hummbwtester/metrics.go`.
