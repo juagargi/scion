@@ -31,28 +31,29 @@ import (
 
 // Metrics defines the data-plane metrics for the BR.
 type Metrics struct {
-	InputBytesTotal            *prometheus.CounterVec
-	OutputBytesTotal           *prometheus.CounterVec
-	InputPacketsTotal          *prometheus.CounterVec
-	OutputPacketsTotal         *prometheus.CounterVec
-	ProcessedPackets           *prometheus.CounterVec
-	PriorityForwardedPackets   *prometheus.CounterVec
-	DroppedPacketsTotal        *prometheus.CounterVec
-	HummProcessedPackets       *prometheus.CounterVec
-	HummFlyoverPackets         *prometheus.CounterVec
-	HummDemotedFreshnessPkts   *prometheus.CounterVec
-	HummDemotedExpiredPkts     *prometheus.CounterVec
-	HummDemotedTokenBucketPkts *prometheus.CounterVec
-	InterfaceUp                *prometheus.GaugeVec
-	BFDInterfaceStateChanges   *prometheus.CounterVec
-	BFDPacketsSent             *prometheus.CounterVec
-	BFDPacketsReceived         *prometheus.CounterVec
-	ServiceInstanceCount       *prometheus.GaugeVec
-	ServiceInstanceChanges     *prometheus.CounterVec
-	SiblingReachable           *prometheus.GaugeVec
-	SiblingBFDPacketsSent      *prometheus.CounterVec
-	SiblingBFDPacketsReceived  *prometheus.CounterVec
-	SiblingBFDStateChanges     *prometheus.CounterVec
+	InputBytesTotal             *prometheus.CounterVec
+	OutputBytesTotal            *prometheus.CounterVec
+	InputPacketsTotal           *prometheus.CounterVec
+	OutputPacketsTotal          *prometheus.CounterVec
+	ProcessedPackets            *prometheus.CounterVec
+	PriorityForwardedPackets    *prometheus.CounterVec
+	DroppedPacketsTotal         *prometheus.CounterVec
+	DroppedPriorityPacketsTotal *prometheus.CounterVec
+	HummProcessedPackets        *prometheus.CounterVec
+	HummFlyoverPackets          *prometheus.CounterVec
+	HummDemotedFreshnessPkts    *prometheus.CounterVec
+	HummDemotedExpiredPkts      *prometheus.CounterVec
+	HummDemotedTokenBucketPkts  *prometheus.CounterVec
+	InterfaceUp                 *prometheus.GaugeVec
+	BFDInterfaceStateChanges    *prometheus.CounterVec
+	BFDPacketsSent              *prometheus.CounterVec
+	BFDPacketsReceived          *prometheus.CounterVec
+	ServiceInstanceCount        *prometheus.GaugeVec
+	ServiceInstanceChanges      *prometheus.CounterVec
+	SiblingReachable            *prometheus.GaugeVec
+	SiblingBFDPacketsSent       *prometheus.CounterVec
+	SiblingBFDPacketsReceived   *prometheus.CounterVec
+	SiblingBFDStateChanges      *prometheus.CounterVec
 	// QueueDepth is a scrape-time collector over egress queue occupancy. Unlike InterfaceMetrics,
 	// these metrics are tied to queue-owning underlay connections rather than to traffic size
 	// classes, because detached sibling links can share the same underlying queues.
@@ -235,6 +236,13 @@ func NewMetrics() *Metrics {
 			prometheus.CounterOpts{
 				Name: "router_dropped_pkts_total",
 				Help: "Total number of packets dropped by the router.",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass", "reason"},
+		),
+		DroppedPriorityPacketsTotal: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_dropped_priority_pkts_total",
+				Help: "Total number of priority packets dropped by the router.",
 			},
 			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass", "reason"},
 		),
@@ -443,20 +451,21 @@ type InterfaceMetrics [maxSizeClass]trafficMetrics
 // trafficMetrics groups all the metrics instances that all share the same interface AND
 // sizeClass label values (but have different names - i.e. they count different things).
 type trafficMetrics struct {
-	InputBytesTotal             prometheus.Counter
-	InputPacketsTotal           prometheus.Counter
-	DroppedPacketsInvalid       prometheus.Counter
-	DroppedPacketsBusyProcessor prometheus.Counter
-	DroppedPacketsBusyForwarder prometheus.Counter
-	DroppedPacketsBusySlowPath  prometheus.Counter
-	ProcessedPackets            prometheus.Counter
-	PriorityForwardedPackets    prometheus.Counter
-	HummProcessedPackets        prometheus.Counter
-	HummFlyoverPackets          prometheus.Counter
-	HummDemotedFreshnessPkts    prometheus.Counter
-	HummDemotedExpiredPkts      prometheus.Counter
-	HummDemotedTokenBucketPkts  prometheus.Counter
-	Output                      [ttMax]outputMetrics
+	InputBytesTotal                     prometheus.Counter
+	InputPacketsTotal                   prometheus.Counter
+	DroppedPacketsInvalid               prometheus.Counter
+	DroppedPacketsBusyProcessor         prometheus.Counter
+	DroppedPacketsBusyForwarder         prometheus.Counter
+	DroppedPriorityPacketsBusyForwarder prometheus.Counter
+	DroppedPacketsBusySlowPath          prometheus.Counter
+	ProcessedPackets                    prometheus.Counter
+	PriorityForwardedPackets            prometheus.Counter
+	HummProcessedPackets                prometheus.Counter
+	HummFlyoverPackets                  prometheus.Counter
+	HummDemotedFreshnessPkts            prometheus.Counter
+	HummDemotedExpiredPkts              prometheus.Counter
+	HummDemotedTokenBucketPkts          prometheus.Counter
+	Output                              [ttMax]outputMetrics
 }
 
 // outputMetrics groups all the metrics about traffic that has reached the output stage. Metrics
@@ -526,6 +535,8 @@ func newTrafficMetrics(
 	reasonMap["reason"] = "busy_forwarder"
 	c.DroppedPacketsBusyForwarder =
 		metrics.DroppedPacketsTotal.MustCurryWith(ifLabels).MustCurryWith(scLabels).With(reasonMap)
+	c.DroppedPriorityPacketsBusyForwarder = metrics.DroppedPriorityPacketsTotal.
+		MustCurryWith(ifLabels).MustCurryWith(scLabels).With(reasonMap)
 
 	reasonMap["reason"] = "busy_slow_path"
 	c.DroppedPacketsBusySlowPath =
@@ -536,6 +547,7 @@ func newTrafficMetrics(
 	c.DroppedPacketsInvalid.Add(0)
 	c.DroppedPacketsBusyProcessor.Add(0)
 	c.DroppedPacketsBusyForwarder.Add(0)
+	c.DroppedPriorityPacketsBusyForwarder.Add(0)
 	c.DroppedPacketsBusySlowPath.Add(0)
 	c.ProcessedPackets.Add(0)
 	c.PriorityForwardedPackets.Add(0)

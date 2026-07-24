@@ -909,9 +909,16 @@ func (d *dataPlane) runProcessor(id int, q <-chan *Packet, slowQ chan<- *Packet)
 			continue
 		}
 		if !fwLink.Send(p) {
+			recordBusyForwarderDrop(p, &metrics[sc])
 			d.packetPool.Put(p)
-			metrics[sc].DroppedPacketsBusyForwarder.Inc()
 		}
+	}
+}
+
+func recordBusyForwarderDrop(p *Packet, metrics *trafficMetrics) {
+	metrics.DroppedPacketsBusyForwarder.Inc()
+	if p.PriorityLabel == pr.WithPriority {
+		metrics.DroppedPriorityPacketsBusyForwarder.Inc()
 	}
 }
 
@@ -943,7 +950,8 @@ func (d *dataPlane) runSlowPathProcessor(id int, q <-chan *Packet) {
 		}
 		if !egressLink.Send(p) {
 			sc := ClassOfSize(len(p.RawPacket))
-			p.Link.Metrics()[sc].DroppedPacketsBusyForwarder.Inc()
+			metrics := p.Link.Metrics()
+			recordBusyForwarderDrop(p, &metrics[sc])
 			d.packetPool.Put(p)
 		}
 	}
@@ -2294,7 +2302,8 @@ func (b *bfdSend) Send(bfd *layers.BFD) error {
 
 	if !fwLink.Send(p) {
 		sc := ClassOfSize(len(p.RawPacket))
-		fwLink.Metrics()[sc].DroppedPacketsBusyForwarder.Inc()
+		metrics := fwLink.Metrics()
+		recordBusyForwarderDrop(p, &metrics[sc])
 		// We do not care if some BFD packets get bounced under high load. If it becomes a problem,
 		// the solution is do use BFD's demand-mode. To be considered in a future refactoring.
 		b.dataPlane.packetPool.Put(p)
