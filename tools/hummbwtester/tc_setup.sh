@@ -116,6 +116,31 @@ verify() {
     done
 }
 
+stats() {
+    if [ "$#" -eq 0 ]; then
+        echo "no inter-AS peers supplied" >&2
+        exit 1
+    fi
+    local peer device output dropped overlimits backlog_bytes
+    declare -A reported=()
+    for peer in "$@"; do
+        device=$(device_for_peer "$peer")
+        [ -z "${reported[$device]:-}" ] || continue
+        reported[$device]=1
+        require_tbf "$device"
+        output=$(tc -s qdisc show dev "$device")
+        dropped=$(stat_value dropped <<<"$output")
+        overlimits=$(stat_value overlimits <<<"$output")
+        backlog_bytes=$(stat_value backlog <<<"$output")
+        if [ -z "$dropped" ] || [ -z "$overlimits" ] || [ -z "$backlog_bytes" ]; then
+            echo "unable to parse TBF statistics for $device" >&2
+            echo "$output" >&2
+            exit 1
+        fi
+        echo "HUMMBWTESTER_TC_STATS peer=$peer dev=$device dropped=$dropped overlimits=$overlimits backlog_bytes=$backlog_bytes"
+    done
+}
+
 case "$action" in
     setup)
         setup "$@"
@@ -123,8 +148,11 @@ case "$action" in
     verify)
         verify "$@"
         ;;
+    stats)
+        stats "$@"
+        ;;
     *)
-        echo "usage: $0 setup RATE BURST LIMIT PEER... | verify PEER..." >&2
+        echo "usage: $0 setup RATE BURST LIMIT PEER... | verify PEER... | stats PEER..." >&2
         exit 2
         ;;
 esac

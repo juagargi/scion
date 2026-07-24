@@ -1,4 +1,5 @@
 import json
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -6,15 +7,18 @@ from unittest import mock
 
 from tools.hummbwtester import orchestration
 from tools.hummbwtester.orchestration import (
-    BFDHealth,
     ConfigError,
-    bfd_health_from_metrics,
     client_args,
+    interface_counters,
     inter_as_router_peers,
+    InterfaceCounters,
     load_config,
     patch_compose,
     patch_toml_section,
-    verify_bfd_health,
+    print_report,
+    ReportSnapshot,
+    RouterInterface,
+    TCStats,
 )
 
 
@@ -230,36 +234,62 @@ class SetupPatchTest(unittest.TestCase):
             ])
 
 
-class BFDHealthTest(unittest.TestCase):
-    def test_aggregates_external_bfd_metrics(self):
-        snapshot = bfd_health_from_metrics([
-            '\n'.join([
-                'router_bfd_state_changes_total{interface="1"} 2',
+class ReportTest(unittest.TestCase):
+    def interfaces(self):
+        return [
+            RouterInterface("br-a", "1-ff00:0:110", "1", "1-ff00:0:111", "192.0.2.1", "192.0.2.2"),
+            RouterInterface("br-b", "1-ff00:0:111", "41", "1-ff00:0:110", "192.0.2.2", "192.0.2.1"),
+        ]
+
+    def test_aggregates_router_counters_by_interface(self):
+        counters = interface_counters(self.interfaces(), {
+            "br-a": '\n'.join([
                 'router_bfd_sent_packets_total{interface="1"} 10',
                 'router_bfd_received_packets_total{interface="1"} 9',
-                'router_interface_up{interface="1"} 1',
+                'router_humm_demoted_freshness_total{interface="1",sizeclass="0_63"} 2',
+                'router_humm_demoted_expired_total{interface="1",sizeclass="0_63"} 3',
+                'router_humm_demoted_tokenbucket_total{interface="1",sizeclass="0_63"} 4',
+                'router_dropped_pkts_total{interface="1",reason="busy_forwarder",sizeclass="0_63"} 5',
+                'router_dropped_pkts_total{interface="1",reason="busy_forwarder",sizeclass="64_127"} 6',
             ]),
-            '\n'.join([
-                'router_bfd_state_changes_total{interface="2"} 3',
-                'router_bfd_sent_packets_total{interface="2"} 20',
-                'router_bfd_received_packets_total{interface="2"} 19',
-                'router_interface_up{interface="2"} 1',
-            ]),
-        ])
-        self.assertEqual(snapshot.state_changes, 5)
-        self.assertEqual(snapshot.packets_sent, 30)
-        self.assertEqual(snapshot.packets_received, 28)
-        self.assertEqual(len(snapshot.interface_up), 2)
-        self.assertTrue(all(value == 1 for value in snapshot.interface_up.values()))
+        })
+        self.assertEqual(counters[("br-a", "1")], InterfaceCounters(10, 9, 9, 11))
+        self.assertNotIn(("br-b", "41"), counters)
 
-    def test_rejects_bfd_state_change_or_down_interface(self):
-        before = BFDHealth(4, 100, 100, {'router[0]{interface="1"}': 1})
-        after = BFDHealth(5, 110, 110, {'router[0]{interface="1"}': 1})
-        with mock.patch("builtins.print"), self.assertRaises(RuntimeError):
-            verify_bfd_health(before, after)
-        after = BFDHealth(4, 110, 110, {'router[0]{interface="1"}': 0})
-        with mock.patch("builtins.print"), self.assertRaises(RuntimeError):
-            verify_bfd_health(before, after)
+    def test_report_uses_peer_bfd_sent_to_calculate_loss(self):
+        interfaces = self.interfaces()
+        previous = ReportSnapshot(
+            counters={
+                ("br-a", "1"): InterfaceCounters(100, 100, 2, 3),
+                ("br-b", "41"): InterfaceCounters(200, 200, 4, 5),
+            },
+            tc={
+                ("br-a", "1"): TCStats(10, 20, 30),
+                ("br-b", "41"): TCStats(40, 50, 60),
+            },
+            errors=(),
+        )
+        current = ReportSnapshot(
+            counters={
+                ("br-a", "1"): InterfaceCounters(110, 118, 3, 7),
+                ("br-b", "41"): InterfaceCounters(225, 210, 4, 5),
+            },
+            tc={
+                ("br-a", "1"): TCStats(11, 25, 31),
+                ("br-b", "41"): TCStats(40, 58, 61),
+            },
+            errors=("br-c metrics unavailable",),
+        )
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            print_report(previous, current, interfaces)
+        rendered = output.getvalue()
+        self.assertIn("HUMMBWTESTER_REPORT interval=60s", rendered)
+        self.assertIn("BFD lost", rendered)
+        self.assertIn("TC backlog bytes", rendered)
+        self.assertIn("observation_error=br-c metrics unavailable", rendered)
+        # br-a lost 25 BFD packets sent by br-b minus 18 packets received by br-a.
+        self.assertRegex(rendered, r"BFD lost.*\b7\b")
 
 
 if __name__ == "__main__":

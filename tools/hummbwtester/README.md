@@ -101,15 +101,15 @@ Prometheus adds `client_id` as the sole custom label to that client's metrics.
 The endpoint addresses must match the generated tester-container addresses.
 For Docker tiny, the sample configuration places the server in AS112 and both sample clients in AS111.
 
-After all clients finish, the runner waits for every in-BR TBF backlog to drain. It fails if a TBF
-dropped packets, if no TBF recorded an overlimit event, or if the BRs recorded no
-`busy_forwarder` drops. Together these checks establish that the kernel shaper exercised the
-configured link rate without silently discarding packets after the router counted them, while
-excess best-effort traffic was discarded in the router queues.
+While clients run, the runner prints one timestamped table per minute. Counter rows are changes
+since the preceding report and TBF backlog is the current number of queued bytes. Columns identify
+external border-router interfaces. The table reports BFD sent, received, and inferred lost packets
+(peer sent minus local received); total Hummingbird demotions; `busy_forwarder` drops; and TBF
+drops, overlimits, and backlog.
 
-The runner also waits for all external BFD sessions to be up before traffic starts, then fails if
-any BFD session changes state, finishes down, or stops sending or receiving BFD packets. It prints
-the observed BFD state-change and packet-counter deltas with the TBF and busy-forwarder results.
+These values are observation-only: BFD state changes, packet drops, TBF counters, and log entries
+never stop or fail an experiment. Only an experiment client or server process exiting unsuccessfully
+causes the runner to return a failure.
 
 ## First run
 
@@ -195,8 +195,8 @@ go test ./tools/hummbwtester
 bazel test //tools/hummbwtester:go_default_test //tools/hummbwtester:orchestration_test
 ```
 
-The Python test covers configuration validation and deterministic metrics-port assignment.
+The Python test covers configuration validation, deterministic metrics-port assignment, and
+per-minute report aggregation.
 The Go test covers random Hummingbird reservation-ID generation.
 A practical Docker smoke test is to run setup, stop SCION, and rerun setup. The generated
-`hummbwtester_tc_*` helpers inspect qdiscs inside the BR network namespaces, and a completed run
-prints one `HUMMBWTESTER_TC_STATS` line per shaped interface.
+`hummbwtester_tc_*` helpers inspect qdiscs inside the BR network namespaces.

@@ -8,6 +8,7 @@ generated Docker topology so that a stopped topology can be brought back with th
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import ipaddress
 import json
 from pathlib import Path
@@ -38,8 +39,10 @@ CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 TC_VALUE_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?(?:bit|kbit|mbit|gbit|b|kb|mb|gb|ms|us|s)?$", re.I)
 TC_HELPER_PREFIX = "hummbwtester_tc_"
 TC_STATS_RE = re.compile(
-    r"^HUMMBWTESTER_TC_STATS dev=(\S+) dropped=(\d+) overlimits=(\d+) backlog_bytes=(\d+)$",
+    r"^HUMMBWTESTER_TC_STATS peer=(\S+) dev=(\S+) dropped=(\d+) overlimits=(\d+) "
+    r"backlog_bytes=(\d+)$",
 )
+PROMETHEUS_LABEL_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"])*)"')
 
 
 class ConfigError(ValueError):
@@ -74,13 +77,51 @@ class Client:
 
 
 @dataclass(frozen=True)
-class BFDHealth:
-    """Snapshot of the external BFD metrics exposed by all border routers."""
+class RouterInterface:
+    """One external border-router interface and its underlay peer."""
 
-    state_changes: float
-    packets_sent: float
-    packets_received: float
-    interface_up: dict[str, float]
+    router: str
+    isd_as: str
+    interface: str
+    neighbor_isd_as: str
+    local: str
+    remote: str
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return self.router, self.interface
+
+    @property
+    def label(self) -> str:
+        return f"{self.router}#{self.interface}"
+
+
+@dataclass(frozen=True)
+class InterfaceCounters:
+    """Cumulative router counters reported for one external interface."""
+
+    bfd_sent: int = 0
+    bfd_received: int = 0
+    demotions: int = 0
+    busy_forwarder_drops: int = 0
+
+
+@dataclass(frozen=True)
+class TCStats:
+    """Cumulative TBF counters and instantaneous backlog for one egress device."""
+
+    dropped: int
+    overlimits: int
+    backlog_bytes: int
+
+
+@dataclass(frozen=True)
+class ReportSnapshot:
+    """One observation used to produce the next per-minute report."""
+
+    counters: dict[tuple[str, str], InterfaceCounters]
+    tc: dict[tuple[str, str], TCStats]
+    errors: tuple[str, ...]
 
 
 def join_host_port(host: str, port: int) -> str:
@@ -599,18 +640,6 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
     return args
 
 
-def router_metric_urls() -> list[str]:
-    """Return the generated border-router Prometheus endpoints."""
-    result: list[str] = []
-    for topology in GEN.glob("AS*/topology.json"):
-        data = json.loads(topology.read_text())
-        for entry in data.get("border_routers", {}).values():
-            internal = entry["internal_addr"]
-            host = internal.rsplit(":", 1)[0].strip("[]")
-            result.append(f"http://{join_host_port(host, 30442)}/metrics")
-    return sorted(result)
-
-
 def metric_samples(body: str, metric: str) -> dict[str, float]:
     """Return all labeled samples for metric from one Prometheus text exposition body."""
     samples: dict[str, float] = {}
@@ -629,112 +658,223 @@ def metric_samples(body: str, metric: str) -> dict[str, float]:
     return samples
 
 
-def bfd_health_from_metrics(metric_bodies: list[str]) -> BFDHealth:
-    """Aggregate external BFD counters and interface states from router metric bodies."""
-    state_changes = 0.0
-    packets_sent = 0.0
-    packets_received = 0.0
-    interface_up: dict[str, float] = {}
-    for index, body in enumerate(metric_bodies):
-        state_changes += sum(metric_samples(body, "router_bfd_state_changes_total").values())
-        packets_sent += sum(metric_samples(body, "router_bfd_sent_packets_total").values())
-        packets_received += sum(metric_samples(body, "router_bfd_received_packets_total").values())
-        for labels, value in metric_samples(body, "router_interface_up").items():
-            interface_up[f"router[{index}]{labels}"] = value
-    return BFDHealth(state_changes, packets_sent, packets_received, interface_up)
+def metric_labels(rendered: str) -> dict[str, str]:
+    """Parse the label fragment returned by metric_samples."""
+    return {key: value for key, value in PROMETHEUS_LABEL_RE.findall(rendered)}
 
 
-def bfd_health() -> BFDHealth:
-    """Read a consistent-enough aggregate external BFD snapshot from all border routers."""
-    bodies: list[str] = []
-    for url in router_metric_urls():
+def address_host(address: str) -> str:
+    """Return the host portion of a generated underlay address."""
+    return address.rsplit(":", 1)[0].strip("[]")
+
+
+def router_interfaces() -> list[RouterInterface]:
+    """Return generated external interfaces, including their local and remote underlay addresses."""
+    result: list[RouterInterface] = []
+    for topology in GEN.glob("AS*/topology.json"):
+        data = json.loads(topology.read_text())
+        for router, entry in data.get("border_routers", {}).items():
+            for interface, link in entry.get("interfaces", {}).items():
+                underlay = link["underlay"]
+                result.append(RouterInterface(
+                    router=router,
+                    isd_as=data["isd_as"],
+                    interface=interface,
+                    neighbor_isd_as=link["isd_as"],
+                    local=address_host(underlay["local"]),
+                    remote=address_host(underlay["remote"]),
+                ))
+    return sorted(result, key=lambda item: item.label)
+
+
+def router_metric_endpoints() -> list[tuple[str, str]]:
+    """Return one direct Prometheus endpoint for every generated border router."""
+    result: list[tuple[str, str]] = []
+    for topology in GEN.glob("AS*/topology.json"):
+        data = json.loads(topology.read_text())
+        for router, entry in data.get("border_routers", {}).items():
+            result.append((router, f"http://{join_host_port(address_host(entry['internal_addr']), 30442)}/metrics"))
+    return sorted(result)
+
+
+def router_metric_bodies() -> tuple[dict[str, str], list[str]]:
+    """Read router metrics without letting an unavailable observation endpoint stop the experiment."""
+    bodies: dict[str, str] = {}
+    errors: list[str] = []
+    for router, url in router_metric_endpoints():
         try:
             with urllib.request.urlopen(url, timeout=5) as response:
-                bodies.append(response.read().decode())
+                bodies[router] = response.read().decode()
         except OSError as err:
-            raise RuntimeError(f"reading border-router metrics from {url}: {err}") from err
-    return bfd_health_from_metrics(bodies)
+            errors.append(f"{router} metrics unavailable: {err}")
+    return bodies, errors
 
 
-def wait_for_bfd_up(timeout: float = 60) -> BFDHealth:
-    """Wait until every external BFD series is present and reports an operational interface."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        snapshot = bfd_health()
-        if snapshot.interface_up and all(value == 1 for value in snapshot.interface_up.values()):
-            return snapshot
-        time.sleep(1)
-    down = [labels for labels, value in bfd_health().interface_up.items() if value != 1]
-    raise RuntimeError("timed out waiting for BFD interfaces to become up: " + ", ".join(down))
-
-
-def verify_bfd_health(before: BFDHealth, after: BFDHealth) -> None:
-    """Require BFD to remain healthy while the experiment applies egress backpressure."""
-    if before.interface_up != after.interface_up:
-        before_labels = set(before.interface_up)
-        after_labels = set(after.interface_up)
-        changed = sorted(before_labels ^ after_labels)
-        down = sorted(labels for labels, value in after.interface_up.items() if value != 1)
-        raise RuntimeError(
-            "BFD interface set or health changed during experiment: "
-            + ", ".join(changed + down),
-        )
-    if after.state_changes < before.state_changes:
-        raise RuntimeError("BFD state-change counter decreased during experiment")
-    state_changes = after.state_changes - before.state_changes
-    packets_sent = after.packets_sent - before.packets_sent
-    packets_received = after.packets_received - before.packets_received
-    print(
-        "router BFD during experiment: "
-        f"state_changes={state_changes:g} packets_sent={packets_sent:g} "
-        f"packets_received={packets_received:g} interfaces={len(after.interface_up)}",
+def interface_counters(
+    interfaces: list[RouterInterface],
+    metric_bodies: dict[str, str],
+) -> dict[tuple[str, str], InterfaceCounters]:
+    """Collect cumulative BFD, demotion, and busy-forwarder counters per external interface."""
+    values: dict[tuple[str, str], list[int]] = {
+        interface.key: [0, 0, 0, 0]
+        for interface in interfaces
+        if interface.router in metric_bodies
+    }
+    demotion_metrics = (
+        "router_humm_demoted_freshness_total",
+        "router_humm_demoted_expired_total",
+        "router_humm_demoted_tokenbucket_total",
     )
-    if state_changes != 0:
-        raise RuntimeError(f"BFD changed state {state_changes:g} times during experiment")
-    if packets_sent <= 0 or packets_received <= 0:
-        raise RuntimeError("BFD packet counters did not advance during experiment")
+    for router, body in metric_bodies.items():
+        for metric, index in (
+            ("router_bfd_sent_packets_total", 0),
+            ("router_bfd_received_packets_total", 1),
+        ):
+            for rendered, value in metric_samples(body, metric).items():
+                labels = metric_labels(rendered)
+                key = router, labels.get("interface", "")
+                if key in values:
+                    values[key][index] += int(value)
+        for metric in demotion_metrics:
+            for rendered, value in metric_samples(body, metric).items():
+                labels = metric_labels(rendered)
+                key = router, labels.get("interface", "")
+                if key in values:
+                    values[key][2] += int(value)
+        for rendered, value in metric_samples(body, "router_dropped_pkts_total").items():
+            labels = metric_labels(rendered)
+            key = router, labels.get("interface", "")
+            if key in values and labels.get("reason") == "busy_forwarder":
+                values[key][3] += int(value)
+    return {
+        key: InterfaceCounters(*counters)
+        for key, counters in values.items()
+    }
 
 
-def busy_forwarder_drops() -> float:
-    """Sum the current busy-forwarder drop counters from all generated border routers."""
-    total = 0.0
-    for url in router_metric_urls():
-        try:
-            with urllib.request.urlopen(url, timeout=5) as response:
-                body = response.read().decode()
-        except OSError as err:
-            raise RuntimeError(f"reading border-router metrics from {url}: {err}") from err
-        for line in body.splitlines():
-            if (line.startswith("router_dropped_pkts_total{")
-                    and 'reason="busy_forwarder"' in line):
-                total += float(line.rsplit(None, 1)[1])
-    return total
-
-
-def verify_tc_qdiscs(compose: dict[str, Any]) -> None:
-    """Require every in-BR TBF to drain without drops and at least one to have shaped traffic."""
-    total_overlimits = 0
+def tc_stats(compose: dict[str, Any], interfaces: list[RouterInterface]) -> tuple[dict[tuple[str, str], TCStats], list[str]]:
+    """Read TBF counters without draining queues or treating counter values as failures."""
+    remote_interfaces = {interface.remote: interface.key for interface in interfaces}
+    stats: dict[tuple[str, str], TCStats] = {}
+    errors: list[str] = []
     helpers = sorted(name for name in compose["services"] if name.startswith(TC_HELPER_PREFIX))
-    if not helpers:
-        raise RuntimeError("no hummbwtester tc helper services are configured; rerun setup")
     for helper in helpers:
-        command = compose["services"][helper].get("command", [])
-        if len(command) < 5 or command[0] != "setup":
-            raise RuntimeError(f"invalid tc helper command for {helper}; rerun setup")
-        peers = command[4:]
-        result = run(
-            dc_args("run", "--rm", "--no-deps", helper, "verify", *peers),
+        service = compose["services"][helper]
+        command = service.get("command", [])
+        peers = command[4:] if len(command) >= 5 and command[0] == "setup" else []
+        if not peers:
+            errors.append(f"{helper} has no configured peers")
+            continue
+        result = subprocess.run(
+            dc_args("run", "--rm", "--no-deps", helper, "stats", *peers),
             cwd=ROOT,
+            check=False,
+            text=True,
             capture_output=True,
         )
-        print(result.stdout, end="")
-        stats = [TC_STATS_RE.fullmatch(line) for line in result.stdout.splitlines()]
-        stats = [match for match in stats if match is not None]
-        if len(stats) != len(peers):
-            raise RuntimeError(f"expected {len(peers)} tc statistics from {helper}, got {len(stats)}")
-        total_overlimits += sum(int(match.group(3)) for match in stats)
-    if total_overlimits == 0:
-        raise RuntimeError("TBF overlimits stayed at zero; the configured bottleneck was not exercised")
+        if result.returncode != 0:
+            errors.append(f"{helper} tc stats failed: {result.stderr.strip() or result.stdout.strip()}")
+            continue
+        for line in result.stdout.splitlines():
+            match = TC_STATS_RE.fullmatch(line)
+            if match is None:
+                continue
+            peer, _, dropped, overlimits, backlog = match.groups()
+            if (key := remote_interfaces.get(peer)) is None:
+                errors.append(f"{helper} reported unknown tc peer {peer}")
+                continue
+            stats[key] = TCStats(int(dropped), int(overlimits), int(backlog))
+    return stats, errors
+
+
+def report_snapshot(compose: dict[str, Any], interfaces: list[RouterInterface]) -> ReportSnapshot:
+    """Capture all observability data; failures are rendered in the report and never abort traffic."""
+    bodies, metric_errors = router_metric_bodies()
+    tc, tc_errors = tc_stats(compose, interfaces)
+    return ReportSnapshot(interface_counters(interfaces, bodies), tc, tuple(metric_errors + tc_errors))
+
+
+def counter_delta(previous: int | None, current: int | None) -> str:
+    """Render a non-negative counter change, or an unavailable value."""
+    if previous is None or current is None:
+        return "-"
+    return str(max(0, current - previous))
+
+
+def peer_interfaces(interfaces: list[RouterInterface]) -> dict[tuple[str, str], tuple[str, str]]:
+    """Map each interface to the peer interface with swapped underlay endpoints."""
+    result: dict[tuple[str, str], tuple[str, str]] = {}
+    for interface in interfaces:
+        for peer in interfaces:
+            if interface.local == peer.remote and interface.remote == peer.local:
+                result[interface.key] = peer.key
+                break
+    return result
+
+
+def render_table(headers: list[str], rows: list[tuple[str, list[str]]]) -> str:
+    """Render a compact ASCII table without adding a third-party reporting dependency."""
+    widths = [len(headers[0]), *(len(header) for header in headers[1:])]
+    for name, values in rows:
+        widths[0] = max(widths[0], len(name))
+        for index, value in enumerate(values, start=1):
+            widths[index] = max(widths[index], len(value))
+    def line(values: list[str]) -> str:
+        return " | ".join(value.rjust(widths[index]) for index, value in enumerate(values))
+    divider = "-+-".join("-" * width for width in widths)
+    return "\n".join([line(headers), divider, *(line([name, *values]) for name, values in rows)])
+
+
+def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: list[RouterInterface]) -> None:
+    """Print one minute of router and TBF observations without enforcing a health policy."""
+    peers = peer_interfaces(interfaces)
+    def counters(snapshot: ReportSnapshot, interface: RouterInterface) -> InterfaceCounters | None:
+        return snapshot.counters.get(interface.key)
+    def tc(snapshot: ReportSnapshot, interface: RouterInterface) -> TCStats | None:
+        return snapshot.tc.get(interface.key)
+    def bfd_lost(interface: RouterInterface) -> str:
+        local_previous, local_current = counters(previous, interface), counters(current, interface)
+        peer = peers.get(interface.key)
+        peer_previous = previous.counters.get(peer) if peer else None
+        peer_current = current.counters.get(peer) if peer else None
+        if None in (local_previous, local_current, peer_previous, peer_current):
+            return "-"
+        assert local_previous and local_current and peer_previous and peer_current
+        sent = peer_current.bfd_sent - peer_previous.bfd_sent
+        received = local_current.bfd_received - local_previous.bfd_received
+        return str(max(0, sent - received))
+    def counter_row(field: str) -> list[str]:
+        return [counter_delta(
+            getattr(counters(previous, interface), field) if counters(previous, interface) else None,
+            getattr(counters(current, interface), field) if counters(current, interface) else None,
+        ) for interface in interfaces]
+    def tc_row(field: str, current_value: bool = False) -> list[str]:
+        values: list[str] = []
+        for interface in interfaces:
+            before, after = tc(previous, interface), tc(current, interface)
+            if current_value:
+                values.append(str(getattr(after, field)) if after else "-")
+            else:
+                values.append(counter_delta(
+                    getattr(before, field) if before else None,
+                    getattr(after, field) if after else None,
+                ))
+        return values
+    rows = [
+        ("BFD sent", counter_row("bfd_sent")),
+        ("BFD received", counter_row("bfd_received")),
+        ("BFD lost", [bfd_lost(interface) for interface in interfaces]),
+        ("Demotions", counter_row("demotions")),
+        ("Busy forwarder drops", counter_row("busy_forwarder_drops")),
+        ("TC dropped", tc_row("dropped")),
+        ("TC overlimits", tc_row("overlimits")),
+        ("TC backlog bytes", tc_row("backlog_bytes", current_value=True)),
+    ]
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    print(f"{timestamp} HUMMBWTESTER_REPORT interval=60s (counters are deltas; TC backlog is current)")
+    print(render_table(["metric", *(interface.label for interface in interfaces)], rows))
+    for error in current.errors:
+        print(f"HUMMBWTESTER_REPORT observation_error={error}")
 
 
 def run_experiment(config_path: Path) -> int:
@@ -752,10 +892,7 @@ def run_experiment(config_path: Path) -> int:
     server_args = ["/share/bin/hummbwtester", "-mode", "server", "-local", server.local(),
                    "-sciond", endpoint_sciond(server, daemons)]
     processes: list[tuple[Client, str, subprocess.Popen[str]]] = []
-    busy_before = busy_forwarder_drops()
-    # The topology has already converged in setup. Snapshot only after every external BFD session
-    # is up, so the load assertion excludes startup transitions and catches every later flap.
-    bfd_before = wait_for_bfd_up()
+    interfaces = router_interfaces()
     server_process = launch(server_service, server_pidfile, server_args, log_dir / "server.log")
     try:
         # Give the server a predictable head start before clients begin selecting paths and dialing.
@@ -767,22 +904,20 @@ def run_experiment(config_path: Path) -> int:
             processes.append((client, pidfile, launch(tester_service(client.endpoint.isd_as), pidfile, args,
                                                        log_dir / f"{suffix}.log")))
         failure = False
+        previous_report = report_snapshot(compose, interfaces)
+        next_report = time.monotonic() + 60
         # A prematurely exited server invalidates the experiment even if clients are still alive.
         while any(process.poll() is None for _, _, process in processes):
             if server_process.poll() is not None:
                 failure = True
                 break
+            if time.monotonic() >= next_report:
+                current_report = report_snapshot(compose, interfaces)
+                print_report(previous_report, current_report, interfaces)
+                previous_report = current_report
+                next_report += 60
             time.sleep(0.25)
         failure = failure or any(process.wait() != 0 for _, _, process in processes)
-        if not failure:
-            verify_tc_qdiscs(compose)
-            verify_bfd_health(bfd_before, bfd_health())
-            busy_delta = busy_forwarder_drops() - busy_before
-            print(f"router busy-forwarder drops during experiment: {busy_delta:g}")
-            if busy_delta <= 0:
-                raise RuntimeError(
-                    "no router busy-forwarder drops occurred; best-effort overload was not exercised",
-                )
         return 1 if failure else 0
     except KeyboardInterrupt:
         return 130
