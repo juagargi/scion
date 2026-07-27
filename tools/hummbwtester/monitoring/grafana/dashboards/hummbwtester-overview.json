@@ -653,7 +653,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Current border router egress queue depths.",
+      "description": "Largest border router egress queue depths observed since the previous Prometheus scrape.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -731,14 +731,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(router_queue_depth{queue=\"priority\"}) or vector(0)",
+          "expr": "sum(router_queue_depth_high_watermark{queue=\"priority\"}) or vector(0)",
           "legendFormat": "priority",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum(router_queue_depth{queue=\"best_effort\"}) or vector(0)",
+          "expr": "sum(router_queue_depth_high_watermark{queue=\"best_effort\"}) or vector(0)",
           "legendFormat": "best-effort",
           "range": true,
           "refId": "B"
