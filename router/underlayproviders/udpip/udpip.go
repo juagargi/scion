@@ -293,7 +293,7 @@ func (u *udpConnection) receive(batchSize int, pool router.PacketPool) {
 		numReusable = len(msgs)
 		numPkts, err := u.conn.ReadBatch(msgs)
 		if err != nil {
-			log.Debug("Error while reading batch", "connection", u.name, "err", err)
+			log.Info("Error while reading batch", "connection", u.name, "err", err)
 			continue
 		}
 		numReusable -= numPkts
@@ -469,10 +469,15 @@ func (u *udpConnection) send(batchSize int, pool router.PacketPool) {
 		if !retryable && pending > 0 {
 			// The batch was not completely written because of a non-retryable error. Assume the
 			// failure was caused by the first packet not sent, drop it, and retry the rest.
-			sc := router.ClassOfSize(len(pkts[currentIdx].RawPacket))
+			pkt := pkts[currentIdx]
+			sc := router.ClassOfSize(len(pkt.RawPacket))
 			u.metrics[sc].DroppedPacketsInvalid.Inc()
+			log.Info("non-temporary error for packet",
+				"error", err.Error(),
+				"priority", pkt.PriorityLabel,
+			)
 			// Return storage for this bad packet.
-			pool.Put(pkts[currentIdx])
+			pool.Put(pkt)
 			currentIdx = (currentIdx + 1) % batchSize
 			pending--
 		}

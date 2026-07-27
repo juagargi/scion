@@ -58,3 +58,44 @@ router_queue_depth{interface="1",isd_as="1-ff00:0:110",neighbor_isd_as="1-ff00:0
 		"router_queue_depth",
 	))
 }
+
+func TestRecordBusyForwarderDropUsesEgressLinkMetrics(t *testing.T) {
+	newLink := func() *MockLink {
+		metrics := &InterfaceMetrics{}
+		for sc := minSizeClass; sc < maxSizeClass; sc++ {
+			metrics[sc].DroppedPacketsBusyForwarder =
+				prometheus.NewCounter(prometheus.CounterOpts{})
+			metrics[sc].DroppedPriorityPacketsBusyForwarder =
+				prometheus.NewCounter(prometheus.CounterOpts{})
+		}
+		return &MockLink{metrics: metrics}
+	}
+
+	t.Run("priority", func(t *testing.T) {
+		egressLink := newLink()
+		packet := &Packet{RawPacket: make([]byte, 128)} // Zero label means priority.
+		sc := ClassOfSize(len(packet.RawPacket))
+
+		recordBusyForwarderDrop(packet, egressLink)
+
+		require.Equal(t, float64(1),
+			promtest.ToFloat64(egressLink.metrics[sc].DroppedPacketsBusyForwarder))
+		require.Equal(t, float64(1),
+			promtest.ToFloat64(egressLink.metrics[sc].DroppedPriorityPacketsBusyForwarder))
+	})
+
+	t.Run("best effort", func(t *testing.T) {
+		egressLink := newLink()
+		packet := new(Packet).init(new([bufSize]byte))
+		packet.reset(0)
+		packet.RawPacket = packet.RawPacket[:128]
+		sc := ClassOfSize(len(packet.RawPacket))
+
+		recordBusyForwarderDrop(packet, egressLink)
+
+		require.Equal(t, float64(1),
+			promtest.ToFloat64(egressLink.metrics[sc].DroppedPacketsBusyForwarder))
+		require.Zero(t,
+			promtest.ToFloat64(egressLink.metrics[sc].DroppedPriorityPacketsBusyForwarder))
+	})
+}

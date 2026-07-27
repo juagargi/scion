@@ -909,16 +909,18 @@ func (d *dataPlane) runProcessor(id int, q <-chan *Packet, slowQ chan<- *Packet)
 			continue
 		}
 		if !fwLink.Send(p) {
-			recordBusyForwarderDrop(p, &metrics[sc])
+			recordBusyForwarderDrop(p, fwLink)
 			d.packetPool.Put(p)
 		}
 	}
 }
 
-func recordBusyForwarderDrop(p *Packet, metrics *trafficMetrics) {
-	metrics.DroppedPacketsBusyForwarder.Inc()
+func recordBusyForwarderDrop(p *Packet, egressLink Link) {
+	sc := ClassOfSize(len(p.RawPacket))
+	metrics := egressLink.Metrics()
+	metrics[sc].DroppedPacketsBusyForwarder.Inc()
 	if p.PriorityLabel == pr.WithPriority {
-		metrics.DroppedPriorityPacketsBusyForwarder.Inc()
+		metrics[sc].DroppedPriorityPacketsBusyForwarder.Inc()
 	}
 }
 
@@ -949,9 +951,7 @@ func (d *dataPlane) runSlowPathProcessor(id int, q <-chan *Packet) {
 			continue
 		}
 		if !egressLink.Send(p) {
-			sc := ClassOfSize(len(p.RawPacket))
-			metrics := p.Link.Metrics()
-			recordBusyForwarderDrop(p, &metrics[sc])
+			recordBusyForwarderDrop(p, egressLink)
 			d.packetPool.Put(p)
 		}
 	}
@@ -2301,9 +2301,7 @@ func (b *bfdSend) Send(bfd *layers.BFD) error {
 	p.PriorityLabel = pr.WithPriority
 
 	if !fwLink.Send(p) {
-		sc := ClassOfSize(len(p.RawPacket))
-		metrics := fwLink.Metrics()
-		recordBusyForwarderDrop(p, &metrics[sc])
+		recordBusyForwarderDrop(p, fwLink)
 		// We do not care if some BFD packets get bounced under high load. If it becomes a problem,
 		// the solution is do use BFD's demand-mode. To be considered in a future refactoring.
 		b.dataPlane.packetPool.Put(p)
