@@ -216,6 +216,7 @@ type udpConnection struct {
 	link         udpLink                            // Link with exclusive use of the connection.
 	links        map[netip.AddrPort]udpLink         // Links that share this connection
 	queues       [pr.QueueCount]chan *router.Packet // Packets to be sent, with priorities.
+	queueDepth   [pr.QueueCount]*router.QueueDepthObserver
 	metrics      *router.InterfaceMetrics
 	receiverDone chan struct{}
 	senderDone   chan struct{}
@@ -530,6 +531,7 @@ type connectedLink struct {
 	procQs     []chan *router.Packet
 	name       string // For logs
 	egressQs   [pr.QueueCount]chan<- *router.Packet
+	queueDepth [pr.QueueCount]*router.QueueDepthObserver
 	metrics    *router.InterfaceMetrics
 	pool       router.PacketPool
 	bfdSession *bfd.Session
@@ -595,10 +597,11 @@ func (u *provider) newConnectedLink(
 		return nil, err
 	}
 	queues := createQueues(qSize)
-	registerQueueDepthMetrics(queueMetrics, queues)
+	queueDepth := registerQueueDepthMetrics(queueMetrics, queues)
 	el := &connectedLink{
 		name:       remoteAddr.String(),
 		egressQs:   typeCastEgressQueues(queues),
+		queueDepth: queueDepth,
 		metrics:    metrics,
 		bfdSession: bfd,
 		seed:       makeHashSeed(),
@@ -612,6 +615,7 @@ func (u *provider) newConnectedLink(
 		link: el,
 		// links: nil; no demux lookup ever for this connection
 		queues:       queues,
+		queueDepth:   queueDepth,
 		metrics:      metrics, // send() needs them :-(
 		receiverDone: make(chan struct{}),
 		senderDone:   make(chan struct{}),
@@ -633,16 +637,18 @@ func createQueues(qSize int) [pr.QueueCount]chan *router.Packet {
 func registerQueueDepthMetrics(
 	queueMetrics *router.QueueDepthMetrics,
 	queues [pr.QueueCount]chan *router.Packet,
-) {
+) [pr.QueueCount]*router.QueueDepthObserver {
+	var observers [pr.QueueCount]*router.QueueDepthObserver
 	if queueMetrics == nil {
-		return
+		return observers
 	}
-	queueMetrics.Register("priority", func() float64 {
-		return float64(len(queues[pr.WithPriority]))
+	observers[pr.WithPriority] = queueMetrics.Register("priority", func() int {
+		return len(queues[pr.WithPriority])
 	})
-	queueMetrics.Register("best_effort", func() float64 {
-		return float64(len(queues[pr.WithBestEffort]))
+	observers[pr.WithBestEffort] = queueMetrics.Register("best_effort", func() int {
+		return len(queues[pr.WithBestEffort])
 	})
+	return observers
 }
 
 func typeCastEgressQueues(queues [pr.QueueCount]chan *router.Packet) [pr.QueueCount]chan<- *router.Packet {
@@ -714,9 +720,14 @@ func (l *connectedLink) Resolve(p *router.Packet, host addr.Host, port uint16) e
 }
 
 func (l *connectedLink) Send(p *router.Packet) bool {
+	queue := l.egressQs[p.PriorityLabel]
 	select {
-	case l.egressQs[p.PriorityLabel] <- p:
+	case queue <- p:
+		l.queueDepth[p.PriorityLabel].Observe(len(queue))
 	default:
+		// Queue is at capacity. Don't use len(queue) right now, as another goroutine might race
+		// to dequeue a packet right before we call len(). Instead, report the capacity.
+		l.queueDepth[p.PriorityLabel].Observe(cap(queue))
 		return false
 	}
 	return true
@@ -724,7 +735,9 @@ func (l *connectedLink) Send(p *router.Packet) bool {
 
 func (l *connectedLink) SendBlocking(p *router.Packet) {
 	// We use a bound and connected socket so we don't need to specify the destination.
-	l.egressQs[p.PriorityLabel] <- p
+	queue := l.egressQs[p.PriorityLabel]
+	queue <- p
+	l.queueDepth[p.PriorityLabel].Observe(len(queue))
 }
 
 func (l *connectedLink) receive(size int, srcAddr *net.UDPAddr, p *router.Packet) {
@@ -758,6 +771,7 @@ type detachedLink struct {
 	procQs     []chan *router.Packet
 	name       string // For logs
 	egressQs   [pr.QueueCount]chan<- *router.Packet
+	queueDepth [pr.QueueCount]*router.QueueDepthObserver
 	metrics    *router.InterfaceMetrics
 	pool       router.PacketPool
 	bfdSession *bfd.Session
@@ -830,6 +844,7 @@ func (u *provider) newDetachedLink(
 	sl := &detachedLink{
 		name:       remoteAddr.String(),
 		egressQs:   typeCastEgressQueues(c.queues),
+		queueDepth: c.queueDepth,
 		metrics:    metrics,
 		bfdSession: bfd,
 		remote:     net.UDPAddrFromAddrPort(remoteAddr),
@@ -898,9 +913,13 @@ func (l *detachedLink) Send(p *router.Packet) bool {
 	// is pointless: if we loan l.remote we avoid a copy and still discard at most one address. This
 	// is safe because we treat p.RemoteAddr as immutable and the router main code doesn't touch it.
 	p.RemoteAddr = unsafe.Pointer(l.remote)
+	queue := l.egressQs[p.PriorityLabel]
 	select {
-	case l.egressQs[p.PriorityLabel] <- p:
+	case queue <- p:
+		l.queueDepth[p.PriorityLabel].Observe(len(queue))
 	default:
+		// Queue is at capacity. Avoid races by not calling len() but cap().
+		l.queueDepth[p.PriorityLabel].Observe(cap(queue))
 		return false
 	}
 	return true
@@ -909,7 +928,9 @@ func (l *detachedLink) Send(p *router.Packet) bool {
 func (l *detachedLink) SendBlocking(p *router.Packet) {
 	// Same as Send(). We must supply the destination address.
 	p.RemoteAddr = unsafe.Pointer(l.remote)
-	l.egressQs[p.PriorityLabel] <- p
+	queue := l.egressQs[p.PriorityLabel]
+	queue <- p
+	l.queueDepth[p.PriorityLabel].Observe(len(queue))
 }
 
 func (l *detachedLink) receive(size int, srcAddr *net.UDPAddr, p *router.Packet) {
@@ -942,6 +963,7 @@ type internalLink struct {
 	procStop         chan struct{}
 	procDone         chan struct{}
 	egressQs         [pr.QueueCount]chan<- *router.Packet
+	queueDepth       [pr.QueueCount]*router.QueueDepthObserver
 	metrics          *router.InterfaceMetrics
 	pool             router.PacketPool
 	svc              *router.Services[netip.AddrPort]
@@ -980,9 +1002,10 @@ func (u *provider) NewInternalLink(
 	}
 	u.internalHashSeed = makeHashSeed()
 	queues := createQueues(qSize)
-	registerQueueDepthMetrics(queueMetrics, queues)
+	queueDepth := registerQueueDepthMetrics(queueMetrics, queues)
 	il := &internalLink{
 		egressQs:         typeCastEgressQueues(queues),
+		queueDepth:       queueDepth,
 		metrics:          metrics,
 		svc:              u.svc,
 		seed:             u.internalHashSeed,
@@ -996,6 +1019,7 @@ func (u *provider) NewInternalLink(
 		link: il,
 		// links: see below.
 		queues:       queues,
+		queueDepth:   queueDepth,
 		metrics:      metrics, // send() needs them :-(
 		receiverDone: make(chan struct{}),
 		senderDone:   make(chan struct{}),
@@ -1168,9 +1192,13 @@ func (l *internalLink) Resolve(p *router.Packet, dst addr.Host, port uint16) err
 
 // The packet's destination is already in the packet's meta-data.
 func (l *internalLink) Send(p *router.Packet) bool {
+	queue := l.egressQs[p.PriorityLabel]
 	select {
-	case l.egressQs[p.PriorityLabel] <- p:
+	case queue <- p:
+		l.queueDepth[p.PriorityLabel].Observe(len(queue))
 	default:
+		// Queue is at capacity. Avoid races by not calling len() but cap().
+		l.queueDepth[p.PriorityLabel].Observe(cap(queue))
 		return false
 	}
 	return true
@@ -1178,7 +1206,9 @@ func (l *internalLink) Send(p *router.Packet) bool {
 
 // The packet's destination is already in the packet's meta-data.
 func (l *internalLink) SendBlocking(p *router.Packet) {
-	l.egressQs[p.PriorityLabel] <- p
+	queue := l.egressQs[p.PriorityLabel]
+	queue <- p
+	l.queueDepth[p.PriorityLabel].Observe(len(queue))
 }
 
 func (l *internalLink) receive(size int, srcAddr *net.UDPAddr, p *router.Packet) {
