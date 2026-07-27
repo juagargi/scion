@@ -46,12 +46,16 @@ type RouterConfig struct {
 	SendBufferSize        int `toml:"send_buffer_size,omitempty"`
 	NumProcessors         int `toml:"num_processors,omitempty"`
 	NumSlowPathProcessors int `toml:"num_slow_processors,omitempty"`
-	// BatchSize is the deprecated common fallback for the three sizing options below.
+	// BatchSize is the deprecated common fallback for ingress batch, egress batch, and egress
+	// queue sizing.
 	BatchSize        int `toml:"batch_size,omitempty"`
 	IngressBatchSize int `toml:"ingress_batch_size,omitempty"`
-	EgressBatchSize  int `toml:"egress_batch_size,omitempty"`
-	EgressQueueSize  int `toml:"egress_queue_size,omitempty"`
-	BFD              BFD `toml:"bfd,omitempty"`
+	// ProcessorQueueSize is the capacity of each fast- and slow-path processor ingress queue.
+	// Zero selects the automatically calculated capacity.
+	ProcessorQueueSize int `toml:"processor_queue_size,omitempty"`
+	EgressBatchSize    int `toml:"egress_batch_size,omitempty"`
+	EgressQueueSize    int `toml:"egress_queue_size,omitempty"`
+	BFD                BFD `toml:"bfd,omitempty"`
 	// TODO: These two values were introduced to override the port range for
 	// configured router in the context of acceptance tests. However, this
 	// introduces two sources for the port configuration. We should remove this
@@ -85,6 +89,9 @@ func (cfg *RouterConfig) Validate() error {
 	}
 	if cfg.IngressBatchSize < 1 {
 		return serrors.New("Provided router config is invalid. IngressBatchSize < 1")
+	}
+	if cfg.ProcessorQueueSize < 0 {
+		return serrors.New("Provided router config is invalid. ProcessorQueueSize < 0")
 	}
 	if cfg.EgressBatchSize < 1 {
 		return serrors.New("Provided router config is invalid. EgressBatchSize < 1")

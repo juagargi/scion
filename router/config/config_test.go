@@ -44,6 +44,7 @@ func TestRouterBatchSizeDefaults(t *testing.T) {
 		var cfg config.RouterConfig
 		cfg.InitDefaults()
 		require.Equal(t, 256, cfg.IngressBatchSize)
+		require.Zero(t, cfg.ProcessorQueueSize)
 		require.Equal(t, 256, cfg.EgressBatchSize)
 		require.Equal(t, 256, cfg.EgressQueueSize)
 		require.NoError(t, cfg.Validate())
@@ -66,11 +67,13 @@ egress_batch_size = 1
 		var cfg config.RouterConfig
 		require.NoError(t, toml.Unmarshal([]byte(`
 ingress_batch_size = 63
+processor_queue_size = 640
 egress_batch_size = 17
 egress_queue_size = 65
 `), &cfg))
 		cfg.InitDefaults()
 		require.Equal(t, 63, cfg.IngressBatchSize)
+		require.Equal(t, 640, cfg.ProcessorQueueSize)
 		require.Equal(t, 17, cfg.EgressBatchSize)
 		require.Equal(t, 65, cfg.EgressQueueSize)
 	})
@@ -85,6 +88,13 @@ func TestRouterBatchSizesMustBePositive(t *testing.T) {
 			require.Error(t, cfg.Validate())
 		})
 	}
+}
+
+func TestRouterProcessorQueueSizeMustNotBeNegative(t *testing.T) {
+	var cfg config.RouterConfig
+	require.NoError(t, toml.Unmarshal([]byte("processor_queue_size = -1\n"), &cfg))
+	cfg.InitDefaults()
+	require.Error(t, cfg.Validate())
 }
 
 func InitTestConfig(cfg *config.Config) {

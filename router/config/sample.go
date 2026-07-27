@@ -35,6 +35,11 @@ num_slow_processors = 1
 # (default 256)
 ingress_batch_size = 256
 
+# The capacity of each fast- and slow-path processor ingress queue.
+# 0 derives the capacity from the number of connections, processors, and ingress batch size.
+# (default 0)
+processor_queue_size = 0
+
 # The maximum number of packets written to a network socket at once.
 # (default 256)
 egress_batch_size = 256

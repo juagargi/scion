@@ -56,6 +56,21 @@ type retryableTestError struct {
 	timeout   bool
 }
 
+func TestProcessorQueueSize(t *testing.T) {
+	t.Run("automatic", func(t *testing.T) {
+		cfg := RunConfig{NumProcessors: 6, IngressBatchSize: 64}
+		require.Equal(t, 64, cfg.processorQueueSize(6))
+		require.Equal(t, 128, cfg.processorQueueSize(12))
+	})
+
+	t.Run("configured", func(t *testing.T) {
+		cfg := RunConfig{
+			NumProcessors: 6, IngressBatchSize: 64, ProcessorQueueSize: 640,
+		}
+		require.Equal(t, 640, cfg.processorQueueSize(6))
+	})
+}
+
 func (e retryableTestError) Error() string   { return "retryable write error" }
 func (e retryableTestError) Temporary() bool { return e.temporary }
 func (e retryableTestError) Timeout() bool   { return e.timeout }

@@ -733,6 +733,7 @@ type RunConfig struct {
 	NumProcessors         int
 	NumSlowPathProcessors int
 	IngressBatchSize      int
+	ProcessorQueueSize    int
 	EgressBatchSize       int
 	EgressQueueSize       int
 	ReceiveBufferSize     int
@@ -760,6 +761,16 @@ func (c RunConfig) underlayConfig() UnderlayConfig {
 	}
 }
 
+func (c RunConfig) processorQueueSize(numConnections int) int {
+	if c.ProcessorQueueSize > 0 {
+		return c.ProcessorQueueSize
+	}
+	return max(
+		numConnections*c.IngressBatchSize/c.NumProcessors,
+		c.IngressBatchSize,
+	)
+}
+
 func (d *dataPlane) Run(ctx context.Context) error {
 	d.mtx.Lock()
 	if d.numInterfaces == 0 {
@@ -780,10 +791,7 @@ func (d *dataPlane) Run(ctx context.Context) error {
 	for _, u := range d.underlays {
 		numConnections += u.NumConnections()
 	}
-	processorQueueSize := max(
-		numConnections*d.RunConfig.IngressBatchSize/d.RunConfig.NumProcessors,
-		d.RunConfig.IngressBatchSize,
-	)
+	processorQueueSize := d.RunConfig.processorQueueSize(numConnections)
 	d.initPacketPool(processorQueueSize)
 	procQs, slowQs := d.initQueues(processorQueueSize)
 	d.setRunning()
