@@ -40,16 +40,17 @@ Edit [hummbwtester.json](hummbwtester.json). It has five required top-level sect
 - `hummingbird_clients`: zero or more Hummingbird client endpoint objects.
 - `best_effort_clients`: zero or more best-effort client endpoint objects.
 - `router`: experiment-only socket and queue settings written to every generated BR TOML before
-  startup: `send_buffer_size`, `ingress_batch_size`, `egress_batch_size`, and
-  `egress_queue_size`.
+  startup: `send_buffer_size`, `ingress_batch_size`, `processor_queue_size`,
+  `egress_batch_size`, and `egress_queue_size`.
 - `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
 
 Linux doubles the requested `SO_SNDBUF` internally. The sample requests a 16 KiB send buffer and
 uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should stop the BR
 writer before TBF tail-drop. If either value changes, retain that relationship and confirm after
 the experiment that the TBF drop count is zero. Its ingress batch of 64 avoids the receive-side
-cost of one-packet batches, while its one-packet egress batch and queues of 64 bound the
-best-effort traffic already dequeued ahead of newly arrived priority packets.
+cost of one-packet batches. Each fast- and slow-path processor ingress queue has 640 slots to
+absorb short scheduling stalls. Its one-packet egress batch and queues of 64 bound the best-effort
+traffic already dequeued ahead of newly arrived priority packets.
 
 Every client requires these fields:
 

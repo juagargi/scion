@@ -284,6 +284,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     router_keys = {
         "send_buffer_size",
         "ingress_batch_size",
+        "processor_queue_size",
         "egress_batch_size",
         "egress_queue_size",
     }
@@ -421,7 +422,7 @@ def patch_toml_section(
 
 
 def patch_router_configs(router: dict[str, int]) -> None:
-    """Apply experiment-only socket and batch settings to every generated border router."""
+    """Apply experiment-only socket, batch, and queue settings to every generated BR."""
     configs = br_config_paths()
     if not configs:
         raise ConfigError("no generated border-router TOML files were found")

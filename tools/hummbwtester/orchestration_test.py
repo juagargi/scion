@@ -52,6 +52,7 @@ class ConfigTest(unittest.TestCase):
             "router": {
                 "send_buffer_size": 16384,
                 "ingress_batch_size": 64,
+                "processor_queue_size": 640,
                 "egress_batch_size": 1,
                 "egress_queue_size": 64,
             },
@@ -166,6 +167,7 @@ class SetupPatchTest(unittest.TestCase):
                 values = {
                     "send_buffer_size": 16384,
                     "ingress_batch_size": 64,
+                    "processor_queue_size": 640,
                     "egress_batch_size": 1,
                     "egress_queue_size": 64,
                 }
@@ -176,6 +178,7 @@ class SetupPatchTest(unittest.TestCase):
                 self.assertEqual(once.count("[router]"), 1)
                 self.assertEqual(once.count("send_buffer_size = 16384"), 1)
                 self.assertEqual(once.count("ingress_batch_size = 64"), 1)
+                self.assertEqual(once.count("processor_queue_size = 640"), 1)
                 self.assertEqual(once.count("egress_batch_size = 1"), 1)
                 self.assertEqual(once.count("egress_queue_size = 64"), 1)
                 self.assertNotRegex(once, r"(?m)^batch_size[ \t]*=")

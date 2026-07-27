@@ -32,6 +32,7 @@
   "router": {
     "send_buffer_size": 16384,
     "ingress_batch_size": 64,
+    "processor_queue_size": 640,
     "egress_batch_size": 1,
     "egress_queue_size": 64
   },
