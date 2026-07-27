@@ -478,7 +478,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Packet-rate view from the border routers.",
+      "description": "Largest priority and best-effort egress queue depths observed since the previous Prometheus scrape, split by border router and interface.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -495,20 +495,20 @@
             "showPoints": "auto",
             "spanNulls": false
           },
-          "decimals": 2,
-          "unit": "pps"
+        "decimals": 0,
+        "unit": "packets"
         },
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "priority"
+              "id": "byRegexp",
+              "options": ".* priority$"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "blue",
+                  "fixedColor": "red",
                   "mode": "fixed"
                 }
               }
@@ -516,14 +516,14 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "best-effort"
+              "id": "byRegexp",
+              "options": ".* best-effort$"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "white",
+                  "fixedColor": "orange",
                   "mode": "fixed"
                 }
               }
@@ -533,7 +533,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 6,
+        "w": 12,
         "x": 12,
         "y": 40
       },
@@ -556,20 +556,20 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(rate(router_priority_forwarded_pkts_total[$__rate_interval])) or vector(0)",
-          "legendFormat": "priority",
+          "expr": "sum by (br, interface) (router_queue_depth_high_watermark{queue=\"priority\"})",
+          "legendFormat": "{{br}} if {{interface}} priority",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "clamp_min((sum(rate(router_processed_pkts_total[$__rate_interval])) or vector(0)) - (sum(rate(router_priority_forwarded_pkts_total[$__rate_interval])) or vector(0)), 0)",
-          "legendFormat": "best-effort",
+          "expr": "sum by (br, interface) (router_queue_depth_high_watermark{queue=\"best_effort\"})",
+          "legendFormat": "{{br}} if {{interface}} best-effort",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Packet Rate Insights",
+      "title": "BR Queue Depths Per Interface",
       "type": "timeseries"
     },
     {
