@@ -1002,7 +1002,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(increase(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[1m])) or on() vector(0)",
+          "expr": "sum(60 * irate(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[$__rate_interval])) or on() vector(0)",
           "legendFormat": "priority drops",
           "range": true,
           "refId": "A"
@@ -1065,7 +1065,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (increase(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[1m]))",
+          "expr": "sum by (br, interface) (60 * irate(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[$__rate_interval]))",
           "legendFormat": "{{br}} if {{interface}}",
           "range": true,
           "refId": "A"
@@ -1286,7 +1286,7 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "5s",
+  "refresh": "1s",
   "schemaVersion": 39,
   "style": "dark",
   "tags": [
@@ -1300,7 +1300,19 @@
     "from": "now-15m",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "refresh_intervals": [
+      "1s",
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
   "timezone": "",
   "title": "hummbwtester Overview",
   "uid": "hummbwtester-overview",

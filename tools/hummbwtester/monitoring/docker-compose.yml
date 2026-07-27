@@ -21,6 +21,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       PROMETHEUS_PORT: "${PROMETHEUS_PORT:-8090}"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "1s"
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     volumes:
