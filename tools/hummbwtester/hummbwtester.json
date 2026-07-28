@@ -11,10 +11,10 @@
       "host": "172.20.0.29",
       "port": 0,
       "bandwidth": "5Mbps",
-      "duration": "600s",
+      "duration": "3h",
       "hummingbird_reservation": {
         "bandwidth": 1000,
-        "duration": "600s",
+        "duration": "3h",
         "reverse_bandwidth": 1000
       }
     }
@@ -26,7 +26,7 @@
       "host": "172.20.0.29",
       "port": 0,
       "bandwidth": "10Mbps",
-      "duration": "600s"
+      "duration": "3h"
     }
   ],
   "router": {
