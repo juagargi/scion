@@ -19,6 +19,7 @@ package conn
 
 import (
 	"context"
+	"encoding/binary"
 	"net"
 	"net/netip"
 	"syscall"
@@ -50,8 +51,7 @@ func (c *connUDPBase) initConnUDP(
 			Control: func(n, a string, rc syscall.RawConn) error {
 				var opErr error
 				err := rc.Control(func(fd uintptr) {
-					opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
-					opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
+					opErr = configureSocket(int(fd))
 				})
 				if err != nil {
 					return err
@@ -72,8 +72,7 @@ func (c *connUDPBase) initConnUDP(
 			Control: func(n, a string, rc syscall.RawConn) error {
 				var opErr error
 				err := rc.Control(func(fd uintptr) {
-					opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
-					opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
+					opErr = configureSocket(int(fd))
 				})
 				if err != nil {
 					return err
@@ -166,4 +165,46 @@ func (c *connUDPBase) initConnUDP(
 
 func UDPCanReuseLocal() bool {
 	return true
+}
+
+// configureSocket applies the Linux options shared by connected and unconnected underlay sockets.
+// SO_RXQ_OVFL asks the kernel to attach its cumulative receive-queue drop count to later packets.
+func configureSocket(fd int) error {
+	for _, option := range []int{unix.SO_REUSEPORT, unix.SO_REUSEADDR, unix.SO_RXQ_OVFL} {
+		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, option, 1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// newReceiveOverflowOOB allocates enough ancillary-data space for one uint32 SO_RXQ_OVFL value.
+func newReceiveOverflowOOB() []byte {
+	return make([]byte, unix.CmsgSpace(4))
+}
+
+// recordReceiveOverflow extracts cumulative kernel drop counts from a received batch and extends
+// the wrapping uint32 values into the monotonic total returned by ReceiveOverflow.
+func (c *connUDPBase) recordReceiveOverflow(msgs Messages) {
+	for _, msg := range msgs {
+		if msg.NN == 0 {
+			continue
+		}
+		controlMessages, err := unix.ParseSocketControlMessage(msg.OOB[:msg.NN])
+		if err != nil {
+			log.Debug("Parsing underlay socket control message", "err", err)
+			continue
+		}
+		for _, controlMessage := range controlMessages {
+			if controlMessage.Header.Level != unix.SOL_SOCKET ||
+				controlMessage.Header.Type != unix.SO_RXQ_OVFL || len(controlMessage.Data) < 4 {
+				continue
+			}
+			current := binary.NativeEndian.Uint32(controlMessage.Data[:4])
+			// uint32 subtraction intentionally wraps when the kernel counter wraps.
+			delta := current - c.lastReceiveOverflow
+			c.lastReceiveOverflow = current
+			c.receiveOverflow.Add(uint64(delta))
+		}
+	}
 }

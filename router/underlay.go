@@ -162,6 +162,8 @@ type UnderlayConfig struct {
 	EgressBatchSize   int
 	ReceiveBufferSize int
 	SendBufferSize    int
+	// Metrics is the main dataplane metric registry shared with the underlay provider.
+	Metrics *Metrics
 }
 
 // NewProviderFn is a function that instantiates an underlay provider.

@@ -21,6 +21,7 @@ package conn
 import (
 	"net"
 	"net/netip"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/ipv4"
@@ -89,6 +90,7 @@ func newConnUDPIPv4(listen, remote netip.AddrPort, cfg *Config) (*connUDPIPv4, e
 // It returns the number of packets read, and an error if any.
 func (c *connUDPIPv4) ReadBatch(msgs Messages) (int, error) {
 	n, err := c.pconn.ReadBatch(msgs, syscallMSG_WAITFORONE)
+	c.recordReceiveOverflow(msgs[:n])
 	return n, err
 }
 
@@ -127,6 +129,7 @@ func newConnUDPIPv6(listen, remote netip.AddrPort, cfg *Config) (*connUDPIPv6, e
 // It returns the number of packets read, and an error if any.
 func (c *connUDPIPv6) ReadBatch(msgs Messages) (int, error) {
 	n, err := c.pconn.ReadBatch(msgs, syscallMSG_WAITFORONE)
+	c.recordReceiveOverflow(msgs[:n])
 	return n, err
 }
 
@@ -152,6 +155,11 @@ type connUDPBase struct {
 	Listen netip.AddrPort
 	Remote netip.AddrPort
 	closed bool
+	// lastReceiveOverflow is the last raw 32-bit SO_RXQ_OVFL value received from Linux.
+	// It is accessed only by the socket's read goroutine.
+	lastReceiveOverflow uint32
+	// receiveOverflow extends the wrapping kernel value into a monotonic process-lifetime total.
+	receiveOverflow atomic.Uint64
 }
 
 func (c *connUDPBase) Write(b []byte) (int, error) {
@@ -181,6 +189,12 @@ func (c *connUDPBase) Close() error {
 	return c.conn.Close()
 }
 
+// ReceiveOverflow returns the cumulative number of packets Linux reported dropped from this
+// socket's receive queue. The boolean is false on platforms without SO_RXQ_OVFL support.
+func (c *connUDPBase) ReceiveOverflow() (uint64, bool) {
+	return c.receiveOverflow.Load(), receiveOverflowSupported
+}
+
 // NewReadMessages allocates memory for reading IPv4 Linux network stack
 // messages.
 func NewReadMessages(n int) Messages {
@@ -188,6 +202,9 @@ func NewReadMessages(n int) Messages {
 	for i := range m {
 		// Allocate a single-element, to avoid allocations when setting the buffer.
 		m[i].Buffers = make([][]byte, 1)
+		// Linux uses this out-of-band buffer to return the SO_RXQ_OVFL control message.
+		// Other platforms return nil and keep the regular packet-read path unchanged.
+		m[i].OOB = newReceiveOverflowOOB()
 	}
 	return m
 }

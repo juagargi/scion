@@ -55,6 +55,7 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = [
+        "conn_test.go",
         "export_test.go",
         "packet_test.go",
         "svcaddr_test.go",

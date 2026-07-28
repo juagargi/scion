@@ -36,6 +36,8 @@ go_test(
         "//pkg/slayers/path/scion:go_default_library",
         "//router:go_default_library",
         "@com_github_gopacket_gopacket//:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus/testutil:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
         "@com_github_stretchr_testify//require:go_default_library",
     ],

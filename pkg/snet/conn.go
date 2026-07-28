@@ -117,6 +117,17 @@ func (c *Conn) SetDeadline(t time.Time) error {
 	return nil
 }
 
+// SetReadBuffer sets the operating system receive buffer associated with this connection.
+func (c *Conn) SetReadBuffer(bytes int) error {
+	setter, ok := c.conn.(interface {
+		SetReadBuffer(int) error
+	})
+	if !ok {
+		return serrors.New("packet connection does not support setting the receive buffer")
+	}
+	return setter.SetReadBuffer(bytes)
+}
+
 func (c *Conn) Close() error {
 	return c.conn.Close()
 }

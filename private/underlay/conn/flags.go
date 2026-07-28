@@ -17,3 +17,5 @@
 package conn
 
 const syscallMSG_WAITFORONE = 0
+
+const receiveOverflowSupported = false

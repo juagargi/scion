@@ -367,7 +367,7 @@ func makeDataPlane(runConfig RunConfig, authSCMP bool) dataPlane {
 	runConfig.initDefaults()
 	return dataPlane{
 		underlays: map[string]UnderlayProvider{
-			"udpip": underlayProviders["udpip"](runConfig.underlayConfig()),
+			"udpip": underlayProviders["udpip"](runConfig.underlayConfig(metrics)),
 		},
 		Metrics:                        metrics,
 		ExperimentalSCMPAuthentication: authSCMP,
@@ -522,7 +522,7 @@ func (d *dataPlane) AddExternalInterface(
 		if !exists {
 			panic(fmt.Sprintf("no provider for underlay: %q", link.Provider))
 		}
-		underlay = underlayProvider(d.RunConfig.underlayConfig())
+		underlay = underlayProvider(d.RunConfig.underlayConfig(d.Metrics))
 		d.underlays[link.Provider] = underlay
 	}
 	d.linkTypes[ifID] = link.LinkTo
@@ -667,7 +667,7 @@ func (d *dataPlane) AddNextHop(
 		if !exists {
 			panic(fmt.Sprintf("no provider for underlay: %q", link.Provider))
 		}
-		underlay = underlayProvider(d.RunConfig.underlayConfig())
+		underlay = underlayProvider(d.RunConfig.underlayConfig(d.Metrics))
 		d.underlays[link.Provider] = underlay
 	}
 	d.linkTypes[ifID] = link.LinkTo
@@ -752,12 +752,13 @@ func (c *RunConfig) initDefaults() {
 	}
 }
 
-func (c RunConfig) underlayConfig() UnderlayConfig {
+func (c RunConfig) underlayConfig(metrics *Metrics) UnderlayConfig {
 	return UnderlayConfig{
 		IngressBatchSize:  c.IngressBatchSize,
 		EgressBatchSize:   c.EgressBatchSize,
 		ReceiveBufferSize: c.ReceiveBufferSize,
 		SendBufferSize:    c.SendBufferSize,
+		Metrics:           metrics,
 	}
 }
 

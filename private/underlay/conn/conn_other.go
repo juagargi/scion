@@ -134,3 +134,11 @@ func (cc *connUDPBase) initConnUDP(
 func UDPCanReuseLocal() bool {
 	return false
 }
+
+// Non-Linux platforms do not request or parse Linux SO_RXQ_OVFL ancillary data.
+func newReceiveOverflowOOB() []byte {
+	return nil
+}
+
+// recordReceiveOverflow is a no-op where SO_RXQ_OVFL is unavailable.
+func (c *connUDPBase) recordReceiveOverflow(Messages) {}

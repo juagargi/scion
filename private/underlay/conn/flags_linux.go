@@ -19,3 +19,5 @@ package conn
 import "syscall"
 
 const syscallMSG_WAITFORONE = syscall.MSG_WAITFORONE
+
+const receiveOverflowSupported = true

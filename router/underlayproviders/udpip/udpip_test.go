@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/gopacket/gopacket"
+	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,6 +43,21 @@ import (
 var (
 	testKey = []byte("testkey_xxxxxxxx")
 )
+
+func TestReceiveOverflowRecorder(t *testing.T) {
+	metric := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "test_router_underlay_receive_overflow_pkts_total",
+	}, []string{"local", "remote"})
+	metrics := &router.Metrics{UnderlayReceiveOverflowPackets: metric}
+	local := netip.MustParseAddrPort("127.0.0.1:10000")
+
+	record := newReceiveOverflowRecorder(metrics, local, netip.AddrPort{})
+	require.NotNil(t, record)
+	record(7)
+
+	require.Equal(t, float64(7),
+		promtest.ToFloat64(metric.WithLabelValues(local.String(), "unconnected")))
+}
 
 type classifiedWriteError struct {
 	temporary bool

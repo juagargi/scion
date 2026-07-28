@@ -40,21 +40,24 @@ type Metrics struct {
 	PriorityForwardedPackets    *prometheus.CounterVec
 	DroppedPacketsTotal         *prometheus.CounterVec
 	DroppedPriorityPacketsTotal *prometheus.CounterVec
-	HummProcessedPackets        *prometheus.CounterVec
-	HummFlyoverPackets          *prometheus.CounterVec
-	HummDemotedFreshnessPkts    *prometheus.CounterVec
-	HummDemotedExpiredPkts      *prometheus.CounterVec
-	HummDemotedTokenBucketPkts  *prometheus.CounterVec
-	InterfaceUp                 *prometheus.GaugeVec
-	BFDInterfaceStateChanges    *prometheus.CounterVec
-	BFDPacketsSent              *prometheus.CounterVec
-	BFDPacketsReceived          *prometheus.CounterVec
-	ServiceInstanceCount        *prometheus.GaugeVec
-	ServiceInstanceChanges      *prometheus.CounterVec
-	SiblingReachable            *prometheus.GaugeVec
-	SiblingBFDPacketsSent       *prometheus.CounterVec
-	SiblingBFDPacketsReceived   *prometheus.CounterVec
-	SiblingBFDStateChanges      *prometheus.CounterVec
+	// UnderlayReceiveOverflowPackets counts kernel drops before packet parsing or interface
+	// classification, so its series are labeled by socket endpoints rather than router interfaces.
+	UnderlayReceiveOverflowPackets *prometheus.CounterVec
+	HummProcessedPackets           *prometheus.CounterVec
+	HummFlyoverPackets             *prometheus.CounterVec
+	HummDemotedFreshnessPkts       *prometheus.CounterVec
+	HummDemotedExpiredPkts         *prometheus.CounterVec
+	HummDemotedTokenBucketPkts     *prometheus.CounterVec
+	InterfaceUp                    *prometheus.GaugeVec
+	BFDInterfaceStateChanges       *prometheus.CounterVec
+	BFDPacketsSent                 *prometheus.CounterVec
+	BFDPacketsReceived             *prometheus.CounterVec
+	ServiceInstanceCount           *prometheus.GaugeVec
+	ServiceInstanceChanges         *prometheus.CounterVec
+	SiblingReachable               *prometheus.GaugeVec
+	SiblingBFDPacketsSent          *prometheus.CounterVec
+	SiblingBFDPacketsReceived      *prometheus.CounterVec
+	SiblingBFDStateChanges         *prometheus.CounterVec
 	// QueueDepth is a scrape-time collector over egress queue occupancy. Unlike InterfaceMetrics,
 	// these metrics are tied to queue-owning underlay connections rather than to traffic size
 	// classes, because detached sibling links can share the same underlying queues.
@@ -299,6 +302,13 @@ func NewMetrics() *Metrics {
 				Help: "Total number of priority packets dropped by the router.",
 			},
 			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass", "reason"},
+		),
+		UnderlayReceiveOverflowPackets: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_underlay_receive_overflow_pkts_total",
+				Help: "Total packets dropped from a border-router underlay socket receive queue.",
+			},
+			[]string{"local", "remote"},
 		),
 		HummProcessedPackets: promauto.NewCounterVec(
 			prometheus.CounterOpts{
