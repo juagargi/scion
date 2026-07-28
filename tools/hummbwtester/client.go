@@ -497,9 +497,26 @@ func (t *pongTracker) evictTimedOut(now time.Time) int {
 	return lost
 }
 
+// advancePacingDeadline advances one absolute pacing schedule after sending the packet associated
+// with target. Under normal timing it returns target+interval, preserving the original cadence.
+// If that following deadline is no longer in the future, the client has accumulated pacing debt:
+// it discards the missed schedule slots and returns now+interval instead. The caller has already
+// sent at most one overdue packet, so rebasing prevents a catch-up burst. Discarding schedule slots
+// does not allocate or advance packet sequence numbers; only actual send attempts do that.
+//
+// The boolean reports whether a rebase occurred so the caller can record the pacing overrun.
+func advancePacingDeadline(target time.Time, interval time.Duration, now time.Time) (time.Time, bool) {
+	next := target.Add(interval)
+	if !next.After(now) {
+		return now.Add(interval), true
+	}
+	return next, false
+}
+
 // sendLoop is the single writer goroutine: it merges the Payload and PongRequest schedules by
 // absolute deadline (per design doc section 3) and writes every packet through conn.WriteTo,
-// always reading the latest reservation pointer so renewal and pacing never race.
+// always reading the latest reservation pointer so renewal and pacing never race. Each schedule
+// permits at most one overdue send before rebasing to the configured rate.
 func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTracker) {
 	payloadInterval := time.Duration(float64(time.Second) * float64(c.cfg.payloadSize*8) / c.cfg.bandwidthBps)
 	if payloadInterval <= 0 {
@@ -523,9 +540,18 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 	nextPayload := now
 	nextPong := now
 
-	const pacingViolationThreshold = -100 * time.Millisecond
 	var overrunsSinceLog int
 	lastOverrunLog := now
+	recordPacingRebase := func(target, observed time.Time) {
+		c.metrics.pacingOverrunTotal.Inc()
+		c.metrics.pacingDelay.Observe(observed.Sub(target).Seconds())
+		overrunsSinceLog++
+		if time.Since(lastOverrunLog) >= time.Second {
+			log.Error("Pacing schedule rebased", "count_since_last_log", overrunsSinceLog)
+			overrunsSinceLog = 0
+			lastOverrunLog = time.Now()
+		}
+	}
 
 	for {
 		if !deadline.IsZero() && !now.Before(deadline) {
@@ -552,15 +578,6 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 				return
 			case <-time.After(wait):
 			}
-		} else if wait <= pacingViolationThreshold {
-			c.metrics.pacingOverrunTotal.Inc()
-			c.metrics.pacingDelay.Observe((-wait).Seconds())
-			overrunsSinceLog++
-			if time.Since(lastOverrunLog) >= time.Second {
-				log.Error("Pacing overruns", "count_since_last_log", overrunsSinceLog)
-				overrunsSinceLog = 0
-				lastOverrunLog = time.Now()
-			}
 		}
 
 		now = time.Now()
@@ -581,7 +598,13 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 				c.rateMu.Unlock()
 			}
 			payloadSeq++
-			nextPayload = nextPayload.Add(payloadInterval)
+			afterSend := time.Now()
+			var rebased bool
+			// Use the completion time so a slow WriteTo is treated as pacing delay too.
+			nextPayload, rebased = advancePacingDeadline(nextPayload, payloadInterval, afterSend)
+			if rebased {
+				recordPacingRebase(target, afterSend)
+			}
 		} else {
 			EncodePongRequest(pongBuf, pongSeq, now.UnixNano())
 			if _, err := conn.WriteTo(pongBuf, addr); err != nil {
@@ -591,7 +614,13 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 				tracker.recordSent(pongSeq, now)
 			}
 			pongSeq++
-			nextPong = nextPong.Add(pongInterval)
+			afterSend := time.Now()
+			var rebased bool
+			// Payload and pong schedules rebase independently; delaying one does not move the other.
+			nextPong, rebased = advancePacingDeadline(nextPong, pongInterval, afterSend)
+			if rebased {
+				recordPacingRebase(target, afterSend)
+			}
 		}
 	}
 }

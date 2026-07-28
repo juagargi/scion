@@ -18,6 +18,7 @@ from tools.hummbwtester.orchestration import (
     print_report,
     ReportSnapshot,
     RouterInterface,
+    server_args,
     TCStats,
 )
 
@@ -37,7 +38,10 @@ class ConfigTest(unittest.TestCase):
         # only on client_id, not on whether the client is Hummingbird or best-effort, nor on its
         # position in the JSON arrays.
         return {
-            "server": {"isd_as": "1-ff00:0:112", "host": "fd00::1", "port": 12345},
+            "server": {
+                "isd_as": "1-ff00:0:112", "host": "fd00::1", "port": 12345,
+                "receive_buffer_size": 4194304,
+            },
             "hummingbird_clients": [{
                 "client_id": "zeta", "isd_as": "1-ff00:0:111", "host": "172.20.0.29", "port": 0,
                 "bandwidth": "2Mbps", "duration": "60s",
@@ -51,6 +55,7 @@ class ConfigTest(unittest.TestCase):
             }],
             "router": {
                 "send_buffer_size": 16384,
+                "receive_buffer_size": 4194304,
                 "ingress_batch_size": 64,
                 "processor_queue_size": 640,
                 "egress_batch_size": 1,
@@ -64,6 +69,19 @@ class ConfigTest(unittest.TestCase):
         # The first sorted client owns the fixed base port; every subsequent client increments it.
         self.assertEqual([("alpha", 9090), ("zeta", 9091)],
                          [(client.client_id, client.metrics_port) for client in clients])
+
+    def test_requires_positive_server_receive_buffer(self):
+        for value in (0, -1, "4194304", True):
+            with self.subTest(value=value):
+                config = self.base_config()
+                config["server"]["receive_buffer_size"] = value
+                with self.assertRaises(ConfigError):
+                    load_config(self.write_config(config))
+
+    def test_server_args_include_receive_buffer(self):
+        server, _, _, _ = load_config(self.write_config(self.base_config()))
+        args = server_args(server, "172.20.0.21:30255")
+        self.assertEqual(args[args.index("-receive-buffer-size") + 1], "4194304")
 
     def test_rejects_unscoped_client_fields(self):
         config = self.base_config()
@@ -166,6 +184,7 @@ class SetupPatchTest(unittest.TestCase):
                 path.write_text(original)
                 values = {
                     "send_buffer_size": 16384,
+                    "receive_buffer_size": 4194304,
                     "ingress_batch_size": 64,
                     "processor_queue_size": 640,
                     "egress_batch_size": 1,
@@ -177,6 +196,7 @@ class SetupPatchTest(unittest.TestCase):
                 self.assertEqual(once, path.read_text())
                 self.assertEqual(once.count("[router]"), 1)
                 self.assertEqual(once.count("send_buffer_size = 16384"), 1)
+                self.assertEqual(once.count("receive_buffer_size = 4194304"), 1)
                 self.assertEqual(once.count("ingress_batch_size = 64"), 1)
                 self.assertEqual(once.count("processor_queue_size = 640"), 1)
                 self.assertEqual(once.count("egress_batch_size = 1"), 1)

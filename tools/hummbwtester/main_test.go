@@ -395,3 +395,34 @@ func TestParseBandwidth(t *testing.T) {
 	_, err := parseBandwidth("not-a-number")
 	assert.Error(t, err)
 }
+
+func TestAdvancePacingDeadline(t *testing.T) {
+	start := time.Unix(100, 0)
+	interval := 10 * time.Millisecond
+
+	t.Run("normal cadence stays absolute", func(t *testing.T) {
+		next, rebased := advancePacingDeadline(start, interval, start.Add(5*time.Millisecond))
+		assert.False(t, rebased)
+		assert.Equal(t, start.Add(interval), next)
+	})
+
+	t.Run("stalled schedule discards accumulated debt", func(t *testing.T) {
+		now := start.Add(35 * time.Millisecond)
+		next, rebased := advancePacingDeadline(start, interval, now)
+		assert.True(t, rebased)
+		assert.Equal(t, now.Add(interval), next)
+	})
+
+	t.Run("payload and pong schedules advance independently", func(t *testing.T) {
+		payloadNext, payloadRebased := advancePacingDeadline(
+			start, time.Millisecond, start.Add(3*time.Millisecond),
+		)
+		pongNext, pongRebased := advancePacingDeadline(
+			start, time.Second, start.Add(3*time.Millisecond),
+		)
+		assert.True(t, payloadRebased)
+		assert.Equal(t, start.Add(4*time.Millisecond), payloadNext)
+		assert.False(t, pongRebased)
+		assert.Equal(t, start.Add(time.Second), pongNext)
+	})
+}

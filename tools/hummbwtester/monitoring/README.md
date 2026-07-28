@@ -114,6 +114,8 @@ Useful example queries include:
 - `router_humm_demoted_expired_total`
 - `router_humm_demoted_tokenbucket_total`
 - `router_queue_depth`
+- `router_queue_depth_high_watermark`
+- `router_underlay_receive_overflow_pkts_total`
 - `process_running_seconds_total`
 - `process_runnable_seconds_total`
 - `go_sched_maxprocs_threads`
@@ -135,8 +137,15 @@ That dashboard includes:
 - total border router demotion rates by freshness, expiry, and token bucket cause
 - detailed demotion rates by cause, border router, and interface
 - border-router running and scheduler-denied CPU time, together with each process's GOMAXPROCS
+- total and per-socket Linux UDP receive-queue overflows for the border routers
 - aggregate BFD packet-loss and state-change counts per minute, plus current per-interface counters
 - pong request-to-reply gaps for remote-sent and client-received replies
 
 If you want to build your own panels, create a new dashboard in Grafana and query the same
 metrics that appear in `./tools/hummbwtester/metrics.go`.
+
+Linux delivers `SO_RXQ_OVFL` as ancillary data on a packet received after an overflow. Therefore,
+`router_underlay_receive_overflow_pkts_total` can update slightly after the actual drop. Its
+`local` and `remote` labels identify the socket; `remote="unconnected"` denotes a BR internal
+socket. The metric cannot carry an interface or priority label because the kernel drops the
+datagram before the BR receives and classifies it.

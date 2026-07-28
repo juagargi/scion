@@ -56,6 +56,8 @@ class Endpoint:
     isd_as: str
     host: str
     port: int
+    # Only the server endpoint sets this; client endpoints keep the zero default.
+    receive_buffer_size: int = 0
 
     def local(self) -> str:
         return f"{self.isd_as},{join_host_port(self.host, self.port)}"
@@ -163,9 +165,14 @@ def require_fields(
         raise ConfigError(f"{context} has " + "; ".join(detail))
 
 
-def parse_endpoint(value: dict[str, Any], context: str) -> Endpoint:
+def parse_endpoint(
+    value: dict[str, Any], context: str, *, require_receive_buffer: bool = False,
+) -> Endpoint:
     """Validate one JSON endpoint object and return its typed representation."""
-    require_fields(value, {"isd_as", "host", "port"}, context)
+    required = {"isd_as", "host", "port"}
+    if require_receive_buffer:
+        required.add("receive_buffer_size")
+    require_fields(value, required, context)
     ia, host, port = value["isd_as"], value["host"], value["port"]
     if not isinstance(ia, str) or not ia:
         raise ConfigError(f"{context}.isd_as must be a non-empty string")
@@ -177,7 +184,13 @@ def parse_endpoint(value: dict[str, Any], context: str) -> Endpoint:
         raise ConfigError(f"{context}.host is not an IP address: {host}") from err
     if not isinstance(port, int) or isinstance(port, bool) or not 0 <= port <= 65535:
         raise ConfigError(f"{context}.port must be an integer from 0 through 65535")
-    return Endpoint(ia, host, port)
+    receive_buffer_size = value.get("receive_buffer_size", 0)
+    if (not isinstance(receive_buffer_size, int) or isinstance(receive_buffer_size, bool)
+            or receive_buffer_size < 0):
+        raise ConfigError(f"{context}.receive_buffer_size must be a non-negative integer")
+    if require_receive_buffer and receive_buffer_size == 0:
+        raise ConfigError(f"{context}.receive_buffer_size must be a positive integer")
+    return Endpoint(ia, host, port, receive_buffer_size)
 
 
 def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Client:
@@ -249,7 +262,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     )
     if not isinstance(root["server"], dict):
         raise ConfigError("server must be an object")
-    server = parse_endpoint(root["server"], "server")
+    server = parse_endpoint(root["server"], "server", require_receive_buffer=True)
     if server.port == 0:
         raise ConfigError("server.port must not be zero")
 
@@ -283,6 +296,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         raise ConfigError("router must be an object")
     router_keys = {
         "send_buffer_size",
+        "receive_buffer_size",
         "ingress_batch_size",
         "processor_queue_size",
         "egress_batch_size",
@@ -621,6 +635,14 @@ def stop_remote(service: str, pidfile: str) -> None:
         cwd=ROOT, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def server_args(server: Endpoint, sciond: str) -> list[str]:
+    """Build the hummbwtester command-line arguments for the configured server."""
+    return [
+        "/share/bin/hummbwtester", "-mode", "server", "-local", server.local(),
+        "-sciond", sciond, "-receive-buffer-size", str(server.receive_buffer_size),
+    ]
+
+
 def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
     """Build the hummbwtester command-line arguments for one configured client."""
     args = ["/share/bin/hummbwtester", "-mode", "client", "-local", client.endpoint.local(),
@@ -890,11 +912,10 @@ def run_experiment(config_path: Path) -> int:
     server_service = tester_service(server.isd_as)
     log_dir = ROOT / "logs" / "hummbwtester"
     server_pidfile = "/tmp/hummbwtester-server.pid"
-    server_args = ["/share/bin/hummbwtester", "-mode", "server", "-local", server.local(),
-                   "-sciond", endpoint_sciond(server, daemons)]
+    args = server_args(server, endpoint_sciond(server, daemons))
     processes: list[tuple[Client, str, subprocess.Popen[str]]] = []
     interfaces = router_interfaces()
-    server_process = launch(server_service, server_pidfile, server_args, log_dir / "server.log")
+    server_process = launch(server_service, server_pidfile, args, log_dir / "server.log")
     try:
         # Give the server a predictable head start before clients begin selecting paths and dialing.
         time.sleep(2)

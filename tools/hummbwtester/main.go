@@ -59,16 +59,17 @@ var (
 	sciondAddr    string
 	sciondConfDir string
 
-	bandwidthFlag   string
-	duration        time.Duration
-	payloadSize     int
-	pongRateHz      float64
-	hummingbirdFlag string
-	hummKeysDir     string
-	metricsAddr     string
-	reportInterval  time.Duration
-	renewalFraction float64
-	verifyIntegrity bool
+	bandwidthFlag     string
+	duration          time.Duration
+	payloadSize       int
+	pongRateHz        float64
+	hummingbirdFlag   string
+	hummKeysDir       string
+	metricsAddr       string
+	reportInterval    time.Duration
+	renewalFraction   float64
+	verifyIntegrity   bool
+	receiveBufferSize int
 )
 
 func main() {
@@ -135,9 +136,10 @@ func realMain() int {
 	switch mode {
 	case modeServer:
 		scfg := serverConfig{
-			local:           localFlag,
-			reportInterval:  reportInterval,
-			verifyIntegrity: verifyIntegrity,
+			local:             localFlag,
+			reportInterval:    reportInterval,
+			verifyIntegrity:   verifyIntegrity,
+			receiveBufferSize: receiveBufferSize,
 		}
 		return runServer(ctx, sn, scfg)
 	case modeClient:
@@ -209,6 +211,8 @@ func addFlags() {
 		"(Client only) fraction of the reservation window elapsed before renewing")
 	flag.BoolVar(&verifyIntegrity, "verify-integrity", false,
 		"(Server only) verify the deterministic filler pattern of received payload packets")
+	flag.IntVar(&receiveBufferSize, "receive-buffer-size", 0,
+		"(Server only) operating-system receive buffer size in bytes; 0 uses the default")
 
 	flag.StringVar(&metricsAddr, "metrics-addr", defaultMetricsAddr,
 		"(Client only) address to serve Prometheus /metrics on")
@@ -224,6 +228,9 @@ func validateFlags() error {
 	}
 	if localFlag.Host == nil {
 		return serrors.New("missing -local")
+	}
+	if receiveBufferSize < 0 {
+		return serrors.New("receive-buffer-size must not be negative", "value", receiveBufferSize)
 	}
 	if mode == modeClient {
 		if remoteFlag.Host == nil {

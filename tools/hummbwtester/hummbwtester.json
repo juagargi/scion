@@ -2,7 +2,8 @@
   "server": {
     "isd_as": "1-ff00:0:112",
     "host": "fd00:f00d:cafe::7f00:15",
-    "port": 12345
+    "port": 12345,
+    "receive_buffer_size": 4194304
   },
   "hummingbird_clients": [
     {
@@ -31,10 +32,11 @@
   ],
   "router": {
     "send_buffer_size": 16384,
+    "receive_buffer_size": 4194304,
     "ingress_batch_size": 64,
     "processor_queue_size": 640,
     "egress_batch_size": 1,
-    "egress_queue_size": 64
+    "egress_queue_size": 640
   },
   "tc": {
     "rate": "10mbit",

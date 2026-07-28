@@ -36,6 +36,8 @@ type serverConfig struct {
 	local           snet.UDPAddr
 	reportInterval  time.Duration
 	verifyIntegrity bool
+	// receiveBufferSize is applied to the listening socket before the receive loop starts.
+	receiveBufferSize int
 }
 
 // clientState is the per-source-address accounting kept by the server. All access is
@@ -74,6 +76,12 @@ func runServer(ctx context.Context, sn *snet.SCIONNetwork, cfg serverConfig) int
 		return 1
 	}
 	defer conn.Close()
+	if cfg.receiveBufferSize > 0 {
+		if err := conn.SetReadBuffer(cfg.receiveBufferSize); err != nil {
+			log.Error("Setting server receive buffer", "size", cfg.receiveBufferSize, "err", err)
+			return 1
+		}
+	}
 	log.Info("Server listening", "local", conn.LocalAddr())
 
 	s := &server{

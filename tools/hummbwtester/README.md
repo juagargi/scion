@@ -36,21 +36,23 @@ are read from the JSON configuration.
 
 Edit [hummbwtester.json](hummbwtester.json). It has five required top-level sections:
 
-- `server`: the server's `isd_as`, tester `host`, and UDP `port`.
+- `server`: the server's `isd_as`, tester `host`, UDP `port`, and
+  `receive_buffer_size`.
 - `hummingbird_clients`: zero or more Hummingbird client endpoint objects.
 - `best_effort_clients`: zero or more best-effort client endpoint objects.
 - `router`: experiment-only socket and queue settings written to every generated BR TOML before
-  startup: `send_buffer_size`, `ingress_batch_size`, `processor_queue_size`,
+  startup: `send_buffer_size`, `receive_buffer_size`, `ingress_batch_size`, `processor_queue_size`,
   `egress_batch_size`, and `egress_queue_size`.
 - `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
 
-Linux doubles the requested `SO_SNDBUF` internally. The sample requests a 16 KiB send buffer and
-uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should stop the BR
-writer before TBF tail-drop. If either value changes, retain that relationship and confirm after
-the experiment that the TBF drop count is zero. Its ingress batch of 64 avoids the receive-side
-cost of one-packet batches. Each fast- and slow-path processor ingress queue has 640 slots to
-absorb short scheduling stalls. Its one-packet egress batch and queues of 64 bound the best-effort
-traffic already dequeued ahead of newly arrived priority packets.
+Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
+send buffer and uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should
+stop the BR writer before TBF tail-drop. It requests the host's current 4 MiB maximum receive
+buffer for every BR socket and for the tester server. If these receive queues still overflow,
+increase `net.core.rmem_max` and both configured receive-buffer values together. Its ingress batch
+of 64 avoids the receive-side cost of one-packet batches; it is not queue storage. Each fast- and
+slow-path processor ingress queue and each priority/best-effort egress queue has 640 slots to absorb
+short scheduling stalls.
 
 Every client requires these fields:
 
@@ -68,6 +70,27 @@ Hummingbird clients additionally require `hummingbird_reservation`, an object wi
 Both client types may optionally set `payload_size`, `pong_rate`, and `renewal_fraction`.
 They are passed respectively as `-payload-size`, `-pong-rate`, and `-renewal-fraction`.
 When omitted, the binary's built-in defaults apply.
+
+### Pacing after a missed deadline
+
+Payload packets and pong requests have independent absolute-deadline schedules. The send loop
+always services whichever deadline comes first. After each send attempt, it normally advances that
+schedule by one interval, preserving the original cadence.
+
+If sending finishes after the following deadline has already passed, the client sends no catch-up
+burst. It discards the accumulated schedule debt and sets the next deadline to one interval after
+the current completion time. For example, with a 10 ms interval, if the packet scheduled for
+time 0 finishes at 35 ms, the schedule slots at 10, 20, and 30 ms are discarded and the next packet
+is scheduled for 45 ms.
+
+Discarded schedule slots are not packets: the client does not increment the payload or pong
+sequence number for them. Consequently, the server's payload-loss tracker does not report an
+intentional sequence gap. The tradeoff is a temporary throughput deficit after a scheduling stall;
+the client resumes at the configured rate instead of transmitting faster to recover it.
+
+Each rebase increments `hummbwtester_client_pacing_overrun_total`, records the delay in
+`hummbwtester_client_pacing_delay_seconds`, and contributes to the rate-limited
+`Pacing schedule rebased` log message.
 
 For example, this commented dummy Hummingbird client shows every supported client field:
 

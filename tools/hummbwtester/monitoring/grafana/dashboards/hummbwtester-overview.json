@@ -478,7 +478,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Largest priority and best-effort egress queue depths observed since the previous Prometheus scrape, split by border router and interface.",
+      "description": "Largest priority and best-effort egress queue depths reported in a rolling minute, split by border router and interface. The rolling maximum preserves scrape-local spikes.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -556,14 +556,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (router_queue_depth_high_watermark{queue=\"priority\"})",
+          "expr": "sum by (br, interface) (max_over_time(router_queue_depth_high_watermark{queue=\"priority\"}[1m]))",
           "legendFormat": "{{br}} if {{interface}} priority",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (router_queue_depth_high_watermark{queue=\"best_effort\"})",
+          "expr": "sum by (br, interface) (max_over_time(router_queue_depth_high_watermark{queue=\"best_effort\"}[1m]))",
           "legendFormat": "{{br}} if {{interface}} best-effort",
           "range": true,
           "refId": "B"
@@ -653,7 +653,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Largest border router egress queue depths observed since the previous Prometheus scrape.",
+      "description": "Sum of the largest border router egress queue depths reported in a rolling minute. The rolling maximum preserves scrape-local spikes.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -731,14 +731,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(router_queue_depth_high_watermark{queue=\"priority\"}) or vector(0)",
+          "expr": "sum(max_over_time(router_queue_depth_high_watermark{queue=\"priority\"}[1m])) or vector(0)",
           "legendFormat": "priority",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum(router_queue_depth_high_watermark{queue=\"best_effort\"}) or vector(0)",
+          "expr": "sum(max_over_time(router_queue_depth_high_watermark{queue=\"best_effort\"}[1m])) or vector(0)",
           "legendFormat": "best-effort",
           "range": true,
           "refId": "B"
@@ -1002,7 +1002,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(60 * irate(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[$__rate_interval])) or on() vector(0)",
+          "expr": "sum(increase(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[1m])) or on() vector(0)",
           "legendFormat": "priority drops",
           "range": true,
           "refId": "A"
@@ -1065,7 +1065,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (60 * irate(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[$__rate_interval]))",
+          "expr": "sum by (br, interface) (increase(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[1m]))",
           "legendFormat": "{{br}} if {{interface}}",
           "range": true,
           "refId": "A"
@@ -1397,6 +1397,129 @@
         }
       ],
       "title": "BR CPU Scheduling",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Packets dropped from all border-router UDP receive queues per rolling minute. Linux reports an overflow on a subsequently received datagram.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "red",
+            "mode": "fixed"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "decimals": 0,
+          "unit": "suffix: packet/min"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "id": 17,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(router_underlay_receive_overflow_pkts_total[1m])) or on() vector(0)",
+          "legendFormat": "kernel receive overflows",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "BR Kernel Receive Overflows Total",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Packets dropped from border-router UDP receive queues per rolling minute, split by socket. The remote label is unconnected for internal sockets.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "decimals": 0,
+          "unit": "suffix: packet/min"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 56
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (br, local, remote) (increase(router_underlay_receive_overflow_pkts_total[1m]))",
+          "legendFormat": "{{br}} {{local}} <- {{remote}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "BR Kernel Receive Overflows Per Socket",
       "type": "timeseries"
     }
   ],
