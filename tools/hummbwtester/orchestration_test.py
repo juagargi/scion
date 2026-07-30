@@ -308,11 +308,14 @@ class ReportTest(unittest.TestCase):
             print_report(previous, current, interfaces)
         rendered = output.getvalue()
         self.assertIn("HUMMBWTESTER_REPORT interval=60s", rendered)
-        self.assertIn("BFD lost", rendered)
-        self.assertIn("TC backlog bytes", rendered)
+        # self.assertIn("BFD lost", rendered)
+        # self.assertIn("TC backlog bytes", rendered)
+        self.assertIn("TC dropped", rendered)
         self.assertIn("observation_error=br-c metrics unavailable", rendered)
-        # br-a lost 25 BFD packets sent by br-b minus 18 packets received by br-a.
-        self.assertRegex(rendered, r"BFD lost.*\b7\b")
+        # # br-a lost 25 BFD packets sent by br-b minus 18 packets received by br-a.
+        # self.assertRegex(rendered, r"BFD lost.*\b7\b")
+        self.assertRegex(rendered, r"TC dropped.*\b1\b.*\b0\b")
+        self.assertIn("\n\nHUMMBWTESTER_REPORT observation_error", rendered)
 
 
 if __name__ == "__main__":

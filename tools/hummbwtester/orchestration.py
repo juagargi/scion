@@ -884,18 +884,19 @@ def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: 
                 ))
         return values
     rows = [
-        ("BFD sent", counter_row("bfd_sent")),
-        ("BFD received", counter_row("bfd_received")),
-        ("BFD lost", [bfd_lost(interface) for interface in interfaces]),
-        ("Demotions", counter_row("demotions")),
-        ("Busy forwarder drops", counter_row("busy_forwarder_drops")),
+        # ("BFD sent", counter_row("bfd_sent")),
+        # ("BFD received", counter_row("bfd_received")),
+        # ("BFD lost", [bfd_lost(interface) for interface in interfaces]),
+        # ("Demotions", counter_row("demotions")),
+        # ("Busy forwarder drops", counter_row("busy_forwarder_drops")),
         ("TC dropped", tc_row("dropped")),
-        ("TC overlimits", tc_row("overlimits")),
-        ("TC backlog bytes", tc_row("backlog_bytes", current_value=True)),
+        # ("TC overlimits", tc_row("overlimits")),
+        # ("TC backlog bytes", tc_row("backlog_bytes", current_value=True)),
     ]
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
     print(f"{timestamp} HUMMBWTESTER_REPORT interval=60s (counters are deltas; TC backlog is current)")
     print(render_table(["metric", *(interface.label for interface in interfaces)], rows))
+    print()
     for error in current.errors:
         print(f"HUMMBWTESTER_REPORT observation_error={error}")
 
