@@ -12,6 +12,7 @@
       "host": "172.20.0.29",
       "port": 0,
       "bandwidth": "5Mbps",
+      "maxburst": "50Mbps",
       "duration": "3h",
       "hummingbird_reservation": {
         "bandwidth": 1000,
@@ -23,10 +24,11 @@
   "best_effort_clients": [
     {
       "client_id": "best-effort-1",
-      "isd_as": "1-ff00:0:111",
-      "host": "172.20.0.29",
+      "isd_as": "1-ff00:0:110",
+      "host": "172.20.0.22",
       "port": 0,
       "bandwidth": "10Mbps",
+      "maxburst": "20Mbps",
       "duration": "3h"
     }
   ],
