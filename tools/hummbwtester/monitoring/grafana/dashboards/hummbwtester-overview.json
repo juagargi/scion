@@ -126,7 +126,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "clamp_min(avg_over_time(hummbwtester_client_send_rate_bps[60s]) - avg_over_time(hummbwtester_client_remote_receive_rate_bps[60s]), 0)",
+          "expr": "avg_over_time(hummbwtester_client_send_rate_bps[60s]) - avg_over_time(hummbwtester_client_remote_receive_rate_bps[60s])",
           "legendFormat": "{{client_id}} send-receive gap",
           "range": true,
           "refId": "B"
