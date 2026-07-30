@@ -38,7 +38,7 @@ type clientMetrics struct {
 	jitter prometheus.Gauge
 	// sendRateBps tracks the achieved payload send rate over the last report interval.
 	sendRateBps prometheus.Gauge
-	// pacingOverrunTotal counts pacing schedules rebased after missing the following deadline.
+	// pacingOverrunTotal counts sends that leave their pacing schedule behind wall-clock time.
 	pacingOverrunTotal prometheus.Counter
 	// pacingDelay records the lateness of pacing overruns.
 	pacingDelay prometheus.Histogram
@@ -93,11 +93,11 @@ func newClientMetrics() *clientMetrics {
 		}),
 		pacingOverrunTotal: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "hummbwtester_client_pacing_overrun_total",
-			Help: "Total number of pacing schedule rebases after accumulated timing debt was discarded.",
+			Help: "Total number of sends that left their pacing schedule behind wall-clock time.",
 		}),
 		pacingDelay: promauto.NewHistogram(prometheus.HistogramOpts{
 			Name:    "hummbwtester_client_pacing_delay_seconds",
-			Help:    "Lateness of sends that caused their pacing schedule to be rebased.",
+			Help:    "Lateness of sends whose pacing schedule was behind wall-clock time.",
 			Buckets: prometheus.DefBuckets,
 		}),
 		reservationRenewals: promauto.NewCounterVec(prometheus.CounterOpts{

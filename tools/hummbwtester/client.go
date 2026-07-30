@@ -81,6 +81,7 @@ type clientConfig struct {
 	sdConn daemon.Connector
 
 	bandwidthBps      float64
+	maxBurstBps       float64
 	duration          time.Duration
 	payloadSize       int
 	pongRateHz        float64
@@ -170,7 +171,8 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 
 	log.Info("Client started",
 		"local", cfg.local, "remote", cfg.remote,
-		"bandwidth_bps", cfg.bandwidthBps, "payload_size", cfg.payloadSize,
+		"bandwidth_bps", cfg.bandwidthBps, "maxburst_bps", cfg.maxBurstBps,
+		"payload_size", cfg.payloadSize,
 		"pong_rate_hz", cfg.pongRateHz, "hummingbird_enabled", cfg.hummEnabled,
 		"bidirectional", cfg.bidirectional(), "hummingbird_reservation_id", cfg.hummReservationID)
 
@@ -497,15 +499,9 @@ func (t *pongTracker) evictTimedOut(now time.Time) int {
 	return lost
 }
 
-// advancePacingDeadline advances one absolute pacing schedule after sending the packet associated
-// with target. Under normal timing it returns target+interval, preserving the original cadence.
-// If that following deadline is no longer in the future, the client has accumulated pacing debt:
-// it discards the missed schedule slots and returns now+interval instead. The caller has already
-// sent at most one overdue packet, so rebasing prevents a catch-up burst. Discarding schedule slots
-// does not allocate or advance packet sequence numbers; only actual send attempts do that.
-//
-// The boolean reports whether a rebase occurred so the caller can record the pacing overrun.
-func advancePacingDeadline(target time.Time, interval time.Duration, now time.Time) (time.Time, bool) {
+// advanceProbeDeadline advances the independent Pong probe schedule. Probes do not contribute to
+// payload bandwidth and have no max-burst setting, so overdue probe slots are still discarded.
+func advanceProbeDeadline(target time.Time, interval time.Duration, now time.Time) (time.Time, bool) {
 	next := target.Add(interval)
 	if !next.After(now) {
 		return now.Add(interval), true
@@ -513,15 +509,58 @@ func advancePacingDeadline(target time.Time, interval time.Duration, now time.Ti
 	return next, false
 }
 
+// payloadPacer retains the canonical bandwidth schedule while independently enforcing a maximum
+// catch-up rate. A stall leaves canonical behind wall-clock time (the pacing debt). The burst
+// deadline spaces actual sends at maxBurstInterval until canonical catches up; it never discards
+// canonical slots.
+type payloadPacer struct {
+	canonical         time.Time
+	burst             time.Time
+	canonicalInterval time.Duration
+	maxBurstInterval  time.Duration
+}
+
+func newPayloadPacer(
+	now time.Time, payloadSize int, bandwidthBps, maxBurstBps float64,
+) payloadPacer {
+	interval := func(rate float64) time.Duration {
+		value := time.Duration(float64(time.Second) * float64(payloadSize*8) / rate)
+		if value <= 0 {
+			return time.Nanosecond
+		}
+		return value
+	}
+	return payloadPacer{
+		canonical:         now,
+		burst:             now,
+		canonicalInterval: interval(bandwidthBps),
+		maxBurstInterval:  interval(maxBurstBps),
+	}
+}
+
+func (p *payloadPacer) deadline() time.Time {
+	if p.burst.After(p.canonical) {
+		return p.burst
+	}
+	return p.canonical
+}
+
+// sent advances one canonical packet slot and the maximum-rate limiter after a send attempt.
+// behind is true while at least one subsequent canonical slot is already due. lateness describes
+// this packet relative to its canonical slot, irrespective of max-burst limiting.
+func (p *payloadPacer) sent(completed time.Time) (behind bool, lateness time.Duration) {
+	canonicalTarget := p.canonical
+	p.canonical = p.canonical.Add(p.canonicalInterval)
+	p.burst = completed.Add(p.maxBurstInterval)
+	return !p.canonical.After(completed), completed.Sub(canonicalTarget)
+}
+
 // sendLoop is the single writer goroutine: it merges the Payload and PongRequest schedules by
 // absolute deadline (per design doc section 3) and writes every packet through conn.WriteTo,
-// always reading the latest reservation pointer so renewal and pacing never race. Each schedule
-// permits at most one overdue send before rebasing to the configured rate.
+// always reading the latest reservation pointer so renewal and pacing never race. Payload pacing
+// retains canonical-rate debt and repays it at no more than maxBurstBps; Pong probes remain on an
+// independent no-catch-up schedule.
 func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTracker) {
-	payloadInterval := time.Duration(float64(time.Second) * float64(c.cfg.payloadSize*8) / c.cfg.bandwidthBps)
-	if payloadInterval <= 0 {
-		payloadInterval = time.Millisecond
-	}
 	pongInterval := time.Duration(float64(time.Second) / c.cfg.pongRateHz)
 	if pongInterval <= 0 {
 		pongInterval = time.Second
@@ -537,17 +576,19 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 
 	var payloadSeq, pongSeq uint64
 	now := time.Now()
-	nextPayload := now
+	payloadPacing := newPayloadPacer(
+		now, c.cfg.payloadSize, c.cfg.bandwidthBps, c.cfg.maxBurstBps,
+	)
 	nextPong := now
 
 	var overrunsSinceLog int
 	lastOverrunLog := now
-	recordPacingRebase := func(target, observed time.Time) {
+	recordPacingDelay := func(delay time.Duration) {
 		c.metrics.pacingOverrunTotal.Inc()
-		c.metrics.pacingDelay.Observe(observed.Sub(target).Seconds())
+		c.metrics.pacingDelay.Observe(delay.Seconds())
 		overrunsSinceLog++
 		if time.Since(lastOverrunLog) >= time.Second {
-			log.Error("Pacing schedule rebased", "count_since_last_log", overrunsSinceLog)
+			log.Error("Pacing schedule behind", "count_since_last_log", overrunsSinceLog)
 			overrunsSinceLog = 0
 			lastOverrunLog = time.Now()
 		}
@@ -564,9 +605,10 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 		}
 
 		var target time.Time
-		isPayload := nextPayload.Before(nextPong) || nextPayload.Equal(nextPong)
+		payloadTarget := payloadPacing.deadline()
+		isPayload := payloadTarget.Before(nextPong) || payloadTarget.Equal(nextPong)
 		if isPayload {
-			target = nextPayload
+			target = payloadTarget
 		} else {
 			target = nextPong
 		}
@@ -599,11 +641,9 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 			}
 			payloadSeq++
 			afterSend := time.Now()
-			var rebased bool
-			// Use the completion time so a slow WriteTo is treated as pacing delay too.
-			nextPayload, rebased = advancePacingDeadline(nextPayload, payloadInterval, afterSend)
-			if rebased {
-				recordPacingRebase(target, afterSend)
+			behind, lateness := payloadPacing.sent(afterSend)
+			if behind {
+				recordPacingDelay(lateness)
 			}
 		} else {
 			EncodePongRequest(pongBuf, pongSeq, now.UnixNano())
@@ -617,9 +657,9 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 			afterSend := time.Now()
 			var rebased bool
 			// Payload and pong schedules rebase independently; delaying one does not move the other.
-			nextPong, rebased = advancePacingDeadline(nextPong, pongInterval, afterSend)
+			nextPong, rebased = advanceProbeDeadline(nextPong, pongInterval, afterSend)
 			if rebased {
-				recordPacingRebase(target, afterSend)
+				recordPacingDelay(afterSend.Sub(target))
 			}
 		}
 	}

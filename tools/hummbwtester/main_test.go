@@ -396,33 +396,68 @@ func TestParseBandwidth(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestAdvancePacingDeadline(t *testing.T) {
+func TestParsePacingBandwidths(t *testing.T) {
+	bandwidth, maxBurst, err := parsePacingBandwidths("10Mbps", "20Mbps")
+	require.NoError(t, err)
+	assert.Equal(t, 10e6, bandwidth)
+	assert.Equal(t, 20e6, maxBurst)
+
+	bandwidth, maxBurst, err = parsePacingBandwidths("10Mbps", "")
+	require.NoError(t, err)
+	assert.Equal(t, bandwidth, maxBurst)
+
+	_, _, err = parsePacingBandwidths("10Mbps", "9Mbps")
+	assert.ErrorContains(t, err, "must be finite and >=")
+	_, _, err = parsePacingBandwidths("0Mbps", "20Mbps")
+	assert.ErrorContains(t, err, "must be finite and positive")
+}
+
+func TestPayloadPacer(t *testing.T) {
 	start := time.Unix(100, 0)
-	interval := 10 * time.Millisecond
 
 	t.Run("normal cadence stays absolute", func(t *testing.T) {
-		next, rebased := advancePacingDeadline(start, interval, start.Add(5*time.Millisecond))
-		assert.False(t, rebased)
-		assert.Equal(t, start.Add(interval), next)
+		pacer := payloadPacer{
+			canonical: start, burst: start,
+			canonicalInterval: 10 * time.Millisecond, maxBurstInterval: 5 * time.Millisecond,
+		}
+		behind, _ := pacer.sent(start.Add(time.Millisecond))
+		assert.False(t, behind)
+		assert.Equal(t, start.Add(10*time.Millisecond), pacer.deadline())
 	})
 
-	t.Run("stalled schedule discards accumulated debt", func(t *testing.T) {
-		now := start.Add(35 * time.Millisecond)
-		next, rebased := advancePacingDeadline(start, interval, now)
-		assert.True(t, rebased)
-		assert.Equal(t, now.Add(interval), next)
+	t.Run("stalled schedule catches up at max burst", func(t *testing.T) {
+		pacer := payloadPacer{
+			canonical: start, burst: start,
+			canonicalInterval: 10 * time.Millisecond, maxBurstInterval: 5 * time.Millisecond,
+		}
+		behind, lateness := pacer.sent(start.Add(35 * time.Millisecond))
+		assert.True(t, behind)
+		assert.Equal(t, 35*time.Millisecond, lateness)
+
+		// The canonical schedule remains in debt, while actual sends are spaced at the 2x rate.
+		for _, milliseconds := range []int{40, 45, 50, 55, 60, 65} {
+			assert.Equal(t, start.Add(time.Duration(milliseconds)*time.Millisecond), pacer.deadline())
+			pacer.sent(start.Add(time.Duration(milliseconds) * time.Millisecond))
+		}
+		assert.Equal(t, start.Add(70*time.Millisecond), pacer.deadline())
+		behind, _ = pacer.sent(start.Add(70 * time.Millisecond))
+		assert.False(t, behind)
+		assert.Equal(t, start.Add(80*time.Millisecond), pacer.deadline())
 	})
 
-	t.Run("payload and pong schedules advance independently", func(t *testing.T) {
-		payloadNext, payloadRebased := advancePacingDeadline(
-			start, time.Millisecond, start.Add(3*time.Millisecond),
-		)
-		pongNext, pongRebased := advancePacingDeadline(
-			start, time.Second, start.Add(3*time.Millisecond),
-		)
-		assert.True(t, payloadRebased)
-		assert.Equal(t, start.Add(4*time.Millisecond), payloadNext)
-		assert.False(t, pongRebased)
-		assert.Equal(t, start.Add(time.Second), pongNext)
+	t.Run("equal rates retain debt without acceleration", func(t *testing.T) {
+		pacer := payloadPacer{
+			canonical: start, burst: start,
+			canonicalInterval: 10 * time.Millisecond, maxBurstInterval: 10 * time.Millisecond,
+		}
+		pacer.sent(start.Add(35 * time.Millisecond))
+		assert.Equal(t, start.Add(45*time.Millisecond), pacer.deadline())
 	})
+}
+
+func TestAdvanceProbeDeadline(t *testing.T) {
+	start := time.Unix(100, 0)
+	next, rebased := advanceProbeDeadline(start, 10*time.Millisecond, start.Add(35*time.Millisecond))
+	assert.True(t, rebased)
+	assert.Equal(t, start.Add(45*time.Millisecond), next)
 }

@@ -44,14 +44,14 @@ class ConfigTest(unittest.TestCase):
             },
             "hummingbird_clients": [{
                 "client_id": "zeta", "isd_as": "1-ff00:0:111", "host": "172.20.0.29", "port": 0,
-                "bandwidth": "2Mbps", "duration": "60s",
+                "bandwidth": "2Mbps", "maxburst": "4Mbps", "duration": "60s",
                 "hummingbird_reservation": {
                     "bandwidth": 1000, "duration": "10s", "reverse_bandwidth": 1000,
                 },
             }],
             "best_effort_clients": [{
                 "client_id": "alpha", "isd_as": "1-ff00:0:110", "host": "172.20.0.22", "port": 0,
-                "bandwidth": "1Mbps", "duration": "30s",
+                "bandwidth": "1Mbps", "maxburst": "2Mbps", "duration": "30s",
             }],
             "router": {
                 "send_buffer_size": 16384,
@@ -93,9 +93,24 @@ class ConfigTest(unittest.TestCase):
 
     def test_requires_workload_for_every_client(self):
         for client_type in ("hummingbird_clients", "best_effort_clients"):
-            with self.subTest(client_type=client_type):
+            for field in ("bandwidth", "maxburst"):
+                with self.subTest(client_type=client_type, field=field):
+                    config = self.base_config()
+                    del config[client_type][0][field]
+                    with self.assertRaises(ConfigError):
+                        load_config(self.write_config(config))
+
+    def test_maxburst_must_be_at_least_bandwidth(self):
+        config = self.base_config()
+        config["best_effort_clients"][0]["maxburst"] = "999Kbps"
+        with self.assertRaisesRegex(ConfigError, "maxburst must be >="):
+            load_config(self.write_config(config))
+
+    def test_rejects_invalid_client_bandwidths(self):
+        for field, value in (("bandwidth", "0Mbps"), ("maxburst", "manyMbps")):
+            with self.subTest(field=field, value=value):
                 config = self.base_config()
-                del config[client_type][0]["bandwidth"]
+                config["best_effort_clients"][0][field] = value
                 with self.assertRaises(ConfigError):
                     load_config(self.write_config(config))
 
@@ -160,6 +175,7 @@ class ConfigTest(unittest.TestCase):
         args = client_args(best_effort, server, "172.20.0.21:30255")
         self.assertEqual(
             args[args.index("-bandwidth") + 1], "1Mbps")
+        self.assertEqual(args[args.index("-maxburst") + 1], "2Mbps")
         self.assertEqual(args[args.index("-duration") + 1], "30s")
         self.assertEqual(args[args.index("-payload-size") + 1], "1200")
         self.assertEqual(args[args.index("-pong-rate") + 1], "2.0")

@@ -11,6 +11,7 @@ import argparse
 from datetime import datetime
 import ipaddress
 import json
+import math
 from pathlib import Path
 import re
 import shlex
@@ -71,6 +72,7 @@ class Client:
     hummingbird: bool
     metrics_port: int
     bandwidth: str
+    maxburst: str
     duration: str
     hummingbird_reservation: tuple[int, str, int] | None
     payload_size: int | None
@@ -195,7 +197,7 @@ def parse_endpoint(
 
 def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Client:
     """Validate one client configuration and retain its workload and optional tuning settings."""
-    required = {"client_id", "isd_as", "host", "port", "bandwidth", "duration"}
+    required = {"client_id", "isd_as", "host", "port", "bandwidth", "maxburst", "duration"}
     optional = {"payload_size", "pong_rate", "renewal_fraction"}
     if hummingbird:
         required.add("hummingbird_reservation")
@@ -204,9 +206,13 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
     client_id = entry["client_id"]
     if not isinstance(client_id, str) or not CLIENT_ID_RE.fullmatch(client_id):
         raise ConfigError(f"{context}.client_id must match {CLIENT_ID_RE.pattern}")
-    for key in ("bandwidth", "duration"):
+    for key in ("bandwidth", "maxburst", "duration"):
         if not isinstance(entry[key], str) or not entry[key]:
             raise ConfigError(f"{context}.{key} must be a non-empty string")
+    bandwidth = parse_bandwidth(entry["bandwidth"], f"{context}.bandwidth")
+    maxburst = parse_bandwidth(entry["maxburst"], f"{context}.maxburst")
+    if maxburst < bandwidth:
+        raise ConfigError(f"{context}.maxburst must be >= {context}.bandwidth")
 
     reservation: tuple[int, str, int] | None = None
     if hummingbird:
@@ -215,10 +221,10 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
             raise ConfigError(f"{context}.hummingbird_reservation must be an object")
         require_fields(value, {"bandwidth", "duration", "reverse_bandwidth"},
                        f"{context}.hummingbird_reservation")
-        bandwidth, duration, reverse_bandwidth = (
+        reservation_bandwidth, duration, reverse_bandwidth = (
             value["bandwidth"], value["duration"], value["reverse_bandwidth"])
-        if (not isinstance(bandwidth, int) or isinstance(bandwidth, bool)
-                or not 0 <= bandwidth <= 65535):
+        if (not isinstance(reservation_bandwidth, int) or isinstance(reservation_bandwidth, bool)
+                or not 0 <= reservation_bandwidth <= 65535):
             raise ConfigError(f"{context}.hummingbird_reservation.bandwidth must be an integer from 0 through 65535")
         if not isinstance(duration, str) or not duration:
             raise ConfigError(f"{context}.hummingbird_reservation.duration must be a non-empty string")
@@ -226,7 +232,7 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
                 or not 0 <= reverse_bandwidth <= 65535):
             raise ConfigError(
                 f"{context}.hummingbird_reservation.reverse_bandwidth must be an integer from 0 through 65535")
-        reservation = (bandwidth, duration, reverse_bandwidth)
+        reservation = (reservation_bandwidth, duration, reverse_bandwidth)
 
     payload_size = entry.get("payload_size")
     if payload_size is not None and (not isinstance(payload_size, int) or isinstance(payload_size, bool)):
@@ -244,12 +250,32 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
         hummingbird=hummingbird,
         metrics_port=0,
         bandwidth=entry["bandwidth"],
+        maxburst=entry["maxburst"],
         duration=entry["duration"],
         hummingbird_reservation=reservation,
         payload_size=payload_size,
         pong_rate=pong_rate,
         renewal_fraction=renewal_fraction,
     )
+
+
+def parse_bandwidth(value: str, context: str) -> float:
+    """Parse the bandwidth syntax accepted by the Go client and require a usable positive rate."""
+    factors = (("Gbps", 1e9), ("Mbps", 1e6), ("Kbps", 1e3), ("bps", 1.0))
+    number = value.strip()
+    factor = 1.0
+    for suffix, candidate in factors:
+        if number.endswith(suffix):
+            number = number[:-len(suffix)]
+            factor = candidate
+            break
+    try:
+        result = float(number) * factor
+    except ValueError as err:
+        raise ConfigError(f"{context} is not a valid bandwidth: {value}") from err
+    if not math.isfinite(result) or result <= 0:
+        raise ConfigError(f"{context} must be finite and positive")
+    return result
 
 
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
@@ -647,7 +673,8 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
     """Build the hummbwtester command-line arguments for one configured client."""
     args = ["/share/bin/hummbwtester", "-mode", "client", "-local", client.endpoint.local(),
             "-remote", server.local(), "-sciond", sciond,
-            "-bandwidth", client.bandwidth, "-duration", client.duration,
+            "-bandwidth", client.bandwidth, "-maxburst", client.maxburst,
+            "-duration", client.duration,
             "-metrics-addr", f":{client.metrics_port}"]
     if client.payload_size is not None:
         args.extend(["-payload-size", str(client.payload_size)])

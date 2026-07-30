@@ -59,6 +59,8 @@ Every client requires these fields:
 - `client_id`: a unique identifier used as the sole custom Prometheus label.
 - `isd_as`, `host`, and `port`: the tester-container endpoint. Use port `0` for an ephemeral UDP port.
 - `bandwidth`: payload send rate passed as `-bandwidth`, such as `"1Mbps"`.
+- `maxburst`: maximum payload rate while repaying pacing debt, passed as `-maxburst`. It must be
+  greater than or equal to `bandwidth`.
 - `duration`: test length passed as `-duration`, such as `"600s"`.
 
 Hummingbird clients additionally require `hummingbird_reservation`, an object with:
@@ -71,26 +73,23 @@ Both client types may optionally set `payload_size`, `pong_rate`, and `renewal_f
 They are passed respectively as `-payload-size`, `-pong-rate`, and `-renewal-fraction`.
 When omitted, the binary's built-in defaults apply.
 
-### Pacing after a missed deadline
+### Bounded catch-up after a missed deadline
 
-Payload packets and pong requests have independent absolute-deadline schedules. The send loop
-always services whichever deadline comes first. After each send attempt, it normally advances that
-schedule by one interval, preserving the original cadence.
+Payload packets and pong requests have independent schedules. Payload pacing retains an absolute
+canonical schedule at `bandwidth`, so a late send creates debt rather than discarding scheduled
+payload slots. A second deadline spaces actual sends at `maxburst`. While debt exists, the client
+therefore catches up at no more than `maxburst`; after repayment, it resumes `bandwidth`.
 
-If sending finishes after the following deadline has already passed, the client sends no catch-up
-burst. It discards the accumulated schedule debt and sets the next deadline to one interval after
-the current completion time. For example, with a 10 ms interval, if the packet scheduled for
-time 0 finishes at 35 ms, the schedule slots at 10, 20, and 30 ms are discarded and the next packet
-is scheduled for 45 ms.
+For example, a 10 Mbps client with `maxburst` 20 Mbps that accumulates 10 megabits of debt has
+10 Mbps of extra catch-up capacity and needs at least one second to repay it. Setting `maxburst`
+equal to `bandwidth` retains the debt accounting but provides no acceleration, so it cannot catch
+up while continuously sending.
 
-Discarded schedule slots are not packets: the client does not increment the payload or pong
-sequence number for them. Consequently, the server's payload-loss tracker does not report an
-intentional sequence gap. The tradeoff is a temporary throughput deficit after a scheduling stall;
-the client resumes at the configured rate instead of transmitting faster to recover it.
-
-Each rebase increments `hummbwtester_client_pacing_overrun_total`, records the delay in
+Pong probes do not contribute to the configured payload bandwidth and retain their independent
+no-catch-up schedule. A send that leaves its schedule behind increments
+`hummbwtester_client_pacing_overrun_total`, records its lateness in
 `hummbwtester_client_pacing_delay_seconds`, and contributes to the rate-limited
-`Pacing schedule rebased` log message.
+`Pacing schedule behind` log message.
 
 For example, this commented dummy Hummingbird client shows every supported client field:
 
@@ -101,6 +100,7 @@ For example, this commented dummy Hummingbird client shows every supported clien
 //   "host": "172.20.0.29",
 //   "port": 0,
 //   "bandwidth": "2Mbps",
+//   "maxburst": "4Mbps",
 //   "duration": "5m",
 //   "hummingbird_reservation": {
 //     "bandwidth": 1000,

@@ -21,6 +21,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"strconv"
@@ -60,6 +61,7 @@ var (
 	sciondConfDir string
 
 	bandwidthFlag     string
+	maxBurstFlag      string
 	duration          time.Duration
 	payloadSize       int
 	pongRateHz        float64
@@ -159,9 +161,9 @@ func realMain() int {
 				return 1
 			}
 		}
-		bandwidthBps, err := parseBandwidth(bandwidthFlag)
+		bandwidthBps, maxBurstBps, err := parsePacingBandwidths(bandwidthFlag, maxBurstFlag)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing -bandwidth:", err)
+			fmt.Fprintln(os.Stderr, "error configuring client pacing:", err)
 			return 1
 		}
 		cfg := clientConfig{
@@ -169,6 +171,7 @@ func realMain() int {
 			remote:            remoteFlag,
 			sdConn:            sdConn,
 			bandwidthBps:      bandwidthBps,
+			maxBurstBps:       maxBurstBps,
 			duration:          duration,
 			payloadSize:       payloadSize,
 			pongRateHz:        pongRateHz,
@@ -196,6 +199,9 @@ func addFlags() {
 
 	flag.StringVar(&bandwidthFlag, "bandwidth", "1Mbps",
 		"(Client only) target payload send rate, e.g. \"1Mbps\", \"500Kbps\", \"2Gbps\"")
+	flag.StringVar(&maxBurstFlag, "maxburst", "",
+		"(Client only) maximum payload rate while catching up; must be >= -bandwidth; "+
+			"empty uses -bandwidth")
 	flag.DurationVar(&duration, "duration", 30*time.Second,
 		"(Client only) how long to send payload traffic; 0 = run until interrupted")
 	flag.IntVar(&payloadSize, "payload-size", defaultPayloadSize,
@@ -318,4 +324,29 @@ func parseBandwidth(raw string) (float64, error) {
 		return 0, serrors.Wrap("parsing bandwidth value", err, "value", raw)
 	}
 	return val, nil
+}
+
+// parsePacingBandwidths parses the canonical and catch-up rates and enforces the relationship
+// required by the payload pacer. An omitted max-burst rate disables acceleration while preserving
+// command-line compatibility: the maximum then equals the canonical rate.
+func parsePacingBandwidths(bandwidthRaw, maxBurstRaw string) (float64, float64, error) {
+	bandwidth, err := parseBandwidth(bandwidthRaw)
+	if err != nil {
+		return 0, 0, serrors.Wrap("parsing -bandwidth", err)
+	}
+	if bandwidth <= 0 || math.IsNaN(bandwidth) || math.IsInf(bandwidth, 0) {
+		return 0, 0, serrors.New("-bandwidth must be finite and positive", "value", bandwidthRaw)
+	}
+	if strings.TrimSpace(maxBurstRaw) == "" {
+		return bandwidth, bandwidth, nil
+	}
+	maxBurst, err := parseBandwidth(maxBurstRaw)
+	if err != nil {
+		return 0, 0, serrors.Wrap("parsing -maxburst", err)
+	}
+	if math.IsNaN(maxBurst) || math.IsInf(maxBurst, 0) || maxBurst < bandwidth {
+		return 0, 0, serrors.New("-maxburst must be finite and >= -bandwidth",
+			"maxburst", maxBurstRaw, "bandwidth", bandwidthRaw)
+	}
+	return bandwidth, maxBurst, nil
 }
