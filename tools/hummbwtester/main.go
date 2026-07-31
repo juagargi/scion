@@ -45,6 +45,7 @@ const (
 	defaultPongRateHz     = 1.0
 	defaultMetricsAddr    = ":9090"
 	defaultReportInterval = 1 * time.Second
+	defaultRenewalAhead   = 10 * time.Second
 	defaultSciondConfDir  = "/etc/scion"
 
 	// bidirectionalFirstPacketPayload is the fixed payload size used for the very first
@@ -69,7 +70,7 @@ var (
 	hummKeysDir       string
 	metricsAddr       string
 	reportInterval    time.Duration
-	renewalFraction   float64
+	renewalAhead      time.Duration
 	verifyIntegrity   bool
 	receiveBufferSize int
 )
@@ -180,7 +181,7 @@ func realMain() int {
 			hummReservationID: reservationID,
 			hummKeysDir:       hummKeysDir,
 			reportInterval:    reportInterval,
-			renewalFraction:   renewalFraction,
+			renewalAhead:      renewalAhead,
 		}
 		return runClient(ctx, sn, cfg)
 	default:
@@ -213,8 +214,8 @@ func addFlags() {
 			"(e.g. \"3,5s\" or \"3,5s,2\"); if omitted, the client runs best-effort over plain SCION")
 	flag.StringVar(&hummKeysDir, "hummKeysDir", "",
 		"(Client only, testing) root dir containing AS*/keys/master0.key, bypasses the redemption service")
-	flag.Float64Var(&renewalFraction, "renewal-fraction", 0.7,
-		"(Client only) fraction of the reservation window elapsed before renewing")
+	flag.DurationVar(&renewalAhead, "renewal-ahead", defaultRenewalAhead,
+		"(Client only) how long before reservation expiry to request its replacement")
 	flag.BoolVar(&verifyIntegrity, "verify-integrity", false,
 		"(Server only) verify the deterministic filler pattern of received payload packets")
 	flag.IntVar(&receiveBufferSize, "receive-buffer-size", 0,
@@ -237,6 +238,9 @@ func validateFlags() error {
 	}
 	if receiveBufferSize < 0 {
 		return serrors.New("receive-buffer-size must not be negative", "value", receiveBufferSize)
+	}
+	if renewalAhead < 0 {
+		return serrors.New("renewal-ahead must not be negative", "value", renewalAhead)
 	}
 	if mode == modeClient {
 		if remoteFlag.Host == nil {

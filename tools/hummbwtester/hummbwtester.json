@@ -18,7 +18,8 @@
         "bandwidth": 1000,
         "duration": "3h",
         "reverse_bandwidth": 1000
-      }
+      },
+      "renewal_ahead": "10s"
     }
   ],
   "best_effort_clients": [

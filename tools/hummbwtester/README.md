@@ -69,9 +69,12 @@ Hummingbird clients additionally require `hummingbird_reservation`, an object wi
 - `duration`: reservation duration, such as `"10s"`.
 - `reverse_bandwidth`: reverse reservation bandwidth class; use `0` for no reverse reservation.
 
-Both client types may optionally set `payload_size`, `pong_rate`, and `renewal_fraction`.
-They are passed respectively as `-payload-size`, `-pong-rate`, and `-renewal-fraction`.
-When omitted, the binary's built-in defaults apply.
+Both client types may optionally set `payload_size` and `pong_rate`. Hummingbird clients may also
+set `renewal_ahead`, a duration specifying how long before expiry to obtain the next reservation.
+They are passed respectively as `-payload-size`, `-pong-rate`, and `-renewal-ahead`.
+When omitted, the binary's built-in defaults apply; `renewal_ahead` defaults to `10s`. A renewed
+reservation starts exactly when the current one expires and remains staged until that boundary,
+so their validity windows do not overlap.
 
 ### Bounded catch-up after a missed deadline
 
@@ -109,7 +112,7 @@ For example, this commented dummy Hummingbird client shows every supported clien
 //   },
 //   "payload_size": 1200,
 //   "pong_rate": 2.0,
-//   "renewal_fraction": 0.7
+//   "renewal_ahead": "10s"
 // }
 ```
 

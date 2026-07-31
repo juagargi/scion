@@ -77,7 +77,7 @@ class Client:
     hummingbird_reservation: tuple[int, str, int] | None
     payload_size: int | None
     pong_rate: float | int | None
-    renewal_fraction: float | int | None
+    renewal_ahead: str | None
 
 
 @dataclass(frozen=True)
@@ -198,9 +198,10 @@ def parse_endpoint(
 def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Client:
     """Validate one client configuration and retain its workload and optional tuning settings."""
     required = {"client_id", "isd_as", "host", "port", "bandwidth", "maxburst", "duration"}
-    optional = {"payload_size", "pong_rate", "renewal_fraction"}
+    optional = {"payload_size", "pong_rate"}
     if hummingbird:
         required.add("hummingbird_reservation")
+        optional.add("renewal_ahead")
     require_fields(entry, required, context, optional)
 
     client_id = entry["client_id"]
@@ -240,10 +241,9 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
     pong_rate = entry.get("pong_rate")
     if pong_rate is not None and (not isinstance(pong_rate, (int, float)) or isinstance(pong_rate, bool)):
         raise ConfigError(f"{context}.pong_rate must be a number")
-    renewal_fraction = entry.get("renewal_fraction")
-    if renewal_fraction is not None and (not isinstance(renewal_fraction, (int, float))
-                                         or isinstance(renewal_fraction, bool)):
-        raise ConfigError(f"{context}.renewal_fraction must be a number")
+    renewal_ahead = entry.get("renewal_ahead")
+    if renewal_ahead is not None and (not isinstance(renewal_ahead, str) or not renewal_ahead):
+        raise ConfigError(f"{context}.renewal_ahead must be a non-empty duration string")
     return Client(
         client_id=client_id,
         endpoint=parse_endpoint({key: entry[key] for key in ("isd_as", "host", "port")}, context),
@@ -255,7 +255,7 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
         hummingbird_reservation=reservation,
         payload_size=payload_size,
         pong_rate=pong_rate,
-        renewal_fraction=renewal_fraction,
+        renewal_ahead=renewal_ahead,
     )
 
 
@@ -680,8 +680,8 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
         args.extend(["-payload-size", str(client.payload_size)])
     if client.pong_rate is not None:
         args.extend(["-pong-rate", str(client.pong_rate)])
-    if client.renewal_fraction is not None:
-        args.extend(["-renewal-fraction", str(client.renewal_fraction)])
+    if client.renewal_ahead is not None:
+        args.extend(["-renewal-ahead", client.renewal_ahead])
     if client.hummingbird:
         assert client.hummingbird_reservation is not None
         bandwidth, duration, reverse_bandwidth = client.hummingbird_reservation

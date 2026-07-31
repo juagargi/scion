@@ -60,8 +60,8 @@ func randomHummReservationID() (uint32, error) {
 	}
 }
 
-// hummStartOffset shifts the requested reservation start time slightly into the past, giving
-// the flyover derivation (and the redemption service, if used) slack against clock skew.
+// hummStartOffset shifts only the initial locally derived reservation slightly into the past,
+// giving it slack against clock skew. Renewals start exactly when the preceding window expires.
 const hummStartOffset = -3 * time.Second
 
 // fillerSeed is the fixed seed used to generate the deterministic payload filler pattern, known
@@ -90,7 +90,7 @@ type clientConfig struct {
 	hummReservationID uint32
 	hummKeysDir       string
 	reportInterval    time.Duration
-	renewalFraction   float64
+	renewalAhead      time.Duration
 }
 
 // bidirectional reports whether the client requested a reverse-direction reservation.
@@ -140,7 +140,11 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	var reservation *snetpath.Reservation
 	if cfg.hummEnabled {
 		var nextHop *net.UDPAddr
-		reservation, nextHop, err = c.buildReservation(ctx, path, time.Now())
+		startTime := time.Now()
+		if c.cfg.hummKeysDir != "" {
+			startTime = startTime.Add(hummStartOffset)
+		}
+		reservation, nextHop, err = c.buildReservation(ctx, path, startTime)
 		if err != nil {
 			log.Error("Building initial Hummingbird reservation", "err", err)
 			return 1
@@ -239,15 +243,15 @@ func selectPath(
 func (c *client) buildReservation(
 	ctx context.Context,
 	path snet.Path,
-	now time.Time,
+	startTime time.Time,
 ) (*snetpath.Reservation, *net.UDPAddr, error) {
 	if c.cfg.hummKeysDir != "" {
-		rsv, err := c.buildReservationWithSecretValues(path, now)
+		rsv, err := c.buildReservationWithSecretValues(path, startTime)
 		return rsv, path.UnderlayNextHop(), err
 	}
 	rsv, err := redemption.OneShotReservation(ctx, c.cfg.sdConn, c.cfg.local.Host.IP, path,
 		hummpkg.RedemptionRequestNoHop{
-			StartTime: uint32(now.Unix()),
+			StartTime: uint32(startTime.Unix()),
 			Bw:        c.cfg.humm.Bw,
 			Duration:  c.cfg.humm.Duration,
 		},
@@ -260,14 +264,14 @@ func (c *client) buildReservation(
 
 func (c *client) buildReservationWithSecretValues(
 	path snet.Path,
-	now time.Time,
+	startTime time.Time,
 ) (*snetpath.Reservation, error) {
 	baseHops := snetpath.InterfacesToBaseHops(path.Metadata().Interfaces)
 	scionPath, ok := path.Dataplane().(snetpath.SCION)
 	if !ok {
 		return nil, serrors.New("provided path must be of type scion")
 	}
-	flyovers, err := c.deriveFlyoversFromSecretValues(baseHops, c.cfg.humm.Bw, now)
+	flyovers, err := c.deriveFlyoversFromSecretValues(baseHops, c.cfg.humm.Bw, startTime)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +282,7 @@ func (c *client) buildReservationWithSecretValues(
 		return reservation, err
 	}
 	reverseFlyovers, err := c.deriveFlyoversFromSecretValues(
-		reverseBaseHops(baseHops), c.cfg.humm.ReverseBw, now)
+		reverseBaseHops(baseHops), c.cfg.humm.ReverseBw, startTime)
 	if err != nil {
 		return nil, err
 	}
@@ -310,10 +314,10 @@ func (c *client) hummSecretValue(ia addr.IA) ([]byte, error) {
 func (c *client) deriveFlyoversFromSecretValues(
 	baseHops []snetpath.BaseHop,
 	bandwidth uint16,
-	now time.Time,
+	start time.Time,
 ) ([]*snetpath.Hop, error) {
 	flyovers := make([]*snetpath.Hop, 0, len(baseHops))
-	startTime := uint32(now.Add(hummStartOffset).Unix())
+	startTime := uint32(start.Unix())
 	aesByIA := make(map[addr.IA]cipher.Block)
 	buffer := make([]byte, hummlib.AkBufferSize)
 
@@ -361,11 +365,10 @@ func reverseBaseHops(hops []snetpath.BaseHop) []snetpath.BaseHop {
 	return reversed
 }
 
-// renewalLoop renews the active reservation shortly before it expires, for as long as runCtx is
-// alive. See the design doc section 4 for the rationale behind the renewal margin.
+// renewalLoop obtains each replacement reservation ahead of expiry, but gives it a start time
+// equal to the current reservation's expiry and does not publish it until that boundary.
 func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time.Time) {
-	totalWindow := time.Duration(c.cfg.humm.Duration) * time.Second
-	renewAt := expiry.Add(-time.Duration(float64(totalWindow) * (1 - c.cfg.renewalFraction)))
+	renewAt, nextStart := renewalSchedule(expiry, c.cfg.renewalAhead)
 
 	for {
 		c.metrics.reservationExpiry.Set(time.Until(expiry).Seconds())
@@ -378,7 +381,7 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 			return
 		}
 
-		newRsv, newNextHop, ok := c.renewWithRetry(runCtx, path, expiry)
+		newRsv, newNextHop, ok := c.renewWithRetry(runCtx, path, nextStart)
 		if !ok {
 			// Exhausted retries for this window; keep sending on the old reservation and try
 			// again shortly, until it actually expires.
@@ -388,6 +391,12 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 			}
 			renewAt = time.Now().Add(1 * time.Second)
 			continue
+		}
+
+		select {
+		case <-runCtx.Done():
+			return
+		case <-time.After(time.Until(expiry)):
 		}
 
 		old := c.currentAddr.Load()
@@ -402,15 +411,19 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 			c.forceSmallNextPayload.Store(true)
 		}
 		expiry = newRsv.Expiry()
-		renewAt = expiry.Add(-time.Duration(float64(totalWindow) * (1 - c.cfg.renewalFraction)))
+		renewAt, nextStart = renewalSchedule(expiry, c.cfg.renewalAhead)
 		log.Info("Renewed Hummingbird reservation", "new_expiry", expiry)
 	}
+}
+
+func renewalSchedule(expiry time.Time, ahead time.Duration) (requestAt, startAt time.Time) {
+	return expiry.Add(-ahead), expiry
 }
 
 // renewWithRetry attempts to build a fresh reservation with a small bounded number of retries
 // and exponential backoff, reporting the outcome via metrics.
 func (c *client) renewWithRetry(
-	runCtx context.Context, path snet.Path, oldExpiry time.Time,
+	runCtx context.Context, path snet.Path, startTime time.Time,
 ) (*snetpath.Reservation, *net.UDPAddr, bool) {
 	const maxAttempts = 5
 	backoff := 500 * time.Millisecond
@@ -419,14 +432,14 @@ func (c *client) renewWithRetry(
 			return nil, nil, false
 		}
 		ctx, cancel := context.WithTimeout(runCtx, 5*time.Second)
-		rsv, nextHop, err := c.buildReservation(ctx, path, time.Now())
+		rsv, nextHop, err := c.buildReservation(ctx, path, startTime)
 		cancel()
 		if err == nil {
 			c.metrics.reservationRenewals.WithLabelValues("ok").Inc()
 			return rsv, nextHop, true
 		}
 		log.Error("Renewing Hummingbird reservation failed",
-			"attempt", attempt+1, "err", err, "time_until_expiry", time.Until(oldExpiry))
+			"attempt", attempt+1, "err", err, "time_until_start", time.Until(startTime))
 		c.metrics.reservationRenewals.WithLabelValues("error").Inc()
 		select {
 		case <-runCtx.Done():

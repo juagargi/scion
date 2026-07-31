@@ -163,13 +163,14 @@ class ConfigTest(unittest.TestCase):
         args = client_args(best_effort, server, "172.20.0.21:30255")
         self.assertNotIn("-payload-size", args)
         self.assertNotIn("-pong-rate", args)
-        self.assertNotIn("-renewal-fraction", args)
+        self.assertNotIn("-renewal-ahead", args)
         self.assertNotIn("-hummingbird", args)
 
         config = self.base_config()
         config["best_effort_clients"][0].update({
-            "payload_size": 1200, "pong_rate": 2.0, "renewal_fraction": 0.5,
+            "payload_size": 1200, "pong_rate": 2.0,
         })
+        config["hummingbird_clients"][0]["renewal_ahead"] = "3s"
         server, clients, _, _ = load_config(self.write_config(config))
         best_effort, hummingbird = clients
         args = client_args(best_effort, server, "172.20.0.21:30255")
@@ -179,10 +180,30 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(args[args.index("-duration") + 1], "30s")
         self.assertEqual(args[args.index("-payload-size") + 1], "1200")
         self.assertEqual(args[args.index("-pong-rate") + 1], "2.0")
-        self.assertEqual(args[args.index("-renewal-fraction") + 1], "0.5")
 
         args = client_args(hummingbird, server, "172.20.0.21:30255")
         self.assertEqual(args[args.index("-hummingbird") + 1], "1000,10s,1000")
+        self.assertEqual(args[args.index("-renewal-ahead") + 1], "3s")
+
+    def test_rejects_legacy_renewal_fraction(self):
+        config = self.base_config()
+        config["hummingbird_clients"][0]["renewal_fraction"] = 0.7
+        with self.assertRaises(ConfigError):
+            load_config(self.write_config(config))
+
+    def test_rejects_renewal_ahead_for_best_effort_client(self):
+        config = self.base_config()
+        config["best_effort_clients"][0]["renewal_ahead"] = "3s"
+        with self.assertRaises(ConfigError):
+            load_config(self.write_config(config))
+
+    def test_rejects_invalid_renewal_ahead(self):
+        for value in ("", 3, True):
+            with self.subTest(value=value):
+                config = self.base_config()
+                config["hummingbird_clients"][0]["renewal_ahead"] = value
+                with self.assertRaises(ConfigError):
+                    load_config(self.write_config(config))
 
 
 class SetupPatchTest(unittest.TestCase):

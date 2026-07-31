@@ -48,6 +48,14 @@ func TestRandomHummReservationID(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRenewalSchedule(t *testing.T) {
+	expiry := time.Unix(1_000_000, 0)
+	requestAt, startAt := renewalSchedule(expiry, 10*time.Second)
+
+	assert.Equal(t, expiry.Add(-10*time.Second), requestAt)
+	assert.Equal(t, expiry, startAt)
+}
+
 // TestHeaderRoundTrip checks that a packet header can be encoded and decoded
 // without losing any fields.
 func TestHeaderRoundTrip(t *testing.T) {
