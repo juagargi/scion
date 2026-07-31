@@ -1290,7 +1290,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Border-router CPU scheduling by process. Running and runnable time rates are equivalent cores used and denied by the scheduler; GOMAXPROCS is the Go runtime concurrency ceiling.",
+      "description": "Border-router CPU scheduling by process. Running and runnable time rates are equivalent cores used and denied by the scheduler.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1324,28 +1324,6 @@
                   "fixedColor": "red",
                   "mode": "fixed"
                 }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": ".* GOMAXPROCS$"
-            },
-            "properties": [
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    10
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "decimals",
-                "value": 0
               }
             ]
           }
@@ -1387,13 +1365,6 @@
           "legendFormat": "{{br}} runnable",
           "range": true,
           "refId": "B"
-        },
-        {
-          "editorMode": "code",
-          "expr": "max by (br) (go_sched_maxprocs_threads)",
-          "legendFormat": "{{br}} GOMAXPROCS",
-          "range": true,
-          "refId": "C"
         }
       ],
       "title": "BR CPU Scheduling",

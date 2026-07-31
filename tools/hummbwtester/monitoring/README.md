@@ -136,7 +136,7 @@ That dashboard includes:
 - border router egress queue depths for priority and best-effort queues
 - total border router demotion rates by freshness, expiry, and token bucket cause
 - detailed demotion rates by cause, border router, and interface
-- border-router running and scheduler-denied CPU time, together with each process's GOMAXPROCS
+- border-router running and scheduler-denied CPU time
 - total and per-socket Linux UDP receive-queue overflows for the border routers
 - aggregate BFD packet-loss and state-change counts per minute, plus current per-interface counters
 - pong request-to-reply gaps for remote-sent and client-received replies
