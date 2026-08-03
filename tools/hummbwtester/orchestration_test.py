@@ -46,7 +46,7 @@ class ConfigTest(unittest.TestCase):
                 "client_id": "zeta", "isd_as": "1-ff00:0:111", "host": "172.20.0.29", "port": 0,
                 "bandwidth": "2Mbps", "maxburst": "4Mbps", "duration": "60s",
                 "hummingbird_reservation": {
-                    "bandwidth": 1000, "duration": "10s", "reverse_bandwidth": 1000,
+                    "bandwidth": 1000, "duration": "1m", "reverse_bandwidth": 1000,
                 },
             }],
             "best_effort_clients": [{
@@ -170,7 +170,11 @@ class ConfigTest(unittest.TestCase):
         config["best_effort_clients"][0].update({
             "payload_size": 1200, "pong_rate": 2.0,
         })
-        config["hummingbird_clients"][0]["renewal_ahead"] = "3s"
+        config["hummingbird_clients"][0]["hummingbird_reservation"].update({
+            "renewal_ahead": "6s",
+            "reservation_overlap": "4s",
+            "humm_start_offset": "-1s",
+        })
         server, clients, _, _ = load_config(self.write_config(config))
         best_effort, hummingbird = clients
         args = client_args(best_effort, server, "172.20.0.21:30255")
@@ -182,8 +186,10 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(args[args.index("-pong-rate") + 1], "2.0")
 
         args = client_args(hummingbird, server, "172.20.0.21:30255")
-        self.assertEqual(args[args.index("-hummingbird") + 1], "1000,10s,1000")
-        self.assertEqual(args[args.index("-renewal-ahead") + 1], "3s")
+        self.assertEqual(args[args.index("-hummingbird") + 1], "1000,1m,1000")
+        self.assertEqual(args[args.index("-renewal-ahead") + 1], "6s")
+        self.assertEqual(args[args.index("-reservation-overlap") + 1], "4s")
+        self.assertEqual(args[args.index("-humm-start-offset") + 1], "-1s")
 
     def test_rejects_legacy_renewal_fraction(self):
         config = self.base_config()
@@ -191,19 +197,20 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
 
-    def test_rejects_renewal_ahead_for_best_effort_client(self):
+    def test_rejects_top_level_renewal_ahead(self):
         config = self.base_config()
-        config["best_effort_clients"][0]["renewal_ahead"] = "3s"
+        config["hummingbird_clients"][0]["renewal_ahead"] = "3s"
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
 
-    def test_rejects_invalid_renewal_ahead(self):
-        for value in ("", 3, True):
-            with self.subTest(value=value):
-                config = self.base_config()
-                config["hummingbird_clients"][0]["renewal_ahead"] = value
-                with self.assertRaises(ConfigError):
-                    load_config(self.write_config(config))
+    def test_rejects_invalid_reservation_timing_settings(self):
+        for field in ("renewal_ahead", "reservation_overlap", "humm_start_offset"):
+            for value in ("", 3, True):
+                with self.subTest(field=field, value=value):
+                    config = self.base_config()
+                    config["hummingbird_clients"][0]["hummingbird_reservation"][field] = value
+                    with self.assertRaises(ConfigError):
+                        load_config(self.write_config(config))
 
 
 class SetupPatchTest(unittest.TestCase):

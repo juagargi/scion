@@ -41,12 +41,14 @@ const (
 	modeClient = "client"
 	modeServer = "server"
 
-	defaultPayloadSize    = 800
-	defaultPongRateHz     = 1.0
-	defaultMetricsAddr    = ":9090"
-	defaultReportInterval = 1 * time.Second
-	defaultRenewalAhead   = 10 * time.Second
-	defaultSciondConfDir  = "/etc/scion"
+	defaultPayloadSize        = 800
+	defaultPongRateHz         = 1.0
+	defaultMetricsAddr        = ":9090"
+	defaultReportInterval     = 1 * time.Second
+	defaultRenewalAhead       = 20 * time.Second
+	defaultReservationOverlap = 15 * time.Second
+	defaultHummStartOffset    = -1 * time.Second
+	defaultSciondConfDir      = "/etc/scion"
 
 	// bidirectionalFirstPacketPayload is the fixed payload size used for the very first
 	// Payload packet sent on a bidirectional reservation, since that packet also carries the
@@ -61,18 +63,20 @@ var (
 	sciondAddr    string
 	sciondConfDir string
 
-	bandwidthFlag     string
-	maxBurstFlag      string
-	duration          time.Duration
-	payloadSize       int
-	pongRateHz        float64
-	hummingbirdFlag   string
-	hummKeysDir       string
-	metricsAddr       string
-	reportInterval    time.Duration
-	renewalAhead      time.Duration
-	verifyIntegrity   bool
-	receiveBufferSize int
+	bandwidthFlag      string
+	maxBurstFlag       string
+	duration           time.Duration
+	payloadSize        int
+	pongRateHz         float64
+	hummingbirdFlag    string
+	hummKeysDir        string
+	metricsAddr        string
+	reportInterval     time.Duration
+	renewalAhead       time.Duration
+	reservationOverlap time.Duration
+	hummStartOffset    time.Duration
+	verifyIntegrity    bool
+	receiveBufferSize  int
 )
 
 func main() {
@@ -168,20 +172,22 @@ func realMain() int {
 			return 1
 		}
 		cfg := clientConfig{
-			local:             localFlag,
-			remote:            remoteFlag,
-			sdConn:            sdConn,
-			bandwidthBps:      bandwidthBps,
-			maxBurstBps:       maxBurstBps,
-			duration:          duration,
-			payloadSize:       payloadSize,
-			pongRateHz:        pongRateHz,
-			humm:              hummParams,
-			hummEnabled:       hummingbirdFlag != "",
-			hummReservationID: reservationID,
-			hummKeysDir:       hummKeysDir,
-			reportInterval:    reportInterval,
-			renewalAhead:      renewalAhead,
+			local:              localFlag,
+			remote:             remoteFlag,
+			sdConn:             sdConn,
+			bandwidthBps:       bandwidthBps,
+			maxBurstBps:        maxBurstBps,
+			duration:           duration,
+			payloadSize:        payloadSize,
+			pongRateHz:         pongRateHz,
+			humm:               hummParams,
+			hummEnabled:        hummingbirdFlag != "",
+			hummReservationID:  reservationID,
+			hummKeysDir:        hummKeysDir,
+			reportInterval:     reportInterval,
+			renewalAhead:       renewalAhead,
+			reservationOverlap: reservationOverlap,
+			hummStartOffset:    hummStartOffset,
 		}
 		return runClient(ctx, sn, cfg)
 	default:
@@ -216,6 +222,10 @@ func addFlags() {
 		"(Client only, testing) root dir containing AS*/keys/master0.key, bypasses the redemption service")
 	flag.DurationVar(&renewalAhead, "renewal-ahead", defaultRenewalAhead,
 		"(Client only) how long before reservation expiry to request its replacement")
+	flag.DurationVar(&reservationOverlap, "reservation-overlap", defaultReservationOverlap,
+		"(Client only) how long before reservation expiry to switch to its replacement")
+	flag.DurationVar(&hummStartOffset, "humm-start-offset", defaultHummStartOffset,
+		"(Client only) signed offset added to Hummingbird reservation start times")
 	flag.BoolVar(&verifyIntegrity, "verify-integrity", false,
 		"(Server only) verify the deterministic filler pattern of received payload packets")
 	flag.IntVar(&receiveBufferSize, "receive-buffer-size", 0,
@@ -239,8 +249,8 @@ func validateFlags() error {
 	if receiveBufferSize < 0 {
 		return serrors.New("receive-buffer-size must not be negative", "value", receiveBufferSize)
 	}
-	if renewalAhead < 0 {
-		return serrors.New("renewal-ahead must not be negative", "value", renewalAhead)
+	if err := validateRenewalTiming(renewalAhead, reservationOverlap); err != nil {
+		return err
 	}
 	if mode == modeClient {
 		if remoteFlag.Host == nil {
@@ -250,6 +260,20 @@ func validateFlags() error {
 			return serrors.New("payload-size too small, must be at least the header size",
 				"value", payloadSize, "min", HeaderLen)
 		}
+	}
+	return nil
+}
+
+func validateRenewalTiming(ahead, overlap time.Duration) error {
+	if ahead < 0 {
+		return serrors.New("renewal-ahead must not be negative", "value", ahead)
+	}
+	if overlap < 0 {
+		return serrors.New("reservation-overlap must not be negative", "value", overlap)
+	}
+	if overlap > ahead {
+		return serrors.New("reservation-overlap must not exceed renewal-ahead",
+			"reservation_overlap", overlap, "renewal_ahead", ahead)
 	}
 	return nil
 }

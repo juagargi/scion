@@ -16,10 +16,12 @@
       "duration": "3h",
       "hummingbird_reservation": {
         "bandwidth": 1000,
-        "duration": "3h",
-        "reverse_bandwidth": 1000
-      },
-      "renewal_ahead": "10s"
+        "duration": "5m",
+        "reverse_bandwidth": 1000,
+        "renewal_ahead": "30s",
+        "reservation_overlap": "20s",
+        "humm_start_offset": "-5s"
+      }
     }
   ],
   "best_effort_clients": [

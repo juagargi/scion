@@ -66,15 +66,23 @@ Every client requires these fields:
 Hummingbird clients additionally require `hummingbird_reservation`, an object with:
 
 - `bandwidth`: forward reservation bandwidth class, passed as the first `-hummingbird` value.
-- `duration`: reservation duration, such as `"10s"`.
+- `duration`: reservation duration, such as `"1m"`.
 - `reverse_bandwidth`: reverse reservation bandwidth class; use `0` for no reverse reservation.
+- `renewal_ahead` (optional): how long before expiry to request the next reservation; defaults to
+  `"20s"`.
+- `reservation_overlap` (optional): how long before expiry to switch to the next reservation;
+  defaults to `"15s"`.
+- `humm_start_offset` (optional): a signed offset added to the calculated reservation start time;
+  defaults to `"-1s"`. For example, `"-3s"` starts the reservation three seconds earlier.
 
-Both client types may optionally set `payload_size` and `pong_rate`. Hummingbird clients may also
-set `renewal_ahead`, a duration specifying how long before expiry to obtain the next reservation.
-They are passed respectively as `-payload-size`, `-pong-rate`, and `-renewal-ahead`.
-When omitted, the binary's built-in defaults apply; `renewal_ahead` defaults to `10s`. A renewed
-reservation starts exactly when the current one expires and remains staged until that boundary,
-so their validity windows do not overlap.
+Both client types may optionally set `payload_size` and `pong_rate`. They are passed as
+`-payload-size` and `-pong-rate`. The Hummingbird reservation timing fields are passed as
+`-renewal-ahead`, `-reservation-overlap`, and `-humm-start-offset`; omitted fields use the binary's
+built-in defaults. `reservation_overlap` must not exceed `renewal_ahead`, ensuring the replacement
+has been requested before its handover. With a negative start offset, the replacement's validity
+window begins before handover and overlaps the old window by the overlap plus the magnitude of that
+offset. After handover, the old reservation remains valid for the configured overlap while its
+packets drain.
 
 ### Bounded catch-up after a missed deadline
 
@@ -107,12 +115,14 @@ For example, this commented dummy Hummingbird client shows every supported clien
 //   "duration": "5m",
 //   "hummingbird_reservation": {
 //     "bandwidth": 1000,
-//     "duration": "10s",
-//     "reverse_bandwidth": 1000
+//     "duration": "1m",
+//     "reverse_bandwidth": 1000,
+//     "renewal_ahead": "20s",
+//     "reservation_overlap": "15s",
+//     "humm_start_offset": "-1s"
 //   },
 //   "payload_size": 1200,
-//   "pong_rate": 2.0,
-//   "renewal_ahead": "10s"
+//   "pong_rate": 2.0
 // }
 ```
 

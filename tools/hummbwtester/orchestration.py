@@ -65,6 +65,16 @@ class Endpoint:
 
 
 @dataclass(frozen=True)
+class HummingbirdReservation:
+    bandwidth: int
+    duration: str
+    reverse_bandwidth: int
+    renewal_ahead: str | None
+    reservation_overlap: str | None
+    humm_start_offset: str | None
+
+
+@dataclass(frozen=True)
 class Client:
     # The runner adds the derived metric port and the client kind to the JSON configuration.
     client_id: str
@@ -74,10 +84,9 @@ class Client:
     bandwidth: str
     maxburst: str
     duration: str
-    hummingbird_reservation: tuple[int, str, int] | None
+    hummingbird_reservation: HummingbirdReservation | None
     payload_size: int | None
     pong_rate: float | int | None
-    renewal_ahead: str | None
 
 
 @dataclass(frozen=True)
@@ -201,7 +210,6 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
     optional = {"payload_size", "pong_rate"}
     if hummingbird:
         required.add("hummingbird_reservation")
-        optional.add("renewal_ahead")
     require_fields(entry, required, context, optional)
 
     client_id = entry["client_id"]
@@ -215,13 +223,14 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
     if maxburst < bandwidth:
         raise ConfigError(f"{context}.maxburst must be >= {context}.bandwidth")
 
-    reservation: tuple[int, str, int] | None = None
+    reservation: HummingbirdReservation | None = None
     if hummingbird:
         value = entry["hummingbird_reservation"]
         if not isinstance(value, dict):
             raise ConfigError(f"{context}.hummingbird_reservation must be an object")
         require_fields(value, {"bandwidth", "duration", "reverse_bandwidth"},
-                       f"{context}.hummingbird_reservation")
+                       f"{context}.hummingbird_reservation",
+                       {"renewal_ahead", "reservation_overlap", "humm_start_offset"})
         reservation_bandwidth, duration, reverse_bandwidth = (
             value["bandwidth"], value["duration"], value["reverse_bandwidth"])
         if (not isinstance(reservation_bandwidth, int) or isinstance(reservation_bandwidth, bool)
@@ -233,7 +242,22 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
                 or not 0 <= reverse_bandwidth <= 65535):
             raise ConfigError(
                 f"{context}.hummingbird_reservation.reverse_bandwidth must be an integer from 0 through 65535")
-        reservation = (reservation_bandwidth, duration, reverse_bandwidth)
+        timing = {}
+        for key in ("renewal_ahead", "reservation_overlap", "humm_start_offset"):
+            setting = value.get(key)
+            if setting is not None and (not isinstance(setting, str) or not setting):
+                raise ConfigError(
+                    f"{context}.hummingbird_reservation.{key} "
+                    "must be a non-empty duration string")
+            timing[key] = setting
+        reservation = HummingbirdReservation(
+            bandwidth=reservation_bandwidth,
+            duration=duration,
+            reverse_bandwidth=reverse_bandwidth,
+            renewal_ahead=timing["renewal_ahead"],
+            reservation_overlap=timing["reservation_overlap"],
+            humm_start_offset=timing["humm_start_offset"],
+        )
 
     payload_size = entry.get("payload_size")
     if payload_size is not None and (not isinstance(payload_size, int) or isinstance(payload_size, bool)):
@@ -241,9 +265,6 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
     pong_rate = entry.get("pong_rate")
     if pong_rate is not None and (not isinstance(pong_rate, (int, float)) or isinstance(pong_rate, bool)):
         raise ConfigError(f"{context}.pong_rate must be a number")
-    renewal_ahead = entry.get("renewal_ahead")
-    if renewal_ahead is not None and (not isinstance(renewal_ahead, str) or not renewal_ahead):
-        raise ConfigError(f"{context}.renewal_ahead must be a non-empty duration string")
     return Client(
         client_id=client_id,
         endpoint=parse_endpoint({key: entry[key] for key in ("isd_as", "host", "port")}, context),
@@ -255,7 +276,6 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
         hummingbird_reservation=reservation,
         payload_size=payload_size,
         pong_rate=pong_rate,
-        renewal_ahead=renewal_ahead,
     )
 
 
@@ -680,13 +700,18 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
         args.extend(["-payload-size", str(client.payload_size)])
     if client.pong_rate is not None:
         args.extend(["-pong-rate", str(client.pong_rate)])
-    if client.renewal_ahead is not None:
-        args.extend(["-renewal-ahead", client.renewal_ahead])
     if client.hummingbird:
         assert client.hummingbird_reservation is not None
-        bandwidth, duration, reverse_bandwidth = client.hummingbird_reservation
-        args.extend(["-hummingbird", f"{bandwidth},{duration},{reverse_bandwidth}",
+        reservation = client.hummingbird_reservation
+        args.extend(["-hummingbird",
+                     f"{reservation.bandwidth},{reservation.duration},{reservation.reverse_bandwidth}",
                      "-hummKeysDir", "/share/gen"])
+        for flag, value in (
+                ("-renewal-ahead", reservation.renewal_ahead),
+                ("-reservation-overlap", reservation.reservation_overlap),
+                ("-humm-start-offset", reservation.humm_start_offset)):
+            if value is not None:
+                args.extend([flag, value])
     return args
 
 

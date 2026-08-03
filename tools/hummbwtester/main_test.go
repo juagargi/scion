@@ -50,10 +50,47 @@ func TestRandomHummReservationID(t *testing.T) {
 
 func TestRenewalSchedule(t *testing.T) {
 	expiry := time.Unix(1_000_000, 0)
-	requestAt, startAt := renewalSchedule(expiry, 10*time.Second)
+	requestAt, handoverAt, startAt := renewalSchedule(
+		expiry, defaultRenewalAhead, defaultReservationOverlap, defaultHummStartOffset)
 
-	assert.Equal(t, expiry.Add(-10*time.Second), requestAt)
-	assert.Equal(t, expiry, startAt)
+	assert.Equal(t, expiry.Add(-20*time.Second), requestAt)
+	assert.Equal(t, expiry.Add(-15*time.Second), handoverAt)
+	assert.Equal(t, expiry.Add(-16*time.Second), startAt)
+
+	_, handoverAt, startAt = renewalSchedule(
+		expiry, 20*time.Second, 15*time.Second, -3*time.Second)
+	assert.Equal(t, expiry.Add(-15*time.Second), handoverAt)
+	assert.Equal(t, expiry.Add(-18*time.Second), startAt)
+
+	_, _, startAt = renewalSchedule(expiry, 20*time.Second, 15*time.Second, 3*time.Second)
+	assert.Equal(t, expiry.Add(-12*time.Second), startAt)
+}
+
+func TestValidateRenewalTiming(t *testing.T) {
+	tests := map[string]struct {
+		ahead   time.Duration
+		overlap time.Duration
+		wantErr string
+	}{
+		"defaults":         {ahead: 20 * time.Second, overlap: 15 * time.Second},
+		"equal":            {ahead: 20 * time.Second, overlap: 20 * time.Second},
+		"zero":             {},
+		"negative ahead":   {ahead: -time.Second, wantErr: "renewal-ahead"},
+		"negative overlap": {overlap: -time.Second, wantErr: "reservation-overlap"},
+		"handover too soon": {
+			ahead: 20 * time.Second, overlap: 21 * time.Second, wantErr: "must not exceed",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := validateRenewalTiming(tc.ahead, tc.overlap)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
 }
 
 // TestHeaderRoundTrip checks that a packet header can be encoded and decoded

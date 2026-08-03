@@ -60,10 +60,6 @@ func randomHummReservationID() (uint32, error) {
 	}
 }
 
-// hummStartOffset shifts only the initial locally derived reservation slightly into the past,
-// giving it slack against clock skew. Renewals start exactly when the preceding window expires.
-const hummStartOffset = -3 * time.Second
-
 // fillerSeed is the fixed seed used to generate the deterministic payload filler pattern, known
 // to both client and server so the server can optionally verify integrity.
 const fillerSeed = 0xC0FFEE1234ABCDEF
@@ -80,17 +76,19 @@ type clientConfig struct {
 	remote snet.UDPAddr
 	sdConn daemon.Connector
 
-	bandwidthBps      float64
-	maxBurstBps       float64
-	duration          time.Duration
-	payloadSize       int
-	pongRateHz        float64
-	humm              hummingbirdParameters
-	hummEnabled       bool
-	hummReservationID uint32
-	hummKeysDir       string
-	reportInterval    time.Duration
-	renewalAhead      time.Duration
+	bandwidthBps       float64
+	maxBurstBps        float64
+	duration           time.Duration
+	payloadSize        int
+	pongRateHz         float64
+	humm               hummingbirdParameters
+	hummEnabled        bool
+	hummReservationID  uint32
+	hummKeysDir        string
+	reportInterval     time.Duration
+	renewalAhead       time.Duration
+	reservationOverlap time.Duration
+	hummStartOffset    time.Duration
 }
 
 // bidirectional reports whether the client requested a reverse-direction reservation.
@@ -140,10 +138,7 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	var reservation *snetpath.Reservation
 	if cfg.hummEnabled {
 		var nextHop *net.UDPAddr
-		startTime := time.Now()
-		if c.cfg.hummKeysDir != "" {
-			startTime = startTime.Add(hummStartOffset)
-		}
+		startTime := time.Now().Add(c.cfg.hummStartOffset)
 		reservation, nextHop, err = c.buildReservation(ctx, path, startTime)
 		if err != nil {
 			log.Error("Building initial Hummingbird reservation", "err", err)
@@ -365,10 +360,11 @@ func reverseBaseHops(hops []snetpath.BaseHop) []snetpath.BaseHop {
 	return reversed
 }
 
-// renewalLoop obtains each replacement reservation ahead of expiry, but gives it a start time
-// equal to the current reservation's expiry and does not publish it until that boundary.
+// renewalLoop obtains each replacement ahead of its handover. The configured start offset is
+// applied to the handover time, but the replacement is not published until the handover.
 func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time.Time) {
-	renewAt, nextStart := renewalSchedule(expiry, c.cfg.renewalAhead)
+	renewAt, handoverAt, nextStart := renewalSchedule(
+		expiry, c.cfg.renewalAhead, c.cfg.reservationOverlap, c.cfg.hummStartOffset)
 
 	for {
 		c.metrics.reservationExpiry.Set(time.Until(expiry).Seconds())
@@ -396,7 +392,7 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 		select {
 		case <-runCtx.Done():
 			return
-		case <-time.After(time.Until(expiry)):
+		case <-time.After(time.Until(handoverAt)):
 		}
 
 		old := c.currentAddr.Load()
@@ -411,13 +407,20 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 			c.forceSmallNextPayload.Store(true)
 		}
 		expiry = newRsv.Expiry()
-		renewAt, nextStart = renewalSchedule(expiry, c.cfg.renewalAhead)
+		renewAt, handoverAt, nextStart = renewalSchedule(
+			expiry, c.cfg.renewalAhead, c.cfg.reservationOverlap, c.cfg.hummStartOffset)
 		log.Info("Renewed Hummingbird reservation", "new_expiry", expiry)
 	}
 }
 
-func renewalSchedule(expiry time.Time, ahead time.Duration) (requestAt, startAt time.Time) {
-	return expiry.Add(-ahead), expiry
+func renewalSchedule(
+	expiry time.Time,
+	ahead, overlap, startOffset time.Duration,
+) (requestAt, handoverAt, startAt time.Time) {
+	requestAt = expiry.Add(-ahead)
+	handoverAt = expiry.Add(-overlap)
+	startAt = handoverAt.Add(startOffset)
+	return requestAt, handoverAt, startAt
 }
 
 // renewWithRetry attempts to build a fresh reservation with a small bounded number of retries
