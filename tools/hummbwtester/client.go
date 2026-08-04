@@ -485,20 +485,25 @@ func (t *pongTracker) recordSent(seq uint64, now time.Time) {
 	t.outstanding[seq] = now
 }
 
-// recordReplied removes seq from the outstanding table (if present), then calculates RTT and
-// jitter entirely from client-local monotonic timestamps.
-func (t *pongTracker) recordReplied(seq uint64, receivedAt time.Time) (time.Duration, bool) {
+// recordReplied calculates RTT for an accepted reply. On-time replies use the retained monotonic
+// send time. If the timeout sweep already removed that entry, the echoed client timestamp still
+// lets a late reply update latency and jitter; late reports whether that fallback was necessary.
+func (t *pongTracker) recordReplied(
+	reply PongReply, receivedAt time.Time,
+) (rtt time.Duration, late bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	sentAt, ok := t.outstanding[seq]
+	sentAt, ok := t.outstanding[reply.SequenceNumber]
 	if !ok {
-		return 0, false
+		sentAt = time.Unix(0, reply.SendTimestampNanos)
+		late = true
+	} else {
+		delete(t.outstanding, reply.SequenceNumber)
 	}
-	delete(t.outstanding, seq)
-	rtt := receivedAt.Sub(sentAt)
+	rtt = receivedAt.Sub(sentAt)
 	t.lastRTT = rtt
 	t.jitter.Sample(sentAt.Sub(t.startedAt), receivedAt.Sub(t.startedAt))
-	return rtt, true
+	return rtt, late
 }
 
 // evictTimedOut removes and returns the count of outstanding requests older than the current
@@ -764,18 +769,20 @@ func (c *client) pongReceiveLoop(ctx context.Context, conn *snet.Conn, tracker *
 			continue
 		}
 		now := time.Now()
-		rtt, ok := tracker.recordReplied(reply.SequenceNumber, now)
-		if !ok {
-			continue // Duplicate, or already evicted as timed out.
+		delta, accepted := tracker.remote.record(reply, now)
+		if !accepted {
+			continue // Duplicate, reordered, older, or a regressed cumulative snapshot.
 		}
+		rtt, late := tracker.recordReplied(reply, now)
 		c.metrics.pongRepliesReceived.Inc()
+		if late {
+			c.metrics.pongLateRepliesReceived.Inc()
+		}
 		c.metrics.rtt.Observe(rtt.Seconds())
 		tracker.mu.Lock()
 		c.metrics.jitter.Set(tracker.jitter.Jitter.Seconds())
 		tracker.mu.Unlock()
-		if delta, accepted := tracker.remote.record(reply, now); accepted {
-			c.applyRemoteStats(delta)
-		}
+		c.applyRemoteStats(delta)
 	}
 }
 

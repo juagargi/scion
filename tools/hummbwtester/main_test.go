@@ -307,7 +307,7 @@ func TestRemoteStatsTrackerUsesClientReceiveTime(t *testing.T) {
 	var tracker remoteStatsTracker
 
 	first, accepted := tracker.record(PongReply{
-		Header:                 Header{SequenceNumber: 10},
+		Header:                 Header{SequenceNumber: 10, SendTimestampNanos: 100},
 		PayloadPacketsReceived: 10,
 		PayloadBytesReceived:   1000,
 		PongRequestsReceived:   1,
@@ -321,7 +321,7 @@ func TestRemoteStatsTrackerUsesClientReceiveTime(t *testing.T) {
 	assert.Equal(t, uint64(1000), first.payloadBytesReceived)
 
 	second, accepted := tracker.record(PongReply{
-		Header:                   Header{SequenceNumber: 11},
+		Header:                   Header{SequenceNumber: 11, SendTimestampNanos: 200},
 		PayloadPacketsReceived:   30,
 		PayloadBytesReceived:     5000,
 		PayloadLost:              2,
@@ -341,7 +341,7 @@ func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
 	start := time.Unix(0, 0)
 	var tracker remoteStatsTracker
 	_, accepted := tracker.record(PongReply{
-		Header:                 Header{SequenceNumber: 1},
+		Header:                 Header{SequenceNumber: 1, SendTimestampNanos: 100},
 		PayloadPacketsReceived: 1,
 		PayloadBytesReceived:   100,
 		PongRequestsReceived:   1,
@@ -350,7 +350,7 @@ func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
 	require.True(t, accepted)
 
 	catchUp, accepted := tracker.record(PongReply{
-		Header:                 Header{SequenceNumber: 3},
+		Header:                 Header{SequenceNumber: 3, SendTimestampNanos: 300},
 		PayloadPacketsReceived: 5,
 		PayloadBytesReceived:   500,
 		PongRequestsReceived:   3,
@@ -361,7 +361,7 @@ func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
 	assert.InDelta(t, 1600, catchUp.receiveRateBps, 0.001)
 
 	_, accepted = tracker.record(PongReply{
-		Header:                 Header{SequenceNumber: 2},
+		Header:                 Header{SequenceNumber: 2, SendTimestampNanos: 200},
 		PayloadPacketsReceived: 3,
 		PayloadBytesReceived:   300,
 		PongRequestsReceived:   2,
@@ -369,13 +369,23 @@ func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
 	}, start.Add(3*time.Second))
 	assert.False(t, accepted)
 	assert.Equal(t, time.Second, tracker.age(start.Add(3*time.Second)))
+
+	_, accepted = tracker.record(PongReply{
+		Header:                 Header{SequenceNumber: 4, SendTimestampNanos: 250},
+		PayloadPacketsReceived: 6,
+		PayloadBytesReceived:   600,
+		PongRequestsReceived:   4,
+		PongRepliesSent:        4,
+	}, start.Add(4*time.Second))
+	assert.False(t, accepted)
+	assert.Equal(t, 2*time.Second, tracker.age(start.Add(4*time.Second)))
 }
 
 func TestRemoteStatsTrackerIgnoresNonPositiveRateInterval(t *testing.T) {
 	now := time.Unix(0, 0)
 	var tracker remoteStatsTracker
 	_, accepted := tracker.record(PongReply{
-		Header:                 Header{SequenceNumber: 1},
+		Header:                 Header{SequenceNumber: 1, SendTimestampNanos: 100},
 		PayloadPacketsReceived: 1,
 		PayloadBytesReceived:   100,
 		PongRequestsReceived:   1,
@@ -384,7 +394,7 @@ func TestRemoteStatsTrackerIgnoresNonPositiveRateInterval(t *testing.T) {
 	require.True(t, accepted)
 
 	delta, accepted := tracker.record(PongReply{
-		Header:                 Header{SequenceNumber: 2},
+		Header:                 Header{SequenceNumber: 2, SendTimestampNanos: 200},
 		PayloadPacketsReceived: 2,
 		PayloadBytesReceived:   200,
 		PongRequestsReceived:   2,
@@ -392,6 +402,22 @@ func TestRemoteStatsTrackerIgnoresNonPositiveRateInterval(t *testing.T) {
 	}, now)
 	require.True(t, accepted)
 	assert.False(t, delta.hasReceiveRate)
+}
+
+func TestPongTrackerUsesReplyAfterTimeout(t *testing.T) {
+	tracker := newPongTracker()
+	sentAt := tracker.startedAt.Add(time.Second)
+	tracker.recordSent(7, sentAt)
+
+	receivedAt := sentAt.Add(3 * time.Second)
+	assert.Equal(t, 1, tracker.evictTimedOut(receivedAt))
+	rtt, late := tracker.recordReplied(PongReply{
+		Header: Header{SequenceNumber: 7, SendTimestampNanos: sentAt.UnixNano()},
+	}, receivedAt)
+
+	assert.True(t, late)
+	assert.Equal(t, 3*time.Second, rtt)
+	assert.Equal(t, 3*time.Second, tracker.lastRTT)
 }
 
 // TestEncodePayloadFillerNonZeroAndDeterministic checks that payload filler

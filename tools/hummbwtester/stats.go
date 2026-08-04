@@ -219,7 +219,8 @@ func (t *remoteStatsTracker) record(reply PongReply, receivedAt time.Time) (remo
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.haveSnapshot && reply.SequenceNumber <= t.lastSequence {
+	if t.haveSnapshot && (reply.SequenceNumber <= t.lastSequence ||
+		reply.SendTimestampNanos <= t.last.SendTimestampNanos) {
 		return remoteStatsDelta{}, false
 	}
 	if t.haveSnapshot && cumulativeSnapshotRegressed(reply, t.last) {

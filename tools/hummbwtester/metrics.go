@@ -30,6 +30,8 @@ type clientMetrics struct {
 	pongRequestsSent prometheus.Counter
 	// pongRepliesReceived counts pong-reply packets received by the client.
 	pongRepliesReceived prometheus.Counter
+	// pongLateRepliesReceived counts accepted replies whose request had already timed out.
+	pongLateRepliesReceived prometheus.Counter
 	// pongLost counts pong requests that timed out without a reply.
 	pongLost prometheus.Counter
 	// rtt records round-trip time measurements from pong requests and replies.
@@ -72,11 +74,15 @@ func newClientMetrics() *clientMetrics {
 		}),
 		pongRepliesReceived: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "hummbwtester_client_pong_replies_received_total",
-			Help: "Total number of pong-reply packets received by the client.",
+			Help: "Total newer, non-reordered pong-reply packets accepted by the client.",
+		}),
+		pongLateRepliesReceived: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_pong_late_replies_received_total",
+			Help: "Total accepted pong replies received after their requests timed out.",
 		}),
 		pongLost: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "hummbwtester_client_pong_lost_total",
-			Help: "Total number of pong requests that timed out without a reply.",
+			Help: "Total pong requests that timed out; a late reply may still arrive and be accepted.",
 		}),
 		rtt: promauto.NewHistogram(prometheus.HistogramOpts{
 			Name:    "hummbwtester_client_rtt_seconds",
