@@ -15,13 +15,149 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"net"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/scionproto/scion/pkg/addr"
+	dppath "github.com/scionproto/scion/pkg/slayers/path"
+	dpscion "github.com/scionproto/scion/pkg/slayers/path/scion"
+	"github.com/scionproto/scion/pkg/snet"
+	snetpath "github.com/scionproto/scion/pkg/snet/path"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// BenchmarkSerializeWriteTo measures the no-sleep client send path over a real loopback UDP
+// socket. Each operation includes snet packet construction, SCION serialization, UDP checksum
+// generation, path-specific work (including flyover MACs for Hummingbird), and WriteTo.
+func BenchmarkSerializeWriteTo(b *testing.B) {
+	paths := benchmarkDataplanePaths(b)
+	for _, tc := range paths {
+		b.Run(tc.name, func(b *testing.B) {
+			benchmarkSerializeWriteTo(b, tc.path)
+		})
+	}
+}
+
+func benchmarkSerializeWriteTo(b *testing.B, dataplanePath snet.DataplanePath) {
+	b.Helper()
+
+	receiver, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(b, err)
+	require.NoError(b, receiver.SetReadBuffer(4<<20))
+
+	var receiverWG sync.WaitGroup
+	receiverWG.Add(1)
+	go func() {
+		defer receiverWG.Done()
+		buf := make([]byte, 64<<10)
+		for {
+			if _, _, err := receiver.ReadFromUDP(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	srcIA := addr.MustParseIA("1-ff00:0:111")
+	dstIA := addr.MustParseIA("1-ff00:0:112")
+	network := &snet.SCIONNetwork{
+		Topology: snet.Topology{
+			LocalIA:   srcIA,
+			PortRange: snet.TopologyPortRange{Start: 31000, End: 32767},
+		},
+	}
+	remote := &snet.UDPAddr{
+		IA:      dstIA,
+		Host:    &net.UDPAddr{IP: net.IPv4(127, 0, 0, 2), Port: 12345},
+		Path:    dataplanePath,
+		NextHop: receiver.LocalAddr().(*net.UDPAddr),
+	}
+	conn, err := network.Dial(
+		context.Background(), "udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}, remote)
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		_ = conn.Close()
+		_ = receiver.Close()
+		receiverWG.Wait()
+	})
+
+	payload := make([]byte, defaultPayloadSize)
+	b.SetBytes(int64(len(payload)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := conn.WriteTo(payload, remote); err != nil {
+			b.Fatal(err)
+		}
+	}
+	packetsPerSecond := float64(b.N) / b.Elapsed().Seconds()
+	b.ReportMetric(packetsPerSecond, "packets/s")
+	b.ReportMetric(packetsPerSecond*float64(len(payload)*8)/1e6, "payload-Mbps")
+}
+
+func benchmarkDataplanePaths(b *testing.B) []struct {
+	name string
+	path snet.DataplanePath
+} {
+	b.Helper()
+
+	decoded := dpscion.Decoded{
+		Base: dpscion.Base{
+			PathMeta: dpscion.MetaHdr{SegLen: [3]uint8{2, 2, 0}},
+			NumINF:   2,
+			NumHops:  4,
+		},
+		InfoFields: []dppath.InfoField{
+			{ConsDir: false},
+			{ConsDir: true},
+		},
+		HopFields: []dppath.HopField{
+			{ConsIngress: 41, ConsEgress: 0},
+			{ConsIngress: 0, ConsEgress: 1},
+			{ConsIngress: 0, ConsEgress: 2},
+			{ConsIngress: 1, ConsEgress: 0},
+		},
+	}
+	raw := make([]byte, decoded.Len())
+	require.NoError(b, decoded.SerializeTo(raw))
+	bestEffort := snetpath.SCION{Raw: raw}
+
+	startTime := uint32(time.Now().Add(-time.Minute).Unix())
+	flyover := func(ia string, ingress, egress uint16) *snetpath.Hop {
+		return &snetpath.Hop{
+			BaseHop: snetpath.BaseHop{
+				IA:      addr.MustParseIA(ia),
+				Ingress: ingress,
+				Egress:  egress,
+			},
+			Flyover: &snetpath.FlyoverData{
+				ResID: 1, Ak: [16]byte{1, 2, 3, 4}, Bw: 1000,
+				StartTime: startTime, Duration: 600,
+			},
+		}
+	}
+	hummingbird, err := snetpath.NewReservation(snetpath.WithDataplanePath(
+		bestEffort,
+		addr.MustParseIA("1-ff00:0:112"),
+		snetpath.FlyoverSequence{
+			flyover("1-ff00:0:111", 0, 41),
+			flyover("1-ff00:0:110", 1, 2),
+			flyover("1-ff00:0:112", 1, 0),
+		},
+	))
+	require.NoError(b, err)
+
+	return []struct {
+		name string
+		path snet.DataplanePath
+	}{
+		{name: "best_effort", path: bestEffort},
+		{name: "hummingbird", path: hummingbird},
+	}
+}
 
 func TestRandomHummReservationID(t *testing.T) {
 	// Replace the rand function with our own.

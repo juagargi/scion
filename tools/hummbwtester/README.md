@@ -232,6 +232,12 @@ go test ./tools/hummbwtester
 bazel test //tools/hummbwtester:go_default_test //tools/hummbwtester:orchestration_test
 ```
 
+Run the no-sleep client send-path benchmark with:
+
+```bash
+go test ./tools/hummbwtester -run '^$' -bench '^BenchmarkSerializeWriteTo$' -benchmem
+```
+
 The Python test covers configuration validation, deterministic metrics-port assignment, and
 per-minute report aggregation.
 The Go test covers random Hummingbird reservation-ID generation.
