@@ -86,10 +86,15 @@ packets drain.
 
 ### Bounded catch-up after a missed deadline
 
-Payload packets and pong requests have independent schedules. Payload pacing retains an absolute
-canonical schedule at `bandwidth`, so a late send creates debt rather than discarding scheduled
-payload slots. A second deadline spaces actual sends at `maxburst`. While debt exists, the client
-therefore catches up at no more than `maxburst`; after repayment, it resumes `bandwidth`.
+Payload packets and pong requests have independent schedules. The client wakes every millisecond
+and compares the bytes sent with an absolute `bandwidth` schedule. It sends the packets due at that
+instant back-to-back, preserving fractional byte credit between wakes so packetization does not
+change the long-term rate. Every packet is encoded and passed separately to `WriteTo`, giving it a
+fresh sequence number, timestamp, and (for Hummingbird) dataplane MAC.
+
+A small token bucket bounds each catch-up batch and replenishes at `maxburst`. Scheduler or CPU
+delays therefore create retained debt rather than an unbounded burst; while debt exists, the client
+catches up at no more than `maxburst`, then resumes `bandwidth`.
 
 For example, a 10 Mbps client with `maxburst` 20 Mbps that accumulates 10 megabits of debt has
 10 Mbps of extra catch-up capacity and needs at least one second to repay it. Setting `maxburst`
@@ -97,7 +102,7 @@ equal to `bandwidth` retains the debt accounting but provides no acceleration, s
 up while continuously sending.
 
 Pong probes do not contribute to the configured payload bandwidth and retain their independent
-no-catch-up schedule. A send that leaves its schedule behind increments
+no-catch-up schedule. A pacing tick that leaves its schedule behind increments
 `hummbwtester_client_pacing_overrun_total`, records its lateness in
 `hummbwtester_client_pacing_delay_seconds`, and contributes to the rate-limited
 `Pacing schedule behind` log message.

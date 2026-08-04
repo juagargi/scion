@@ -596,43 +596,57 @@ func TestParsePacingBandwidths(t *testing.T) {
 func TestPayloadPacer(t *testing.T) {
 	start := time.Unix(100, 0)
 
-	t.Run("normal cadence stays absolute", func(t *testing.T) {
-		pacer := payloadPacer{
-			canonical: start, burst: start,
-			canonicalInterval: 10 * time.Millisecond, maxBurstInterval: 5 * time.Millisecond,
+	t.Run("fractional byte credit produces the exact long-term rate", func(t *testing.T) {
+		pacer := newPayloadPacer(start, 800, 10e6, 10e6)
+		packets := 0
+		for tick := 1; tick <= 8; tick++ {
+			now := start.Add(time.Duration(tick) * time.Millisecond)
+			pacer.beginTick(now)
+			for pacer.canSend(now, 800) {
+				pacer.sent(800)
+				packets++
+			}
 		}
-		behind, _ := pacer.sent(start.Add(time.Millisecond))
-		assert.False(t, behind)
-		assert.Equal(t, start.Add(10*time.Millisecond), pacer.deadline())
+
+		// 10 Mbps schedules 10,000 bytes in 8 ms: twelve packets plus 400 bytes of credit.
+		assert.Equal(t, 12, packets)
+		assert.Equal(t, uint64(9600), pacer.accountedBytes)
+		assert.False(t, pacer.canSend(start.Add(8*time.Millisecond), 800))
+		assert.InDelta(t, 400, pacer.scheduledBytes(start.Add(8*time.Millisecond))-
+			float64(pacer.accountedBytes), 1e-9)
 	})
 
-	t.Run("stalled schedule catches up at max burst", func(t *testing.T) {
-		pacer := payloadPacer{
-			canonical: start, burst: start,
-			canonicalInterval: 10 * time.Millisecond, maxBurstInterval: 5 * time.Millisecond,
+	t.Run("stalled schedule catches up in max-burst bounded batches", func(t *testing.T) {
+		pacer := newPayloadPacer(start, 800, 10e6, 20e6)
+		now := start.Add(10 * time.Millisecond)
+		pacer.beginTick(now)
+
+		packets := 0
+		for pacer.canSend(now, 800) {
+			pacer.sent(800)
+			packets++
 		}
-		behind, lateness := pacer.sent(start.Add(35 * time.Millisecond))
+
+		// A 10 ms stall creates fifteen packets of canonical debt, but the one-tick token bucket
+		// permits only a bounded initial batch. The remaining debt is retained for later ticks.
+		assert.Equal(t, 4, packets)
+		behind, lateness := pacer.behind(now, 800)
 		assert.True(t, behind)
-		assert.Equal(t, 35*time.Millisecond, lateness)
-
-		// The canonical schedule remains in debt, while actual sends are spaced at the 2x rate.
-		for _, milliseconds := range []int{40, 45, 50, 55, 60, 65} {
-			assert.Equal(t, start.Add(time.Duration(milliseconds)*time.Millisecond), pacer.deadline())
-			pacer.sent(start.Add(time.Duration(milliseconds) * time.Millisecond))
-		}
-		assert.Equal(t, start.Add(70*time.Millisecond), pacer.deadline())
-		behind, _ = pacer.sent(start.Add(70 * time.Millisecond))
-		assert.False(t, behind)
-		assert.Equal(t, start.Add(80*time.Millisecond), pacer.deadline())
+		assert.Equal(t, 6800*time.Microsecond, lateness)
 	})
 
-	t.Run("equal rates retain debt without acceleration", func(t *testing.T) {
-		pacer := payloadPacer{
-			canonical: start, burst: start,
-			canonicalInterval: 10 * time.Millisecond, maxBurstInterval: 10 * time.Millisecond,
+	t.Run("absolute schedule uses elapsed time rather than tick count", func(t *testing.T) {
+		pacer := newPayloadPacer(start, 800, 10e6, 100e6)
+		now := start.Add(10 * time.Millisecond)
+		pacer.beginTick(now)
+		packets := 0
+		for pacer.canSend(now, 800) {
+			pacer.sent(800)
+			packets++
 		}
-		pacer.sent(start.Add(35 * time.Millisecond))
-		assert.Equal(t, start.Add(45*time.Millisecond), pacer.deadline())
+
+		assert.Equal(t, 15, packets)
+		assert.Equal(t, uint64(12000), pacer.accountedBytes)
 	})
 }
 

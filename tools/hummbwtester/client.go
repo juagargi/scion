@@ -21,6 +21,7 @@ import (
 	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"path/filepath"
 	"sync"
@@ -63,6 +64,10 @@ func randomHummReservationID() (uint32, error) {
 // fillerSeed is the fixed seed used to generate the deterministic payload filler pattern, known
 // to both client and server so the server can optionally verify integrity.
 const fillerSeed = 0xC0FFEE1234ABCDEF
+
+// payloadPacingCadence is deliberately coarser than the per-packet intervals used by typical
+// experiment rates. Each wake sends a bounded batch based on the absolute payload schedule.
+const payloadPacingCadence = time.Millisecond
 
 // bidirectionalFirstPacketLen is the total packet size (header + filler) used for the one
 // Payload packet sent immediately after attaching a bidirectional reservation (initial dial or
@@ -525,57 +530,85 @@ func advanceProbeDeadline(target time.Time, interval time.Duration, now time.Tim
 	return next, false
 }
 
-// payloadPacer retains the canonical bandwidth schedule while independently enforcing a maximum
-// catch-up rate. A stall leaves canonical behind wall-clock time (the pacing debt). The burst
-// deadline spaces actual sends at maxBurstInterval until canonical catches up; it never discards
-// canonical slots.
+// payloadPacer retains the absolute byte schedule while independently enforcing a maximum
+// catch-up rate. The float-valued schedule preserves sub-packet byte credit across ticks.
+// burstCreditBytes is capped so idle time cannot accumulate an unbounded instantaneous burst.
 type payloadPacer struct {
-	canonical         time.Time
-	burst             time.Time
-	canonicalInterval time.Duration
-	maxBurstInterval  time.Duration
+	startedAt            time.Time
+	lastTick             time.Time
+	bandwidthBytesPerSec float64
+	maxBurstBytesPerSec  float64
+	accountedBytes       uint64
+	burstCreditBytes     float64
+	burstCapacityBytes   float64
 }
 
 func newPayloadPacer(
 	now time.Time, payloadSize int, bandwidthBps, maxBurstBps float64,
 ) payloadPacer {
-	interval := func(rate float64) time.Duration {
-		value := time.Duration(float64(time.Second) * float64(payloadSize*8) / rate)
-		if value <= 0 {
-			return time.Nanosecond
-		}
-		return value
-	}
+	maxBurstBytesPerSec := maxBurstBps / 8
+	burstBytesPerTick := maxBurstBytesPerSec * payloadPacingCadence.Seconds()
+	burstCapacityBytes := math.Ceil(burstBytesPerTick/float64(payloadSize)) *
+		float64(payloadSize)
 	return payloadPacer{
-		canonical:         now,
-		burst:             now,
-		canonicalInterval: interval(bandwidthBps),
-		maxBurstInterval:  interval(maxBurstBps),
+		startedAt:            now,
+		lastTick:             now,
+		bandwidthBytesPerSec: bandwidthBps / 8,
+		maxBurstBytesPerSec:  maxBurstBytesPerSec,
+		burstCreditBytes:     burstCapacityBytes,
+		burstCapacityBytes:   burstCapacityBytes,
 	}
 }
 
-func (p *payloadPacer) deadline() time.Time {
-	if p.burst.After(p.canonical) {
-		return p.burst
+// beginTick replenishes max-burst credit from elapsed wall time. The canonical schedule itself
+// remains absolute and therefore retains all pacing debt after a delayed wake.
+func (p *payloadPacer) beginTick(now time.Time) {
+	if now.Before(p.lastTick) {
+		return
 	}
-	return p.canonical
+	p.burstCreditBytes += now.Sub(p.lastTick).Seconds() * p.maxBurstBytesPerSec
+	if p.burstCreditBytes > p.burstCapacityBytes {
+		p.burstCreditBytes = p.burstCapacityBytes
+	}
+	p.lastTick = now
 }
 
-// sent advances one canonical packet slot and the maximum-rate limiter after a send attempt.
-// behind is true while at least one subsequent canonical slot is already due. lateness describes
-// this packet relative to its canonical slot, irrespective of max-burst limiting.
-func (p *payloadPacer) sent(completed time.Time) (behind bool, lateness time.Duration) {
-	canonicalTarget := p.canonical
-	p.canonical = p.canonical.Add(p.canonicalInterval)
-	p.burst = completed.Add(p.maxBurstInterval)
-	return !p.canonical.After(completed), completed.Sub(canonicalTarget)
+// canSend reports whether the absolute bandwidth schedule and max-burst bucket both allow the
+// next packet. scheduledBytes remains fractional rather than rounding at every tick.
+func (p *payloadPacer) canSend(now time.Time, packetSize int) bool {
+	scheduledBytes := p.scheduledBytes(now)
+	nextAccountedBytes := float64(p.accountedBytes) + float64(packetSize)
+	return nextAccountedBytes <= scheduledBytes &&
+		float64(packetSize) <= p.burstCreditBytes
 }
 
-// sendLoop is the single writer goroutine: it merges the Payload and PongRequest schedules by
-// absolute deadline (per design doc section 3) and writes every packet through conn.WriteTo,
-// always reading the latest reservation pointer so renewal and pacing never race. Payload pacing
-// retains canonical-rate debt and repays it at no more than maxBurstBps; Pong probes remain on an
-// independent no-catch-up schedule.
+func (p *payloadPacer) scheduledBytes(now time.Time) float64 {
+	return now.Sub(p.startedAt).Seconds() * p.bandwidthBytesPerSec
+}
+
+// sent accounts one independently serialized send attempt against both schedules.
+func (p *payloadPacer) sent(packetSize int) {
+	p.accountedBytes += uint64(packetSize)
+	p.burstCreditBytes -= float64(packetSize)
+}
+
+// behind reports how late the next packet already due on the canonical schedule is. This is only
+// true when a tick ended with debt, normally because maxburst or local send work bounded the batch.
+func (p *payloadPacer) behind(now time.Time, packetSize int) (bool, time.Duration) {
+	bytesUntilNext := float64(p.accountedBytes) + float64(packetSize)
+	dueAfter := time.Duration(bytesUntilNext / p.bandwidthBytesPerSec * float64(time.Second))
+	dueAt := p.startedAt.Add(dueAfter)
+	if dueAt.After(now) {
+		return false, 0
+	}
+	return true, now.Sub(dueAt)
+}
+
+// sendLoop is the single writer goroutine. It wakes at a coarse cadence, calculates the payload
+// batch from an absolute byte schedule, and writes each packet independently through conn.WriteTo.
+// This gives every packet a fresh application timestamp, sequence number, Hummingbird timestamp,
+// duplicate-detection counter, and MAC. Payload debt is retained and repaid at no more than
+// maxBurstBps; Pong probes remain on an independent no-catch-up schedule.
 func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTracker) {
 	pongInterval := time.Duration(float64(time.Second) / c.cfg.pongRateHz)
 	if pongInterval <= 0 {
@@ -596,6 +629,24 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 		now, c.cfg.payloadSize, c.cfg.bandwidthBps, c.cfg.maxBurstBps,
 	)
 	nextPong := now
+	ticker := time.NewTicker(payloadPacingCadence)
+	defer ticker.Stop()
+
+	var lastSendTimestamp int64
+	nextSendTimestamp := func(at time.Time) int64 {
+		timestamp := at.UnixNano()
+		if timestamp <= lastSendTimestamp {
+			timestamp = lastSendTimestamp + 1
+		}
+		lastSendTimestamp = timestamp
+		return timestamp
+	}
+	nextPayload := func() (size int, small bool) {
+		if c.forceSmallNextPayload.Load() {
+			return bidirectionalFirstPacketLen, true
+		}
+		return c.cfg.payloadSize, false
+	}
 
 	var overrunsSinceLog int
 	lastOverrunLog := now
@@ -611,42 +662,37 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 	}
 
 	for {
-		if !deadline.IsZero() && !now.Before(deadline) {
-			return
-		}
 		select {
 		case <-ctx.Done():
 			return
-		default:
+		case <-ticker.C:
 		}
 
-		var target time.Time
-		payloadTarget := payloadPacing.deadline()
-		isPayload := payloadTarget.Before(nextPong) || payloadTarget.Equal(nextPong)
-		if isPayload {
-			target = payloadTarget
-		} else {
-			target = nextPong
+		tickNow := time.Now()
+		if !deadline.IsZero() && !tickNow.Before(deadline) {
+			return
 		}
+		payloadPacing.beginTick(tickNow)
 
-		wait := time.Until(target)
-		if wait > 0 {
-			select {
-			case <-ctx.Done():
+		for {
+			if ctx.Err() != nil {
 				return
-			case <-time.After(wait):
 			}
-		}
+			if !deadline.IsZero() && !time.Now().Before(deadline) {
+				return
+			}
 
-		now = time.Now()
-		addr := c.currentAddr.Load()
-		if isPayload {
-			size := c.cfg.payloadSize
-			if c.forceSmallNextPayload.CompareAndSwap(true, false) {
-				size = bidirectionalFirstPacketLen
+			size, small := nextPayload()
+			if !payloadPacing.canSend(tickNow, size) {
+				break
 			}
-			EncodePayload(buf[:size], payloadSeq, now.UnixNano(), fillerSeed)
-			if _, err := conn.WriteTo(buf[:size], addr); err != nil {
+			if small && !c.forceSmallNextPayload.CompareAndSwap(true, false) {
+				continue
+			}
+
+			sentAt := time.Now()
+			EncodePayload(buf[:size], payloadSeq, nextSendTimestamp(sentAt), fillerSeed)
+			if _, err := conn.WriteTo(buf[:size], c.currentAddr.Load()); err != nil {
 				log.Error("Sending payload packet", "err", err)
 			} else {
 				c.metrics.payloadPacketsSent.Inc()
@@ -656,26 +702,31 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 				c.rateMu.Unlock()
 			}
 			payloadSeq++
-			afterSend := time.Now()
-			behind, lateness := payloadPacing.sent(afterSend)
-			if behind {
-				recordPacingDelay(lateness)
-			}
-		} else {
-			EncodePongRequest(pongBuf, pongSeq, now.UnixNano())
-			if _, err := conn.WriteTo(pongBuf, addr); err != nil {
+			payloadPacing.sent(size)
+		}
+
+		nextSize, _ := nextPayload()
+		if behind, lateness := payloadPacing.behind(tickNow, nextSize); behind {
+			recordPacingDelay(lateness)
+		}
+
+		if !nextPong.After(tickNow) {
+			sentAt := time.Now()
+			EncodePongRequest(pongBuf, pongSeq, nextSendTimestamp(sentAt))
+			if _, err := conn.WriteTo(pongBuf, c.currentAddr.Load()); err != nil {
 				log.Error("Sending pong request", "err", err)
 			} else {
 				c.metrics.pongRequestsSent.Inc()
-				tracker.recordSent(pongSeq, now)
+				tracker.recordSent(pongSeq, sentAt)
 			}
 			pongSeq++
 			afterSend := time.Now()
+			pongTarget := nextPong
 			var rebased bool
 			// Payload and pong schedules rebase independently; delaying one does not move the other.
 			nextPong, rebased = advanceProbeDeadline(nextPong, pongInterval, afterSend)
 			if rebased {
-				recordPacingDelay(afterSend.Sub(target))
+				recordPacingDelay(afterSend.Sub(pongTarget))
 			}
 		}
 	}
