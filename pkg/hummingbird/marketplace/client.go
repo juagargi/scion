@@ -16,164 +16,25 @@ package marketplace
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"math"
-	"net"
-	"net/http"
-	"net/netip"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/quic-go/quic-go/http3"
 	"github.com/scionproto/scion/pkg/addr"
-	libconnect "github.com/scionproto/scion/pkg/connect"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 	"github.com/scionproto/scion/pkg/proto/hummingbird/v1/hummingbirdconnect"
 	"github.com/scionproto/scion/pkg/snet"
-	"github.com/scionproto/scion/pkg/snet/path"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
-	"github.com/scionproto/scion/pkg/snet/squic"
-	"github.com/scionproto/scion/private/app/appnet"
-	"github.com/scionproto/scion/private/storage"
-	"github.com/scionproto/scion/private/trust"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type MarketplaceClient struct {
-	token  string
-	topo   snet.Topology
 	client hummingbirdconnect.MarketplaceServiceClient
-}
-
-func (c *MarketplaceClient) withSCION(ctx context.Context, querier snet.PathQuerier, remote *snet.UDPAddr, serverName string, insecure bool) (
-	hummingbirdconnect.MarketplaceServiceClient, error) {
-
-	trustDB, err := storage.NewInMemoryTrustStorage()
-	if err != nil {
-		return nil, err
-	}
-	var localPublic *net.UDPAddr
-	var dp snet.DataplanePath
-	var nextHop *net.UDPAddr
-
-	if remote.IA == c.topo.LocalIA {
-		// marketplace is inside local AS
-		dp = path.Empty{}
-		nextHop = remote.Host
-	} else {
-		paths, err := querier.Query(ctx, remote.IA)
-		if err != nil {
-			return nil, err
-		}
-		if len(paths) == 0 {
-			return nil, serrors.New("no paths found to marketplace")
-		}
-		dp = paths[0].Dataplane()
-		nextHop = paths[0].UnderlayNextHop()
-	}
-	remote.Path = dp
-	remote.NextHop = nextHop
-
-	conn, err := net.Dial("udp", nextHop.String())
-	if err != nil {
-		return nil, err
-	}
-	localPublic, ok := conn.LocalAddr().(*net.UDPAddr)
-	if !ok {
-		return nil, serrors.New("localAddr not UDP addr")
-	}
-	conn.Close()
-
-	nc := appnet.NetworkConfig{
-		Topology: c.topo,
-		IA:       c.topo.LocalIA,
-		QUIC: appnet.QUIC{
-			TLSVerifier: trust.NewTLSCryptoVerifier(trustDB),
-		},
-		MTU: 1400,
-		Public: &net.UDPAddr{
-			IP:   localPublic.IP,
-			Port: 0,
-			Zone: localPublic.Zone,
-		},
-	}
-	quicStack, err := nc.QUICStack(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var dialerFunc func(a net.Addr, opts ...squic.EarlyDialerOption) squic.EarlyDialer
-	if insecure {
-		dialerFunc = (&squic.EarlyDialerFactory{
-			Transport: quicStack.Dialer.Transport,
-			TLSConfig: &tls.Config{
-				NextProtos:         []string{"h3", "SCION"},
-				InsecureSkipVerify: true,
-			},
-			Rewriter: &appnet.AddressRewriter{
-				Router: &snet.BaseRouter{
-					Querier: querier,
-				},
-			},
-		}).NewDialer
-	} else {
-		dialerFunc = (&squic.EarlyDialerFactory{
-			Transport: quicStack.Dialer.Transport,
-			TLSConfig: &tls.Config{
-				NextProtos: []string{"h3", "SCION"},
-				ServerName: serverName,
-			},
-			Rewriter: &appnet.AddressRewriter{
-				Router: &snet.BaseRouter{
-					Querier: querier,
-				},
-			},
-		}).NewDialer
-	}
-
-	dialer := dialerFunc(remote)
-	marketplaceClient := hummingbirdconnect.NewMarketplaceServiceClient(
-		libconnect.HTTPClient{
-			RoundTripper: &http3.Transport{
-				Dial: dialer.DialEarly,
-			},
-		}, libconnect.BaseUrl(remote), connect.WithInterceptors(authInterceptor(c.token)))
-	return marketplaceClient, nil
-}
-
-func authInterceptor(jwtToken string) connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			req.Header().Set("Authorization", "Bearer "+jwtToken)
-			return next(ctx, req)
-		}
-	}
-}
-
-func parseAddr(s string) (addr.Addr, uint16, string, error) {
-	host, port, err := net.SplitHostPort(s)
-	if err != nil {
-		return addr.Addr{}, 0, "", serrors.Wrap("invalid address: split host:port", err, "addr", s)
-	}
-	splits := strings.Split(host, ",")
-	if len(splits) != 2 {
-		return addr.Addr{}, 0, "", serrors.Wrap("invalid address: split host:port", err, "addr", s)
-	}
-	_, err = netip.ParseAddr(splits[1])
-	if err != nil {
-		ipAddr, err := net.ResolveIPAddr("ip", splits[1])
-		if err != nil {
-			return addr.Addr{}, 0, "", serrors.Wrap("invalid address: split host:port", err, "addr", s)
-		}
-		s = fmt.Sprintf("[%s,%s]:%s", splits[0], ipAddr.String(), port)
-	}
-	a, p, err := addr.ParseAddrPort(s)
-	return a, p, splits[1], err
 }
 
 // Creates a new marketplace client.
@@ -187,44 +48,15 @@ func parseAddr(s string) (addr.Addr, uint16, string, error) {
 // If insecure = true, server certificate validation will be disabled.
 // path querier and local topology is only required for scion connections
 func NewMarketplaceClient(ctx context.Context, url string, token string, querier snet.PathQuerier, topo snet.Topology, insecure bool) (*MarketplaceClient, error) {
-	urlSplit := strings.Split(url, "://")
-	api := ""
-	if len(urlSplit) == 1 {
-		api = urlSplit[0]
-	} else if len(urlSplit) == 2 {
-		api = urlSplit[1]
-	} else {
-		return nil, serrors.New("invalid url", "url", url)
+	clients, err := NewClientSet(ctx, url, token, ClientOptions{
+		Querier:  querier,
+		Topology: topo,
+		Insecure: insecure,
+	})
+	if err != nil {
+		return nil, err
 	}
-	c := &MarketplaceClient{
-		token: token,
-		topo:  topo,
-	}
-	scionAddr, port, serverName, err := parseAddr(api)
-	if err == nil {
-		remote := &snet.UDPAddr{
-			IA:   scionAddr.IA,
-			Host: net.UDPAddrFromAddrPort(netip.AddrPortFrom(scionAddr.Host.IP(), port)),
-		}
-		c.client, err = c.withSCION(ctx, querier, remote, serverName, insecure)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		if insecure {
-			c.client = hummingbirdconnect.NewMarketplaceServiceClient(&http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						InsecureSkipVerify: true,
-					},
-				},
-			}, url, connect.WithInterceptors(authInterceptor(token)))
-		} else {
-			c.client = hummingbirdconnect.NewMarketplaceServiceClient(http.DefaultClient,
-				url, connect.WithInterceptors(authInterceptor(token)))
-		}
-	}
-	return c, nil
+	return &MarketplaceClient{client: clients.Marketplace}, nil
 }
 
 type BuyMode int
@@ -238,6 +70,19 @@ type InterfacePair struct {
 	IA      uint64
 	Ingress uint32
 	Egress  uint32
+}
+
+func interfacePairsFromInterfaces(ifaces []snet.PathInterface) []InterfacePair {
+	baseHops := snetpath.InterfacesToBaseHops(ifaces)
+	pairs := make([]InterfacePair, 0, len(baseHops))
+	for _, hop := range baseHops {
+		pairs = append(pairs, InterfacePair{
+			IA:      uint64(hop.IA),
+			Ingress: uint32(hop.Ingress),
+			Egress:  uint32(hop.Egress),
+		})
+	}
+	return pairs
 }
 
 func (c *MarketplaceClient) findExistingReservations(ctx context.Context, pairs []InterfacePair, bwInKbps uint32, startsAt time.Time, stopsAt time.Time) ([]*snetpath.Hop, error) {
@@ -1019,27 +864,6 @@ func (c *MarketplaceClient) redeemHopsConcurrently(ctx context.Context, pairs []
 func (c *MarketplaceClient) ObtainReservationsFullPath(ctx context.Context, path snet.Path, bwInKbps uint32, startsAt time.Time, stopsAt time.Time,
 	maxPrice uint64, buyMode BuyMode, fetchReservations bool, combineAssets bool, num_retries int) ([]*snetpath.Hop, error) {
 
-	pairs := []InterfacePair{}
-	ifaces := path.Metadata().Interfaces
-	pairs = append(pairs, InterfacePair{
-		IA:      uint64(ifaces[0].IA),
-		Ingress: uint32(0),
-		Egress:  uint32(ifaces[0].ID),
-	})
-	i := 1
-	for ; i < len(ifaces)-1; i += 2 {
-		pairs = append(pairs, InterfacePair{
-			IA:      uint64(ifaces[i].IA),
-			Ingress: uint32(ifaces[i].ID),
-			Egress:  uint32(ifaces[i+1].ID),
-		})
-	}
-	for ; i < len(ifaces); i++ {
-		pairs = append(pairs, InterfacePair{
-			IA:      uint64(ifaces[i].IA),
-			Ingress: uint32(ifaces[i].ID),
-			Egress:  0,
-		})
-	}
+	pairs := interfacePairsFromInterfaces(path.Metadata().Interfaces)
 	return c.ObtainReservationsForInterfacePairs(ctx, pairs, bwInKbps, startsAt, stopsAt, maxPrice, buyMode, fetchReservations, combineAssets, num_retries)
 }

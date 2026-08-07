@@ -30,7 +30,7 @@ message DelegateRedemptionRequest {
     google.protobuf.Timestamp expiration_time = 1;
     // the exclusive end of the reservation ID interval
     uint32 reservation_id_upper_bound = 2;
-    // the key used for the derival of the authentication keys
+    // the key used for the derivation of the authentication keys
     bytes Key = 3;
     // up to 1024 sorted values that indicate the dataplane encoding points
     repeated uint32 encoding_points = 4;

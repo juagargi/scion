@@ -39,8 +39,9 @@ var methodScopes = map[string]string{
 	"/proto.hummingbird.v1.MarketplaceService/RedeemAsset":       "User",
 	"/proto.hummingbird.v1.RedemptionService/RedeemASAsset":      "RedemptionService",
 	"/proto.hummingbird.v1.RedemptionService/DelegateRedemption": "RedemptionService",
-	"/proto.hummingbird.v1.AccountService/ResetJWT":              "User,AssetPublisher,RedemptionService",
-	"/proto.hummingbird.v1.AccountService/SetPassword":           "AssetPublisher,RedemptionService",
+
+	"/proto.hummingbird.v1.AccountService/ResetJWT":    "User,AssetPublisher,RedemptionService",
+	"/proto.hummingbird.v1.AccountService/SetPassword": "AssetPublisher,RedemptionService",
 }
 
 type AuthInterceptor struct {
@@ -58,7 +59,12 @@ type TokenVerifier struct {
 	JWTVerifier *registration.Verifier
 }
 
-func (a *TokenVerifier) verifyTokenVersion(ctx context.Context, user any, claims jwt.MapClaims, scopes map[string]bool) (int64, error) {
+func (a *TokenVerifier) verifyTokenVersion(
+	ctx context.Context,
+	user any,
+	claims jwt.MapClaims,
+	scopes map[string]bool,
+) (int64, error) {
 	tokenVersion := int64(0)
 	if scopes["AssetPublisher"] || scopes["RedemptionService"] {
 		dbUser, err := a.Store.GetASUser(ctx, user.(addr.IA))
@@ -100,7 +106,11 @@ func (a *AuthInterceptor) WrapStreamingClient(
 	return next
 }
 
-func (t *TokenVerifier) contextFromJwt(ctx context.Context, tokenStr string, requiredScope string) (context.Context, error) {
+func (t *TokenVerifier) contextFromJwt(
+	ctx context.Context,
+	tokenStr string,
+	requiredScope string,
+) (context.Context, error) {
 	token, err := t.JWTVerifier.VerifyToken(tokenStr)
 	if err != nil || !token.Valid {
 		fmt.Println("invalid token")

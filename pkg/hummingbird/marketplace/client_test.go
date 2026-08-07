@@ -18,10 +18,49 @@ import (
 	"testing"
 	"time"
 
+	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
+	"github.com/scionproto/scion/pkg/snet"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestInterfacePairsFromInterfaces(t *testing.T) {
+	interfaces := []snet.PathInterface{
+		{IA: addr.MustParseIA("1-ff00:0:111"), ID: 41},
+		{IA: addr.MustParseIA("1-ff00:0:110"), ID: 1},
+		{IA: addr.MustParseIA("1-ff00:0:110"), ID: 2},
+		{IA: addr.MustParseIA("1-ff00:0:112"), ID: 1},
+	}
+
+	assert.Equal(t, []InterfacePair{
+		{IA: uint64(addr.MustParseIA("1-ff00:0:111")), Ingress: 0, Egress: 41},
+		{IA: uint64(addr.MustParseIA("1-ff00:0:110")), Ingress: 1, Egress: 2},
+		{IA: uint64(addr.MustParseIA("1-ff00:0:112")), Ingress: 1, Egress: 0},
+	}, interfacePairsFromInterfaces(interfaces))
+	assert.Empty(t, interfacePairsFromInterfaces(nil))
+}
+
+func TestIsSCIONURL(t *testing.T) {
+	tests := map[string]struct {
+		url  string
+		want bool
+	}{
+		"SCION IP address":   {url: "[1-ff00:0:111,127.0.0.1]:9888", want: true},
+		"SCION hostname":     {url: "[1-ff00:0:111,marketplace.invalid]:9888", want: true},
+		"TCP IPv4 address":   {url: "https://127.0.0.1:8888", want: false},
+		"TCP IPv6 address":   {url: "https://[::1]:8888", want: false},
+		"malformed URL":      {url: "https://https://localhost:8888", want: false},
+		"invalid SCION IA":   {url: "[invalid,127.0.0.1]:9888", want: false},
+		"missing SCION host": {url: "[1-ff00:0:111]:9888", want: false},
+		"missing SCION port": {url: "[1-ff00:0:111,127.0.0.1]", want: false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, IsSCIONURL(tc.url))
+		})
+	}
+}
 
 func TestCombine(t *testing.T) {
 	type Test struct {
