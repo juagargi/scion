@@ -2,7 +2,7 @@ load("@rules_go//proto:def.bzl", "go_proto_library")
 
 go_proto_library(
     name = "go_default_library",
-    compiler = "@rules_go//proto:go_grpc",
+    compiler = "@rules_go//proto:go_proto",
     importpath = "github.com/scionproto/scion/pkg/proto/hummingbird",
     proto = "//proto/hummingbird/v1:hummingbird",
     visibility = ["//visibility:public"],
