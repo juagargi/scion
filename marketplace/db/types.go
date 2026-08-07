@@ -22,6 +22,17 @@ import (
 	"github.com/scionproto/scion/pkg/addr"
 )
 
+// AssetState describes the transient lifecycle state of an asset.
+type AssetState int
+
+const (
+	AssetStateAvailable AssetState = iota
+	AssetStateCheckedOut
+	AssetStateRedemptionPending
+	AssetStateSplitPending
+	AssetStateCombinePending
+)
+
 type AssetQuery struct {
 	AccountId            *int64
 	IA                   *addr.IA

@@ -361,7 +361,10 @@ func (s *Service) PublishAsset(ctx context.Context, req *connect.Request[humming
 	}, nil
 }
 
-func (s *Service) RedeemAsset(ctx context.Context, req *connect.Request[hummingbird.RedeemAssetRequest]) (*connect.Response[hummingbird.RedeemAssetResponse], error) {
+func (s *Service) RedeemAsset(
+	ctx context.Context,
+	req *connect.Request[hummingbird.RedeemAssetRequest],
+) (*connect.Response[hummingbird.RedeemAssetResponse], error) {
 	fmt.Println("RedeemAsset")
 	user, ok := ctx.Value("user").(int64)
 	if !ok {
@@ -431,7 +434,8 @@ func (s *Service) RedeemAsset(ctx context.Context, req *connect.Request[hummingb
 		return err
 	}
 	if stopsAt.Before(startsAt) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.Join(serrors.New("stops at before starts at"), undoRedemption()))
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			serrors.Join(serrors.New("stops at before starts at"), undoRedemption()))
 	}
 	peer, found := s.redemptionServerPeers[ia]
 	if !found {
