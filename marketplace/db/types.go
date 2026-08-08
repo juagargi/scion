@@ -17,9 +17,11 @@ package db
 import (
 	"database/sql"
 	"encoding/binary"
+	"math"
 	"time"
 
 	"github.com/scionproto/scion/pkg/addr"
+	"github.com/scionproto/scion/pkg/private/serrors"
 )
 
 // AssetState describes the transient lifecycle state of an asset.
@@ -32,6 +34,19 @@ const (
 	AssetStateSplitPending
 	AssetStateCombinePending
 )
+
+// AssetID is the unsigned representation of an asset identifier used by the
+// marketplace API.
+type AssetID uint64
+
+// Int64 converts an API asset identifier to the signed range supported by
+// SQLite row IDs.
+func (id AssetID) Int64() (int64, error) {
+	if id > math.MaxInt64 {
+		return 0, serrors.New("asset ID exceeds SQLite range", "id", id)
+	}
+	return int64(id), nil
+}
 
 type AssetQuery struct {
 	AccountId            *int64

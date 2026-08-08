@@ -18,11 +18,11 @@ import (
 	"context"
 	"database/sql"
 	"math"
-	"strconv"
 	"time"
 
 	marketplacedb "github.com/scionproto/scion/marketplace/db"
 	"github.com/scionproto/scion/pkg/addr"
+	hbird "github.com/scionproto/scion/pkg/hummingbird"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 	"github.com/scionproto/scion/private/config"
@@ -271,16 +271,6 @@ func (s *MarketplaceStorage) CreateASUser(
 	return s.db.CreateASUser(ctx, user)
 }
 
-func ceilDuration(
-	base time.Duration,
-	multiple time.Duration,
-) time.Duration {
-	truncated := base.Truncate(multiple)
-	if truncated == base {
-		return base
-	}
-	return truncated + multiple
-}
 func (s *MarketplaceStorage) CreateOrUpdateRedemptionDelegations(
 	ctx context.Context,
 	r *marketplacedb.RedemptionDelegation,
@@ -300,7 +290,7 @@ func (s *MarketplaceStorage) CreateOrUpdateRedemptionDelegations(
 				r.PaidUntil = r.Expiration
 			}
 		} else if r.Expiration.After(paidUntil) {
-			paymentDuration := ceilDuration(r.Expiration.Sub(paidUntil), time.Hour)
+			paymentDuration := hbird.RoundUpDuration(r.Expiration.Sub(paidUntil), time.Hour)
 			numHours := uint64(paymentDuration / time.Hour)
 			if _, err := tx.UpdateASMoney(
 				ctx, r.IA, -int64(numHours*s.delegationHourlyFee)); err != nil {
@@ -321,25 +311,6 @@ func (s *MarketplaceStorage) FindRedemptionDelegations(
 	return s.db.FindRedemptionDelegations(ctx)
 }
 
-func mulInt64(
-	a int64,
-	b int64,
-) (int64, bool) {
-	if a == 0 || b == 0 {
-		return 0, true
-	}
-	if a == math.MinInt64 && b == -1 {
-		return 0, false
-	}
-	if b == math.MinInt64 && a == -1 {
-		return 0, false
-	}
-	if a > math.MaxInt64/b || a < math.MinInt64/b {
-		return 0, false
-	}
-	return a * b, true
-}
-
 func addInt64(
 	a int64,
 	b int64,
@@ -351,25 +322,6 @@ func addInt64(
 	return a + b, true
 }
 
-func (s *MarketplaceStorage) totalPrice(
-	price uint32,
-	bw uint32,
-	startsAt time.Time,
-	stopsAt time.Time,
-) (int64, int64, bool) {
-	splitDuration := int64(stopsAt.Sub(startsAt).Seconds())
-	a, safe := mulInt64(int64(price), splitDuration)
-	if !safe {
-		return 0, 0, false
-	}
-	costWithoutFee, safe := mulInt64(a, int64(bw))
-	if !safe {
-		return 0, 0, false
-	}
-	fee := int64(float64(costWithoutFee)*float64(s.transactionFeeRelative)) +
-		int64(s.transactionFeeAbsolute)
-	return costWithoutFee, fee, true
-}
 func (s *MarketplaceStorage) IncrementASJWTVersion(
 	ctx context.Context,
 	ia addr.IA,
@@ -605,7 +557,7 @@ func (s *MarketplaceStorage) BuyAssets(
 	assets []*hummingbird.BuyAsset,
 	maxPrice uint64,
 ) ([]int64, int64, error) {
-	uniqueCheck := make(map[string]bool)
+	uniqueCheck := make(map[uint64]bool)
 	for _, asset := range assets {
 		if uniqueCheck[asset.AssetId] {
 			return nil, 0, serrors.New("Only a single split per asset per buy request allowed")
@@ -619,7 +571,7 @@ func (s *MarketplaceStorage) BuyAssets(
 	costAcc := int64(0)
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
 		for _, asset := range assets {
-			assetID, err := strconv.ParseInt(asset.AssetId, 10, 64)
+			assetID, err := marketplacedb.AssetID(asset.AssetId).Int64()
 			if err != nil {
 				return err
 			}
@@ -654,19 +606,26 @@ func (s *MarketplaceStorage) BuyAssets(
 			if err != nil {
 				return err
 			}
-			totalAssetPrice, fee, safe := s.totalPrice(
+			totalAssetPrice, err := hbird.ReservationPrice(
 				dbAsset.Price,
 				split.Split.Bandwidth,
-				split.Split.StartsAt,
-				split.Split.StopsAt)
+				dbAsset.BandwidthMin,
+				dbAsset.TimeMinDuration,
+				dbAsset.TimeGranularity,
+				split.Split.StopsAt.Sub(split.Split.StartsAt))
+			if err != nil {
+				return serrors.Wrap("calculating total asset price", err)
+			}
+			if totalAssetPrice > math.MaxInt64 {
+				return serrors.New("total asset price would lead to integer overflow")
+			}
+			fee := int64(float64(totalAssetPrice)*float64(s.transactionFeeRelative)) +
+				int64(s.transactionFeeAbsolute)
+			pricePlusFee, safe := addInt64(int64(totalAssetPrice), fee)
 			if !safe {
 				return serrors.New("total asset price would lead to integer overflow")
 			}
-			pricePlusFee, safe := addInt64(totalAssetPrice, fee)
-			if !safe {
-				return serrors.New("total asset price would lead to integer overflow")
-			}
-			if _, err := tx.UpdateASMoney(ctx, dbAsset.IA, totalAssetPrice); err != nil {
+			if _, err := tx.UpdateASMoney(ctx, dbAsset.IA, int64(totalAssetPrice)); err != nil {
 				return err
 			}
 			costAcc, safe = addInt64(costAcc, pricePlusFee)
@@ -718,14 +677,13 @@ func (s *MarketplaceStorage) InsertReservation(
 func (s *MarketplaceStorage) UndoRedemption(
 	ctx context.Context,
 	user_id int64,
-	ingressIDString *string,
-	egressIDString *string,
-	pairIDString *string,
+	ingressID *uint64,
+	egressID *uint64,
+	pairID *uint64,
 ) error {
 	return s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
-		// TODO(juagargi) deleteme IDs should be integers not strings.
-		transition := func(id string) error {
-			assetID, err := strconv.ParseInt(id, 10, 64)
+		transition := func(id uint64) error {
+			assetID, err := marketplacedb.AssetID(id).Int64()
 			if err != nil {
 				return err
 			}
@@ -734,13 +692,13 @@ func (s *MarketplaceStorage) UndoRedemption(
 			return err
 		}
 		switch {
-		case ingressIDString != nil && egressIDString != nil:
-			if err := transition(*ingressIDString); err != nil {
+		case ingressID != nil && egressID != nil:
+			if err := transition(*ingressID); err != nil {
 				return err
 			}
-			return transition(*egressIDString)
-		case ingressIDString == nil && egressIDString == nil && pairIDString != nil:
-			return transition(*pairIDString)
+			return transition(*egressID)
+		case ingressID == nil && egressID == nil && pairID != nil:
+			return transition(*pairID)
 		default:
 			return serrors.New("invalid asset IDs")
 		}
@@ -773,14 +731,14 @@ func validateAsset(
 func (s *MarketplaceStorage) PrepareRedemption(
 	ctx context.Context,
 	user_id int64,
-	ingressIDString *string,
-	egressIDString *string,
-	pairIDString *string,
+	ingressID *uint64,
+	egressID *uint64,
+	pairID *uint64,
 ) ([]*marketplacedb.DBAsset, error) {
 	var assets []*marketplacedb.DBAsset
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
-		prepare := func(id string) (*marketplacedb.DBAsset, error) {
-			assetID, err := strconv.ParseInt(id, 10, 64)
+		prepare := func(id uint64) (*marketplacedb.DBAsset, error) {
+			assetID, err := marketplacedb.AssetID(id).Int64()
 			if err != nil {
 				return nil, err
 			}
@@ -788,8 +746,8 @@ func (s *MarketplaceStorage) PrepareRedemption(
 				marketplacedb.AssetStateAvailable, marketplacedb.AssetStateRedemptionPending)
 		}
 		switch {
-		case ingressIDString != nil && egressIDString != nil:
-			ingressAsset, err := prepare(*ingressIDString)
+		case ingressID != nil && egressID != nil:
+			ingressAsset, err := prepare(*ingressID)
 			if err != nil {
 				return err
 			}
@@ -799,7 +757,7 @@ func (s *MarketplaceStorage) PrepareRedemption(
 			if err := validateAsset(ingressAsset); err != nil {
 				return err
 			}
-			egressAsset, err := prepare(*egressIDString)
+			egressAsset, err := prepare(*egressID)
 			if err != nil {
 				return err
 			}
@@ -811,8 +769,8 @@ func (s *MarketplaceStorage) PrepareRedemption(
 			}
 			assets = []*marketplacedb.DBAsset{ingressAsset, egressAsset}
 			return nil
-		case ingressIDString == nil && egressIDString == nil && pairIDString != nil:
-			pairAsset, err := prepare(*pairIDString)
+		case ingressID == nil && egressID == nil && pairID != nil:
+			pairAsset, err := prepare(*pairID)
 			if err != nil {
 				return err
 			}

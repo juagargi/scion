@@ -37,7 +37,7 @@ message UpdateAssetsRequest {
     repeated AssetUpdate assets = 1;
 }
 message AssetUpdate {
-    string asset_id = 1;
+    uint64 asset_id = 1;
     oneof operation {
         PublisherAsset update = 2;
         Remove remove = 3;
@@ -49,7 +49,7 @@ message UpdateAssetsResponse {
 }
 message UpdateAssetResult {
     oneof result_type {
-        string new_id = 1;
+        uint64 new_id = 1;
         string error = 2;
     }
 }
@@ -73,7 +73,7 @@ message StatisticsResponseEntry {
 
 // Split assets splits an asset either by defining the bandwidth to split, or the time it should split.
 message SplitAssetRequest {
-    string asset_id = 1;
+    uint64 asset_id = 1;
     oneof split_option {
         uint32 bw_split = 2;
         google.protobuf.Timestamp time_split = 3;
@@ -81,20 +81,20 @@ message SplitAssetRequest {
 }
 // Returns the two asset IDs created from the split.
 message SplitAssetResponse {
-    string asset_id_1 = 1;
-    string asset_id_2 = 2;
+    uint64 asset_id_1 = 1;
+    uint64 asset_id_2 = 2;
 }
 // When combining assets, both assets must have the same IA, asset_type, ingress and egress.enum
 // Additionally, both assets must either:
 // a) have adjacent validity with same bandwidth, or
 // b) same validity with different bandwidth
 message CombineAssetRequest {
-    string asset_id_1 = 1;
-    string asset_id_2 = 2;
+    uint64 asset_id_1 = 1;
+    uint64 asset_id_2 = 2;
 }
 // Returns the the asset ID created from combining the two assets.
 message CombineAssetResponse {
-    string asset_id = 1;
+    uint64 asset_id = 1;
 }
 
 message MarketplaceInfoRequest {
@@ -125,7 +125,7 @@ message PublishAssetRequest {
 }
 
 message PublishAssetResponse {
-    string asset_id = 1;
+    uint64 asset_id = 1;
 }
 message PublisherAsset {
     optional uint32 if_id_ingress = 1;
@@ -155,7 +155,7 @@ message SearchAssetsResponse {
     repeated SearchAsset assets = 1;
 }
 message SearchAsset {
-    string asset_id = 1;
+    uint64 asset_id = 1;
     uint64 ia = 2;
     optional uint32 if_id_ingress = 3;
     optional uint32 if_id_egress = 4;
@@ -175,7 +175,7 @@ message BuyAssetsRequest {
 }
 
 message BuyAsset {
-    string asset_id = 1;
+    uint64 asset_id = 1;
     google.protobuf.Timestamp starts_at_exactly = 2;
     google.protobuf.Timestamp stops_at_exactly = 3;
     uint32 bandwidth_exact = 4;
@@ -187,18 +187,18 @@ message BuyAssetsResponse {
 }
 
 message BoughtAsset {
-    string asset_id = 1;
+    uint64 asset_id = 1;
 }
 
 message RedeemAssetRequest {
     oneof interfaces {
         IngressEgressPair pair = 1;
-        string if_pair_asset_id = 3;
+        uint64 if_pair_asset_id = 3;
     }
 }
 message IngressEgressPair {
-    string ingress_asset_id = 1;
-    string egress_asset_id = 2;
+    uint64 ingress_asset_id = 1;
+    uint64 egress_asset_id = 2;
 }
 
 message RedeemAssetResponse {

@@ -114,7 +114,7 @@ func (x *UpdateAssetsRequest) GetAssets() []*AssetUpdate {
 
 type AssetUpdate struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
-	AssetId string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	AssetId uint64                 `protobuf:"varint,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	// Types that are valid to be assigned to Operation:
 	//
 	//	*AssetUpdate_Update
@@ -154,11 +154,11 @@ func (*AssetUpdate) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *AssetUpdate) GetAssetId() string {
+func (x *AssetUpdate) GetAssetId() uint64 {
 	if x != nil {
 		return x.AssetId
 	}
-	return ""
+	return 0
 }
 
 func (x *AssetUpdate) GetOperation() isAssetUpdate_Operation {
@@ -330,13 +330,13 @@ func (x *UpdateAssetResult) GetResultType() isUpdateAssetResult_ResultType {
 	return nil
 }
 
-func (x *UpdateAssetResult) GetNewId() string {
+func (x *UpdateAssetResult) GetNewId() uint64 {
 	if x != nil {
 		if x, ok := x.ResultType.(*UpdateAssetResult_NewId); ok {
 			return x.NewId
 		}
 	}
-	return ""
+	return 0
 }
 
 func (x *UpdateAssetResult) GetError() string {
@@ -353,7 +353,7 @@ type isUpdateAssetResult_ResultType interface {
 }
 
 type UpdateAssetResult_NewId struct {
-	NewId string `protobuf:"bytes,1,opt,name=new_id,json=newId,proto3,oneof"`
+	NewId uint64 `protobuf:"varint,1,opt,name=new_id,json=newId,proto3,oneof"`
 }
 
 type UpdateAssetResult_Error struct {
@@ -538,7 +538,7 @@ func (x *StatisticsResponseEntry) GetBandwidthUtilization() float64 {
 
 type SplitAssetRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
-	AssetId string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	AssetId uint64                 `protobuf:"varint,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	// Types that are valid to be assigned to SplitOption:
 	//
 	//	*SplitAssetRequest_BwSplit
@@ -578,11 +578,11 @@ func (*SplitAssetRequest) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *SplitAssetRequest) GetAssetId() string {
+func (x *SplitAssetRequest) GetAssetId() uint64 {
 	if x != nil {
 		return x.AssetId
 	}
-	return ""
+	return 0
 }
 
 func (x *SplitAssetRequest) GetSplitOption() isSplitAssetRequest_SplitOption {
@@ -628,8 +628,8 @@ func (*SplitAssetRequest_TimeSplit) isSplitAssetRequest_SplitOption() {}
 
 type SplitAssetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AssetId_1     string                 `protobuf:"bytes,1,opt,name=asset_id_1,json=assetId1,proto3" json:"asset_id_1,omitempty"`
-	AssetId_2     string                 `protobuf:"bytes,2,opt,name=asset_id_2,json=assetId2,proto3" json:"asset_id_2,omitempty"`
+	AssetId_1     uint64                 `protobuf:"varint,1,opt,name=asset_id_1,json=assetId1,proto3" json:"asset_id_1,omitempty"`
+	AssetId_2     uint64                 `protobuf:"varint,2,opt,name=asset_id_2,json=assetId2,proto3" json:"asset_id_2,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -664,24 +664,24 @@ func (*SplitAssetResponse) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *SplitAssetResponse) GetAssetId_1() string {
+func (x *SplitAssetResponse) GetAssetId_1() uint64 {
 	if x != nil {
 		return x.AssetId_1
 	}
-	return ""
+	return 0
 }
 
-func (x *SplitAssetResponse) GetAssetId_2() string {
+func (x *SplitAssetResponse) GetAssetId_2() uint64 {
 	if x != nil {
 		return x.AssetId_2
 	}
-	return ""
+	return 0
 }
 
 type CombineAssetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AssetId_1     string                 `protobuf:"bytes,1,opt,name=asset_id_1,json=assetId1,proto3" json:"asset_id_1,omitempty"`
-	AssetId_2     string                 `protobuf:"bytes,2,opt,name=asset_id_2,json=assetId2,proto3" json:"asset_id_2,omitempty"`
+	AssetId_1     uint64                 `protobuf:"varint,1,opt,name=asset_id_1,json=assetId1,proto3" json:"asset_id_1,omitempty"`
+	AssetId_2     uint64                 `protobuf:"varint,2,opt,name=asset_id_2,json=assetId2,proto3" json:"asset_id_2,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -716,23 +716,23 @@ func (*CombineAssetRequest) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *CombineAssetRequest) GetAssetId_1() string {
+func (x *CombineAssetRequest) GetAssetId_1() uint64 {
 	if x != nil {
 		return x.AssetId_1
 	}
-	return ""
+	return 0
 }
 
-func (x *CombineAssetRequest) GetAssetId_2() string {
+func (x *CombineAssetRequest) GetAssetId_2() uint64 {
 	if x != nil {
 		return x.AssetId_2
 	}
-	return ""
+	return 0
 }
 
 type CombineAssetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	AssetId       uint64                 `protobuf:"varint,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -767,11 +767,11 @@ func (*CombineAssetResponse) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *CombineAssetResponse) GetAssetId() string {
+func (x *CombineAssetResponse) GetAssetId() uint64 {
 	if x != nil {
 		return x.AssetId
 	}
-	return ""
+	return 0
 }
 
 type MarketplaceInfoRequest struct {
@@ -980,7 +980,7 @@ func (x *PublishAssetRequest) GetAsset() *PublisherAsset {
 
 type PublishAssetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	AssetId       uint64                 `protobuf:"varint,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1015,11 +1015,11 @@ func (*PublishAssetResponse) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *PublishAssetResponse) GetAssetId() string {
+func (x *PublishAssetResponse) GetAssetId() uint64 {
 	if x != nil {
 		return x.AssetId
 	}
-	return ""
+	return 0
 }
 
 type PublisherAsset struct {
@@ -1284,7 +1284,7 @@ func (x *SearchAssetsResponse) GetAssets() []*SearchAsset {
 
 type SearchAsset struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	AssetId         string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	AssetId         uint64                 `protobuf:"varint,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	Ia              uint64                 `protobuf:"varint,2,opt,name=ia,proto3" json:"ia,omitempty"`
 	IfIdIngress     *uint32                `protobuf:"varint,3,opt,name=if_id_ingress,json=ifIdIngress,proto3,oneof" json:"if_id_ingress,omitempty"`
 	IfIdEgress      *uint32                `protobuf:"varint,4,opt,name=if_id_egress,json=ifIdEgress,proto3,oneof" json:"if_id_egress,omitempty"`
@@ -1330,11 +1330,11 @@ func (*SearchAsset) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{19}
 }
 
-func (x *SearchAsset) GetAssetId() string {
+func (x *SearchAsset) GetAssetId() uint64 {
 	if x != nil {
 		return x.AssetId
 	}
-	return ""
+	return 0
 }
 
 func (x *SearchAsset) GetIa() uint64 {
@@ -1468,7 +1468,7 @@ func (x *BuyAssetsRequest) GetMaxPrice() uint64 {
 
 type BuyAsset struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	AssetId         string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	AssetId         uint64                 `protobuf:"varint,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	StartsAtExactly *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=starts_at_exactly,json=startsAtExactly,proto3" json:"starts_at_exactly,omitempty"`
 	StopsAtExactly  *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=stops_at_exactly,json=stopsAtExactly,proto3" json:"stops_at_exactly,omitempty"`
 	BandwidthExact  uint32                 `protobuf:"varint,4,opt,name=bandwidth_exact,json=bandwidthExact,proto3" json:"bandwidth_exact,omitempty"`
@@ -1506,11 +1506,11 @@ func (*BuyAsset) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{21}
 }
 
-func (x *BuyAsset) GetAssetId() string {
+func (x *BuyAsset) GetAssetId() uint64 {
 	if x != nil {
 		return x.AssetId
 	}
-	return ""
+	return 0
 }
 
 func (x *BuyAsset) GetStartsAtExactly() *timestamppb.Timestamp {
@@ -1588,7 +1588,7 @@ func (x *BuyAssetsResponse) GetCost() uint64 {
 
 type BoughtAsset struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	AssetId       uint64                 `protobuf:"varint,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1623,11 +1623,11 @@ func (*BoughtAsset) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{23}
 }
 
-func (x *BoughtAsset) GetAssetId() string {
+func (x *BoughtAsset) GetAssetId() uint64 {
 	if x != nil {
 		return x.AssetId
 	}
-	return ""
+	return 0
 }
 
 type RedeemAssetRequest struct {
@@ -1687,13 +1687,13 @@ func (x *RedeemAssetRequest) GetPair() *IngressEgressPair {
 	return nil
 }
 
-func (x *RedeemAssetRequest) GetIfPairAssetId() string {
+func (x *RedeemAssetRequest) GetIfPairAssetId() uint64 {
 	if x != nil {
 		if x, ok := x.Interfaces.(*RedeemAssetRequest_IfPairAssetId); ok {
 			return x.IfPairAssetId
 		}
 	}
-	return ""
+	return 0
 }
 
 type isRedeemAssetRequest_Interfaces interface {
@@ -1705,7 +1705,7 @@ type RedeemAssetRequest_Pair struct {
 }
 
 type RedeemAssetRequest_IfPairAssetId struct {
-	IfPairAssetId string `protobuf:"bytes,3,opt,name=if_pair_asset_id,json=ifPairAssetId,proto3,oneof"`
+	IfPairAssetId uint64 `protobuf:"varint,3,opt,name=if_pair_asset_id,json=ifPairAssetId,proto3,oneof"`
 }
 
 func (*RedeemAssetRequest_Pair) isRedeemAssetRequest_Interfaces() {}
@@ -1714,8 +1714,8 @@ func (*RedeemAssetRequest_IfPairAssetId) isRedeemAssetRequest_Interfaces() {}
 
 type IngressEgressPair struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	IngressAssetId string                 `protobuf:"bytes,1,opt,name=ingress_asset_id,json=ingressAssetId,proto3" json:"ingress_asset_id,omitempty"`
-	EgressAssetId  string                 `protobuf:"bytes,2,opt,name=egress_asset_id,json=egressAssetId,proto3" json:"egress_asset_id,omitempty"`
+	IngressAssetId uint64                 `protobuf:"varint,1,opt,name=ingress_asset_id,json=ingressAssetId,proto3" json:"ingress_asset_id,omitempty"`
+	EgressAssetId  uint64                 `protobuf:"varint,2,opt,name=egress_asset_id,json=egressAssetId,proto3" json:"egress_asset_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1750,18 +1750,18 @@ func (*IngressEgressPair) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{25}
 }
 
-func (x *IngressEgressPair) GetIngressAssetId() string {
+func (x *IngressEgressPair) GetIngressAssetId() uint64 {
 	if x != nil {
 		return x.IngressAssetId
 	}
-	return ""
+	return 0
 }
 
-func (x *IngressEgressPair) GetEgressAssetId() string {
+func (x *IngressEgressPair) GetEgressAssetId() uint64 {
 	if x != nil {
 		return x.EgressAssetId
 	}
-	return ""
+	return 0
 }
 
 type RedeemAssetResponse struct {
@@ -2076,7 +2076,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x13UpdateAssetsRequest\x129\n" +
 	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.AssetUpdateR\x06assets\"\xad\x01\n" +
 	"\vAssetUpdate\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\tR\aassetId\x12>\n" +
+	"\basset_id\x18\x01 \x01(\x04R\aassetId\x12>\n" +
 	"\x06update\x18\x02 \x01(\v2$.proto.hummingbird.v1.PublisherAssetH\x00R\x06update\x126\n" +
 	"\x06remove\x18\x03 \x01(\v2\x1c.proto.hummingbird.v1.RemoveH\x00R\x06removeB\v\n" +
 	"\toperation\"\b\n" +
@@ -2084,7 +2084,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x14UpdateAssetsResponse\x12?\n" +
 	"\x06result\x18\x01 \x03(\v2'.proto.hummingbird.v1.UpdateAssetResultR\x06result\"S\n" +
 	"\x11UpdateAssetResult\x12\x17\n" +
-	"\x06new_id\x18\x01 \x01(\tH\x00R\x05newId\x12\x16\n" +
+	"\x06new_id\x18\x01 \x01(\x04H\x00R\x05newId\x12\x16\n" +
 	"\x05error\x18\x02 \x01(\tH\x00R\x05errorB\r\n" +
 	"\vresult_type\"\xfa\x01\n" +
 	"\x11StatisticsRequest\x12'\n" +
@@ -2104,23 +2104,23 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\arevenue\x18\x01 \x01(\x04R\arevenue\x123\n" +
 	"\x15bandwidth_utilization\x18\x02 \x01(\x01R\x14bandwidthUtilization\"\x98\x01\n" +
 	"\x11SplitAssetRequest\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x1b\n" +
+	"\basset_id\x18\x01 \x01(\x04R\aassetId\x12\x1b\n" +
 	"\bbw_split\x18\x02 \x01(\rH\x00R\abwSplit\x12;\n" +
 	"\n" +
 	"time_split\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\ttimeSplitB\x0e\n" +
 	"\fsplit_option\"P\n" +
 	"\x12SplitAssetResponse\x12\x1c\n" +
 	"\n" +
-	"asset_id_1\x18\x01 \x01(\tR\bassetId1\x12\x1c\n" +
+	"asset_id_1\x18\x01 \x01(\x04R\bassetId1\x12\x1c\n" +
 	"\n" +
-	"asset_id_2\x18\x02 \x01(\tR\bassetId2\"Q\n" +
+	"asset_id_2\x18\x02 \x01(\x04R\bassetId2\"Q\n" +
 	"\x13CombineAssetRequest\x12\x1c\n" +
 	"\n" +
-	"asset_id_1\x18\x01 \x01(\tR\bassetId1\x12\x1c\n" +
+	"asset_id_1\x18\x01 \x01(\x04R\bassetId1\x12\x1c\n" +
 	"\n" +
-	"asset_id_2\x18\x02 \x01(\tR\bassetId2\"1\n" +
+	"asset_id_2\x18\x02 \x01(\x04R\bassetId2\"1\n" +
 	"\x14CombineAssetResponse\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\tR\aassetId\"\x18\n" +
+	"\basset_id\x18\x01 \x01(\x04R\aassetId\"\x18\n" +
 	"\x16MarketplaceInfoRequest\"\xf5\x04\n" +
 	"\x17MarketplaceInfoResponse\x12*\n" +
 	"\x11api_major_version\x18\x01 \x01(\rR\x0fapiMajorVersion\x12*\n" +
@@ -2138,7 +2138,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x13PublishAssetRequest\x12:\n" +
 	"\x05asset\x18\x01 \x01(\v2$.proto.hummingbird.v1.PublisherAssetR\x05asset\"1\n" +
 	"\x14PublishAssetResponse\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\tR\aassetId\"\xc8\x03\n" +
+	"\basset_id\x18\x01 \x01(\x04R\aassetId\"\xc8\x03\n" +
 	"\x0ePublisherAsset\x12'\n" +
 	"\rif_id_ingress\x18\x01 \x01(\rH\x00R\vifIdIngress\x88\x01\x01\x12%\n" +
 	"\fif_id_egress\x18\x02 \x01(\rH\x01R\n" +
@@ -2174,7 +2174,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x14SearchAssetsResponse\x129\n" +
 	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.SearchAssetR\x06assets\"\xf0\x03\n" +
 	"\vSearchAsset\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x0e\n" +
+	"\basset_id\x18\x01 \x01(\x04R\aassetId\x12\x0e\n" +
 	"\x02ia\x18\x02 \x01(\x04R\x02ia\x12'\n" +
 	"\rif_id_ingress\x18\x03 \x01(\rH\x00R\vifIdIngress\x88\x01\x01\x12%\n" +
 	"\fif_id_egress\x18\x04 \x01(\rH\x01R\n" +
@@ -2194,7 +2194,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x06assets\x18\x01 \x03(\v2\x1e.proto.hummingbird.v1.BuyAssetR\x06assets\x12\x1b\n" +
 	"\tmax_price\x18\x02 \x01(\x04R\bmaxPrice\"\xdc\x01\n" +
 	"\bBuyAsset\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\tR\aassetId\x12F\n" +
+	"\basset_id\x18\x01 \x01(\x04R\aassetId\x12F\n" +
 	"\x11starts_at_exactly\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x0fstartsAtExactly\x12D\n" +
 	"\x10stops_at_exactly\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x0estopsAtExactly\x12'\n" +
 	"\x0fbandwidth_exact\x18\x04 \x01(\rR\x0ebandwidthExact\"b\n" +
@@ -2202,15 +2202,15 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.BoughtAssetR\x06assets\x12\x12\n" +
 	"\x04cost\x18\x02 \x01(\x04R\x04cost\"(\n" +
 	"\vBoughtAsset\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\tR\aassetId\"\x8c\x01\n" +
+	"\basset_id\x18\x01 \x01(\x04R\aassetId\"\x8c\x01\n" +
 	"\x12RedeemAssetRequest\x12=\n" +
 	"\x04pair\x18\x01 \x01(\v2'.proto.hummingbird.v1.IngressEgressPairH\x00R\x04pair\x12)\n" +
-	"\x10if_pair_asset_id\x18\x03 \x01(\tH\x00R\rifPairAssetIdB\f\n" +
+	"\x10if_pair_asset_id\x18\x03 \x01(\x04H\x00R\rifPairAssetIdB\f\n" +
 	"\n" +
 	"interfaces\"e\n" +
 	"\x11IngressEgressPair\x12(\n" +
-	"\x10ingress_asset_id\x18\x01 \x01(\tR\x0eingressAssetId\x12&\n" +
-	"\x0fegress_asset_id\x18\x02 \x01(\tR\regressAssetId\"\xcc\x01\n" +
+	"\x10ingress_asset_id\x18\x01 \x01(\x04R\x0eingressAssetId\x12&\n" +
+	"\x0fegress_asset_id\x18\x02 \x01(\x04R\regressAssetId\"\xcc\x01\n" +
 	"\x13RedeemAssetResponse\x12-\n" +
 	"\x12authentication_key\x18\x01 \x01(\fR\x11authenticationKey\x12%\n" +
 	"\x0ereservation_id\x18\x02 \x01(\rR\rreservationId\x12+\n" +

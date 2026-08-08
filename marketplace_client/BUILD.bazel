@@ -9,6 +9,7 @@ go_library(
         "//pkg/addr:go_default_library",
         "//pkg/daemon:go_default_library",
         "//pkg/daemon/types:go_default_library",
+        "//pkg/hummingbird:go_default_library",
         "//pkg/hummingbird/marketplace:go_default_library",
         "//pkg/hummingbird/registration:go_default_library",
         "//pkg/private/serrors:go_default_library",

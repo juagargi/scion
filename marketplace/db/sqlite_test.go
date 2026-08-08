@@ -17,6 +17,7 @@ package db
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -48,6 +49,16 @@ func testAsset() *DBAsset {
 		StartAt:         start,
 		StopsAt:         start.Add(time.Hour),
 	}
+}
+
+// TestAssetIDInt64 rejects identifiers that cannot be represented by SQLite.
+func TestAssetIDInt64(t *testing.T) {
+	id, err := AssetID(42).Int64()
+	require.NoError(t, err)
+	require.Equal(t, int64(42), id)
+
+	_, err = AssetID(math.MaxInt64 + 1).Int64()
+	require.Error(t, err)
 }
 
 // TestWithTxCommitsAndRollsBack verifies that WithTx persists successful work

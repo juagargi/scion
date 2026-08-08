@@ -24,6 +24,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/scionproto/scion/pkg/addr"
+	hbird "github.com/scionproto/scion/pkg/hummingbird"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
@@ -173,7 +174,7 @@ func (c *MarketplaceClient) recursiveSelectStart(assets []*hummingbird.SearchAss
 	sort.Slice(assets, func(i, j int) bool {
 		return assets[i].StartsAt.Seconds < assets[j].StartsAt.Seconds
 	})
-	assetMap := make(map[string]*hummingbird.SearchAsset)
+	assetMap := make(map[uint64]*hummingbird.SearchAsset)
 	for _, asset := range assets {
 		assetMap[asset.AssetId] = asset
 	}
@@ -195,9 +196,18 @@ func (c *MarketplaceClient) recursiveSelectStart(assets []*hummingbird.SearchAss
 			allChains = append(allChains, resultChain)
 		}
 	}
-	actualPrice := func(a *hummingbird.SearchAsset, duration uint32) uint32 {
-		granularityAdjustedDuration := duration + (a.TimeGranularity-(duration%a.TimeGranularity))%a.TimeGranularity
-		return a.Price * max(a.BandwidthMin, bwInKbps) * max(a.TimeMinDuration, duration, granularityAdjustedDuration)
+	actualPrice := func(a *hummingbird.SearchAsset, duration time.Duration) uint64 {
+		price, err := hbird.ReservationPrice(
+			a.Price,
+			bwInKbps,
+			a.BandwidthMin,
+			a.TimeMinDuration,
+			a.TimeGranularity,
+			duration)
+		if err != nil {
+			return math.MaxUint64
+		}
+		return price
 	}
 	bestCost := uint64(math.MaxInt64)
 	bestSelect := []*hummingbird.BuyAsset{}
@@ -206,7 +216,7 @@ func (c *MarketplaceClient) recursiveSelectStart(assets []*hummingbird.SearchAss
 		currSelect := []*hummingbird.BuyAsset{}
 		if len(chain.ids) == 1 {
 			asset := assetMap[chain.ids[0]]
-			currCost += uint64(actualPrice(asset, uint32(chain.stopsAt.Sub(startsAt).Seconds())))
+			currCost += actualPrice(asset, chain.stopsAt.Sub(startsAt))
 			currSelect = append(currSelect, &hummingbird.BuyAsset{
 				AssetId:         asset.AssetId,
 				StartsAtExactly: timestamppb.New(startsAt),
@@ -221,8 +231,8 @@ func (c *MarketplaceClient) recursiveSelectStart(assets []*hummingbird.SearchAss
 				currAsset := assetMap[chain.ids[i]]
 				nextAsset := assetMap[chain.ids[i+1]]
 				if currAsset.Price <= nextAsset.Price {
-					duration := uint32(timeMin(currAsset.StopsAt.AsTime(), chain.stopsAt).Sub(currStartsAt).Seconds())
-					currCost += uint64(actualPrice(currAsset, duration))
+					duration := timeMin(currAsset.StopsAt.AsTime(), chain.stopsAt).Sub(currStartsAt)
+					currCost += actualPrice(currAsset, duration)
 
 					currSelect = append(currSelect, &hummingbird.BuyAsset{
 						AssetId:         currAsset.AssetId,
@@ -233,8 +243,8 @@ func (c *MarketplaceClient) recursiveSelectStart(assets []*hummingbird.SearchAss
 					currStartsAt = timeMin(currAsset.StopsAt.AsTime(), chain.stopsAt)
 
 				} else {
-					duration := uint32(timeMin(nextAsset.StartsAt.AsTime(), chain.stopsAt).Sub(currStartsAt).Seconds())
-					currCost += uint64(actualPrice(currAsset, duration))
+					duration := timeMin(nextAsset.StartsAt.AsTime(), chain.stopsAt).Sub(currStartsAt)
+					currCost += actualPrice(currAsset, duration)
 					currSelect = append(currSelect, &hummingbird.BuyAsset{
 						AssetId:         currAsset.AssetId,
 						StartsAtExactly: timestamppb.New(currStartsAt),
@@ -245,8 +255,8 @@ func (c *MarketplaceClient) recursiveSelectStart(assets []*hummingbird.SearchAss
 				}
 			}
 			lastAsset := assetMap[chain.ids[i]]
-			duration := uint32(timeMin(lastAsset.StopsAt.AsTime(), chain.stopsAt).Sub(currStartsAt).Seconds())
-			currCost += uint64(actualPrice(lastAsset, duration))
+			duration := timeMin(lastAsset.StopsAt.AsTime(), chain.stopsAt).Sub(currStartsAt)
+			currCost += actualPrice(lastAsset, duration)
 
 			currSelect = append(currSelect, &hummingbird.BuyAsset{
 				AssetId:         lastAsset.AssetId,
@@ -265,7 +275,7 @@ func (c *MarketplaceClient) recursiveSelectStart(assets []*hummingbird.SearchAss
 }
 
 type chain struct {
-	ids             []string
+	ids             []uint64
 	timeGranularity uint32
 	timeMinDuration uint32
 	bandwidthMin    uint32
@@ -290,7 +300,7 @@ func (c *MarketplaceClient) recursiveSelect(currentAsset *hummingbird.SearchAsse
 	}
 	if !currentAsset.StopsAt.AsTime().Before(globalStop) {
 		// with this asset we found a chain from start till end
-		return []chain{{ids: []string{currentAsset.AssetId}, bandwidthMin: currBW, timeGranularity: timeGranularity, timeMinDuration: timeMinDuration, stopsAt: globalStop}}, true
+		return []chain{{ids: []uint64{currentAsset.AssetId}, bandwidthMin: currBW, timeGranularity: timeGranularity, timeMinDuration: timeMinDuration, stopsAt: globalStop}}, true
 	}
 	nextAssets := filterValidAt(currentAsset.StopsAt.AsTime(), otherAssets)
 	if len(nextAssets) == 0 {
@@ -309,7 +319,7 @@ func (c *MarketplaceClient) recursiveSelect(currentAsset *hummingbird.SearchAsse
 				fmt.Println("bandwidth cannot be satisfied")
 				continue
 			}
-			resultChain.ids = append([]string{currentAsset.AssetId}, resultChain.ids...)
+			resultChain.ids = append([]uint64{currentAsset.AssetId}, resultChain.ids...)
 			allChains = append(allChains, resultChain)
 		}
 	}
@@ -454,34 +464,27 @@ func (c *MarketplaceClient) checkoutAssetForInterfacePair(ctx context.Context, p
 	}
 	pairSearchAssets = pairAssetsResponse.Msg.Assets
 
-	duration := uint32(stopsAt.Sub(startsAt).Seconds())
-	actualPrice := func(a *hummingbird.SearchAsset) uint32 {
-		granularityAdjustedDuration := duration + (a.TimeGranularity-(duration%a.TimeGranularity))%a.TimeGranularity
-		return a.Price * max(a.BandwidthMin, bwInKbps) * max(a.TimeMinDuration, duration, granularityAdjustedDuration)
+	duration := stopsAt.Sub(startsAt)
+	actualPrice := func(a *hummingbird.SearchAsset) uint64 {
+		price, err := hbird.ReservationPrice(
+			a.Price,
+			bwInKbps,
+			a.BandwidthMin,
+			a.TimeMinDuration,
+			a.TimeGranularity,
+			duration)
+		if err != nil {
+			return math.MaxUint64
+		}
+		return price
 	}
 	filterAssets := func(assets []*hummingbird.SearchAsset) []*hummingbird.SearchAsset {
 		return filter(assets, func(a *hummingbird.SearchAsset) bool {
-			if duration < a.TimeMinDuration {
-				if a.StopsAt.Seconds <= startsAt.Unix()+int64(a.TimeMinDuration) {
-					// asset is not valid because when extending duration to the minimum duration, the stops at lies outside validity period
-					return false
-				}
+			billableDuration, err := hbird.ReservationDuration(duration, a.TimeMinDuration, a.TimeGranularity)
+			if err != nil || a.StopsAt.AsTime().Before(startsAt.Add(billableDuration)) {
+				return false
 			}
-			remainder := duration % a.TimeGranularity
-			if remainder != 0 {
-				addedDuration := a.TimeGranularity - remainder
-				if a.StopsAt.Seconds <= startsAt.Unix()+int64(addedDuration) {
-					// asset is not valid because when extending duration to a multiple of time granularity, the stops at lies outside validity period
-					return false
-				}
-			}
-			if a.BandwidthMin > bwInKbps {
-				if a.Bandwidth < a.BandwidthMin {
-					// there is not enough bandwidth to satisfy bandwidth min
-					return false
-				}
-			}
-			return true
+			return a.Bandwidth >= max(bwInKbps, a.BandwidthMin)
 		})
 	}
 	sortAssets := func(assets []*hummingbird.SearchAsset) []*hummingbird.SearchAsset {
@@ -491,19 +494,12 @@ func (c *MarketplaceClient) checkoutAssetForInterfacePair(ctx context.Context, p
 		return assets
 	}
 	buildBuyRequest := func(a *hummingbird.SearchAsset) *hummingbird.BuyAsset {
-		addedDuration := uint32(0)
-		if duration < a.TimeMinDuration {
-			addedDuration = a.TimeMinDuration - duration
-		}
-		remainder := duration % a.TimeGranularity
-		if remainder != 0 {
-			addedDuration = a.TimeGranularity - remainder
-		}
+		billableDuration, _ := hbird.ReservationDuration(duration, a.TimeMinDuration, a.TimeGranularity)
 		return &hummingbird.BuyAsset{
 			AssetId:         a.AssetId,
 			BandwidthExact:  max(bwInKbps, a.BandwidthMin),
 			StartsAtExactly: timestamppb.New(startsAt),
-			StopsAtExactly:  timestamppb.New(stopsAt.Add(time.Duration(addedDuration) * time.Second)),
+			StopsAtExactly:  timestamppb.New(startsAt.Add(billableDuration)),
 		}
 	}
 	ingressAssets := sortAssets(filterAssets(ingressSearchAssets))
@@ -531,7 +527,7 @@ func (c *MarketplaceClient) checkoutAssetForInterfacePair(ctx context.Context, p
 }
 
 type assetInfo struct {
-	id       string
+	id       uint64
 	startsAt time.Time
 	stopsAt  time.Time
 }

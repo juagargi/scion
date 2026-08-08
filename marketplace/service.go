@@ -18,7 +18,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/scionproto/scion/marketplace/db"
 	"github.com/scionproto/scion/marketplace/storage"
 	"github.com/scionproto/scion/pkg/addr"
+	hbird "github.com/scionproto/scion/pkg/hummingbird"
 	"github.com/scionproto/scion/pkg/hummingbird/registration"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
@@ -54,6 +54,10 @@ type MarketplaceInfo struct {
 	TransactionFeeAbsolute       uint64
 	SplitCombineFeeAbsolute      uint64
 	DelegationHourlyFee          uint64
+}
+
+func databaseAssetID(id uint64) (int64, error) {
+	return db.AssetID(id).Int64()
 }
 
 func NewService(ctx context.Context, info *MarketplaceInfo, store *storage.MarketplaceStorage, regService *registration.Service, signer *registration.Signer) (*Service, error) {
@@ -91,11 +95,11 @@ func (s *Service) CombineAssets(ctx context.Context, req *connect.Request[hummin
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("user_id not provided"))
 	}
-	assetId1, err := strconv.ParseInt(req.Msg.AssetId_1, 10, 64)
+	assetId1, err := databaseAssetID(req.Msg.AssetId_1)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	assetId2, err := strconv.ParseInt(req.Msg.AssetId_2, 10, 64)
+	assetId2, err := databaseAssetID(req.Msg.AssetId_2)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -108,7 +112,7 @@ func (s *Service) CombineAssets(ctx context.Context, req *connect.Request[hummin
 	}
 	return &connect.Response[hummingbird.CombineAssetResponse]{
 		Msg: &hummingbird.CombineAssetResponse{
-			AssetId: strconv.FormatInt(combinedId, 10),
+			AssetId: uint64(combinedId),
 		},
 	}, nil
 }
@@ -118,7 +122,7 @@ func (s *Service) SplitAsset(ctx context.Context, req *connect.Request[hummingbi
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("user_id not provided"))
 	}
-	assetId, err := strconv.ParseInt(req.Msg.AssetId, 10, 64)
+	assetId, err := databaseAssetID(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -138,8 +142,8 @@ func (s *Service) SplitAsset(ctx context.Context, req *connect.Request[hummingbi
 	}
 	return &connect.Response[hummingbird.SplitAssetResponse]{
 		Msg: &hummingbird.SplitAssetResponse{
-			AssetId_1: strconv.FormatInt(id1, 10),
-			AssetId_2: strconv.FormatInt(id2, 10),
+			AssetId_1: uint64(id1),
+			AssetId_2: uint64(id2),
 		},
 	}, nil
 }
@@ -157,7 +161,7 @@ func (s *Service) BuyAssets(ctx context.Context, req *connect.Request[hummingbir
 	boughtAssets := make([]*hummingbird.BoughtAsset, 0, len(boughtAssetIDs))
 	for _, a := range boughtAssetIDs {
 		boughtAssets = append(boughtAssets, &hummingbird.BoughtAsset{
-			AssetId: strconv.FormatInt(a, 10),
+			AssetId: uint64(a),
 		})
 	}
 	return &connect.Response[hummingbird.BuyAssetsResponse]{
@@ -246,21 +250,21 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("ia not provided"))
 	}
-	handleAsset := func(update *hummingbird.AssetUpdate) (string, error) {
-		assetId, err := strconv.ParseInt(update.AssetId, 10, 64)
+	handleAsset := func(update *hummingbird.AssetUpdate) (uint64, error) {
+		assetId, err := databaseAssetID(update.AssetId)
 		if err != nil {
-			return "", err
+			return 0, err
 		}
 		switch t := update.Operation.(type) {
 		case *hummingbird.AssetUpdate_Remove:
 			x, err := s.store.DeleteListedAsset(ctx, ia, assetId)
 			if err != nil {
-				return "", err
+				return 0, err
 			}
 			if x != 1 {
-				return "", serrors.New("no modifiable asset with that ID found")
+				return 0, serrors.New("no modifiable asset with that ID found")
 			}
-			return "", nil
+			return 0, nil
 		case *hummingbird.AssetUpdate_Update:
 			dbAsset := &db.DBAsset{
 				ID:              assetId,
@@ -288,11 +292,11 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 			}
 			newId, err := s.store.UpdateListedAsset(ctx, dbAsset)
 			if err != nil {
-				return "", err
+				return 0, err
 			}
-			return strconv.FormatInt(newId, 10), nil
+			return uint64(newId), nil
 		default:
-			return "", serrors.New("unkown update")
+			return 0, serrors.New("unkown update")
 		}
 	}
 	res := make([]*hummingbird.UpdateAssetResult, 0, len(req.Msg.Assets))
@@ -356,7 +360,7 @@ func (s *Service) PublishAsset(ctx context.Context, req *connect.Request[humming
 
 	return &connect.Response[hummingbird.PublishAssetResponse]{
 		Msg: &hummingbird.PublishAssetResponse{
-			AssetId: strconv.FormatInt(assetID, 10),
+			AssetId: uint64(assetID),
 		},
 	}, nil
 }
@@ -490,30 +494,15 @@ func (s *Service) RedeemAsset(
 	return nil, connect.NewError(connect.CodeUnavailable, serrors.Join(serrors.New("Redemption service not available"), undoRedemption()))
 }
 
-func ceilDuration(base time.Duration, multiple time.Duration) time.Duration {
-	truncated := base.Truncate(multiple)
-	if truncated == base {
-		return base
-	}
-	return truncated + multiple
-}
-func ceilTime(base time.Time, multiple time.Duration) time.Time {
-	truncated := base.Truncate(multiple)
-	if truncated.Equal(base) {
-		return base
-	}
-	return truncated.Add(multiple)
-}
-
 func (s *Service) Statistics(ctx context.Context, req *connect.Request[hummingbird.StatisticsRequest]) (*connect.Response[hummingbird.StatisticsResponse], error) {
 	fmt.Println("Statistics")
 	ia, ok := ctx.Value("user").(addr.IA)
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("ia not provided"))
 	}
-	step := ceilDuration(time.Duration(req.Msg.Step)*time.Second, (time.Duration(s.info.StatisticsTimeGranularity) * time.Second))
-	windowStart := req.Msg.Start.AsTime().UTC().Truncate(time.Duration(s.info.StatisticsTimeGranularity))
-	windowEnd := ceilTime(req.Msg.End.AsTime().UTC(), time.Duration(s.info.StatisticsTimeGranularity))
+	step := hbird.RoundUpDuration(time.Duration(req.Msg.Step)*time.Second, time.Duration(s.info.StatisticsTimeGranularity)*time.Second)
+	windowStart := req.Msg.Start.AsTime().UTC().Truncate(time.Duration(s.info.StatisticsTimeGranularity) * time.Second)
+	windowEnd := hbird.RoundUpTime(req.Msg.End.AsTime().UTC(), time.Duration(s.info.StatisticsTimeGranularity)*time.Second)
 	num_intervals := int(windowEnd.Sub(windowStart) / step)
 	fmt.Println(step, windowStart, windowEnd)
 	if num_intervals > 1024 {
@@ -629,7 +618,7 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 	repAssets := make([]*hummingbird.SearchAsset, 0, len(assets))
 	for _, asset := range assets {
 		a := &hummingbird.SearchAsset{
-			AssetId:         strconv.FormatInt(asset.ID, 10),
+			AssetId:         uint64(asset.ID),
 			Ia:              uint64(asset.IA),
 			Bandwidth:       asset.Bandwidth,
 			BandwidthMin:    asset.BandwidthMin,
