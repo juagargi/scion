@@ -567,6 +567,13 @@ def main(args):
         if dropped:
             print("dropped", ", ".join(dropped))
         applyScheme(cursor, args.schema)
+        if args.default_entries:
+            data = removeExisting(cursor, data)
+            added = {section: len(e) for section, e in data.items() if e}
+            if not added:
+                print("the default entries are already in the database")
+                return
+            print("adding " + ", ".join(f"{n} {section}" for section, n in added.items()))
         if insertAll(cursor, data):
             conn.commit()
             print("stored in database")
