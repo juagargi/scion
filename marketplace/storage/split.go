@@ -17,8 +17,6 @@ package storage
 import (
 	"fmt"
 	"time"
-
-	"github.com/scionproto/scion/marketplace/db"
 )
 
 type RequestedSplit struct {
@@ -38,8 +36,8 @@ type SplitResult struct {
 	Remainders []AssetSegment
 }
 
-func validateSplit(asset *db.DBAsset, p RequestedSplit) error {
-	if p.ExactFrom.Before(asset.StartAt) || p.ExactTo.After(asset.StopsAt) {
+func validateSplit(asset AssetSegment, p RequestedSplit) error {
+	if p.ExactFrom.Before(asset.StartsAt) || p.ExactTo.After(asset.StopsAt) {
 		return fmt.Errorf("purchase outside asset bounds")
 	}
 	if !p.ExactFrom.Before(p.ExactTo) {
@@ -55,8 +53,8 @@ func validateSplit(asset *db.DBAsset, p RequestedSplit) error {
 	return nil
 }
 
-func SplitAsset(asset *db.DBAsset, split RequestedSplit) (*SplitResult, error) {
-	if !asset.StartAt.Before(asset.StopsAt) {
+func SplitAsset(asset AssetSegment, split RequestedSplit) (*SplitResult, error) {
+	if !asset.StartsAt.Before(asset.StopsAt) {
 		return nil, fmt.Errorf("invalid asset range")
 	}
 	if err := validateSplit(asset, split); err != nil {
@@ -64,7 +62,7 @@ func SplitAsset(asset *db.DBAsset, split RequestedSplit) (*SplitResult, error) {
 	}
 	remainingAsset := AssetSegment{
 		Bandwidth: asset.Bandwidth,
-		StartsAt:  asset.StartAt,
+		StartsAt:  asset.StartsAt,
 		StopsAt:   asset.StopsAt,
 	}
 	splitResult := &SplitResult{}

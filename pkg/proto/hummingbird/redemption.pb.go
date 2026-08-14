@@ -25,9 +25,10 @@ const (
 type DelegateRedemptionRequest struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
 	ExpirationTime          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
-	ReservationIdUpperBound uint32                 `protobuf:"varint,2,opt,name=reservation_id_upper_bound,json=reservationIdUpperBound,proto3" json:"reservation_id_upper_bound,omitempty"`
-	Key                     []byte                 `protobuf:"bytes,3,opt,name=Key,proto3" json:"Key,omitempty"`
-	EncodingPoints          []uint32               `protobuf:"varint,4,rep,packed,name=encoding_points,json=encodingPoints,proto3" json:"encoding_points,omitempty"`
+	ReservationIdLowerBound uint32                 `protobuf:"varint,2,opt,name=reservation_id_lower_bound,json=reservationIdLowerBound,proto3" json:"reservation_id_lower_bound,omitempty"`
+	ReservationIdUpperBound uint32                 `protobuf:"varint,3,opt,name=reservation_id_upper_bound,json=reservationIdUpperBound,proto3" json:"reservation_id_upper_bound,omitempty"`
+	Key                     []byte                 `protobuf:"bytes,4,opt,name=Key,proto3" json:"Key,omitempty"`
+	EncodingPoints          []uint32               `protobuf:"varint,5,rep,packed,name=encoding_points,json=encodingPoints,proto3" json:"encoding_points,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -67,6 +68,13 @@ func (x *DelegateRedemptionRequest) GetExpirationTime() *timestamppb.Timestamp {
 		return x.ExpirationTime
 	}
 	return nil
+}
+
+func (x *DelegateRedemptionRequest) GetReservationIdLowerBound() uint32 {
+	if x != nil {
+		return x.ReservationIdLowerBound
+	}
+	return 0
 }
 
 func (x *DelegateRedemptionRequest) GetReservationIdUpperBound() uint32 {
@@ -380,12 +388,13 @@ var File_proto_hummingbird_v1_redemption_proto protoreflect.FileDescriptor
 
 const file_proto_hummingbird_v1_redemption_proto_rawDesc = "" +
 	"\n" +
-	"%proto/hummingbird/v1/redemption.proto\x12\x14proto.hummingbird.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd8\x01\n" +
+	"%proto/hummingbird/v1/redemption.proto\x12\x14proto.hummingbird.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x95\x02\n" +
 	"\x19DelegateRedemptionRequest\x12C\n" +
 	"\x0fexpiration_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x0eexpirationTime\x12;\n" +
-	"\x1areservation_id_upper_bound\x18\x02 \x01(\rR\x17reservationIdUpperBound\x12\x10\n" +
-	"\x03Key\x18\x03 \x01(\fR\x03Key\x12'\n" +
-	"\x0fencoding_points\x18\x04 \x03(\rR\x0eencodingPoints\"a\n" +
+	"\x1areservation_id_lower_bound\x18\x02 \x01(\rR\x17reservationIdLowerBound\x12;\n" +
+	"\x1areservation_id_upper_bound\x18\x03 \x01(\rR\x17reservationIdUpperBound\x12\x10\n" +
+	"\x03Key\x18\x04 \x01(\fR\x03Key\x12'\n" +
+	"\x0fencoding_points\x18\x05 \x03(\rR\x0eencodingPoints\"a\n" +
 	"\x1aDelegateRedemptionResponse\x12C\n" +
 	"\x0fexpiration_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x0eexpirationTime\"\x83\x02\n" +
 	"\x18RedeemAssetFromASRequest\x12\x1d\n" +

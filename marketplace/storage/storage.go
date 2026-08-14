@@ -17,6 +17,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"math"
 	"time"
 
@@ -363,94 +364,92 @@ func lcm(
 	return a / gcd(a, b) * b
 }
 
+// Combines multiple compatible assets into a single assset.
+// Requires len(assetIds) >= 2.
 func (s *MarketplaceStorage) CombineAssets(
 	ctx context.Context,
 	accountID int64,
-	assetId1 int64,
-	assetId2 int64,
+	assetIds []int64,
 ) (int64, error) {
 	var newID int64
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
+		var err error
 		if _, err := tx.UpdateAccountMoney(
-			ctx, accountID, -int64(s.splitCombineFeeAbsolute)); err != nil {
+			ctx, accountID, -int64(s.splitCombineFeeAbsolute)*int64(len(assetIds)-1)); err != nil {
 			return err
 		}
-		a1, err := tx.TransitionAsset(ctx, assetId1, &accountID,
-			marketplacedb.AssetStateAvailable, marketplacedb.AssetStateCombinePending)
-		if err != nil {
-			return err
-		}
-		a2, err := tx.TransitionAsset(ctx, assetId2, &accountID,
-			marketplacedb.AssetStateAvailable, marketplacedb.AssetStateCombinePending)
-		if err != nil {
-			return err
-		}
-		if a1.IA != a2.IA {
-			return serrors.New("asset must have same IA")
-		}
-		if a1.IfIdIngress.Valid && a1.IfIdIngress.Int32 != a2.IfIdIngress.Int32 {
-			return serrors.New("asset must have same ingress")
-		}
-		if a1.IfIdEgress.Valid && a1.IfIdEgress.Int32 != a2.IfIdEgress.Int32 {
-			return serrors.New("asset must have same egress")
-		}
-		var combinedAsset *marketplacedb.DBAsset
-		if a1.StartAt.Equal(a2.StartAt) && a1.StopsAt.Equal(a2.StopsAt) {
-			combinedAsset = &marketplacedb.DBAsset{
-				AccountId:       a1.AccountId,
-				IA:              a1.IA,
-				Bandwidth:       a1.Bandwidth + a2.Bandwidth,
-				BandwidthMin:    max(a1.BandwidthMin, a2.BandwidthMin),
-				BandwidthMax:    min(a1.BandwidthMax, a2.BandwidthMax),
-				StartAt:         a1.StartAt,
-				StopsAt:         a1.StopsAt,
-				Price:           0,
-				TimeGranularity: lcm(a1.TimeGranularity, a2.TimeGranularity),
-				TimeMinDuration: max(a1.TimeMinDuration, a2.TimeMinDuration),
-				IfIdIngress:     a1.IfIdIngress,
-				IfIdEgress:      a1.IfIdEgress,
+		assets := make([]*marketplacedb.DBAsset, 0, len(assetIds))
+		for _, assetId := range assetIds {
+			a, err := tx.TransitionAsset(ctx, assetId, &accountID,
+				marketplacedb.AssetStateAvailable, marketplacedb.AssetStateCombinePending)
+			if err != nil {
+				return err
 			}
-		} else if a1.Bandwidth == a2.Bandwidth {
-			if a1.StartAt.Equal(a2.StopsAt) {
-				combinedAsset = &marketplacedb.DBAsset{
-					AccountId:       a1.AccountId,
-					IA:              a1.IA,
-					Bandwidth:       a1.Bandwidth,
-					BandwidthMin:    max(a1.BandwidthMin, a2.BandwidthMin),
-					BandwidthMax:    min(a1.BandwidthMax, a2.BandwidthMax),
-					StartAt:         a2.StartAt,
-					StopsAt:         a1.StopsAt,
-					Price:           0,
-					TimeGranularity: lcm(a1.TimeGranularity, a2.TimeGranularity),
-					TimeMinDuration: max(a1.TimeMinDuration, a2.TimeMinDuration),
-					IfIdIngress:     a1.IfIdIngress,
-					IfIdEgress:      a1.IfIdEgress,
+			assets = append(assets, a)
+		}
+		ia := assets[0].IA
+		ingress := assets[0].IfIdIngress
+		egress := assets[0].IfIdEgress
+		combinedStop := assets[0].StopsAt
+		useTimeAxis := assets[0].StopsAt.Equal(assets[1].StartAt)
+		combinedMinBW := assets[0].BandwidthMin
+		combinedMaxBW := assets[0].BandwidthMax
+		combinedTimeMinDuration := assets[0].TimeMinDuration
+		combinedTimeMaxDuration := assets[0].TimeMaxDuration
+		combinedTimeGranularity := assets[0].TimeGranularity
+		combinedBandwidth := assets[0].Bandwidth
+
+		for _, asset := range assets[1:] {
+			if asset.IA != ia {
+				return serrors.New("assets must have same IA")
+			}
+			if asset.IfIdIngress != ingress {
+				return serrors.New("asset must have same ingress")
+			}
+			if asset.IfIdEgress != egress {
+				return serrors.New("asset must have same egress")
+			}
+			combinedMinBW = max(combinedMinBW, asset.BandwidthMin)
+			combinedMaxBW = min(combinedMaxBW, asset.BandwidthMax)
+			combinedTimeMinDuration = max(combinedTimeMinDuration, asset.TimeMinDuration)
+			combinedTimeMaxDuration = min(combinedTimeMaxDuration, asset.TimeMaxDuration)
+			combinedTimeGranularity = lcm(combinedTimeGranularity, asset.TimeGranularity)
+			if useTimeAxis {
+				if assets[0].Bandwidth != asset.Bandwidth {
+					return serrors.New("assets cannot be combined")
 				}
-			} else if a2.StartAt.Equal(a1.StopsAt) {
-				combinedAsset = &marketplacedb.DBAsset{
-					AccountId:       a1.AccountId,
-					IA:              a1.IA,
-					Bandwidth:       a1.Bandwidth,
-					BandwidthMin:    max(a1.BandwidthMin, a2.BandwidthMin),
-					BandwidthMax:    min(a1.BandwidthMax, a2.BandwidthMax),
-					StartAt:         a1.StartAt,
-					StopsAt:         a2.StopsAt,
-					Price:           0,
-					TimeGranularity: lcm(a1.TimeGranularity, a2.TimeGranularity),
-					TimeMinDuration: max(a1.TimeMinDuration, a2.TimeMinDuration),
-					IfIdIngress:     a1.IfIdIngress,
-					IfIdEgress:      a1.IfIdEgress,
+				if !combinedStop.Equal(asset.StartAt) {
+					return serrors.New("assets cannot be combined")
 				}
+				combinedStop = asset.StopsAt
+			} else {
+				if !asset.StartAt.Equal(assets[0].StartAt) || !asset.StopsAt.Equal(assets[0].StopsAt) {
+					return serrors.New("assets cannot be combined")
+				}
+				combinedBandwidth += asset.Bandwidth
 			}
 		}
-		if combinedAsset == nil {
-			return serrors.New("asset cannot be combined")
+		combinedAsset := &marketplacedb.DBAsset{
+			AccountId: sql.NullInt64{
+				Int64: accountID,
+				Valid: true,
+			},
+			IA:              ia,
+			IfIdIngress:     ingress,
+			IfIdEgress:      egress,
+			BandwidthMin:    combinedMinBW,
+			BandwidthMax:    combinedMaxBW,
+			TimeMinDuration: combinedTimeMinDuration,
+			TimeMaxDuration: combinedTimeMaxDuration,
+			TimeGranularity: combinedTimeGranularity,
+			Bandwidth:       combinedBandwidth,
+			StartAt:         assets[0].StartAt,
+			StopsAt:         combinedStop,
 		}
-		if err := tx.RemoveAsset(ctx, assetId1); err != nil {
-			return err
-		}
-		if err := tx.RemoveAsset(ctx, assetId2); err != nil {
-			return err
+		for _, assetId := range assetIds {
+			if err := tx.RemoveAsset(ctx, assetId); err != nil {
+				return err
+			}
 		}
 		newID, err = tx.InsertAsset(ctx, combinedAsset)
 		return err
@@ -462,16 +461,16 @@ func (s *MarketplaceStorage) SplitAsset(
 	ctx context.Context,
 	accountID int64,
 	assetId int64,
-	bwSplit *uint32,
-	timeSplit *time.Time,
-) (int64, int64, error) {
-	if bwSplit == nil && timeSplit == nil {
-		return 0, 0, serrors.New("invalid split request")
+	bwSplit []uint32,
+	timeSplit []time.Time,
+) ([]int64, error) {
+	if len(bwSplit) == 0 && len(timeSplit) == 0 {
+		return nil, serrors.New("invalid split request")
 	}
-	var assetID1, assetID2 int64
+	var ids []int64
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
 		if _, err := tx.UpdateAccountMoney(
-			ctx, accountID, -int64(s.splitCombineFeeAbsolute)); err != nil {
+			ctx, accountID, -int64(s.splitCombineFeeAbsolute)*int64(max(len(bwSplit), len(timeSplit)))); err != nil {
 			return err
 		}
 		dbAsset, err := tx.TransitionAsset(ctx, assetId, &accountID,
@@ -479,62 +478,73 @@ func (s *MarketplaceStorage) SplitAsset(
 		if err != nil {
 			return err
 		}
-		requestedSplit := RequestedSplit{
-			ExactBandwidth: dbAsset.Bandwidth,
-			ExactFrom:      dbAsset.StartAt,
-			ExactTo:        dbAsset.StopsAt,
+		var splitSegments []AssetSegment
+		baseSegment := AssetSegment{
+			StartsAt:  dbAsset.StartAt,
+			StopsAt:   dbAsset.StopsAt,
+			Bandwidth: dbAsset.Bandwidth,
 		}
-		if bwSplit != nil {
-			requestedSplit.ExactBandwidth = *bwSplit
+		if len(bwSplit) != 0 {
+			for _, split := range bwSplit {
+				res, err := SplitAsset(baseSegment, RequestedSplit{
+					ExactFrom:      baseSegment.StartsAt,
+					ExactTo:        baseSegment.StopsAt,
+					ExactBandwidth: split,
+				})
+				if err != nil {
+					return err
+				}
+				if len(res.Remainders) != 1 {
+					return serrors.New("invalid split")
+				}
+				splitSegments = append(splitSegments, res.Split)
+				baseSegment = res.Remainders[0]
+			}
 		} else {
-			requestedSplit.ExactTo = *timeSplit
+			for _, split := range timeSplit {
+				res, err := SplitAsset(baseSegment, RequestedSplit{
+					ExactFrom:      baseSegment.StartsAt,
+					ExactTo:        split,
+					ExactBandwidth: baseSegment.Bandwidth,
+				})
+				if err != nil {
+					return err
+				}
+				if len(res.Remainders) != 1 {
+					return serrors.New("invalid split")
+				}
+				splitSegments = append(splitSegments, res.Split)
+				baseSegment = res.Remainders[0]
+			}
 		}
-		splitResult, err := SplitAsset(dbAsset, requestedSplit)
-		if err != nil {
-			return err
-		}
-		if len(splitResult.Remainders) != 1 {
-			return serrors.New("invalid split result")
-		}
-		asset1 := &marketplacedb.DBAsset{
-			AccountId:       dbAsset.AccountId,
-			IA:              dbAsset.IA,
-			BandwidthMin:    dbAsset.BandwidthMin,
-			BandwidthMax:    dbAsset.BandwidthMax,
-			Price:           dbAsset.Price,
-			TimeGranularity: dbAsset.TimeGranularity,
-			TimeMinDuration: dbAsset.TimeMinDuration,
-			IfIdIngress:     dbAsset.IfIdIngress,
-			IfIdEgress:      dbAsset.IfIdEgress,
-			Bandwidth:       splitResult.Split.Bandwidth,
-			StartAt:         splitResult.Split.StartsAt,
-			StopsAt:         splitResult.Split.StopsAt,
-		}
-		asset2 := &marketplacedb.DBAsset{
-			AccountId:       dbAsset.AccountId,
-			IA:              dbAsset.IA,
-			BandwidthMin:    dbAsset.BandwidthMin,
-			BandwidthMax:    dbAsset.BandwidthMax,
-			Price:           dbAsset.Price,
-			TimeGranularity: dbAsset.TimeGranularity,
-			TimeMinDuration: dbAsset.TimeMinDuration,
-			IfIdIngress:     dbAsset.IfIdIngress,
-			IfIdEgress:      dbAsset.IfIdEgress,
-			Bandwidth:       splitResult.Remainders[0].Bandwidth,
-			StartAt:         splitResult.Remainders[0].StartsAt,
-			StopsAt:         splitResult.Remainders[0].StopsAt,
-		}
+		splitSegments = append(splitSegments, baseSegment)
 		if err := tx.RemoveAsset(ctx, assetId); err != nil {
 			return err
 		}
-		assetID1, err = tx.InsertAsset(ctx, asset1)
-		if err != nil {
-			return err
+		for _, segment := range splitSegments {
+			asset := &marketplacedb.DBAsset{
+				AccountId:       dbAsset.AccountId,
+				IA:              dbAsset.IA,
+				BandwidthMin:    dbAsset.BandwidthMin,
+				BandwidthMax:    dbAsset.BandwidthMax,
+				Price:           dbAsset.Price,
+				TimeGranularity: dbAsset.TimeGranularity,
+				TimeMinDuration: dbAsset.TimeMinDuration,
+				IfIdIngress:     dbAsset.IfIdIngress,
+				IfIdEgress:      dbAsset.IfIdEgress,
+				Bandwidth:       segment.Bandwidth,
+				StartAt:         segment.StartsAt,
+				StopsAt:         segment.StopsAt,
+			}
+			splitAssetId, err := tx.InsertAsset(ctx, asset)
+			if err != nil {
+				return err
+			}
+			ids = append(ids, splitAssetId)
 		}
-		assetID2, err = tx.InsertAsset(ctx, asset2)
 		return err
 	})
-	return assetID1, assetID2, err
+	return ids, err
 }
 
 func (s *MarketplaceStorage) Statistics(
@@ -551,36 +561,50 @@ func (s *MarketplaceStorage) FindUsedReservations(
 	return s.db.FindUsedReservations(ctx, params)
 }
 
+func databaseAssetID(id []byte) (int64, error) {
+	idInt := binary.BigEndian.Uint64(id)
+	return marketplacedb.AssetID(idInt).Int64()
+}
+
 func (s *MarketplaceStorage) BuyAssets(
 	ctx context.Context,
 	accountID int64,
 	assets []*hummingbird.BuyAsset,
 	maxPrice uint64,
 ) ([]int64, int64, error) {
-	uniqueCheck := make(map[uint64]bool)
+	uniqueCheck := make(map[int64]bool)
 	for _, asset := range assets {
-		if uniqueCheck[asset.AssetId] {
+		assetId, err := databaseAssetID(asset.AssetId)
+		if err != nil {
+			return nil, 0, err
+		}
+		if uniqueCheck[assetId] {
 			return nil, 0, serrors.New("Only a single split per asset per buy request allowed")
 		}
 		if asset.StopsAtExactly.AsTime().Before(asset.StartsAtExactly.AsTime()) {
 			return nil, 0, serrors.New("End of validity must come after start of validity")
 		}
-		uniqueCheck[asset.AssetId] = true
+		uniqueCheck[assetId] = true
 	}
 	boughtAssets := make([]int64, 0, 1)
 	costAcc := int64(0)
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
 		for _, asset := range assets {
-			assetID, err := marketplacedb.AssetID(asset.AssetId).Int64()
+			assetId, err := databaseAssetID(asset.AssetId)
 			if err != nil {
 				return err
 			}
-			dbAsset, err := tx.TransitionAsset(ctx, assetID, nil,
+			dbAsset, err := tx.TransitionAsset(ctx, assetId, nil,
 				marketplacedb.AssetStateAvailable, marketplacedb.AssetStateCheckedOut)
 			if err != nil {
 				return err
 			}
-			split, err := SplitAsset(dbAsset, RequestedSplit{
+			baseSegment := AssetSegment{
+				StartsAt:  dbAsset.StartAt,
+				StopsAt:   dbAsset.StopsAt,
+				Bandwidth: dbAsset.Bandwidth,
+			}
+			split, err := SplitAsset(baseSegment, RequestedSplit{
 				ExactFrom:      asset.StartsAtExactly.AsTime(),
 				ExactTo:        asset.StopsAtExactly.AsTime(),
 				ExactBandwidth: asset.BandwidthExact,
@@ -677,17 +701,13 @@ func (s *MarketplaceStorage) InsertReservation(
 func (s *MarketplaceStorage) UndoRedemption(
 	ctx context.Context,
 	user_id int64,
-	ingressID *uint64,
-	egressID *uint64,
-	pairID *uint64,
+	ingressID *int64,
+	egressID *int64,
+	pairID *int64,
 ) error {
 	return s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
-		transition := func(id uint64) error {
-			assetID, err := marketplacedb.AssetID(id).Int64()
-			if err != nil {
-				return err
-			}
-			_, err = tx.TransitionAsset(ctx, assetID, &user_id,
+		transition := func(id int64) error {
+			_, err := tx.TransitionAsset(ctx, id, &user_id,
 				marketplacedb.AssetStateRedemptionPending, marketplacedb.AssetStateAvailable)
 			return err
 		}
@@ -731,23 +751,19 @@ func validateAsset(
 func (s *MarketplaceStorage) PrepareRedemption(
 	ctx context.Context,
 	user_id int64,
-	ingressID *uint64,
-	egressID *uint64,
-	pairID *uint64,
+	ingressAssetID *int64,
+	egressAssetID *int64,
+	pairAssetID *int64,
 ) ([]*marketplacedb.DBAsset, error) {
 	var assets []*marketplacedb.DBAsset
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
-		prepare := func(id uint64) (*marketplacedb.DBAsset, error) {
-			assetID, err := marketplacedb.AssetID(id).Int64()
-			if err != nil {
-				return nil, err
-			}
-			return tx.TransitionAsset(ctx, assetID, &user_id,
+		prepare := func(id int64) (*marketplacedb.DBAsset, error) {
+			return tx.TransitionAsset(ctx, id, &user_id,
 				marketplacedb.AssetStateAvailable, marketplacedb.AssetStateRedemptionPending)
 		}
 		switch {
-		case ingressID != nil && egressID != nil:
-			ingressAsset, err := prepare(*ingressID)
+		case ingressAssetID != nil && egressAssetID != nil:
+			ingressAsset, err := prepare(*ingressAssetID)
 			if err != nil {
 				return err
 			}
@@ -757,7 +773,7 @@ func (s *MarketplaceStorage) PrepareRedemption(
 			if err := validateAsset(ingressAsset); err != nil {
 				return err
 			}
-			egressAsset, err := prepare(*egressID)
+			egressAsset, err := prepare(*egressAssetID)
 			if err != nil {
 				return err
 			}
@@ -769,8 +785,8 @@ func (s *MarketplaceStorage) PrepareRedemption(
 			}
 			assets = []*marketplacedb.DBAsset{ingressAsset, egressAsset}
 			return nil
-		case ingressID == nil && egressID == nil && pairID != nil:
-			pairAsset, err := prepare(*pairID)
+		case ingressAssetID == nil && egressAssetID == nil && pairAssetID != nil:
+			pairAsset, err := prepare(*pairAssetID)
 			if err != nil {
 				return err
 			}

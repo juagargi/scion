@@ -628,7 +628,6 @@ func (e *executor) buildSearchQuery(params *AssetQuery) (string, []any) {
 	query := []string{
 		"SELECT " + assetColumnsWithAlias + " FROM Assets a",
 	}
-
 	if params.AccountId == nil {
 		where = append(where, "(a.account_id IS NULL)")
 	} else {

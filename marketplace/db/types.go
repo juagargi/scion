@@ -129,6 +129,7 @@ type DBAsset struct {
 	Price           uint32
 	TimeGranularity uint32
 	TimeMinDuration uint32
+	TimeMaxDuration uint32
 	IfIdIngress     sql.NullInt32
 	IfIdEgress      sql.NullInt32
 }

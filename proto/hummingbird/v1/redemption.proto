@@ -28,12 +28,14 @@ service RedemptionService {
 message DelegateRedemptionRequest {
     // delegate request valid from now until expiration_time
     google.protobuf.Timestamp expiration_time = 1;
+    // the start of the reservation ID interval
+    uint32 reservation_id_lower_bound = 2;
     // the exclusive end of the reservation ID interval
-    uint32 reservation_id_upper_bound = 2;
+    uint32 reservation_id_upper_bound = 3;
     // the key used for the derivation of the authentication keys
-    bytes Key = 3;
+    bytes Key = 4;
     // up to 1024 sorted values that indicate the dataplane encoding points
-    repeated uint32 encoding_points = 4;
+    repeated uint32 encoding_points = 5;
 }
 message DelegateRedemptionResponse {
     google.protobuf.Timestamp expiration_time = 1;

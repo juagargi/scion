@@ -20,8 +20,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/scionproto/scion/marketplace/db"
 )
 
 // TestSplitAsset covers carving a purchase out of an asset: what the buyer gets,
@@ -30,10 +28,10 @@ import (
 func TestSplitAsset(t *testing.T) {
 	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	stop := start.Add(time.Hour)
-	asset := func() *db.DBAsset {
-		return &db.DBAsset{
+	asset := func() AssetSegment {
+		return AssetSegment{
 			Bandwidth: 1000,
-			StartAt:   start,
+			StartsAt:  start,
 			StopsAt:   stop,
 		}
 	}
@@ -148,7 +146,7 @@ func TestSplitAsset(t *testing.T) {
 func TestSplitAssetRejects(t *testing.T) {
 	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	stop := start.Add(time.Hour)
-	asset := &db.DBAsset{Bandwidth: 1000, StartAt: start, StopsAt: stop}
+	asset := AssetSegment{Bandwidth: 1000, StartsAt: start, StopsAt: stop}
 
 	testCases := map[string]RequestedSplit{
 		"starts before the asset": {

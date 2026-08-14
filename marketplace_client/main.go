@@ -466,13 +466,23 @@ func handleUpdate(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 			}
 			switch {
 			case subOption == "delete":
+				assetId, err := readAssetID(reader, "AssetID: ")
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
 				assetUpdates = append(assetUpdates, &hummingbird.AssetUpdate{
-					AssetId:   readUint64(reader, "AssetID: "),
+					AssetId:   assetId,
 					Operation: &hummingbird.AssetUpdate_Remove{},
 				})
 			case subOption == "update":
+				assetId, err := readAssetID(reader, "AssetID: ")
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
 				assetUpdates = append(assetUpdates, &hummingbird.AssetUpdate{
-					AssetId: readUint64(reader, "AssetID: "),
+					AssetId: assetId,
 					Operation: &hummingbird.AssetUpdate_Update{
 						Update: &hummingbird.PublisherAsset{IfIdIngress: readOptionalUint32(reader, "ingress: "),
 							IfIdEgress:      readOptionalUint32(reader, "egress: "),
@@ -576,25 +586,53 @@ func handleStatistics(ctx context.Context, reader *bufio.Reader, c hummingbirdco
 }
 func handleSplit(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect.MarketplaceServiceClient) {
 	fmt.Println("Handle split asset query.")
-	assetID := readUint64(reader, "assetID: ")
+	assetId, err := readAssetID(reader, "AssetID: ")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	splitOption := readOptionalString(reader, "spit using axis [bw,time]: ", nil)
 	if splitOption == nil {
 		fmt.Println("invalid split option.")
 		return
 	}
 	req := &hummingbird.SplitAssetRequest{
-		AssetId: assetID,
+		AssetId: assetId,
 	}
 	switch *splitOption {
 	case "bw":
-		bwSplit := readUint64(reader, "bw split: ")
+		bwSplits := readString(reader, "bw split (10,15,10): ")
+		allSplits := strings.Split(bwSplits, ",")
+		intSplits := make([]uint32, 0, len(allSplits))
+		for _, split := range allSplits {
+			intSplit, err := strconv.ParseUint(split, 10, 32)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			intSplits = append(intSplits, uint32(intSplit))
+		}
 		req.SplitOption = &hummingbird.SplitAssetRequest_BwSplit{
-			BwSplit: uint32(bwSplit),
+			BwSplit: &hummingbird.SplitBwOption{
+				Splits: intSplits,
+			},
 		}
 	case "time":
-		timeSplit := readTime(reader, "time split (2026-06-23T13:25:36Z): ")
+		timeSplits := readString(reader, "time split (2026-06-23T13:25:36Z): ")
+		allSplits := strings.Split(timeSplits, ",")
+		timestampSplits := make([]*timestamppb.Timestamp, 0, len(allSplits))
+		for _, split := range allSplits {
+			timeSplit, err := time.Parse(time.RFC3339, split)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			timestampSplits = append(timestampSplits, timestamppb.New(timeSplit))
+		}
 		req.SplitOption = &hummingbird.SplitAssetRequest_TimeSplit{
-			TimeSplit: timestamppb.New(timeSplit),
+			TimeSplit: &hummingbird.SplitTimeOption{
+				Splits: timestampSplits,
+			},
 		}
 	default:
 		fmt.Println("invalid split option.")
@@ -610,19 +648,31 @@ func handleSplit(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect
 		fmt.Println(err)
 		return
 	}
-	fmt.Printf("asset split into %d and %d\n", resp.Msg.AssetId_1, resp.Msg.AssetId_2)
+	fmt.Println("asset split into:")
+	for _, assetId := range resp.Msg.AssetIds {
+		fmt.Printf("- %s\n", hex.EncodeToString(assetId))
+	}
 }
 func handleCombine(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect.MarketplaceServiceClient) {
 	fmt.Println("Handle combine assets query.")
-	asset1 := readUint64(reader, "asset 1: ")
-	asset2 := readUint64(reader, "asset 2: ")
+	assetIds := make([][]byte, 0, 2)
+	for {
+		assetId, err := readAssetID(reader, "AssetID (empty to continue): ")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if len(assetId) == 0 {
+			break
+		}
+		assetIds = append(assetIds, assetId)
+	}
 	if !readConfirm(reader) {
 		return
 	}
 	resp, err := c.CombineAssets(ctx, &connect.Request[hummingbird.CombineAssetRequest]{
 		Msg: &hummingbird.CombineAssetRequest{
-			AssetId_1: asset1,
-			AssetId_2: asset2,
+			AssetIds: assetIds,
 		},
 	})
 	if err != nil {
@@ -706,8 +756,16 @@ func handleRedeem(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 	if option == nil {
 		return
 	} else if *option == 0 {
-		ingressAssetID := readUint64(reader, "Ingress Asset ID: ")
-		egressAssetID := readUint64(reader, "Egress Asset ID: ")
+		ingressAssetID, err := readAssetID(reader, "Ingress Asset ID: ")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		egressAssetID, err := readAssetID(reader, "Egress Asset ID: ")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 		if !readConfirm(reader) {
 			return
 		}
@@ -722,7 +780,11 @@ func handleRedeem(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 			},
 		})
 	} else if *option == 1 {
-		assetID := readUint64(reader, "Interface-pair Asset ID: ")
+		assetID, err := readAssetID(reader, "Interface-pair Asset ID: ")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 		if !readConfirm(reader) {
 			return
 		}
@@ -764,8 +826,14 @@ func handleBuy(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect.M
 		}
 		switch {
 		case option == "add":
+			assetId, err := readAssetID(reader, "AssetID: ")
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Println("read asset id ", assetId, " with len ", len(assetId))
 			buyAsset := &hummingbird.BuyAsset{
-				AssetId:         readUint64(reader, "AssetID: "),
+				AssetId:         assetId,
 				StartsAtExactly: timestamppb.New(readTime(reader, "Starts at exactly (2026-06-23T13:25:36Z): ")),
 				StopsAtExactly:  timestamppb.New(readTime(reader, "Stops at exactly (2026-06-23T13:25:36Z): ")),
 				BandwidthExact:  uint32(readUint64(reader, "BW exact: ")),
@@ -857,8 +925,9 @@ func handleSearch(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 	}
 	transformed := make([]Asset, 0, len(rep.Msg.Assets))
 	for _, asset := range rep.Msg.Assets {
+
 		transformed = append(transformed, Asset{
-			ID:              asset.AssetId,
+			ID:              hex.EncodeToString(asset.AssetId),
 			IA:              addr.IA(asset.Ia),
 			Bandwidth:       asset.Bandwidth,
 			BandwidthMin:    asset.BandwidthMin,
@@ -909,6 +978,11 @@ func readConfirm(reader *bufio.Reader) bool {
 		return true
 	}
 	return false
+}
+
+func readAssetID(reader *bufio.Reader, prompt string) ([]byte, error) {
+	str := readString(reader, prompt)
+	return hex.DecodeString(str)
 }
 
 func readUint64(reader *bufio.Reader, prompt string) uint64 {
@@ -1059,7 +1133,7 @@ func main() {
 }
 
 type Asset struct {
-	ID              uint64
+	ID              string
 	IA              addr.IA
 	Bandwidth       uint32
 	BandwidthMin    uint32

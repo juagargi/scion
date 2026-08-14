@@ -37,7 +37,7 @@ message UpdateAssetsRequest {
     repeated AssetUpdate assets = 1;
 }
 message AssetUpdate {
-    uint64 asset_id = 1;
+    bytes asset_id = 1;
     oneof operation {
         PublisherAsset update = 2;
         Remove remove = 3;
@@ -73,28 +73,32 @@ message StatisticsResponseEntry {
 
 // Split assets splits an asset either by defining the bandwidth to split, or the time it should split.
 message SplitAssetRequest {
-    uint64 asset_id = 1;
+    bytes asset_id = 1;
     oneof split_option {
-        uint32 bw_split = 2;
-        google.protobuf.Timestamp time_split = 3;
+        SplitBwOption bw_split = 2;
+        SplitTimeOption time_split = 3;
     }
 }
-// Returns the two asset IDs created from the split.
-message SplitAssetResponse {
-    uint64 asset_id_1 = 1;
-    uint64 asset_id_2 = 2;
+message SplitBwOption {
+    repeated uint32 splits = 1;
 }
-// When combining assets, both assets must have the same IA, asset_type, ingress and egress.enum
-// Additionally, both assets must either:
-// a) have adjacent validity with same bandwidth, or
+message SplitTimeOption {
+    repeated google.protobuf.Timestamp splits = 1;
+}
+// Returns the asset IDs created from the split.
+message SplitAssetResponse {
+    repeated bytes asset_ids = 1;
+}
+// When combining assets, all assets must have the same IA, asset_type, ingress and egress.
+// Additionally, all assets must either:
+// a) have consecutive validity with same bandwidth, or
 // b) same validity with different bandwidth
 message CombineAssetRequest {
-    uint64 asset_id_1 = 1;
-    uint64 asset_id_2 = 2;
+    repeated bytes asset_ids = 1;
 }
-// Returns the the asset ID created from combining the two assets.
+// Returns the asset ID created from combining the provided assets.
 message CombineAssetResponse {
-    uint64 asset_id = 1;
+    bytes asset_id = 1;
 }
 
 message MarketplaceInfoRequest {
@@ -113,6 +117,7 @@ message MarketplaceInfoResponse {
     uint64 split_combine_fee_absolute = 9;
     bool supports_redemption_delegation = 10;
     uint64 delegation_hourly_fee = 11;
+    uint32 asset_validity_max = 12;
 }
 
 enum PricingStrategy {
@@ -125,7 +130,7 @@ message PublishAssetRequest {
 }
 
 message PublishAssetResponse {
-    uint64 asset_id = 1;
+    bytes asset_id = 1;
 }
 message PublisherAsset {
     optional uint32 if_id_ingress = 1;
@@ -149,13 +154,16 @@ message SearchAssetsRequest {
     optional google.protobuf.Timestamp starts_at_latest = 6;
     optional google.protobuf.Timestamp stops_at_earliest = 7;
     optional uint32 price = 8;
+    optional uint32 page = 9;
+    // The marketplace may return less assets per page than requested.
+    optional uint32 max_returned_assets = 10;
 }
 
 message SearchAssetsResponse {
     repeated SearchAsset assets = 1;
 }
 message SearchAsset {
-    uint64 asset_id = 1;
+    bytes asset_id = 1;
     uint64 ia = 2;
     optional uint32 if_id_ingress = 3;
     optional uint32 if_id_egress = 4;
@@ -175,7 +183,7 @@ message BuyAssetsRequest {
 }
 
 message BuyAsset {
-    uint64 asset_id = 1;
+    bytes asset_id = 1;
     google.protobuf.Timestamp starts_at_exactly = 2;
     google.protobuf.Timestamp stops_at_exactly = 3;
     uint32 bandwidth_exact = 4;
@@ -187,18 +195,18 @@ message BuyAssetsResponse {
 }
 
 message BoughtAsset {
-    uint64 asset_id = 1;
+    bytes asset_id = 1;
 }
 
 message RedeemAssetRequest {
     oneof interfaces {
         IngressEgressPair pair = 1;
-        uint64 if_pair_asset_id = 3;
+        bytes if_pair_asset_id = 3;
     }
 }
 message IngressEgressPair {
-    uint64 ingress_asset_id = 1;
-    uint64 egress_asset_id = 2;
+    bytes ingress_asset_id = 1;
+    bytes egress_asset_id = 2;
 }
 
 message RedeemAssetResponse {

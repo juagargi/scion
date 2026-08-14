@@ -168,11 +168,10 @@ def checkDispatchedPorts(marketplace_dir: Path, port: int) -> None:
         return
     start, end = int(match.group(1)), int(match.group(2))
     if not start <= port <= end:
-        raise SetupError(
-            f"the SCION API port {port} is outside the dispatched_ports range "
-            f"{ports} of {topology}; the marketplace would only receive SCION "
-            "packets through a shim dispatcher"
-        )
+        print("Warning: "
+        f"the SCION API port {port} is outside the dispatched_ports range "
+            f"{ports} of {topology}; the marketplace will only receive SCION "
+            "packets through a shim dispatcher")
 
 
 def loadStaticInfo(path: Path):
