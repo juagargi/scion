@@ -514,6 +514,8 @@ func (h *Handler) assetsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	assets, err := h.store.Search(r.Context(), &db.AssetQuery{
 		AccountId: &filterAccount.ID,
+		Page:      0,
+		PageSize:  1024, //TODO: add pagination also for GUI website
 	})
 	if err != nil {
 		log.Debug("User assets handler", "err", err)

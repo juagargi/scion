@@ -55,6 +55,7 @@ type MarketplaceInfo struct {
 	TransactionFeeAbsolute       uint64
 	SplitCombineFeeAbsolute      uint64
 	DelegationHourlyFee          uint64
+	MaxReturnedAssets            uint32
 }
 
 func databaseAssetID(id []byte) (int64, error) {
@@ -84,10 +85,11 @@ func NewService(ctx context.Context, info *MarketplaceInfo, store *storage.Marke
 			delegation.EncodingsToInts()
 			peer := s.newRedemptionServerPeer(delegation.IA)
 			err = s.startOrUpdateRedemptionDelegation(ctx, peer.ia, &RedemptionDelegationUpdate{
-				ExpirationTime:     delegation.Expiration,
-				ReservationIdLimit: delegation.ReservationIdLimit,
-				Key:                delegation.Key,
-				EncodingPoints:     delegation.EncodingsToInts(),
+				ExpirationTime: delegation.Expiration,
+				IdLimitLow:     delegation.ResIdLow,
+				IdLimitHigh:    delegation.ResIdHigh,
+				Key:            delegation.Key,
+				EncodingPoints: delegation.EncodingsToInts(),
 			}, false)
 			if err != nil {
 				return nil, err
@@ -631,6 +633,15 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 		tmp := addr.IA(*req.Msg.Ia)
 		ia = &tmp
 	}
+	page := uint32(0)
+	if req.Msg.Page != nil {
+		page = *req.Msg.Page
+	}
+	pageSize := s.info.MaxReturnedAssets
+	if req.Msg.MaxReturnedAssets != nil {
+		pageSize = min(pageSize, *req.Msg.MaxReturnedAssets)
+	}
+
 	assets, err := s.store.Search(ctx, &db.AssetQuery{
 		AccountId:            owner_id,
 		IA:                   ia,
@@ -640,6 +651,8 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 		Price:                req.Msg.Price,
 		StartsAt:             startsAt,
 		StopsAt:              stopsAt,
+		Page:                 page,
+		PageSize:             pageSize,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)

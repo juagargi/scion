@@ -299,7 +299,7 @@ func (e *executor) FindRedemptionDelegations(
 	if e.read == nil {
 		return nil, serrors.New("No database open")
 	}
-	stmt := `SELECT isd_id, as_id, res_id_limit, expiration, paid_until, key, encodings
+	stmt := `SELECT isd_id, as_id, res_id_limit_low, res_id_limit_high, expiration, paid_until, key, encodings
 			 FROM Redemption_Delegations WHERE expiration >= ?`
 	args := []any{time.Now().UTC().Format(time.RFC3339)}
 	rows, err := e.read.QueryContext(ctx, stmt, args...)
@@ -317,7 +317,8 @@ func (e *executor) FindRedemptionDelegations(
 		err = rows.Scan(
 			&isd,
 			&as,
-			&a.ReservationIdLimit,
+			&a.ResIdLow,
+			&a.ResIdHigh,
 			&expirationString,
 			&paidUntilString,
 			&a.Key,
@@ -346,7 +347,7 @@ func (e *executor) FindRedemptionDelegation(
 	if e.read == nil {
 		return nil, serrors.New("No database open")
 	}
-	stmt := `SELECT isd_id, as_id, res_id_limit, expiration, paid_until, key, encodings
+	stmt := `SELECT isd_id, as_id, res_id_limit_low, res_id_limit_high, expiration, paid_until, key, encodings
 			 FROM Redemption_Delegations
 			 WHERE expiration >= ? AND isd_id = ? AND as_id = ?`
 	rows, err := e.read.QueryContext(ctx, stmt, time.Now().Format(time.RFC3339), ia.ISD(), ia.AS())
@@ -365,7 +366,8 @@ func (e *executor) FindRedemptionDelegation(
 	err = rows.Scan(
 		&isd,
 		&as,
-		&a.ReservationIdLimit,
+		&a.ResIdLow,
+		&a.ResIdHigh,
 		&expirationString,
 		&paidUntilString,
 		&a.Key,
@@ -471,19 +473,21 @@ func (e *executor) CreateOrUpdateRedemptionDelegations(
 		return 0, serrors.New("No database open")
 	}
 	q := `INSERT INTO Redemption_Delegations
-		  (isd_id, as_id, res_id_limit, expiration, paid_until, key, encodings)
-		  VALUES (?,?,?,?,?,?,?)
+		  (isd_id, as_id, res_id_limit_low, res_id_limit_high, expiration, paid_until, key, encodings)
+		  VALUES (?,?,?,?,?,?,?,?)
 	ON CONFLICT(isd_id, as_id)
 	DO UPDATE SET
 		expiration = excluded.expiration,
 		paid_until = excluded.paid_until,
 		key = excluded.key,
 		encodings = excluded.encodings,
-		res_id_limit = excluded.res_id_limit;`
+		res_id_limit_low = excluded.res_id_limit_low
+		res_id_limit_high = excluded.res_id_limit_high;`
 	res, err := e.write.ExecContext(ctx, q,
 		r.IA.ISD(),
 		r.IA.AS(),
-		r.ReservationIdLimit,
+		r.ResIdLow,
+		r.ResIdHigh,
 		r.Expiration.UTC().Format(time.RFC3339),
 		r.PaidUntil.UTC().Format(time.RFC3339),
 		r.Key,
@@ -531,12 +535,13 @@ func (e *executor) FindUsedReservations(
 
 func (e *executor) buildUsedReservationsQuery(params *UsedReservationsQuery) (string, []any) {
 	query := `SELECT id, starts_at, stops_at FROM Reservations
-			  WHERE (isd_id = ?) AND (as_id = ?) AND (id < ?) AND (stops_at > ?)`
+			  WHERE (isd_id = ?) AND (as_id = ?) AND (id >= ?) AND (id < ?) AND (stops_at > ?)`
 
 	args := []any{
 		params.IA.ISD(),
 		params.IA.AS(),
-		params.Limit,
+		params.Limit_low,
+		params.Limit_high,
 		time.Now().UTC().Format(time.RFC3339),
 	}
 	return query, args
@@ -671,6 +676,8 @@ func (e *executor) buildSearchQuery(params *AssetQuery) (string, []any) {
 	}
 	query = append(query, fmt.Sprintf("WHERE %s", strings.Join(where, "AND\n")))
 	query = append(query, "ORDER BY LENGTH(a.id) ASC, a.id ASC")
+	query = append(query, "LIMIT ? OFFSET ?")
+	args = append(args, params.PageSize, params.Page*params.PageSize)
 	return strings.Join(query, "\n"), args
 }
 

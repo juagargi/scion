@@ -48,6 +48,7 @@ type RedemptionService struct {
 	client              *RedemptionServerPeer
 	store               *storage.MarketplaceStorage
 	cipher              cipher.Block
+	resStart            uint32
 	resLimit            uint32
 	resIdStore          ReservationIdStore
 	encodingPoints      []uint32
@@ -55,10 +56,11 @@ type RedemptionService struct {
 }
 
 type RedemptionDelegationUpdate struct {
-	ExpirationTime     time.Time
-	ReservationIdLimit uint32
-	Key                []byte
-	EncodingPoints     []uint32
+	ExpirationTime time.Time
+	IdLimitLow     uint32
+	IdLimitHigh    uint32
+	Key            []byte
+	EncodingPoints []uint32
 }
 
 type RedemptionDelegationUpdateResult struct {
@@ -67,9 +69,9 @@ type RedemptionDelegationUpdateResult struct {
 }
 
 type ReservationIdStore interface {
-	Init(limit uint32, r []*db.UsedReservation) error
+	Init(limit_low uint32, limit_high uint32, r []*db.UsedReservation) error
 	Next(now int64, start int64, end int64) (uint32, error)
-	Migrate(newLimit uint32, r []*db.UsedReservation) error
+	Migrate(new_limit_low uint32, new_limit_hight uint32, r []*db.UsedReservation) error
 	Close() error
 }
 
@@ -87,20 +89,22 @@ func NewRedemptionService(ctx context.Context, client *RedemptionServerPeer, sto
 		UpdateResultChannel: make(chan error),
 		store:               store,
 		cipher:              blockCipher,
-		resLimit:            initState.ReservationIdLimit,
+		resStart:            initState.IdLimitLow,
+		resLimit:            initState.IdLimitHigh,
 		encodingPoints:      initState.EncodingPoints,
 		client:              client,
 		expiration:          initState.ExpirationTime,
 		resIdStore:          &UsedIDStore{},
 	}
 	res, err := s.store.FindUsedReservations(ctx, &db.UsedReservationsQuery{
-		IA:    ia,
-		Limit: initState.ReservationIdLimit,
+		IA:         ia,
+		Limit_low:  initState.IdLimitLow,
+		Limit_high: initState.IdLimitHigh,
 	})
 	if err != nil {
 		return nil, err
 	}
-	err = s.resIdStore.Init(initState.ReservationIdLimit, res)
+	err = s.resIdStore.Init(initState.IdLimitLow, initState.IdLimitHigh, res)
 	if err != nil {
 		return nil, err
 	}
@@ -140,15 +144,16 @@ func (s *RedemptionService) handleUpdate(u *RedemptionDelegationUpdate) error {
 	var err error
 	if u.ExpirationTime != s.expiration {
 		res, err = s.store.FindUsedReservations(context.TODO(), &db.UsedReservationsQuery{
-			IA:    s.client.ia,
-			Limit: u.ReservationIdLimit,
+			IA:         s.client.ia,
+			Limit_low:  u.IdLimitLow,
+			Limit_high: u.IdLimitHigh,
 		})
 		if err != nil {
 			return err
 		}
 		s.expiration = u.ExpirationTime
 	}
-	err = s.resIdStore.Migrate(u.ReservationIdLimit, res)
+	err = s.resIdStore.Migrate(u.IdLimitLow, u.IdLimitHigh, res)
 	if err != nil {
 		return err
 	}
@@ -172,6 +177,7 @@ func (s *RedemptionService) handleRequest(now time.Time, r *hummingbird.RedeemAs
 	var buff [16]byte
 	ak := hbird.DeriveAuthKey(s.cipher, resId, encoded_bw, uint16(r.IngressId), uint16(r.EgressId), unixStart, uint16(durSeconds), buff[:])
 	s.client.mtx.Lock()
+	defer s.client.mtx.Unlock()
 	ch, ok := s.Pending[r.RequestId]
 	if ok {
 		ch <- &hummingbird.RedeemAssetFromASResponse{
@@ -188,7 +194,6 @@ func (s *RedemptionService) handleRequest(now time.Time, r *hummingbird.RedeemAs
 		close(ch)
 		delete(s.client.pending, r.RequestId)
 	}
-	s.client.mtx.Unlock()
 	return nil
 }
 
@@ -236,12 +241,14 @@ type UsedIDStore struct {
 	expirations ExpiryHeap
 	next        uint32
 	limit       uint32
+	base        uint32
 }
 
-func (s *UsedIDStore) Init(limit uint32, r []*db.UsedReservation) error {
+func (s *UsedIDStore) Init(limit_low uint32, limit_high uint32, r []*db.UsedReservation) error {
 	s.usedIds = make(map[uint32]struct{})
-	s.limit = limit
-	s.next = 0
+	s.base = limit_low
+	s.limit = limit_high
+	s.next = s.base
 	for _, res := range r {
 		s.usedIds[res.Id] = struct{}{}
 		s.expirations = append(s.expirations, &entry{
@@ -278,14 +285,17 @@ func (s *UsedIDStore) Next(now int64, start int64, end int64) (uint32, error) {
 	return 0, serrors.New("no free reservation id")
 }
 
-func (s *UsedIDStore) Migrate(newLimit uint32, r []*db.UsedReservation) error {
-	if s.next > newLimit {
+func (s *UsedIDStore) Migrate(new_limit_low uint32, new_limit_high uint32, r []*db.UsedReservation) error {
+	if s.next > new_limit_high {
 		return serrors.New("newLimit too small")
 	}
+	s.base = new_limit_low
+	s.limit = new_limit_high
+
 	if r != nil {
 		clear(s.usedIds)
 		clear(s.expirations)
-		s.next = 0
+		s.next = s.base
 		for _, res := range r {
 			s.usedIds[res.Id] = struct{}{}
 			s.expirations = append(s.expirations, &entry{
@@ -295,8 +305,6 @@ func (s *UsedIDStore) Migrate(newLimit uint32, r []*db.UsedReservation) error {
 		}
 		heap.Init(&s.expirations)
 	}
-
-	s.limit = newLimit
 	return nil
 }
 

@@ -67,6 +67,7 @@ type MarketplaceConfig struct {
 	DelegationHourlyFee          uint64  `toml:"delegation_hourly_fee,omitempty"`
 	DisableUserRegistration      bool    `toml:"disable_user_registration,omitempty"`
 	DisableASRegistration        bool    `toml:"disable_as_registration,omitempty"`
+	MaxRowsPerPage               uint32  `toml:"max_rows_per_page,omitempty"`
 }
 
 func (cfg *MarketplaceConfig) InitDefaults() {
@@ -81,6 +82,9 @@ func (cfg *MarketplaceConfig) InitDefaults() {
 	}
 	if cfg.StatisticsTimeGranularity == 0 {
 		cfg.StatisticsTimeGranularity = 86400
+	}
+	if cfg.MaxRowsPerPage == 0 {
+		cfg.MaxRowsPerPage = 64
 	}
 }
 func (cfg *MarketplaceConfig) Validate() error {

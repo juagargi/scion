@@ -257,7 +257,6 @@ func userInteraction() {
 		trcDir := readString(reader, "trc directory: ")
 		certDir := readString(reader, "certificate directory: ")
 		keyRingDir := readString(reader, "keyring directory: ")
-		fmt.Println("httpHost", clients.Authority)
 		regClient := registration.NewClient(accountClient, clients.Authority)
 		publisherToken, redemptionToken, err := regClient.RegisterWithNewSigner(ctx, localIA, trcDir, certDir, keyRingDir)
 		if err != nil {
@@ -351,6 +350,7 @@ func handleResetJwt(ctx context.Context, reader *bufio.Reader, c hummingbirdconn
 func handleDelegate(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect.RedemptionServiceClient) {
 	fmt.Println("Handle redemption delegation query")
 	expTime := readTime(reader, "Redemption until (2026-06-23T13:25:36Z): ")
+	idLowerBound := uint32(readUint64(reader, "Reservation ID lower bound: "))
 	idUpperBound := uint32(readUint64(reader, "Reservation ID upper bound: "))
 	hexStr := readString(reader, "Key in hexadecimal (a1b2c3): ")
 	key, err := hex.DecodeString(hexStr)
@@ -394,6 +394,7 @@ func handleDelegate(ctx context.Context, reader *bufio.Reader, c hummingbirdconn
 	resp, err := c.DelegateRedemption(ctx, &connect.Request[hummingbird.DelegateRedemptionRequest]{
 		Msg: &hummingbird.DelegateRedemptionRequest{
 			ExpirationTime:          timestamppb.New(expTime),
+			ReservationIdLowerBound: idLowerBound,
 			ReservationIdUpperBound: idUpperBound,
 			Key:                     key,
 			EncodingPoints:          encodings,

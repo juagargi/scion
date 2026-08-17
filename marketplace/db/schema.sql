@@ -67,7 +67,8 @@ CREATE TABLE IF NOT EXISTS Ases(
 CREATE TABLE IF NOT EXISTS Redemption_Delegations(
     isd_id INTEGER NOT NULL,
     as_id INTEGER NOT NULL,
-    res_id_limit INTEGER NOT NULL,
+    res_id_limit_low INTEGER DEFAULT 0,
+    res_id_limit_high INTEGER NOT NULL,
     expiration TEXT NOT NULL CHECK (expiration <= paid_until),
     paid_until TEXT NOT NULL,
     key BLOB NOT NULL,

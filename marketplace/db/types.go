@@ -57,11 +57,14 @@ type AssetQuery struct {
 	StartsAt             *string
 	StopsAt              *string
 	Price                *uint32
+	Page                 uint32
+	PageSize             uint32
 }
 
 type UsedReservationsQuery struct {
-	IA    addr.IA
-	Limit uint32
+	IA         addr.IA
+	Limit_low  uint32
+	Limit_high uint32
 }
 
 type UsedReservation struct {
@@ -71,12 +74,13 @@ type UsedReservation struct {
 }
 
 type RedemptionDelegation struct {
-	IA                 addr.IA
-	Expiration         time.Time
-	PaidUntil          time.Time
-	ReservationIdLimit uint32
-	Key                []byte
-	Encodings          []byte
+	IA         addr.IA
+	Expiration time.Time
+	PaidUntil  time.Time
+	ResIdLow   uint32
+	ResIdHigh  uint32
+	Key        []byte
+	Encodings  []byte
 }
 
 type ReservationQuery struct {

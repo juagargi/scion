@@ -160,7 +160,8 @@ Example JSON file:
     "delegations": [
         {
             "ia": "1-ff00:0:110",
-            "res_id_limit": 100000,
+            "res_id_limit_low": 0,
+            "res_id_limit_high": 100000,
             "expiration": "2027-01-01T00:00:00Z",
             "paid_until": "2027-01-01T00:00:00Z",
             "key": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
@@ -530,11 +531,11 @@ def insertDelegations(db, delegations):
         )
     db.executemany(
         """
-        INSERT OR REPLACE INTO Redemption_Delegations (isd_id, as_id, res_id_limit, expiration, paid_until, key, encodings)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO Redemption_Delegations (isd_id, as_id, res_id_limit_low, res_id_limit_high, expiration, paid_until, key, encodings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
-            (u.get("isd_id"), u.get("as_id"), u.get("res_id_limit"), u.get("expiration"), u.get("paid_until"), u.get("key_bytes"),u.get("encoding_bytes"))
+            (u.get("isd_id"), u.get("as_id"), u.get("res_id_limit_low"), u.get("res_id_limit_high"), u.get("expiration"), u.get("paid_until"), u.get("key_bytes"),u.get("encoding_bytes"))
             for u in delegations
         ],
     )

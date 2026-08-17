@@ -30,7 +30,7 @@ func TestIDStore(t *testing.T) {
 	b := base.Unix()
 	assert.NoError(t, err)
 	store := marketplace.UsedIDStore{}
-	err = store.Init(3, []*db.UsedReservation{
+	err = store.Init(0, 3, []*db.UsedReservation{
 		{
 			Id:       0,
 			StartsAt: base,

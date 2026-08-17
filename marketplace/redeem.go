@@ -84,10 +84,11 @@ func (s *Service) startOrUpdateRedemptionDelegation(ctx context.Context, clientI
 		s.redemptionServerPeers[clientID] = client
 		if dbSync {
 			dbDelegation := &db.RedemptionDelegation{
-				IA:                 clientID,
-				Expiration:         state.ExpirationTime,
-				ReservationIdLimit: state.ReservationIdLimit,
-				Key:                state.Key,
+				IA:         clientID,
+				Expiration: state.ExpirationTime,
+				ResIdLow:   state.IdLimitLow,
+				ResIdHigh:  state.IdLimitHigh,
+				Key:        state.Key,
 			}
 			dbDelegation.EncodeInts(state.EncodingPoints)
 			_, err = s.store.CreateOrUpdateRedemptionDelegations(ctx, dbDelegation)
@@ -106,10 +107,11 @@ func (s *Service) startOrUpdateRedemptionDelegation(ctx context.Context, clientI
 		defer client.mtx.Unlock()
 		if dbSync {
 			dbDelegation := &db.RedemptionDelegation{
-				IA:                 clientID,
-				Expiration:         state.ExpirationTime,
-				ReservationIdLimit: state.ReservationIdLimit,
-				Key:                state.Key,
+				IA:         clientID,
+				Expiration: state.ExpirationTime,
+				ResIdLow:   state.IdLimitLow,
+				ResIdHigh:  state.IdLimitHigh,
+				Key:        state.Key,
 			}
 			dbDelegation.EncodeInts(state.EncodingPoints)
 			_, err = s.store.CreateOrUpdateRedemptionDelegations(ctx, dbDelegation)
@@ -131,10 +133,11 @@ func (s *Service) startOrUpdateRedemptionDelegation(ctx context.Context, clientI
 		}
 		if dbSync {
 			dbDelegation := &db.RedemptionDelegation{
-				IA:                 clientID,
-				Expiration:         state.ExpirationTime,
-				ReservationIdLimit: state.ReservationIdLimit,
-				Key:                state.Key,
+				IA:         clientID,
+				Expiration: state.ExpirationTime,
+				ResIdLow:   state.IdLimitLow,
+				ResIdHigh:  state.IdLimitHigh,
+				Key:        state.Key,
 			}
 			dbDelegation.EncodeInts(state.EncodingPoints)
 			_, err = s.store.CreateOrUpdateRedemptionDelegations(ctx, dbDelegation)
@@ -193,10 +196,11 @@ func (s *Service) DelegateRedemption(ctx context.Context, req *connect.Request[h
 		}, nil
 	}
 	err := s.startOrUpdateRedemptionDelegation(ctx, clientID, &RedemptionDelegationUpdate{
-		ExpirationTime:     req.Msg.ExpirationTime.AsTime(),
-		ReservationIdLimit: req.Msg.ReservationIdUpperBound,
-		Key:                req.Msg.Key,
-		EncodingPoints:     req.Msg.EncodingPoints,
+		ExpirationTime: req.Msg.ExpirationTime.AsTime(),
+		IdLimitLow:     req.Msg.ReservationIdLowerBound,
+		IdLimitHigh:    req.Msg.ReservationIdUpperBound,
+		Key:            req.Msg.Key,
+		EncodingPoints: req.Msg.EncodingPoints,
 	}, true)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
