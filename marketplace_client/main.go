@@ -83,7 +83,7 @@ type HummingbirdNoteEntry struct {
 	Name     string `json:"name"`
 	Protocol string `json:"protocol"`
 	Api      string `json:"api"`
-	Website  string `json:"website"`
+	Website  string `json:"client_registration_website"`
 }
 
 func discoverMarketplaces(ctx context.Context, reader *bufio.Reader) (*HummingbirdNoteEntry, error) {
@@ -680,7 +680,7 @@ func handleCombine(ctx context.Context, reader *bufio.Reader, c hummingbirdconne
 		fmt.Println(err)
 		return
 	}
-	fmt.Printf("assets combined into %d\n", resp.Msg.AssetId)
+	fmt.Printf("assets combined into %s\n", hex.EncodeToString(resp.Msg.AssetId))
 }
 func handleReservation(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect.MarketplaceServiceClient) {
 	var ia *uint64
@@ -751,7 +751,6 @@ func handleReservation(ctx context.Context, reader *bufio.Reader, c hummingbirdc
 
 func handleRedeem(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect.MarketplaceServiceClient) {
 	fmt.Println("Redeem Query.")
-	var err error
 	option := readOptionalUint32(reader, "Select option:\n0: ingress and egress assets\n1: interface-pair asset:\n")
 	var rep *connect.Response[hummingbird.RedeemAssetResponse]
 	if option == nil {
@@ -780,6 +779,10 @@ func handleRedeem(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 				},
 			},
 		})
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 	} else if *option == 1 {
 		assetID, err := readAssetID(reader, "Interface-pair Asset ID: ")
 		if err != nil {
@@ -796,11 +799,11 @@ func handleRedeem(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 				},
 			},
 		})
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 	} else {
-		return
-	}
-	if err != nil {
-		fmt.Println(err)
 		return
 	}
 	fmt.Println("Redemption Result:")
@@ -868,11 +871,13 @@ func handleBuy(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect.M
 				continue
 			}
 			fmt.Printf("Bought assets for a total cost of %d\n", rep.Msg.Cost)
-			fmt.Print("[")
-			for _, boughtAsset := range rep.Msg.Assets {
-				fmt.Printf("%d,", boughtAsset.AssetId)
+			for i, boughtAsset := range rep.Msg.Assets {
+				if i > 0 {
+					fmt.Print(", ")
+				}
+				fmt.Print(hex.EncodeToString(boughtAsset.AssetId))
 			}
-			fmt.Print("]\n")
+			fmt.Print("\n")
 			return
 		case option == "cancel":
 			return
@@ -978,7 +983,7 @@ func handleInfo(ctx context.Context, c hummingbirdconnect.MarketplaceServiceClie
 
 func readConfirm(reader *bufio.Reader, prompt *string) bool {
 	if prompt != nil {
-		fmt.Print(prompt)
+		fmt.Print(*prompt)
 	} else {
 		fmt.Print("Confirm [yes,no]: ")
 	}

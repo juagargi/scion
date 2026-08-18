@@ -132,13 +132,13 @@ def marketplaceEntries(ia_colons: str, endpoints: Endpoints):
             "name": "Test Market",
             "protocol": "connectrpc/TLS/QUIC/SCION",
             "api": f"[{ia_colons},{endpoints.host}]:{endpoints.scion_port}",
-            "website": website,
+            "client_registration_website": website,
         },
         {
             "name": "Test Market",
             "protocol": "connectrpc/TLS/TCP",
             "api": website,
-            "website": website,
+            "client_registration_website": website,
         },
     ]
 
