@@ -49,6 +49,9 @@ type RequestMap map[addr.IA]RedemptionRequest
 // RoundUpDuration rounds duration up to the next multiple. A non-positive
 // multiple leaves duration unchanged.
 func RoundUpDuration(duration, multiple time.Duration) time.Duration {
+	if duration == 0 {
+		return multiple
+	}
 	if multiple <= 0 {
 		return duration
 	}

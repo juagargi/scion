@@ -77,3 +77,16 @@ CREATE TABLE IF NOT EXISTS Redemption_Delegations(
     PRIMARY KEY(isd_id, as_id)
 );
 CREATE INDEX IF NOT EXISTS idx_redemption_expiration ON Redemption_Delegations(expiration);
+CREATE TABLE IF NOT EXISTS Asset_Events(
+    isd_id INTEGER NOT NULL,
+    as_id INTEGER NOT NULL,
+    ingress INTEGER,
+    egress INTEGER,
+    bandwidth INTEGER NOT NULL,
+    starts_at TEXT NOT NULL,
+    stops_at TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    event_type INTEGER NOT NULL,
+    event_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_asset_events ON Asset_Events(event_type, isd_id, as_id, stops_at, starts_at);

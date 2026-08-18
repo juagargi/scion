@@ -747,7 +747,7 @@ func (c *MarketplaceClient) ObtainReservationsForInterfacePairs(
 	foundAssetsMap := make(map[uint64][]*hummingbird.SearchAsset)
 	for _, boughtAsset := range boughtAssets {
 		for _, foundAsset := range foundAssets {
-			if bytes.Compare(boughtAsset.AssetId, foundAsset.AssetId) == 0 {
+			if bytes.Equal(boughtAsset.AssetId, foundAsset.AssetId) {
 				currentSlice, found := foundAssetsMap[foundAsset.Ia]
 				if found {
 					foundAssetsMap[foundAsset.Ia] = append(currentSlice, foundAsset)

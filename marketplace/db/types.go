@@ -35,6 +35,13 @@ const (
 	AssetStateCombinePending
 )
 
+type AssetEventType int
+
+const (
+	AssetPublished AssetEventType = iota
+	AssetBought
+)
+
 // AssetID is the unsigned representation of an asset identifier used by the
 // marketplace API.
 type AssetID uint64
@@ -104,7 +111,6 @@ type DBStat struct {
 	Bandwidth int64
 	StartsAt  time.Time
 	StopsAt   time.Time
-	OwnerId   sql.NullInt64
 }
 
 type DBReservation struct {

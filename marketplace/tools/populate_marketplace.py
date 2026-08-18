@@ -18,7 +18,7 @@ are owned by the main account of that user.
 
 Example JSON file:
 {
-    "version": "390412f2780897af26f11debb387aed30a2e52eefcca33d9fc204b9f1217011b",
+    "version": "ed2a98d8b4293e3572981790d28037e7a6cdbd0a2ecde3398eec3ec4e521d502",
     "users": [
         {
             "name": "Alice",
@@ -445,6 +445,20 @@ def insertAssets(db, assets) -> bool:
             return False
         a["isd_id"] = isd_id
         a["as_id"] = as_id
+        db.execute(
+            """
+            INSERT INTO Asset_Events (event_type, isd_id, as_id, ingress, egress, bandwidth, starts_at, stops_at, price)
+            VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (a.get("isd_id") , a.get("as_id"),  a.get("ingress"), a.get("egress"), a.get("bandwidth"), a.get("starts_at"), a.get("stops_at"), a.get("price"))
+        )
+        if a.get("owner") is not None:
+            db.execute(
+                """
+                INSERT INTO Asset_Events (event_type, isd_id, as_id, ingress, egress, bandwidth, starts_at, stops_at, price)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (a.get("isd_id") , a.get("as_id"),  a.get("ingress"), a.get("egress"), a.get("bandwidth"), a.get("starts_at"), a.get("stops_at"), a.get("price"))
+            )
+        
     db.executemany(
         """
         INSERT INTO Assets (isd_id, as_id, bandwidth, bandwidth_min, bandwidth_max, price, time_granularity, time_min_duration, time_max_duration, starts_at, stops_at, ingress, egress, account_id)

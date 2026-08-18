@@ -91,7 +91,19 @@ func (s *MarketplaceStorage) PublishAsset(
 	if err != nil {
 		return 0, err
 	}
-	return s.db.InsertAsset(ctx, a)
+	var assetId int64
+	err = s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
+		assetId, err = tx.InsertAsset(ctx, a)
+		if err != nil {
+			return err
+		}
+		_, err := tx.RegisterAssetEvent(ctx, a, marketplacedb.AssetPublished)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return assetId, err
 }
 func (s *MarketplaceStorage) UpdateListedAsset(
 	ctx context.Context,
@@ -550,7 +562,7 @@ func (s *MarketplaceStorage) SplitAsset(
 func (s *MarketplaceStorage) Statistics(
 	ctx context.Context,
 	params *marketplacedb.StatisticsQuery,
-) ([]*marketplacedb.DBStat, error) {
+) ([]*marketplacedb.DBStat, []*marketplacedb.DBStat, error) {
 	return s.db.SearchAssetsForStatistics(ctx, params)
 }
 
@@ -627,6 +639,11 @@ func (s *MarketplaceStorage) BuyAssets(
 				Price:           dbAsset.Price,
 			}
 			id, err := tx.InsertAsset(ctx, newAsset)
+			if err != nil {
+				return err
+			}
+			newAsset.ID = id
+			_, err = tx.RegisterAssetEvent(ctx, newAsset, marketplacedb.AssetBought)
 			if err != nil {
 				return err
 			}
