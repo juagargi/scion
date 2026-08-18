@@ -335,7 +335,7 @@ func handleResetJwt(ctx context.Context, reader *bufio.Reader, c hummingbirdconn
 	if t == Publisher || t == RedemptionService {
 		fmt.Println("Warning! Reseting the Token will also terminate the connection between the marketplace and the redemption service!")
 	}
-	if !readConfirm(reader) {
+	if !readConfirm(reader, nil) {
 		return false
 	}
 	_, err := c.ResetJWT(ctx, &connect.Request[hummingbird.JWTResetRequest]{})
@@ -387,7 +387,7 @@ func handleDelegate(ctx context.Context, reader *bufio.Reader, c hummingbirdconn
 		}
 		encodings[i] = uint32(v)
 	}
-	if !readConfirm(reader) {
+	if !readConfirm(reader, nil) {
 		return
 	}
 
@@ -420,7 +420,7 @@ func handlePublish(ctx context.Context, reader *bufio.Reader, c hummingbirdconne
 		TimeMinDuration: uint32(readUint64(reader, "minimum time duration: ")),
 		TimeGranularity: uint32(readUint64(reader, "time granularity: ")),
 	}
-	if !readConfirm(reader) {
+	if !readConfirm(reader, nil) {
 		return
 	}
 	resp, err := c.PublishAsset(ctx, &connect.Request[hummingbird.PublishAssetRequest]{
@@ -513,7 +513,7 @@ func handleUpdate(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 				fmt.Printf("%d:%s\n", index, string(jsonAsset))
 			}
 		case option == "submit":
-			if !readConfirm(reader) {
+			if !readConfirm(reader, nil) {
 				continue
 			}
 			rep, err := c.UpdateAssets(ctx, &connect.Request[hummingbird.UpdateAssetsRequest]{
@@ -561,7 +561,7 @@ func handleStatistics(ctx context.Context, reader *bufio.Reader, c hummingbirdco
 	stepSize := readUint64(reader, "Step size: ")
 	ingress := readOptionalUint32(reader, "Ingress: ")
 	egress := readOptionalUint32(reader, "Egress: ")
-	if !readConfirm(reader) {
+	if !readConfirm(reader, nil) {
 		return
 	}
 	resp, err := c.Statistics(ctx, &connect.Request[hummingbird.StatisticsRequest]{
@@ -639,7 +639,7 @@ func handleSplit(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect
 		fmt.Println("invalid split option.")
 		return
 	}
-	if !readConfirm(reader) {
+	if !readConfirm(reader, nil) {
 		return
 	}
 	resp, err := c.SplitAsset(ctx, &connect.Request[hummingbird.SplitAssetRequest]{
@@ -668,7 +668,7 @@ func handleCombine(ctx context.Context, reader *bufio.Reader, c hummingbirdconne
 		}
 		assetIds = append(assetIds, assetId)
 	}
-	if !readConfirm(reader) {
+	if !readConfirm(reader, nil) {
 		return
 	}
 	resp, err := c.CombineAssets(ctx, &connect.Request[hummingbird.CombineAssetRequest]{
@@ -767,7 +767,7 @@ func handleRedeem(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 			fmt.Println(err)
 			return
 		}
-		if !readConfirm(reader) {
+		if !readConfirm(reader, nil) {
 			return
 		}
 		rep, err = c.RedeemAsset(ctx, &connect.Request[hummingbird.RedeemAssetRequest]{
@@ -786,7 +786,7 @@ func handleRedeem(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 			fmt.Println(err)
 			return
 		}
-		if !readConfirm(reader) {
+		if !readConfirm(reader, nil) {
 			return
 		}
 		rep, err = c.RedeemAsset(ctx, &connect.Request[hummingbird.RedeemAssetRequest]{
@@ -854,7 +854,7 @@ func handleBuy(ctx context.Context, reader *bufio.Reader, c hummingbirdconnect.M
 			}
 		case option == "submit":
 			maxPrice := readUint64(reader, "Max Price: ")
-			if !readConfirm(reader) {
+			if !readConfirm(reader, nil) {
 				continue
 			}
 			rep, err := c.BuyAssets(ctx, &connect.Request[hummingbird.BuyAssetsRequest]{
@@ -917,37 +917,43 @@ func handleSearch(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 	if stopsAtEarliest != nil {
 		msg.StopsAtEarliest = timestamppb.New(*stopsAtEarliest)
 	}
-	rep, err := c.SearchAssets(ctx, &connect.Request[hummingbird.SearchAssetsRequest]{
-		Msg: msg,
-	})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	transformed := make([]Asset, 0, len(rep.Msg.Assets))
-	for _, asset := range rep.Msg.Assets {
-
-		transformed = append(transformed, Asset{
-			ID:              hex.EncodeToString(asset.AssetId),
-			IA:              addr.IA(asset.Ia),
-			Bandwidth:       asset.Bandwidth,
-			BandwidthMin:    asset.BandwidthMin,
-			BandwidthMax:    asset.BandwidthMax,
-			TimeMinDuration: asset.TimeMinDuration,
-			StartAt:         asset.StartsAt.AsTime(),
-			StopsAt:         asset.StopsAt.AsTime(),
-			Price:           asset.Price,
-			IfIdIngress:     asset.IfIdIngress,
-			IfIdEgress:      asset.IfIdEgress,
-			TimeGranularity: asset.TimeGranularity,
+	for page := uint32(0); ; page++ {
+		msg.Page = &page
+		rep, err := c.SearchAssets(ctx, &connect.Request[hummingbird.SearchAssetsRequest]{
+			Msg: msg,
 		})
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		transformed := make([]Asset, 0, len(rep.Msg.Assets))
+		for _, asset := range rep.Msg.Assets {
+			transformed = append(transformed, Asset{
+				ID:              hex.EncodeToString(asset.AssetId),
+				IA:              addr.IA(asset.Ia),
+				Bandwidth:       asset.Bandwidth,
+				BandwidthMin:    asset.BandwidthMin,
+				BandwidthMax:    asset.BandwidthMax,
+				TimeMinDuration: asset.TimeMinDuration,
+				StartAt:         asset.StartsAt.AsTime(),
+				StopsAt:         asset.StopsAt.AsTime(),
+				Price:           asset.Price,
+				IfIdIngress:     asset.IfIdIngress,
+				IfIdEgress:      asset.IfIdEgress,
+				TimeGranularity: asset.TimeGranularity,
+			})
+		}
+		j, err := json.MarshalIndent(transformed, "", "\t")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(string(j))
+		prompt := "More assets? [yes, no]: "
+		if !readConfirm(reader, &prompt) {
+			return
+		}
 	}
-	j, err := json.MarshalIndent(transformed, "", "\t")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(string(j))
 }
 
 func handleInfo(ctx context.Context, c hummingbirdconnect.MarketplaceServiceClient) {
@@ -970,8 +976,12 @@ func handleInfo(ctx context.Context, c hummingbirdconnect.MarketplaceServiceClie
 	fmt.Printf("Statistics granularity: %s\n", (time.Duration(info.Msg.MaxStatisticsGranularity) * time.Second).String())
 }
 
-func readConfirm(reader *bufio.Reader) bool {
-	fmt.Print("Confirm [yes,no]: ")
+func readConfirm(reader *bufio.Reader, prompt *string) bool {
+	if prompt != nil {
+		fmt.Print(prompt)
+	} else {
+		fmt.Print("Confirm [yes,no]: ")
+	}
 	text, _ := reader.ReadString('\n')
 	text = strings.TrimSpace(text)
 	text = strings.ToLower(text)
