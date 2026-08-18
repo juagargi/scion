@@ -68,6 +68,7 @@ type MarketplaceConfig struct {
 	DisableUserRegistration      bool    `toml:"disable_user_registration,omitempty"`
 	DisableASRegistration        bool    `toml:"disable_as_registration,omitempty"`
 	MaxRowsPerPage               uint32  `toml:"max_rows_per_page,omitempty"`
+	AssetValidityMax             uint32  `toml:"asset_validity_max,omitempty"`
 }
 
 func (cfg *MarketplaceConfig) InitDefaults() {
@@ -85,6 +86,9 @@ func (cfg *MarketplaceConfig) InitDefaults() {
 	}
 	if cfg.MaxRowsPerPage == 0 {
 		cfg.MaxRowsPerPage = 64
+	}
+	if cfg.AssetValidityMax == 0 {
+		cfg.AssetValidityMax = 60 * 60 * 24 * 365 // 1 year
 	}
 }
 func (cfg *MarketplaceConfig) Validate() error {

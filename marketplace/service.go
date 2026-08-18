@@ -56,6 +56,7 @@ type MarketplaceInfo struct {
 	SplitCombineFeeAbsolute      uint64
 	DelegationHourlyFee          uint64
 	MaxReturnedAssets            uint32
+	AssetValidityMax             uint32
 }
 
 func databaseAssetID(id []byte) (int64, error) {
@@ -256,6 +257,7 @@ func (s *Service) Info(context.Context, *connect.Request[hummingbird.Marketplace
 			TransactionFeeAbsolute:       s.info.TransactionFeeAbsolute,
 			SplitCombineFeeAbsolute:      s.info.SplitCombineFeeAbsolute,
 			DelegationHourlyFee:          s.info.DelegationHourlyFee,
+			AssetValidityMax:             s.info.AssetValidityMax,
 		},
 	}, nil
 }
@@ -266,7 +268,7 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("ia not provided"))
 	}
-	handleAsset := func(update *hummingbird.AssetUpdate) (uint64, error) {
+	handleAsset := func(update *hummingbird.AssetUpdate) (int64, error) {
 		assetId, err := databaseAssetID(update.AssetId)
 		if err != nil {
 			return 0, err
@@ -293,6 +295,10 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 				Price:           t.Update.Price,
 				TimeGranularity: t.Update.TimeGranularity,
 				TimeMinDuration: t.Update.TimeMinDuration,
+				TimeMaxDuration: t.Update.TimeMaxDuration,
+			}
+			if dbAsset.StopsAt.After(time.Now().Add(time.Duration(s.info.AssetValidityMax) * time.Second)) {
+				return 0, serrors.New("validity outside allowed range")
 			}
 			if t.Update.IfIdIngress != nil {
 				dbAsset.IfIdIngress = sql.NullInt32{
@@ -310,9 +316,9 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 			if err != nil {
 				return 0, err
 			}
-			return uint64(newId), nil
+			return newId, nil
 		default:
-			return 0, serrors.New("unkown update")
+			return 0, serrors.New("unknown update")
 		}
 	}
 	res := make([]*hummingbird.UpdateAssetResult, 0, len(req.Msg.Assets))
@@ -327,7 +333,7 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 		} else {
 			res = append(res, &hummingbird.UpdateAssetResult{
 				ResultType: &hummingbird.UpdateAssetResult_NewId{
-					NewId: newId,
+					NewId: protoAssetID(newId),
 				},
 			})
 		}
@@ -357,6 +363,9 @@ func (s *Service) PublishAsset(ctx context.Context, req *connect.Request[humming
 		TimeMinDuration: req.Msg.Asset.TimeMinDuration,
 		IfIdIngress:     sql.NullInt32{},
 		IfIdEgress:      sql.NullInt32{},
+	}
+	if dbAsset.StopsAt.After(time.Now().Add(time.Duration(s.info.AssetValidityMax) * time.Second)) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("validity outside allowed range"))
 	}
 	if !dbAsset.StopsAt.After(dbAsset.StartAt) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("stopsAt must come after startsAt"))
@@ -666,6 +675,7 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 			BandwidthMin:    asset.BandwidthMin,
 			BandwidthMax:    asset.BandwidthMax,
 			TimeMinDuration: asset.TimeMinDuration,
+			TimeMaxDuration: asset.TimeMaxDuration,
 			StartsAt:        timestamppb.New(asset.StartAt),
 			StopsAt:         timestamppb.New(asset.StopsAt),
 			TimeGranularity: asset.TimeGranularity,

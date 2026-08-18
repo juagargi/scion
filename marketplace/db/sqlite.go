@@ -141,9 +141,9 @@ var _ MarketplaceDB = (*Backend)(nil)
 
 const (
 	assetColumns = `id, account_id, isd_id, as_id, bandwidth, bandwidth_min, bandwidth_max, price,
-	time_granularity, time_min_duration, starts_at, stops_at, ingress, egress`
+	time_granularity, time_min_duration, time_max_duration, starts_at, stops_at, ingress, egress`
 	assetColumnsWithAlias = `a.id, a.account_id, a.isd_id, a.as_id, a.bandwidth, a.bandwidth_min,
-	a.bandwidth_max, a.price, a.time_granularity, a.time_min_duration, a.starts_at, a.stops_at,
+	a.bandwidth_max, a.price, a.time_granularity, a.time_min_duration, a.time_max_duration, a.starts_at, a.stops_at,
 	a.ingress, a.egress`
 )
 
@@ -168,6 +168,7 @@ func scanAsset(row rowScanner) (*DBAsset, error) {
 		&asset.Price,
 		&asset.TimeGranularity,
 		&asset.TimeMinDuration,
+		&asset.TimeMaxDuration,
 		&startsAt,
 		&stopsAt,
 		&asset.IfIdIngress,
@@ -749,9 +750,9 @@ func (e *executor) InsertAsset(ctx context.Context, a *DBAsset) (int64, error) {
 	var err error
 	if a.AccountId.Valid {
 		inst := `INSERT INTO Assets (isd_id, as_id, bandwidth, bandwidth_min, bandwidth_max,
-				 price, time_granularity, time_min_duration, starts_at, stops_at,
+				 price, time_granularity, time_min_duration, time_max_duration, starts_at, stops_at,
 				 ingress, egress, account_id)
-				 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
+				 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 		res, err = e.write.ExecContext(ctx, inst,
 			a.IA.ISD(),
 			a.IA.AS(),
@@ -761,6 +762,7 @@ func (e *executor) InsertAsset(ctx context.Context, a *DBAsset) (int64, error) {
 			a.Price,
 			a.TimeGranularity,
 			a.TimeMinDuration,
+			a.TimeMaxDuration,
 			a.StartAt.UTC().Format(time.RFC3339),
 			a.StopsAt.UTC().Format(time.RFC3339),
 			a.IfIdIngress,
@@ -768,8 +770,8 @@ func (e *executor) InsertAsset(ctx context.Context, a *DBAsset) (int64, error) {
 			a.AccountId)
 	} else {
 		inst := `INSERT INTO Assets (isd_id, as_id, bandwidth, bandwidth_min, bandwidth_max,
-				 price, time_granularity, time_min_duration, starts_at, stops_at, ingress, egress)
-				 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
+				 price, time_granularity, time_min_duration, time_max_duration, starts_at, stops_at, ingress, egress)
+				 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
 		res, err = e.write.ExecContext(ctx, inst,
 			a.IA.ISD(), a.IA.AS(),
 			a.Bandwidth,
@@ -778,6 +780,7 @@ func (e *executor) InsertAsset(ctx context.Context, a *DBAsset) (int64, error) {
 			a.Price,
 			a.TimeGranularity,
 			a.TimeMinDuration,
+			a.TimeMaxDuration,
 			a.StartAt.UTC().Format(time.RFC3339),
 			a.StopsAt.UTC().Format(time.RFC3339),
 			a.IfIdIngress,

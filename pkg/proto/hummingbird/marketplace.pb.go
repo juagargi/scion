@@ -330,13 +330,13 @@ func (x *UpdateAssetResult) GetResultType() isUpdateAssetResult_ResultType {
 	return nil
 }
 
-func (x *UpdateAssetResult) GetNewId() uint64 {
+func (x *UpdateAssetResult) GetNewId() []byte {
 	if x != nil {
 		if x, ok := x.ResultType.(*UpdateAssetResult_NewId); ok {
 			return x.NewId
 		}
 	}
-	return 0
+	return nil
 }
 
 func (x *UpdateAssetResult) GetError() string {
@@ -353,7 +353,7 @@ type isUpdateAssetResult_ResultType interface {
 }
 
 type UpdateAssetResult_NewId struct {
-	NewId uint64 `protobuf:"varint,1,opt,name=new_id,json=newId,proto3,oneof"`
+	NewId []byte `protobuf:"bytes,1,opt,name=new_id,json=newId,proto3,oneof"`
 }
 
 type UpdateAssetResult_Error struct {
@@ -1113,7 +1113,8 @@ type PublisherAsset struct {
 	StopsAt         *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=stops_at,json=stopsAt,proto3" json:"stops_at,omitempty"`
 	TimeGranularity uint32                 `protobuf:"varint,8,opt,name=time_granularity,json=timeGranularity,proto3" json:"time_granularity,omitempty"`
 	TimeMinDuration uint32                 `protobuf:"varint,9,opt,name=time_min_duration,json=timeMinDuration,proto3" json:"time_min_duration,omitempty"`
-	Price           uint32                 `protobuf:"varint,10,opt,name=price,proto3" json:"price,omitempty"`
+	TimeMaxDuration uint32                 `protobuf:"varint,10,opt,name=time_max_duration,json=timeMaxDuration,proto3" json:"time_max_duration,omitempty"`
+	Price           uint32                 `protobuf:"varint,11,opt,name=price,proto3" json:"price,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1207,6 +1208,13 @@ func (x *PublisherAsset) GetTimeGranularity() uint32 {
 func (x *PublisherAsset) GetTimeMinDuration() uint32 {
 	if x != nil {
 		return x.TimeMinDuration
+	}
+	return 0
+}
+
+func (x *PublisherAsset) GetTimeMaxDuration() uint32 {
+	if x != nil {
+		return x.TimeMaxDuration
 	}
 	return 0
 }
@@ -1391,7 +1399,8 @@ type SearchAsset struct {
 	StopsAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=stops_at,json=stopsAt,proto3" json:"stops_at,omitempty"`
 	TimeGranularity uint32                 `protobuf:"varint,10,opt,name=time_granularity,json=timeGranularity,proto3" json:"time_granularity,omitempty"`
 	TimeMinDuration uint32                 `protobuf:"varint,11,opt,name=time_min_duration,json=timeMinDuration,proto3" json:"time_min_duration,omitempty"`
-	Price           uint32                 `protobuf:"varint,12,opt,name=price,proto3" json:"price,omitempty"`
+	TimeMaxDuration uint32                 `protobuf:"varint,12,opt,name=time_max_duration,json=timeMaxDuration,proto3" json:"time_max_duration,omitempty"`
+	Price           uint32                 `protobuf:"varint,13,opt,name=price,proto3" json:"price,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1499,6 +1508,13 @@ func (x *SearchAsset) GetTimeGranularity() uint32 {
 func (x *SearchAsset) GetTimeMinDuration() uint32 {
 	if x != nil {
 		return x.TimeMinDuration
+	}
+	return 0
+}
+
+func (x *SearchAsset) GetTimeMaxDuration() uint32 {
+	if x != nil {
+		return x.TimeMaxDuration
 	}
 	return 0
 }
@@ -2180,7 +2196,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x14UpdateAssetsResponse\x12?\n" +
 	"\x06result\x18\x01 \x03(\v2'.proto.hummingbird.v1.UpdateAssetResultR\x06result\"S\n" +
 	"\x11UpdateAssetResult\x12\x17\n" +
-	"\x06new_id\x18\x01 \x01(\x04H\x00R\x05newId\x12\x16\n" +
+	"\x06new_id\x18\x01 \x01(\fH\x00R\x05newId\x12\x16\n" +
 	"\x05error\x18\x02 \x01(\tH\x00R\x05errorB\r\n" +
 	"\vresult_type\"\xfa\x01\n" +
 	"\x11StatisticsRequest\x12'\n" +
@@ -2233,7 +2249,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x13PublishAssetRequest\x12:\n" +
 	"\x05asset\x18\x01 \x01(\v2$.proto.hummingbird.v1.PublisherAssetR\x05asset\"1\n" +
 	"\x14PublishAssetResponse\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\fR\aassetId\"\xc8\x03\n" +
+	"\basset_id\x18\x01 \x01(\fR\aassetId\"\xf4\x03\n" +
 	"\x0ePublisherAsset\x12'\n" +
 	"\rif_id_ingress\x18\x01 \x01(\rH\x00R\vifIdIngress\x88\x01\x01\x12%\n" +
 	"\fif_id_egress\x18\x02 \x01(\rH\x01R\n" +
@@ -2244,9 +2260,10 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\tstarts_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bstartsAt\x125\n" +
 	"\bstops_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\astopsAt\x12)\n" +
 	"\x10time_granularity\x18\b \x01(\rR\x0ftimeGranularity\x12*\n" +
-	"\x11time_min_duration\x18\t \x01(\rR\x0ftimeMinDuration\x12\x14\n" +
-	"\x05price\x18\n" +
-	" \x01(\rR\x05priceB\x10\n" +
+	"\x11time_min_duration\x18\t \x01(\rR\x0ftimeMinDuration\x12*\n" +
+	"\x11time_max_duration\x18\n" +
+	" \x01(\rR\x0ftimeMaxDuration\x12\x14\n" +
+	"\x05price\x18\v \x01(\rR\x05priceB\x10\n" +
 	"\x0e_if_id_ingressB\x0f\n" +
 	"\r_if_id_egress\"\xd2\x04\n" +
 	"\x13SearchAssetsRequest\x12\x14\n" +
@@ -2272,7 +2289,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x05_pageB\x16\n" +
 	"\x14_max_returned_assets\"Q\n" +
 	"\x14SearchAssetsResponse\x129\n" +
-	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.SearchAssetR\x06assets\"\xf0\x03\n" +
+	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.SearchAssetR\x06assets\"\x9c\x04\n" +
 	"\vSearchAsset\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\fR\aassetId\x12\x0e\n" +
 	"\x02ia\x18\x02 \x01(\x04R\x02ia\x12'\n" +
@@ -2286,8 +2303,9 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\bstops_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\astopsAt\x12)\n" +
 	"\x10time_granularity\x18\n" +
 	" \x01(\rR\x0ftimeGranularity\x12*\n" +
-	"\x11time_min_duration\x18\v \x01(\rR\x0ftimeMinDuration\x12\x14\n" +
-	"\x05price\x18\f \x01(\rR\x05priceB\x10\n" +
+	"\x11time_min_duration\x18\v \x01(\rR\x0ftimeMinDuration\x12*\n" +
+	"\x11time_max_duration\x18\f \x01(\rR\x0ftimeMaxDuration\x12\x14\n" +
+	"\x05price\x18\r \x01(\rR\x05priceB\x10\n" +
 	"\x0e_if_id_ingressB\x0f\n" +
 	"\r_if_id_egress\"g\n" +
 	"\x10BuyAssetsRequest\x126\n" +

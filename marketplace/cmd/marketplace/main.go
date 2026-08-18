@@ -258,6 +258,7 @@ func realMain(ctx context.Context) error {
 		SplitCombineFeeAbsolute:      globalCfg.Marketplace.SplitCombineFeeAbsolute,
 		DelegationHourlyFee:          globalCfg.Marketplace.DelegationHourlyFee,
 		MaxReturnedAssets:            globalCfg.Marketplace.MaxRowsPerPage,
+		AssetValidityMax:             globalCfg.Marketplace.AssetValidityMax,
 	}, store, regService, jwtSigner)
 	if err != nil {
 		return err

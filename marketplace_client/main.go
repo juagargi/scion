@@ -418,6 +418,7 @@ func handlePublish(ctx context.Context, reader *bufio.Reader, c hummingbirdconne
 		StopsAt:         timestamppb.New(readTime(reader, "Stops at (2026-06-23T13:25:36Z): ")),
 		Price:           uint32(readUint64(reader, "price per kbit per second: ")),
 		TimeMinDuration: uint32(readUint64(reader, "minimum time duration: ")),
+		TimeMaxDuration: uint32(readUint64(reader, "maximum time duration: ")),
 		TimeGranularity: uint32(readUint64(reader, "time granularity: ")),
 	}
 	if !readConfirm(reader, nil) {
@@ -432,7 +433,7 @@ func handlePublish(ctx context.Context, reader *bufio.Reader, c hummingbirdconne
 		fmt.Println(err)
 		return
 	}
-	fmt.Printf("Published asset ID %d\n", resp.Msg.AssetId)
+	fmt.Printf("Published asset ID %s\n", hex.EncodeToString(resp.Msg.AssetId))
 }
 
 func printUpdateAssetOptions() {
@@ -494,6 +495,7 @@ func handleUpdate(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 							StopsAt:         timestamppb.New(readTime(reader, "Stops at (2026-06-23T13:25:36Z): ")),
 							Price:           uint32(readUint64(reader, "price per kbit per second: ")),
 							TimeMinDuration: uint32(readUint64(reader, "minimum time duration: ")),
+							TimeMaxDuration: uint32(readUint64(reader, "maximum time duration: ")),
 							TimeGranularity: uint32(readUint64(reader, "time granularity: "))},
 					},
 				})
@@ -509,8 +511,8 @@ func handleUpdate(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 			assetUpdates = append(assetUpdates[:index], assetUpdates[index+1:]...)
 		case option == "list":
 			for index, asset := range assetUpdates {
-				jsonAsset, _ := json.Marshal(asset)
-				fmt.Printf("%d:%s\n", index, string(jsonAsset))
+				jsonAsset, _ := json.Marshal(asset.Operation)
+				fmt.Printf("%d: asset_id: %s, operation: %s\n", index, hex.EncodeToString(asset.AssetId), string(jsonAsset))
 			}
 		case option == "submit":
 			if !readConfirm(reader, nil) {
@@ -531,15 +533,15 @@ func handleUpdate(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 				}
 				switch t := res.ResultType.(type) {
 				case *hummingbird.UpdateAssetResult_NewId:
-					if t.NewId == 0 {
-						fmt.Printf("%d: deleted\n", assetUpdates[i].AssetId)
+					if t.NewId == nil {
+						fmt.Printf("%s: deleted\n", hex.EncodeToString(assetUpdates[i].AssetId))
 					} else {
-						fmt.Printf("%d: updated to -> %d\n", assetUpdates[i].AssetId, t.NewId)
+						fmt.Printf("%s: updated to -> %s\n", hex.EncodeToString(assetUpdates[i].AssetId), hex.EncodeToString(t.NewId))
 					}
 				case *hummingbird.UpdateAssetResult_Error:
-					fmt.Printf("%d: error: %s\n", assetUpdates[i].AssetId, t.Error)
+					fmt.Printf("%s: error: %s\n", hex.EncodeToString(assetUpdates[i].AssetId), t.Error)
 				default:
-					fmt.Printf("%d: unkown result", assetUpdates[i].AssetId)
+					fmt.Printf("%s: unknown result", hex.EncodeToString(assetUpdates[i].AssetId))
 				}
 			}
 			return
@@ -940,6 +942,7 @@ func handleSearch(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 				BandwidthMin:    asset.BandwidthMin,
 				BandwidthMax:    asset.BandwidthMax,
 				TimeMinDuration: asset.TimeMinDuration,
+				TimeMaxDuration: asset.TimeMaxDuration,
 				StartAt:         asset.StartsAt.AsTime(),
 				StopsAt:         asset.StopsAt.AsTime(),
 				Price:           asset.Price,
@@ -1159,6 +1162,7 @@ type Asset struct {
 	Price           uint32
 	TimeGranularity uint32
 	TimeMinDuration uint32
+	TimeMaxDuration uint32
 	IfIdIngress     *uint32
 	IfIdEgress      *uint32
 }

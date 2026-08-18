@@ -734,6 +734,24 @@ func validateAsset(
 	if duration == 0 {
 		return serrors.New("duration is 0")
 	}
+	if duration <= 0 {
+		return serrors.New("duration of the asset is not positive")
+	}
+	return nil
+}
+func validateAssetForRedemption(
+	a *marketplacedb.DBAsset,
+) error {
+	duration := a.StopsAt.Sub(a.StartAt)
+	if a.Bandwidth == 0 {
+		return serrors.New("bandwidth is 0")
+	}
+	if duration == 0 {
+		return serrors.New("duration is 0")
+	}
+	if duration <= 0 {
+		return serrors.New("duration of the asset is not positive")
+	}
 	if a.Bandwidth < a.BandwidthMin {
 		return serrors.New("bandwidth < min_bandwidth")
 	}
@@ -742,6 +760,9 @@ func validateAsset(
 	}
 	if duration < time.Duration(a.TimeMinDuration)*time.Second {
 		return serrors.New("duration < time_min_duration")
+	}
+	if duration > time.Duration(a.TimeMaxDuration)*time.Second {
+		return serrors.New("duration > time_max_duration")
 	}
 	if duration%(time.Duration(a.TimeGranularity)*time.Second) != 0 {
 		return serrors.New("duration not multiple of time granularity")
@@ -770,7 +791,7 @@ func (s *MarketplaceStorage) PrepareRedemption(
 			if !ingressAsset.IfIdIngress.Valid || ingressAsset.IfIdEgress.Valid {
 				return serrors.New("ingress asset is not an ingress asset")
 			}
-			if err := validateAsset(ingressAsset); err != nil {
+			if err := validateAssetForRedemption(ingressAsset); err != nil {
 				return err
 			}
 			egressAsset, err := prepare(*egressAssetID)
@@ -780,7 +801,7 @@ func (s *MarketplaceStorage) PrepareRedemption(
 			if !egressAsset.IfIdEgress.Valid || egressAsset.IfIdIngress.Valid {
 				return serrors.New("egress asset is not an egress asset")
 			}
-			if err := validateAsset(egressAsset); err != nil {
+			if err := validateAssetForRedemption(egressAsset); err != nil {
 				return err
 			}
 			assets = []*marketplacedb.DBAsset{ingressAsset, egressAsset}
@@ -793,7 +814,7 @@ func (s *MarketplaceStorage) PrepareRedemption(
 			if !pairAsset.IfIdIngress.Valid || !pairAsset.IfIdEgress.Valid {
 				return serrors.New("pair asset is not a pair asset")
 			}
-			if err := validateAsset(pairAsset); err != nil {
+			if err := validateAssetForRedemption(pairAsset); err != nil {
 				return err
 			}
 			assets = []*marketplacedb.DBAsset{pairAsset}

@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS Assets(
     price INTEGER NOT NULL,
     time_granularity INTEGER NOT NULL,
     time_min_duration INTEGER NOT NULL,
+    time_max_duration INTEGER NOT NULL,
     starts_at TEXT NOT NULL,
     stops_at TEXT NOT NULL,
     ingress INTEGER,
