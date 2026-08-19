@@ -1236,7 +1236,7 @@ type SearchAssetsRequest struct {
 	StartsAtLatest    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=starts_at_latest,json=startsAtLatest,proto3,oneof" json:"starts_at_latest,omitempty"`
 	StopsAtEarliest   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=stops_at_earliest,json=stopsAtEarliest,proto3,oneof" json:"stops_at_earliest,omitempty"`
 	Price             *uint32                `protobuf:"varint,8,opt,name=price,proto3,oneof" json:"price,omitempty"`
-	Page              *uint32                `protobuf:"varint,9,opt,name=page,proto3,oneof" json:"page,omitempty"`
+	Page              uint32                 `protobuf:"varint,9,opt,name=page,proto3" json:"page,omitempty"`
 	MaxReturnedAssets *uint32                `protobuf:"varint,10,opt,name=max_returned_assets,json=maxReturnedAssets,proto3,oneof" json:"max_returned_assets,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -1329,8 +1329,8 @@ func (x *SearchAssetsRequest) GetPrice() uint32 {
 }
 
 func (x *SearchAssetsRequest) GetPage() uint32 {
-	if x != nil && x.Page != nil {
-		return *x.Page
+	if x != nil {
+		return x.Page
 	}
 	return 0
 }
@@ -2265,7 +2265,7 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	" \x01(\rR\x0ftimeMaxDuration\x12\x14\n" +
 	"\x05price\x18\v \x01(\rR\x05priceB\x10\n" +
 	"\x0e_if_id_ingressB\x0f\n" +
-	"\r_if_id_egress\"\xd2\x04\n" +
+	"\r_if_id_egress\"\xc4\x04\n" +
 	"\x13SearchAssetsRequest\x12\x14\n" +
 	"\x05owned\x18\x01 \x01(\bR\x05owned\x12\x13\n" +
 	"\x02ia\x18\x02 \x01(\x04H\x00R\x02ia\x88\x01\x01\x12'\n" +
@@ -2275,18 +2275,17 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x0fmin_required_bw\x18\x05 \x01(\rH\x03R\rminRequiredBw\x88\x01\x01\x12I\n" +
 	"\x10starts_at_latest\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampH\x04R\x0estartsAtLatest\x88\x01\x01\x12K\n" +
 	"\x11stops_at_earliest\x18\a \x01(\v2\x1a.google.protobuf.TimestampH\x05R\x0fstopsAtEarliest\x88\x01\x01\x12\x19\n" +
-	"\x05price\x18\b \x01(\rH\x06R\x05price\x88\x01\x01\x12\x17\n" +
-	"\x04page\x18\t \x01(\rH\aR\x04page\x88\x01\x01\x123\n" +
+	"\x05price\x18\b \x01(\rH\x06R\x05price\x88\x01\x01\x12\x12\n" +
+	"\x04page\x18\t \x01(\rR\x04page\x123\n" +
 	"\x13max_returned_assets\x18\n" +
-	" \x01(\rH\bR\x11maxReturnedAssets\x88\x01\x01B\x05\n" +
+	" \x01(\rH\aR\x11maxReturnedAssets\x88\x01\x01B\x05\n" +
 	"\x03_iaB\x10\n" +
 	"\x0e_if_id_ingressB\x0f\n" +
 	"\r_if_id_egressB\x12\n" +
 	"\x10_min_required_bwB\x13\n" +
 	"\x11_starts_at_latestB\x14\n" +
 	"\x12_stops_at_earliestB\b\n" +
-	"\x06_priceB\a\n" +
-	"\x05_pageB\x16\n" +
+	"\x06_priceB\x16\n" +
 	"\x14_max_returned_assets\"Q\n" +
 	"\x14SearchAssetsResponse\x129\n" +
 	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.SearchAssetR\x06assets\"\x9c\x04\n" +

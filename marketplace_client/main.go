@@ -925,7 +925,7 @@ func handleSearch(ctx context.Context, reader *bufio.Reader, c hummingbirdconnec
 		msg.StopsAtEarliest = timestamppb.New(*stopsAtEarliest)
 	}
 	for page := uint32(0); ; page++ {
-		msg.Page = &page
+		msg.Page = page
 		rep, err := c.SearchAssets(ctx, &connect.Request[hummingbird.SearchAssetsRequest]{
 			Msg: msg,
 		})

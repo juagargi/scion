@@ -155,7 +155,7 @@ message SearchAssetsRequest {
     optional google.protobuf.Timestamp starts_at_latest = 6;
     optional google.protobuf.Timestamp stops_at_earliest = 7;
     optional uint32 price = 8;
-    optional uint32 page = 9;
+    uint32 page = 9;
     // The marketplace may return less assets per page than requested.
     optional uint32 max_returned_assets = 10;
 }

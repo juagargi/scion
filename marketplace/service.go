@@ -664,10 +664,6 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 		tmp := addr.IA(*req.Msg.Ia)
 		ia = &tmp
 	}
-	page := uint32(0)
-	if req.Msg.Page != nil {
-		page = *req.Msg.Page
-	}
 	pageSize := s.info.MaxReturnedAssets
 	if req.Msg.MaxReturnedAssets != nil {
 		pageSize = min(pageSize, *req.Msg.MaxReturnedAssets)
@@ -682,7 +678,7 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 		Price:                req.Msg.Price,
 		StartsAt:             startsAt,
 		StopsAt:              stopsAt,
-		Page:                 page,
+		Page:                 req.Msg.Page,
 		PageSize:             pageSize,
 	})
 	if err != nil {
