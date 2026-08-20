@@ -110,7 +110,7 @@ func SplitAsset(asset *db.DBAsset, split RequestedSplit) (*SplitResult, error) {
 			splitResult.Remainders = append(splitResult.Remainders, AssetSegment{
 				Bandwidth: remainingAsset.Bandwidth,
 				StartsAt:  remainingAsset.StartsAt,
-				StopsAt:   split.ExactTo,
+				StopsAt:   split.ExactFrom,
 			})
 		} else {
 			// a left remainder and a right remainder exists
