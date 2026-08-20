@@ -31,6 +31,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ import (
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/daemon"
 	daemontypes "github.com/scionproto/scion/pkg/daemon/types"
-	hummpkg "github.com/scionproto/scion/pkg/hummingbird"
+	marketclient "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/hummingbird/redemption"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/common"
@@ -89,6 +90,7 @@ var (
 	hummingbird            string                // e.g. "1,5s" or "1,5s,2"
 	hummKeysDir            string                // for testing purposes only
 	hummParams             hummingbirdParameters // derived from the string in hummingbird
+	marketParams           marketplaceParameters // derived from the environment
 )
 
 func main() {
@@ -126,9 +128,14 @@ func addFlags() {
 	flag.Var(timeout, "timeout", "The timeout for each attempt")
 	flag.BoolVar(&epic, "epic", false, "Enable EPIC")
 	flag.StringVar(&hummingbird, "hummingbird", "",
-		"Enable Hummingbird with BW,dur[,reverseBW] (e.g. '3,5s' or '3,5s,2')")
+		"Enable Hummingbird with BW,dur[,reverseBW]. With -hummKeysDir the bandwidths are "+
+			"a bandwidth class, without a unit (e.g. '3,5s' or '3,5s,2'); without it they "+
+			"are bandwidths and need a unit, kbps|mbps|gbps "+
+			"(e.g. '100kbps,20s' or '100kbps,20s,1mbps')")
 	flag.StringVar(&hummKeysDir, "hummKeysDir", "",
-		"Root directory containing AS*/keys/master0.key files for Hummingbird")
+		"Root directory containing AS*/keys/master0.key files for Hummingbird. "+
+			"Without it, the reservations are bought from the marketplace configured "+
+			"in "+envMarketplaceURL+" and "+envMarketplaceJWT)
 }
 
 func validateFlags() {
@@ -148,13 +155,29 @@ func validateFlags() {
 	}
 	if hummingbird != "" {
 		var err error
-		hummParams, err = parseHummingbirdFlag(hummingbird)
+		// With the secret values of the ASes the bandwidths are a bandwidth
+		// class; bought from a marketplace they are bandwidths, with a unit.
+		hummParams, err = parseHummingbirdFlag(hummingbird, hummKeysDir == "")
 		if err != nil {
 			integration.LogFatal("bad hummingbird flag", "value", hummingbird, "err", err)
 		}
+		if hummKeysDir != "" {
+			// Flyovers derived from the AS secret values carry a 16 bit bandwidth class.
+			if hummParams.Bw > math.MaxUint16 || hummParams.ReverseBw > math.MaxUint16 {
+				integration.LogFatal("hummingbird bandwidth must fit in 16 bits",
+					"bw", hummParams.Bw, "reverse_bw", hummParams.ReverseBw)
+			}
+		} else if integration.Mode == integration.ModeClient {
+			// Without the secret values the reservations are bought from a
+			// marketplace, and the bandwidths are in kbps.
+			marketParams, err = marketplaceParametersFromEnv()
+			if err != nil {
+				integration.LogFatal("bad marketplace configuration", "err", err)
+			}
+		}
 	}
 	log.Info("Flags", "timeout", timeout, "epic", epic, "hummingbird", hummingbird,
-		"humm_keys_dir", hummKeysDir, "remote", remote)
+		"humm_keys_dir", hummKeysDir, "marketplace_url", marketParams.URL, "remote", remote)
 }
 
 type server struct{}
@@ -272,6 +295,10 @@ type client struct {
 	hummKeysDir    string
 	hummParams     hummingbirdParameters
 	hummSVByIA     map[addr.IA][]byte
+	// Specific to Hummingbird without secret values, i.e. buying the flyovers:
+	topo         snet.Topology
+	marketParams marketplaceParameters
+	marketClient *marketclient.MarketplaceClient
 }
 
 func (c *client) run() int {
@@ -301,6 +328,8 @@ func (c *client) run() int {
 	c.hummKeysDir = hummKeysDir
 	c.hummParams = hummParams
 	c.hummSVByIA = make(map[addr.IA][]byte)
+	c.topo = topo
+	c.marketParams = marketParams
 	log.Info("Send", "local",
 		fmt.Sprintf("%v,[%v] -> %v,[%v]",
 			integration.Local.IA, integration.Local.Host,
@@ -456,7 +485,7 @@ func (c *client) configureRemotePath(ctx context.Context, path snet.Path) error 
 		if c.hummKeysDir != "" {
 			reservation, err = c.buildReservationWithSecretValues(ctx, path, time.Now())
 		} else {
-			reservation, err = c.buildReservationWithRedemptions(ctx, path, time.Now())
+			reservation, err = c.buildReservationWithMarketplace(ctx, path, time.Now())
 		}
 		if err != nil {
 			return err
@@ -469,19 +498,106 @@ func (c *client) configureRemotePath(ctx context.Context, path snet.Path) error 
 	return nil
 }
 
-func (c *client) buildReservationWithRedemptions(
+// buildReservationWithMarketplace buys the flyovers for the path from a
+// marketplace and binds them to the forward path. If a reverse bandwidth was
+// requested, the reverse flyovers are bought as well and travel as an extension
+// on the forward reservation.
+func (c *client) buildReservationWithMarketplace(
 	ctx context.Context,
 	path snet.Path,
 	now time.Time,
 ) (*snetpath.Reservation, error) {
-	return redemption.OneShotReservation(ctx, c.sdConn, integration.Local.Host.IP, path,
-		hummpkg.RedemptionRequestNoHop{
-			StartTime: uint32(now.Unix()),
-			Bw:        hummParams.Bw,
-			Duration:  hummParams.Duration,
-		},
-		c.hummParams.ReverseBw,
+	scionPath, ok := path.Dataplane().(snetpath.SCION)
+	if !ok {
+		return nil, serrors.New("provided path must be of type scion")
+	}
+	market, err := c.marketplaceClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Whole seconds: the flyover carries a start time in seconds and a duration
+	// in seconds, and the marketplace matches the assets it sold on exactly the
+	// timestamps it was asked for.
+	startsAt := now.Add(hummStartOffset).Truncate(time.Second)
+	stopsAt := startsAt.Add(time.Duration(c.hummParams.Duration) * time.Second)
+	log.Debug("Buying Hummingbird reservation from marketplace",
+		"url", c.marketParams.URL,
+		"bandwidth_kbps", c.hummParams.Bw,
+		"starts_at", startsAt,
+		"stops_at", stopsAt)
+
+	flyovers, err := market.ObtainReservationsFullPath(ctx, path, c.hummParams.Bw,
+		startsAt, stopsAt, marketplaceMaxPrice, marketplaceBuyMode,
+		marketplaceFetchReservations, marketplaceCombineAssets, marketplaceRetries)
+	if err != nil {
+		return nil, serrors.Wrap("obtaining reservations from marketplace", err)
+	}
+	// One hop per AS on the path, which is what the marketplace client buys for.
+	expected := len(snetpath.InterfacesToBaseHops(path.Metadata().Interfaces))
+	if err := checkFlyovers(flyovers, expected); err != nil {
+		return nil, serrors.Wrap("checking bought reservations", err)
+	}
+	reservation, err := snetpath.NewReservation(
+		snetpath.WithDataplanePath(scionPath, path.Destination(), flyovers),
 	)
+	if err != nil || c.hummParams.ReverseBw == 0 {
+		return reservation, err
+	}
+
+	reversePairs := reverseInterfacePairs(path.Metadata().Interfaces)
+	log.Debug("Buying reverse Hummingbird reservation from marketplace",
+		"bandwidth_kbps", c.hummParams.ReverseBw)
+	reverseFlyovers, err := market.ObtainReservationsForInterfacePairs(ctx, reversePairs,
+		c.hummParams.ReverseBw, startsAt, stopsAt, marketplaceMaxPrice, marketplaceBuyMode,
+		marketplaceFetchReservations, marketplaceCombineAssets, marketplaceRetries)
+	if err != nil {
+		return nil, serrors.Wrap("obtaining reverse reservations from marketplace", err)
+	}
+	if err := checkFlyovers(reverseFlyovers, len(reversePairs)); err != nil {
+		return nil, serrors.Wrap("checking bought reverse reservations", err)
+	}
+	extn, err := redemption.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
+	if err != nil {
+		return nil, err
+	}
+	reservation.SetReverseReservationExtn(extn)
+	return reservation, nil
+}
+
+// checkFlyovers rejects hops that carry no flyover. The marketplace client
+// returns a bare hop when redeeming its asset failed, and a path built from
+// those would silently travel as a plain SCION path.
+func checkFlyovers(hops []*snetpath.Hop, expected int) error {
+	if len(hops) != expected {
+		return serrors.New("unexpected number of hops", "expected", expected, "actual", len(hops))
+	}
+	for _, hop := range hops {
+		if hop == nil {
+			return serrors.New("missing hop")
+		}
+		if hop.Flyover == nil {
+			return serrors.New("hop without flyover, the asset could not be redeemed",
+				"ia", hop.IA, "ingress", hop.Ingress, "egress", hop.Egress)
+		}
+	}
+	return nil
+}
+
+// marketplaceClient returns the marketplace client, creating it on first use.
+func (c *client) marketplaceClient(ctx context.Context) (*marketclient.MarketplaceClient, error) {
+	if c.marketClient != nil {
+		return c.marketClient, nil
+	}
+	// The querier and the topology are only used for marketplaces reached over
+	// SCION, but they are always available here.
+	querier := daemon.Querier{Connector: c.sdConn, IA: c.topo.LocalIA}
+	market, err := marketclient.NewMarketplaceClient(ctx, c.marketParams.URL, c.marketParams.JWT,
+		querier, c.topo, marketplaceInsecure)
+	if err != nil {
+		return nil, serrors.Wrap("creating marketplace client", err, "url", c.marketParams.URL)
+	}
+	c.marketClient = market
+	return market, nil
 }
 
 func (c *client) buildReservationWithSecretValues(
@@ -498,7 +614,7 @@ func (c *client) buildReservationWithSecretValues(
 		scionPath,
 		path.Destination(),
 		baseHops,
-		c.hummParams.Bw,
+		uint16(c.hummParams.Bw),
 		now,
 	)
 	if err != nil || c.hummParams.ReverseBw == 0 {
@@ -506,7 +622,7 @@ func (c *client) buildReservationWithSecretValues(
 	}
 	reverseFlyovers, err := c.deriveFlyoversFromSecretValues(
 		reverseBaseHops(baseHops),
-		c.hummParams.ReverseBw,
+		uint16(c.hummParams.ReverseBw),
 		now,
 	)
 	if err != nil {
@@ -584,18 +700,70 @@ func readFrom(conn *snet.Conn, pld []byte) (int, net.Addr, error) {
 
 }
 
+// hummingbirdParameters holds the parsed -hummingbird flag. The bandwidths are
+// a 16 bit bandwidth class when the flyovers are derived from the AS secret
+// values, and kbps when they are bought from a marketplace.
 type hummingbirdParameters struct {
-	Bw        uint16
+	Bw        uint32
 	Duration  uint16
-	ReverseBw uint16
+	ReverseBw uint32
 }
 
-func parseHummingbirdFlag(raw string) (hummingbirdParameters, error) {
+// bandwidthUnits are the units a bandwidth of the -hummingbird flag can carry,
+// and what one of them is in kbps.
+var bandwidthUnits = []struct {
+	suffix string
+	kbps   uint64
+}{
+	{suffix: "kbps", kbps: 1},
+	{suffix: "mbps", kbps: 1000},
+	{suffix: "gbps", kbps: 1000 * 1000},
+}
+
+// parseBandwidth parses one bandwidth of the -hummingbird flag into kbps. A
+// bandwidth bought from a marketplace is a bandwidth and carries a unit; one
+// derived from the secret values of the ASes is a bandwidth class, and has none.
+func parseBandwidth(raw string, withUnit bool) (uint32, error) {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	for _, unit := range bandwidthUnits {
+		number, hasUnit := strings.CutSuffix(value, unit.suffix)
+		if !hasUnit {
+			continue
+		}
+		if !withUnit {
+			return 0, serrors.New("bandwidth class must not carry a unit", "value", raw)
+		}
+		parsed, err := strconv.ParseUint(strings.TrimSpace(number), 10, 32)
+		if err != nil {
+			return 0, serrors.Wrap("parsing bandwidth", err, "value", raw)
+		}
+		kbps := parsed * unit.kbps
+		if kbps > math.MaxUint32 {
+			return 0, serrors.New("bandwidth too large", "value", raw,
+				"max_kbps", uint64(math.MaxUint32))
+		}
+		return uint32(kbps), nil
+	}
+	if withUnit {
+		return 0, serrors.New("bandwidth must carry a unit", "value", raw,
+			"units", "kbps|mbps|gbps")
+	}
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil {
+		return 0, serrors.Wrap("parsing bandwidth class", err, "value", raw)
+	}
+	return uint32(parsed), nil
+}
+
+// parseHummingbirdFlag parses the -hummingbird flag. The bandwidths carry a unit
+// exactly when the reservations are bought from a marketplace, i.e. when no
+// -hummKeysDir is given.
+func parseHummingbirdFlag(raw string, withUnits bool) (hummingbirdParameters, error) {
 	parts := strings.Split(raw, ",")
 	if len(parts) != 2 && len(parts) != 3 {
 		return hummingbirdParameters{}, serrors.New("expected BW,dur[,reverseBW]")
 	}
-	bw, err := strconv.ParseUint(parts[0], 10, 16)
+	bw, err := parseBandwidth(parts[0], withUnits)
 	if err != nil {
 		return hummingbirdParameters{}, serrors.Wrap("parsing hummingbird bandwidth", err,
 			"value", parts[0])
@@ -612,16 +780,68 @@ func parseHummingbirdFlag(raw string) (hummingbirdParameters, error) {
 		)
 	}
 	params := hummingbirdParameters{
-		Bw:       uint16(bw),
+		Bw:       bw,
 		Duration: uint16(dur.Seconds()),
 	}
 	if len(parts) == 3 {
-		reverseBw, err := strconv.ParseUint(parts[2], 10, 16)
+		reverseBw, err := parseBandwidth(parts[2], withUnits)
 		if err != nil {
 			return hummingbirdParameters{}, serrors.Wrap("parsing reverse hummingbird bandwidth", err,
 				"value", parts[2])
 		}
-		params.ReverseBw = uint16(reverseBw)
+		params.ReverseBw = reverseBw
+	}
+	return params, nil
+}
+
+// Environment variables configuring the marketplace used by the -hummingbird
+// mode when no -hummKeysDir is given. Both are mandatory.
+const (
+	envMarketplaceURL = "SCION_MARKETPLACE_URL"
+	envMarketplaceJWT = "SCION_MARKETPLACE_JWT"
+)
+
+// How the reservations are bought. These are the only values this test needs, so
+// they are not configurable.
+const (
+	// The marketplace serves a self-signed certificate in the local topologies,
+	// so verifying it cannot succeed.
+	marketplaceInsecure = true
+
+	// The money is play money, and a purchase that is too expensive is more
+	// confusing than useful in a test.
+	marketplaceMaxPrice = uint64(math.MaxUint64)
+
+	// A path is only useful whole, so give up as soon as one AS of it cannot be
+	// reserved.
+	marketplaceBuyMode = marketclient.FailOnError
+
+	// Reuse the reservations of an earlier attempt instead of buying again.
+	marketplaceFetchReservations = true
+
+	// The assets of a local topology span far more than one test run, so there
+	// is nothing to combine along the time axis.
+	marketplaceCombineAssets = false
+
+	// Somebody else may buy an asset between searching for it and paying it.
+	marketplaceRetries = 3
+)
+
+type marketplaceParameters struct {
+	URL string
+	JWT string
+}
+
+func marketplaceParametersFromEnv() (marketplaceParameters, error) {
+	params := marketplaceParameters{
+		URL: os.Getenv(envMarketplaceURL),
+		JWT: os.Getenv(envMarketplaceJWT),
+	}
+	if params.URL == "" {
+		return params, serrors.New("missing marketplace url", "env", envMarketplaceURL)
+	}
+	if params.JWT == "" {
+		return params, serrors.New("missing marketplace token", "env", envMarketplaceJWT)
 	}
 	return params, nil
 }
@@ -703,6 +923,21 @@ func (c *client) deriveFlyoversFromSecretValues(
 		})
 	}
 	return flyovers, nil
+}
+
+// reverseInterfacePairs returns the interface pairs of the reverse direction of
+// a path, which is what the reverse reservation must be bought for.
+func reverseInterfacePairs(ifaces []snet.PathInterface) []marketclient.InterfacePair {
+	hops := reverseBaseHops(snetpath.InterfacesToBaseHops(ifaces))
+	pairs := make([]marketclient.InterfacePair, 0, len(hops))
+	for _, hop := range hops {
+		pairs = append(pairs, marketclient.InterfacePair{
+			IA:      uint64(hop.IA),
+			Ingress: uint32(hop.Ingress),
+			Egress:  uint32(hop.Egress),
+		})
+	}
+	return pairs
 }
 
 func reverseBaseHops(hops []snetpath.BaseHop) []snetpath.BaseHop {

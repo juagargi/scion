@@ -106,3 +106,91 @@ func requireManualDerivationMatchesClient(t *testing.T, dirs [2]string, clientSV
 	manualSV := hummlib.DeriveSecretValue(master0)
 	require.Equal(t, manualSV, clientSV)
 }
+
+// TestParseHummingbirdFlag covers the bandwidths of the -hummingbird flag: with
+// a marketplace they are bandwidths and carry a unit, with the secret values of
+// the ASes they are bandwidth classes and carry none.
+func TestParseHummingbirdFlag(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]struct {
+		raw       string
+		withUnits bool
+		expected  hummingbirdParameters
+		assertErr require.ErrorAssertionFunc
+	}{
+		"class, no reverse": {
+			raw:       "3,5s",
+			expected:  hummingbirdParameters{Bw: 3, Duration: 5},
+			assertErr: require.NoError,
+		},
+		"class, with reverse": {
+			raw:       "3,5s,2",
+			expected:  hummingbirdParameters{Bw: 3, Duration: 5, ReverseBw: 2},
+			assertErr: require.NoError,
+		},
+		"class must not carry a unit": {
+			raw:       "3kbps,5s",
+			assertErr: require.Error,
+		},
+		"kbps": {
+			raw:       "100kbps,20s",
+			withUnits: true,
+			expected:  hummingbirdParameters{Bw: 100, Duration: 20},
+			assertErr: require.NoError,
+		},
+		"mbps and gbps": {
+			raw:       "1mbps,20s,2gbps",
+			withUnits: true,
+			expected:  hummingbirdParameters{Bw: 1000, Duration: 20, ReverseBw: 2000000},
+			assertErr: require.NoError,
+		},
+		"units are case insensitive": {
+			raw:       "100KBPS,20s,1MBps",
+			withUnits: true,
+			expected:  hummingbirdParameters{Bw: 100, Duration: 20, ReverseBw: 1000},
+			assertErr: require.NoError,
+		},
+		"bandwidth needs a unit": {
+			raw:       "100,20s",
+			withUnits: true,
+			assertErr: require.Error,
+		},
+		"reverse bandwidth needs a unit too": {
+			raw:       "100kbps,20s,100",
+			withUnits: true,
+			assertErr: require.Error,
+		},
+		"unknown unit": {
+			raw:       "100tbps,20s",
+			withUnits: true,
+			assertErr: require.Error,
+		},
+		"bandwidth beyond 32 bits of kbps": {
+			raw:       "5000gbps,20s",
+			withUnits: true,
+			assertErr: require.Error,
+		},
+		"missing duration": {
+			raw:       "100kbps",
+			withUnits: true,
+			assertErr: require.Error,
+		},
+		"duration beyond 16 bits of seconds": {
+			raw:       "100kbps,100000s",
+			withUnits: true,
+			assertErr: require.Error,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			params, err := parseHummingbirdFlag(tc.raw, tc.withUnits)
+			tc.assertErr(t, err)
+			if err == nil {
+				require.Equal(t, tc.expected, params)
+			}
+		})
+	}
+}
