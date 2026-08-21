@@ -25,7 +25,6 @@ go_test(
     srcs = ["split_test.go"],
     embed = [":go_default_library"],
     deps = [
-        "//marketplace/db:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
         "@com_github_stretchr_testify//require:go_default_library",
     ],

@@ -74,7 +74,7 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 		return err
 	})
 	require.NoError(t, err)
-	assets, err := backend.Search(ctx, &AssetQuery{})
+	assets, err := backend.Search(ctx, &AssetQuery{PageSize: 64})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 
@@ -90,7 +90,7 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 	require.ErrorIs(t, err, rollbackErr)
 
 	// Only the asset written by the committed transaction is visible.
-	assets, err = backend.Search(ctx, &AssetQuery{})
+	assets, err = backend.Search(ctx, &AssetQuery{PageSize: 64})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 }
@@ -113,7 +113,7 @@ func TestAssetTransitionAndRowScanners(t *testing.T) {
 	require.False(t, transitioned.AccountId.Valid)
 
 	// Checked-out assets are no longer returned by the available-asset search.
-	assets, err := backend.Search(ctx, &AssetQuery{})
+	assets, err := backend.Search(ctx, &AssetQuery{PageSize: 64})
 	require.NoError(t, err)
 	require.Empty(t, assets)
 
@@ -208,7 +208,7 @@ func TestSearchOwnedAssets(t *testing.T) {
 	_, err = backend.InsertAsset(ctx, otherAsset)
 	require.NoError(t, err)
 
-	assets, err := backend.Search(ctx, &AssetQuery{AccountId: &alicesAccountID})
+	assets, err := backend.Search(ctx, &AssetQuery{AccountId: &alicesAccountID, PageSize: 64})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 	require.Equal(t, ownedID, assets[0].ID)
@@ -220,6 +220,7 @@ func TestSearchOwnedAssets(t *testing.T) {
 		AccountId: &alicesAccountID,
 		StartsAt:  &startsAt,
 		StopsAt:   &stopsAt,
+		PageSize:  64,
 	})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
@@ -229,12 +230,13 @@ func TestSearchOwnedAssets(t *testing.T) {
 		AccountId: &alicesAccountID,
 		StartsAt:  &startsAt,
 		StopsAt:   &tooLate,
+		PageSize:  64,
 	})
 	require.NoError(t, err)
 	require.Empty(t, assets, "an asset that stops too early must not be returned")
 
 	// Without an account, only the assets nobody owns are listed.
-	assets, err = backend.Search(ctx, &AssetQuery{})
+	assets, err = backend.Search(ctx, &AssetQuery{PageSize: 64})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 	require.Equal(t, notOwnedAssetID, assets[0].ID)
