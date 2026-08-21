@@ -183,6 +183,7 @@ DEFAULT_ASSET_BANDWIDTH_MAX = 1000000
 DEFAULT_ASSET_PRICE = 1
 DEFAULT_ASSET_TIME_GRANULARITY = 10
 DEFAULT_ASSET_TIME_MIN_DURATION = 10
+DEFAULT_ASSET_TIME_MAX_DURATION = 60*60*24*365
 DEFAULT_ASSET_DURATION = timedelta(days=100)
 DEFAULT_DELEGATION_RES_ID_LIMIT = 1000
 # The flyover carries the bandwidth as a 10 bit codepoint into the points
@@ -290,6 +291,7 @@ def defaultEntries(genDir, now=None):
             "price": DEFAULT_ASSET_PRICE,
             "time_granularity": DEFAULT_ASSET_TIME_GRANULARITY,
             "time_min_duration": DEFAULT_ASSET_TIME_MIN_DURATION,
+            "time_max_duration": DEFAULT_ASSET_TIME_MAX_DURATION,
             "starts_at": startsAt,
             "stops_at": stopsAt,
             "ingress": ingress,
@@ -318,7 +320,8 @@ def defaultEntries(genDir, now=None):
         "delegations": [
             {
                 "ia": ia,
-                "res_id_limit": DEFAULT_DELEGATION_RES_ID_LIMIT,
+                "res_id_limit_low": 0,
+                "res_id_limit_high": DEFAULT_DELEGATION_RES_ID_LIMIT,
                 "expiration": stopsAt,
                 "paid_until": stopsAt,
                 "key": secretValue(asDir).hex(),
