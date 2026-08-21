@@ -50,6 +50,7 @@ py_binary(
     name = "topogen",
     srcs = ["topogen.py"],
     data = [
+        "//marketplace/db:schema.sql",
         "//scion-pki/cmd/scion-pki",
         "//tools:docker_ip",
     ],
@@ -61,6 +62,7 @@ py_binary(
     deps = [
         "//tools/topology:py_default_library",
         "@bazel_tools//tools/python/runfiles",
+        requirement("bcrypt"),
         requirement("toml"),
         requirement("plumbum"),
         requirement("pyyaml"),

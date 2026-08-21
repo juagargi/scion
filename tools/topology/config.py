@@ -45,6 +45,11 @@ from topology.net import (
     SubnetGenerator,
     DEFAULT_NETWORK,
 )
+from topology.marketplace import (
+    MarketplaceError,
+    MarketplaceGenArgs,
+    MarketplaceGenerator,
+)
 from topology.monitoring import MonitoringGenArgs, MonitoringGenerator
 from topology.supervisor import SupervisorGenArgs, SupervisorGenerator
 from topology.topo import TopoGenArgs, TopoGenerator
@@ -96,6 +101,7 @@ class ConfigGenerator(object):
         """
         self._ensure_uniq_ases()
         self._canonicalize_isd_asns()
+        self._ensure_marketplace_as()
         topo_dicts, self.all_networks = self._generate_topology()
         if not self.args.topology_jsons_only:
             self.networks = remove_v4_nets(self.all_networks)
@@ -112,6 +118,22 @@ class ConfigGenerator(object):
                 sys.exit(1)
             seen.add(ia.as_str())
 
+    def _ensure_marketplace_as(self):
+        if not self.args.marketplace:
+            return
+        try:
+            ia = str(ISD_AS(self.args.marketplace))
+        except ValueError:
+            logging.critical("Invalid ISD-AS '%s' for the marketplace", self.args.marketplace)
+            sys.exit(1)
+        if ia not in self.topo_config["ASes"]:
+            logging.critical("The marketplace AS '%s' is not part of %s", ia,
+                             self.args.topo_config)
+            sys.exit(1)
+        # The marketplace is canonicalized like the ASes it is checked against, so
+        # that the generators can compare it to a TopoID.
+        self.args.marketplace = ia
+
     def _canonicalize_isd_asns(self):
         canonicalized = {}
         for asStr, value in self.topo_config["ASes"].items():
@@ -126,6 +148,21 @@ class ConfigGenerator(object):
             self._generate_supervisor(topo_dicts)
         self._generate_monitoring_conf(topo_dicts)
         self._generate_certs_trcs(topo_dicts)
+        if self.args.marketplace:
+            self._generate_marketplace(topo_dicts)
+
+    def _generate_marketplace(self, topo_dicts):
+        # Last, because the redemption delegations of the marketplace are derived
+        # from the master keys that _generate_certs_trcs writes.
+        gen = MarketplaceGenerator(self._marketplace_args(topo_dicts))
+        try:
+            gen.generate()
+        except MarketplaceError as e:
+            logging.critical("Cannot add the marketplace to %s: %s", self.args.marketplace, e)
+            sys.exit(1)
+
+    def _marketplace_args(self, topo_dicts):
+        return MarketplaceGenArgs(self.args, topo_dicts, self.networks)
 
     def _generate_certs_trcs(self, topo_dicts):
         certgen = CertGenerator(self._cert_args())

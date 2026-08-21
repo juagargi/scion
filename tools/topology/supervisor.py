@@ -23,6 +23,12 @@ import shlex
 from io import StringIO
 
 # SCION
+from topology.marketplace import (
+    MARKETPLACE_CONFIG_NAME,
+    PROGRAM_NAME as MARKETPLACE_PROGRAM_NAME,
+    hosts_marketplace,
+    supervisordProgram,
+)
 from topology.util import write_file
 from topology.common import (
     ArgsTopoDicts,
@@ -71,6 +77,7 @@ class SupervisorGenerator(object):
         entries.extend(self._br_entries(topo, "bin/router", base))
         entries.extend(self._control_service_entries(topo, base))
         entries.extend(self._hummingbird_entries(topo_id, topo, base))
+        entries.extend(self._marketplace_entries(topo_id, base))
         entries.append(self._sciond_entry(topo_id, base))
         return entries
 
@@ -129,6 +136,12 @@ class SupervisorGenerator(object):
         ]
         entries.append((name, self._common_entry(name, cmd_args)))
         return entries
+
+    def _marketplace_entries(self, topo_id, base):
+        if not hosts_marketplace(self.args, topo_id):
+            return []
+        conf = os.path.join(base, MARKETPLACE_CONFIG_NAME)
+        return [(MARKETPLACE_PROGRAM_NAME, supervisordProgram(conf))]
 
     def _add_dispatcher(self, config):
         name, entry = self._dispatcher_entry()

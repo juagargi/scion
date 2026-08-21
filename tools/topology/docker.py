@@ -30,6 +30,11 @@ from topology.common import (
     sciond_name,
 )
 from topology.docker_utils import DockerUtilsGenArgs, DockerUtilsGenerator
+from topology.marketplace import (
+    dockerService,
+    dockerServiceName,
+    hosts_marketplace,
+)
 from topology.net import NetworkDescription, IPNetwork
 from topology.sig import SIGGenArgs, SIGGenerator
 
@@ -93,6 +98,7 @@ class DockerGenerator(object):
         self._br_conf(topo_id, topo, base)
         self._control_service_conf(topo_id, topo, base)
         self._hummingbird_conf(topo_id, topo, base)
+        self._marketplace_conf(topo_id, topo, base)
         self._sciond_conf(topo_id, base)
 
     def _gen_sig(self):
@@ -221,6 +227,26 @@ class DockerGenerator(object):
                 'command': ['--config', '/etc/scion/hbird.toml']
             }
             self.dc_conf['services'][name] = entry
+
+    def _marketplace_conf(self, topo_id, topo, base):
+        if not hosts_marketplace(self.args, topo_id):
+            return
+        for k in topo.get("control_service", {}):
+            if not k.endswith("-1"):
+                continue
+            self.dc_conf['services'][dockerServiceName(topo_id)] = dockerService(
+                docker_image(self.args, 'marketplace'),
+                k,
+                'disp_%s' % k,
+                [
+                    self._cache_vol(),
+                    # The marketplace writes into its config dir:
+                    # its TLS certificate and its JWT signature keys are created on first run.
+                    '%s:/etc/scion:rw' % base,
+                ],
+                self.user,
+            )
+            break
 
     def _dispatcher_conf(self, topo_id, topo, base):
         image = 'dispatcher'

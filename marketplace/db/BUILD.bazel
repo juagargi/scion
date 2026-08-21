@@ -1,6 +1,9 @@
 load("@rules_go//go:def.bzl", "go_library")
 load("//tools:go.bzl", "go_test")
 
+# The topology generator needs the schema when it prepopulates a marketplace.
+exports_files(["schema.sql"])
+
 go_library(
     name = "go_default_library",
     srcs = [
