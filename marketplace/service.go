@@ -58,10 +58,6 @@ type MarketplaceInfo struct {
 	AssetValidityMax             uint32
 }
 
-func databaseAssetID(id []byte) (int64, error) {
-	idInt := binary.BigEndian.Uint64(id)
-	return db.AssetID(idInt).Int64()
-}
 func protoAssetID(assetId int64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, uint64(assetId))
@@ -109,7 +105,7 @@ func (s *Service) CombineAssets(ctx context.Context, req *connect.Request[hummin
 	}
 	assetIds := make([]int64, 0, len(req.Msg.AssetIds))
 	for _, id := range req.Msg.AssetIds {
-		assetId, err := databaseAssetID(id)
+		assetId, err := storage.DatabaseAssetID(id)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
 		}
@@ -131,7 +127,7 @@ func (s *Service) SplitAsset(ctx context.Context, req *connect.Request[hummingbi
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("user_id not provided"))
 	}
-	assetId, err := databaseAssetID(req.Msg.AssetId)
+	assetId, err := storage.DatabaseAssetID(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -265,7 +261,7 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("ia not provided"))
 	}
 	handleAsset := func(update *hummingbird.AssetUpdate) (int64, error) {
-		assetId, err := databaseAssetID(update.AssetId)
+		assetId, err := storage.DatabaseAssetID(update.AssetId)
 		if err != nil {
 			return 0, err
 		}
@@ -356,6 +352,7 @@ func (s *Service) PublishAsset(ctx context.Context, req *connect.Request[humming
 		Price:           req.Msg.Asset.Price,
 		TimeGranularity: req.Msg.Asset.TimeGranularity,
 		TimeMinDuration: req.Msg.Asset.TimeMinDuration,
+		TimeMaxDuration: req.Msg.Asset.TimeMaxDuration,
 		IfIdIngress:     sql.NullInt32{},
 		IfIdEgress:      sql.NullInt32{},
 	}
@@ -397,17 +394,17 @@ func (s *Service) RedeemAsset(
 	var err error
 	switch t := req.Msg.Interfaces.(type) {
 	case *hummingbird.RedeemAssetRequest_Pair:
-		ingressAssetId, err := databaseAssetID(t.Pair.IngressAssetId)
+		ingressAssetId, err := storage.DatabaseAssetID(t.Pair.IngressAssetId)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("invalid assets"))
 		}
-		egressAssetId, err := databaseAssetID(t.Pair.EgressAssetId)
+		egressAssetId, err := storage.DatabaseAssetID(t.Pair.EgressAssetId)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("invalid assets"))
 		}
 		assets, err = s.store.PrepareRedemption(ctx, user, &ingressAssetId, &egressAssetId, nil)
 	case *hummingbird.RedeemAssetRequest_IfPairAssetId:
-		pairAssetId, err := databaseAssetID(t.IfPairAssetId)
+		pairAssetId, err := storage.DatabaseAssetID(t.IfPairAssetId)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("invalid assets"))
 		}
@@ -459,11 +456,11 @@ func (s *Service) RedeemAsset(
 		// we cannot undo the redemption using the request's context.
 		switch t := req.Msg.Interfaces.(type) {
 		case *hummingbird.RedeemAssetRequest_Pair:
-			ingressAssetId, _ := databaseAssetID(t.Pair.IngressAssetId)
-			egressAssetId, _ := databaseAssetID(t.Pair.EgressAssetId)
+			ingressAssetId, _ := storage.DatabaseAssetID(t.Pair.IngressAssetId)
+			egressAssetId, _ := storage.DatabaseAssetID(t.Pair.EgressAssetId)
 			err = s.store.UndoRedemption(context.Background(), user, &ingressAssetId, &egressAssetId, nil)
 		case *hummingbird.RedeemAssetRequest_IfPairAssetId:
-			pairAssetId, _ := databaseAssetID(t.IfPairAssetId)
+			pairAssetId, _ := storage.DatabaseAssetID(t.IfPairAssetId)
 			err = s.store.UndoRedemption(context.Background(), user, nil, nil, &pairAssetId)
 		}
 		if err != nil {

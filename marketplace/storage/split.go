@@ -38,7 +38,7 @@ type SplitResult struct {
 
 func validateSplit(asset AssetSegment, p RequestedSplit) error {
 	if p.ExactFrom.Before(asset.StartsAt) || p.ExactTo.After(asset.StopsAt) {
-		return fmt.Errorf("purchase outside asset bounds")
+		return fmt.Errorf("split outside asset bounds")
 	}
 	if !p.ExactFrom.Before(p.ExactTo) {
 		return fmt.Errorf("invalid validity range")
@@ -47,7 +47,13 @@ func validateSplit(asset AssetSegment, p RequestedSplit) error {
 		return fmt.Errorf("timestamps must be second precision")
 	}
 	if p.ExactBandwidth > asset.Bandwidth {
-		return fmt.Errorf("purchase amount exceeds asset amount")
+		return fmt.Errorf("split amount exceeds asset amount")
+	}
+	if p.ExactBandwidth == 0 {
+		return fmt.Errorf("split cannot be zero")
+	}
+	if p.ExactFrom.Equal(p.ExactTo) {
+		return fmt.Errorf("split cannot be zero")
 	}
 
 	return nil

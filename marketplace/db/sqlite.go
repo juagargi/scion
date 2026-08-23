@@ -483,7 +483,7 @@ func (e *executor) CreateOrUpdateRedemptionDelegations(
 		paid_until = excluded.paid_until,
 		key = excluded.key,
 		encodings = excluded.encodings,
-		res_id_limit_low = excluded.res_id_limit_low
+		res_id_limit_low = excluded.res_id_limit_low,
 		res_id_limit_high = excluded.res_id_limit_high;`
 	res, err := e.write.ExecContext(ctx, q,
 		r.IA.ISD(),
@@ -632,7 +632,7 @@ func (e *executor) RegisterAssetEvent(ctx context.Context, a *DBAsset, eventType
 	}
 	var err error
 	inst := `INSERT INTO Asset_Events (event_type, isd_id, as_id, ingress, egress, bandwidth, starts_at, stops_at, price)
-	VALUES(?,?,?,?,?,?,?,?)`
+	VALUES(?,?,?,?,?,?,?,?,?)`
 	res, err := e.write.ExecContext(ctx, inst, eventType, a.IA.ISD(), a.IA.AS(), a.IfIdIngress, a.IfIdEgress, a.Bandwidth,
 		a.StartAt.UTC().Format(time.RFC3339), a.StopsAt.UTC().Format(time.RFC3339), a.Price)
 	if err != nil {

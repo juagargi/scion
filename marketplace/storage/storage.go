@@ -383,6 +383,9 @@ func (s *MarketplaceStorage) CombineAssets(
 	accountID int64,
 	assetIds []int64,
 ) (int64, error) {
+	if len(assetIds) < 2 {
+		return 0, serrors.New("at least 2 asset IDs are required when combining assets")
+	}
 	var newID int64
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
 		var err error
@@ -506,11 +509,14 @@ func (s *MarketplaceStorage) SplitAsset(
 				if err != nil {
 					return err
 				}
-				if len(res.Remainders) != 1 {
+				splitSegments = append(splitSegments, res.Split)
+				if len(res.Remainders) == 0 {
+					baseSegment = AssetSegment{}
+				} else if len(res.Remainders) == 1 {
+					baseSegment = res.Remainders[0]
+				} else {
 					return serrors.New("invalid split")
 				}
-				splitSegments = append(splitSegments, res.Split)
-				baseSegment = res.Remainders[0]
 			}
 		} else {
 			for _, split := range timeSplit {
@@ -519,17 +525,23 @@ func (s *MarketplaceStorage) SplitAsset(
 					ExactTo:        split,
 					ExactBandwidth: baseSegment.Bandwidth,
 				})
+				// TODO: TEST THIS HERE
 				if err != nil {
 					return err
 				}
-				if len(res.Remainders) != 1 {
+				splitSegments = append(splitSegments, res.Split)
+				if len(res.Remainders) == 0 {
+					baseSegment = AssetSegment{}
+				} else if len(res.Remainders) == 1 {
+					baseSegment = res.Remainders[0]
+				} else {
 					return serrors.New("invalid split")
 				}
-				splitSegments = append(splitSegments, res.Split)
-				baseSegment = res.Remainders[0]
 			}
 		}
-		splitSegments = append(splitSegments, baseSegment)
+		if baseSegment.Bandwidth != 0 && !baseSegment.StartsAt.Equal(baseSegment.StopsAt) {
+			splitSegments = append(splitSegments, baseSegment)
+		}
 		if err := tx.RemoveAsset(ctx, assetId); err != nil {
 			return err
 		}
@@ -542,6 +554,7 @@ func (s *MarketplaceStorage) SplitAsset(
 				Price:           dbAsset.Price,
 				TimeGranularity: dbAsset.TimeGranularity,
 				TimeMinDuration: dbAsset.TimeMinDuration,
+				TimeMaxDuration: dbAsset.TimeMaxDuration,
 				IfIdIngress:     dbAsset.IfIdIngress,
 				IfIdEgress:      dbAsset.IfIdEgress,
 				Bandwidth:       segment.Bandwidth,
@@ -573,7 +586,10 @@ func (s *MarketplaceStorage) FindUsedReservations(
 	return s.db.FindUsedReservations(ctx, params)
 }
 
-func databaseAssetID(id []byte) (int64, error) {
+func DatabaseAssetID(id []byte) (int64, error) {
+	if len(id) != 8 {
+		return 0, serrors.New("invalid asset ID")
+	}
 	idInt := binary.BigEndian.Uint64(id)
 	return marketplacedb.AssetID(idInt).Int64()
 }
@@ -586,7 +602,7 @@ func (s *MarketplaceStorage) BuyAssets(
 ) ([]int64, int64, error) {
 	uniqueCheck := make(map[int64]bool)
 	for _, asset := range assets {
-		assetId, err := databaseAssetID(asset.AssetId)
+		assetId, err := DatabaseAssetID(asset.AssetId)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -602,7 +618,7 @@ func (s *MarketplaceStorage) BuyAssets(
 	costAcc := int64(0)
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
 		for _, asset := range assets {
-			assetId, err := databaseAssetID(asset.AssetId)
+			assetId, err := DatabaseAssetID(asset.AssetId)
 			if err != nil {
 				return err
 			}
@@ -631,6 +647,7 @@ func (s *MarketplaceStorage) BuyAssets(
 				BandwidthMax:    dbAsset.BandwidthMax,
 				TimeGranularity: dbAsset.TimeGranularity,
 				TimeMinDuration: dbAsset.TimeMinDuration,
+				TimeMaxDuration: dbAsset.TimeMaxDuration,
 				IfIdIngress:     dbAsset.IfIdIngress,
 				IfIdEgress:      dbAsset.IfIdEgress,
 				Bandwidth:       split.Split.Bandwidth,
@@ -681,6 +698,7 @@ func (s *MarketplaceStorage) BuyAssets(
 					BandwidthMax:    dbAsset.BandwidthMax,
 					TimeGranularity: dbAsset.TimeGranularity,
 					TimeMinDuration: dbAsset.TimeMinDuration,
+					TimeMaxDuration: dbAsset.TimeMaxDuration,
 					IfIdIngress:     dbAsset.IfIdIngress,
 					IfIdEgress:      dbAsset.IfIdEgress,
 					Bandwidth:       segment.Bandwidth,

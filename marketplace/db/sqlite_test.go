@@ -242,3 +242,107 @@ func TestSearchOwnedAssets(t *testing.T) {
 	require.Equal(t, notOwnedAssetID, assets[0].ID)
 	require.False(t, assets[0].AccountId.Valid)
 }
+
+func TestCreateOrUpdateRedemptionDelegations(t *testing.T) {
+	ctx := context.Background()
+	backend := newTestBackend(t)
+	ia := addr.MustParseIA("1-ff00:0:110")
+	// first try creating a redemption delegation
+	delegationToInsert := &RedemptionDelegation{
+		IA:         ia,
+		Expiration: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		PaidUntil:  time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		ResIdLow:   0,
+		ResIdHigh:  1024,
+		Key:        []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		Encodings:  []byte{0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4},
+	}
+	_, err := backend.CreateOrUpdateRedemptionDelegations(ctx, delegationToInsert)
+	require.NoError(t, err)
+	// now compare whether the redemption delegation is stored and returned correctly
+	delegation, err := backend.FindRedemptionDelegation(ctx, ia)
+	require.NoError(t, err)
+	require.Equal(t, *delegationToInsert, *delegation)
+	// now check whether finding all redemption delegations also returned the correct one
+	allDelegations, err := backend.FindRedemptionDelegations(ctx)
+	require.NoError(t, err)
+	require.Len(t, allDelegations, 1)
+	require.Equal(t, *delegationToInsert, *allDelegations[0])
+	// now try to update a redemption delegation
+	delegationToUpdate := &RedemptionDelegation{
+		IA:         ia,
+		Expiration: time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC),
+		PaidUntil:  time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC),
+		ResIdLow:   1024,
+		ResIdHigh:  2048,
+		Key:        []byte{16, 15, 14, 16, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1},
+		Encodings:  []byte{0, 0, 0, 5, 0, 0, 0, 9, 0, 0, 0, 7, 0, 0, 0, 8},
+	}
+	_, err = backend.CreateOrUpdateRedemptionDelegations(ctx, delegationToUpdate)
+	require.NoError(t, err)
+	delegation, err = backend.FindRedemptionDelegation(ctx, ia)
+	require.NoError(t, err)
+	require.Equal(t, *delegationToUpdate, *delegation)
+}
+
+func TestRegisterAssetEvent(t *testing.T) {
+	ctx := context.Background()
+	backend := newTestBackend(t)
+	ia := addr.MustParseIA("1-ff00:0:110")
+	// register a publish asset event
+	publishAsset := &DBAsset{
+		ID:              1,
+		IA:              ia,
+		Bandwidth:       1000,
+		BandwidthMin:    10,
+		BandwidthMax:    1000,
+		StartAt:         time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		StopsAt:         time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC),
+		TimeGranularity: 10,
+		TimeMinDuration: 10,
+		TimeMaxDuration: 3600,
+		Price:           2,
+		IfIdIngress:     sql.NullInt32{Valid: true, Int32: 1},
+		IfIdEgress:      sql.NullInt32{Valid: true, Int32: 2},
+	}
+	_, err := backend.RegisterAssetEvent(ctx, publishAsset, AssetPublished)
+	require.NoError(t, err)
+	// register a buy asset event
+	buyAsset := &DBAsset{
+		AccountId:       sql.NullInt64{Valid: true, Int64: 7},
+		ID:              2,
+		IA:              ia,
+		Bandwidth:       1000,
+		BandwidthMin:    10,
+		BandwidthMax:    1000,
+		StartAt:         time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		StopsAt:         time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC),
+		TimeGranularity: 10,
+		TimeMinDuration: 10,
+		TimeMaxDuration: 3600,
+		Price:           2,
+		IfIdIngress:     sql.NullInt32{Valid: true, Int32: 1},
+		IfIdEgress:      sql.NullInt32{Valid: true, Int32: 2},
+	}
+
+	_, err = backend.RegisterAssetEvent(ctx, buyAsset, AssetBought)
+	require.NoError(t, err)
+	// now verify whether both registered events return the correct values.
+	publishStats, buyStats, err := backend.SearchAssetsForStatistics(ctx, &StatisticsQuery{
+		IA:          ia,
+		WindowStart: "2027-01-01T00:00:00Z",
+		WindowEnd:   "2028-01-01T00:00:00Z",
+	})
+	require.NoError(t, err)
+	require.Len(t, publishStats, 1)
+	require.Len(t, buyStats, 1)
+	require.Equal(t, publishAsset.Bandwidth, uint32(publishStats[0].Bandwidth))
+	require.Equal(t, publishAsset.Price, uint32(publishStats[0].Price))
+	require.Equal(t, publishAsset.StartAt, publishStats[0].StartsAt)
+	require.Equal(t, publishAsset.StopsAt, publishStats[0].StopsAt)
+
+	require.Equal(t, buyAsset.Bandwidth, uint32(buyStats[0].Bandwidth))
+	require.Equal(t, buyAsset.Price, uint32(buyStats[0].Price))
+	require.Equal(t, buyAsset.StartAt, buyStats[0].StartsAt)
+	require.Equal(t, buyAsset.StopsAt, buyStats[0].StopsAt)
+}
