@@ -525,7 +525,6 @@ func (s *MarketplaceStorage) SplitAsset(
 					ExactTo:        split,
 					ExactBandwidth: baseSegment.Bandwidth,
 				})
-				// TODO: TEST THIS HERE
 				if err != nil {
 					return err
 				}

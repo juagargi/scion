@@ -19,7 +19,6 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"fmt"
 	"slices"
 	"sort"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"github.com/scionproto/scion/marketplace/db"
 	"github.com/scionproto/scion/marketplace/storage"
 	"github.com/scionproto/scion/pkg/addr"
+	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 	hbird "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
@@ -113,7 +113,6 @@ func NewRedemptionService(ctx context.Context, client *RedemptionServerPeer, sto
 }
 
 func (s *RedemptionService) readRoutine() {
-	var err error
 	for {
 		select {
 		case u := <-s.UpdateChannel:
@@ -128,13 +127,11 @@ func (s *RedemptionService) readRoutine() {
 				select {
 				case s.SendChannel <- r:
 				default:
+					log.Debug("Could not return request back to send queue. Request is dropped.")
 				}
 				return
 			}
-			if err = s.handleRequest(now, r); err != nil {
-				fmt.Println(err)
-				return
-			}
+			s.handleRequest(now, r)
 		}
 	}
 }
@@ -142,17 +139,15 @@ func (s *RedemptionService) readRoutine() {
 func (s *RedemptionService) handleUpdate(u *RedemptionDelegationUpdate) error {
 	var res []*db.UsedReservation
 	var err error
-	if u.ExpirationTime != s.expiration {
-		res, err = s.store.FindUsedReservations(context.TODO(), &db.UsedReservationsQuery{
-			IA:         s.client.ia,
-			Limit_low:  u.IdLimitLow,
-			Limit_high: u.IdLimitHigh,
-		})
-		if err != nil {
-			return err
-		}
-		s.expiration = u.ExpirationTime
+	res, err = s.store.FindUsedReservations(context.TODO(), &db.UsedReservationsQuery{
+		IA:         s.client.ia,
+		Limit_low:  u.IdLimitLow,
+		Limit_high: u.IdLimitHigh,
+	})
+	if err != nil {
+		return err
 	}
+	s.expiration = u.ExpirationTime
 	err = s.resIdStore.Migrate(u.IdLimitLow, u.IdLimitHigh, res)
 	if err != nil {
 		return err
@@ -163,10 +158,28 @@ func (s *RedemptionService) handleUpdate(u *RedemptionDelegationUpdate) error {
 	return err
 }
 
-func (s *RedemptionService) handleRequest(now time.Time, r *hummingbird.RedeemAssetFromASRequest) error {
+func (s *RedemptionService) handleRequest(now time.Time, r *hummingbird.RedeemAssetFromASRequest) {
+	reply := func(msg *hummingbird.RedeemAssetFromASResponse) {
+		s.client.mtx.Lock()
+		defer s.client.mtx.Unlock()
+		ch, ok := s.Pending[r.RequestId]
+		if ok {
+			ch <- msg
+			close(ch)
+			delete(s.client.pending, r.RequestId)
+		} else {
+			log.Debug("Redemption request with invalid request id. Request is dropped.")
+		}
+	}
 	resId, err := s.resIdStore.Next(now.Unix(), r.StartsAt.Seconds, r.StopsAt.Seconds)
 	if err != nil {
-		return err
+		reply(&hummingbird.RedeemAssetFromASResponse{
+			Result: &hummingbird.RedeemAssetFromASResponse_Error{
+				Error: err.Error(),
+			},
+			RequestId: r.RequestId,
+		})
+		return
 	}
 
 	unixStart := uint32(r.StartsAt.Seconds)
@@ -176,25 +189,17 @@ func (s *RedemptionService) handleRequest(now time.Time, r *hummingbird.RedeemAs
 
 	var buff [16]byte
 	ak := hbird.DeriveAuthKey(s.cipher, resId, encoded_bw, uint16(r.IngressId), uint16(r.EgressId), unixStart, uint16(durSeconds), buff[:])
-	s.client.mtx.Lock()
-	defer s.client.mtx.Unlock()
-	ch, ok := s.Pending[r.RequestId]
-	if ok {
-		ch <- &hummingbird.RedeemAssetFromASResponse{
-			Result: &hummingbird.RedeemAssetFromASResponse_ResInfo{
-				ResInfo: &hummingbird.ReservationInfo{
-					ReservationId:       resId,
-					BandwithRounded:     s.encodingPoints[encoded_bw],
-					BwDataplaneEncoding: uint32(encoded_bw),
-					AuthenticationKey:   ak,
-				},
+	reply(&hummingbird.RedeemAssetFromASResponse{
+		Result: &hummingbird.RedeemAssetFromASResponse_ResInfo{
+			ResInfo: &hummingbird.ReservationInfo{
+				ReservationId:       resId,
+				BandwithRounded:     s.encodingPoints[encoded_bw],
+				BwDataplaneEncoding: uint32(encoded_bw),
+				AuthenticationKey:   ak,
 			},
-			RequestId: r.RequestId,
-		}
-		close(ch)
-		delete(s.client.pending, r.RequestId)
-	}
-	return nil
+		},
+		RequestId: r.RequestId,
+	})
 }
 
 func (s *RedemptionService) encodeBandwidth(bw uint32) uint16 {
@@ -286,29 +291,29 @@ func (s *UsedIDStore) Next(now int64, start int64, end int64) (uint32, error) {
 }
 
 func (s *UsedIDStore) Migrate(new_limit_low uint32, new_limit_high uint32, r []*db.UsedReservation) error {
-	if s.next > new_limit_high {
+	if s.next >= new_limit_high {
 		return serrors.New("newLimit too small")
 	}
 	s.base = new_limit_low
 	s.limit = new_limit_high
-
-	if r != nil {
-		clear(s.usedIds)
-		clear(s.expirations)
-		s.next = s.base
-		for _, res := range r {
-			s.usedIds[res.Id] = struct{}{}
-			s.expirations = append(s.expirations, &entry{
-				id:         res.Id,
-				expiration: res.StopsAt.Unix(),
-			})
-		}
-		heap.Init(&s.expirations)
+	s.next = s.base
+	clear(s.usedIds)
+	clear(s.expirations)
+	s.expirations = s.expirations[:0]
+	for _, res := range r {
+		s.usedIds[res.Id] = struct{}{}
+		s.expirations = append(s.expirations, &entry{
+			id:         res.Id,
+			expiration: res.StopsAt.Unix(),
+		})
 	}
+	heap.Init(&s.expirations)
 	return nil
 }
 
 func (s *UsedIDStore) Close() error {
 	clear(s.usedIds)
+	clear(s.expirations)
+	s.expirations = nil
 	return nil
 }
