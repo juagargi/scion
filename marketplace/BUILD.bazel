@@ -7,6 +7,7 @@ go_library(
         "account.go",
         "auth.go",
         "config.go",
+        "id_store.go",
         "redeem.go",
         "redemption_service.go",
         "service.go",

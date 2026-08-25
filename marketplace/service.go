@@ -34,12 +34,12 @@ import (
 )
 
 type Service struct {
-	redemptionServerPeers map[addr.IA]*RedemptionServerPeer
-	mtx                   sync.Mutex
-	info                  *MarketplaceInfo
-	store                 *storage.MarketplaceStorage
-	registrationService   *registration.Service
-	signer                *registration.Signer
+	redemptionServerHandlers map[addr.IA]*RedemptionServerHandler
+	mtx                      sync.RWMutex
+	info                     *MarketplaceInfo
+	store                    *storage.MarketplaceStorage
+	registrationService      *registration.Service
+	signer                   *registration.Signer
 }
 
 type MarketplaceInfo struct {
@@ -66,11 +66,11 @@ func protoAssetID(assetId int64) []byte {
 
 func NewService(ctx context.Context, info *MarketplaceInfo, store *storage.MarketplaceStorage, regService *registration.Service, signer *registration.Signer) (*Service, error) {
 	s := &Service{
-		redemptionServerPeers: make(map[addr.IA]*RedemptionServerPeer),
-		info:                  info,
-		store:                 store,
-		registrationService:   regService,
-		signer:                signer,
+		redemptionServerHandlers: make(map[addr.IA]*RedemptionServerHandler),
+		info:                     info,
+		store:                    store,
+		registrationService:      regService,
+		signer:                   signer,
 	}
 	if s.info.SupportsRedemptionDelegation {
 		d, err := store.FindRedemptionDelegations(ctx)
@@ -79,20 +79,42 @@ func NewService(ctx context.Context, info *MarketplaceInfo, store *storage.Marke
 		}
 		for _, delegation := range d {
 			delegation.EncodingsToInts()
-			peer := s.newRedemptionServerPeer(delegation.IA)
-			err = s.startOrUpdateRedemptionDelegation(ctx, peer.ia, &RedemptionDelegationUpdate{
+			handler := s.FindRedemptionServerHandler(delegation.IA)
+			handler.delegationInChannel <- &RedemptionDelegationUpdate{
 				ExpirationTime: delegation.Expiration,
 				IdLimitLow:     delegation.ResIdLow,
 				IdLimitHigh:    delegation.ResIdHigh,
 				Key:            delegation.Key,
 				EncodingPoints: delegation.EncodingsToInts(),
-			}, false)
+			}
+			err = <-handler.delegationOutChannel
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 	return s, nil
+}
+
+// FindRedemptionServerHandler returns an already register redemption server handler,
+// or if none is found, registers a new one.
+func (s *Service) FindRedemptionServerHandler(ia addr.IA) *RedemptionServerHandler {
+	s.mtx.RLock()
+	handler, found := s.redemptionServerHandlers[ia]
+	s.mtx.RUnlock()
+	if found {
+		return handler
+	}
+	// handler does not exist, acquire writer lock and create it if it was not created in the meantime
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	handler, found = s.redemptionServerHandlers[ia]
+	if found {
+		return handler
+	}
+	handler = NewRedemptionServerHandler(ia, s.store)
+	s.redemptionServerHandlers[ia] = handler
+	return handler
 }
 
 func (s *Service) CombineAssets(ctx context.Context, req *connect.Request[hummingbird.CombineAssetRequest]) (*connect.Response[hummingbird.CombineAssetResponse], error) {
@@ -472,11 +494,8 @@ func (s *Service) RedeemAsset(
 		return nil, connect.NewError(connect.CodeInvalidArgument,
 			serrors.Join(serrors.New("stops at before starts at"), undoRedemption()))
 	}
-	peer, found := s.redemptionServerPeers[ia]
-	if !found {
-		return nil, connect.NewError(connect.CodeUnavailable, serrors.Join(serrors.New("Redemption service not reachable"), undoRedemption()))
-	}
-	respCh := peer.Send(&hummingbird.RedeemAssetFromASRequest{
+	peer := s.FindRedemptionServerHandler(ia)
+	respCh := peer.QueueRedemptionRequest(&hummingbird.RedeemAssetFromASRequest{
 		Bandwidth: bw,
 		IngressId: ingressID,
 		EgressId:  egressID,

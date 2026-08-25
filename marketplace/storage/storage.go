@@ -301,6 +301,8 @@ func (s *MarketplaceStorage) CreateOrUpdateRedemptionDelegations(
 		if s.delegationHourlyFee == 0 {
 			if r.Expiration.After(paidUntil) {
 				r.PaidUntil = r.Expiration
+			} else {
+				r.PaidUntil = paidUntil
 			}
 		} else if r.Expiration.After(paidUntil) {
 			paymentDuration := hbird.RoundUpDuration(r.Expiration.Sub(paidUntil), time.Hour)

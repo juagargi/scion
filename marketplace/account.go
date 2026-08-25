@@ -157,17 +157,9 @@ func (s *Service) ResetJWT(ctx context.Context, req *connect.Request[hummingbird
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		kickRedemptionService := func() {
-			s.mtx.Lock()
-			defer s.mtx.Unlock()
-			peer, found := s.redemptionServerPeers[x]
-			if !found {
-				return
-			}
-			peer.mtx.Lock()
-			defer peer.mtx.Unlock()
-			if peer.cancelOldConnection != nil {
-				peer.cancelOldConnection()
-			}
+			handler := s.FindRedemptionServerHandler(x)
+			handler.remoteConnectionOpenChannel <- nil
+			_ = <-handler.remoteConnectionCloseChannel
 		}
 		kickRedemptionService()
 	default:

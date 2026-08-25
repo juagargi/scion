@@ -51,42 +51,6 @@ func TestIDStore(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestIDStoreMigrate(t *testing.T) {
-	base, err := time.Parse(time.RFC3339, "2026-07-16T00:00:00Z")
-	assert.NoError(t, err)
-	b := base.Unix()
-	store := marketplace.UsedIDStore{}
-	err = store.Init(0, 3, []*db.UsedReservation{
-		{
-			Id:       0,
-			StartsAt: base,
-			StopsAt:  base.Add(time.Second * 10),
-		},
-		{
-			Id:       1,
-			StartsAt: base,
-			StopsAt:  base.Add(time.Second * 10),
-		},
-	})
-	assert.NoError(t, err)
-	err = store.Migrate(1, 4, []*db.UsedReservation{
-		{
-			Id:       1,
-			StartsAt: base,
-			StopsAt:  base.Add(time.Second * 10),
-		},
-	})
-	assert.NoError(t, err)
-	nextId, err := store.Next(b, b, b+10)
-	assert.NoError(t, err)
-	assert.Equal(t, uint32(2), nextId)
-	nextId, err = store.Next(b, b, b+10)
-	assert.NoError(t, err)
-	assert.Equal(t, uint32(3), nextId)
-	nextId, err = store.Next(b, b, b+10)
-	assert.Error(t, err)
-}
-
 func TestEncoding(t *testing.T) {
 	// The points an AS publishes are the bandwidths of the codepoints the
 	// dataplane carries, so a delegated redemption service rounds a request to

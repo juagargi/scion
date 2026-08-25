@@ -15,8 +15,6 @@
 package marketplace
 
 import (
-	"container/heap"
-	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"slices"
@@ -24,10 +22,6 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/marketplace/db"
-	"github.com/scionproto/scion/marketplace/storage"
-	"github.com/scionproto/scion/pkg/addr"
-	"github.com/scionproto/scion/pkg/log"
-	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 	hbird "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 )
@@ -37,24 +31,11 @@ const (
 )
 
 type RedemptionService struct {
-	SendChannel chan *hummingbird.RedeemAssetFromASRequest
-	Pending     map[uint64]chan *hummingbird.RedeemAssetFromASResponse
-	// The update channel is used to propagate updates to the redemption service
-	// like different secret key or updated expiration date
-	// The result of the update is send over the UpdateResultChannel, which MUST
-	// be consumed by the entity who send the update over the UpdateChannel.
-	UpdateChannel       chan *RedemptionDelegationUpdate
-	UpdateResultChannel chan error
-	client              *RedemptionServerPeer
-	store               *storage.MarketplaceStorage
-	cipher              cipher.Block
-	resStart            uint32
-	resLimit            uint32
-	resIdStore          ReservationIdStore
-	encodingPoints      []uint32
-	expiration          time.Time
+	encodingPoints []uint32
+	cipher         cipher.Block
+	resIdStore     ReservationIdStore
+	expiration     time.Time
 }
-
 type RedemptionDelegationUpdate struct {
 	ExpirationTime time.Time
 	IdLimitLow     uint32
@@ -62,258 +43,63 @@ type RedemptionDelegationUpdate struct {
 	Key            []byte
 	EncodingPoints []uint32
 }
-
-type RedemptionDelegationUpdateResult struct {
-	ExpirationTime time.Time
-	OK             bool
-}
-
 type ReservationIdStore interface {
 	Init(limit_low uint32, limit_high uint32, r []*db.UsedReservation) error
 	Next(now int64, start int64, end int64) (uint32, error)
-	Migrate(new_limit_low uint32, new_limit_hight uint32, r []*db.UsedReservation) error
 	Close() error
 }
 
-func NewRedemptionService(ctx context.Context, client *RedemptionServerPeer, store *storage.MarketplaceStorage, ia addr.IA, initState *RedemptionDelegationUpdate, sendCh chan *hummingbird.RedeemAssetFromASRequest,
-	pending map[uint64]chan *hummingbird.RedeemAssetFromASResponse) (*RedemptionService, error) {
+func NewRedemptionService(initState *RedemptionDelegationUpdate, r []*db.UsedReservation) (*RedemptionService, error) {
 	slices.Sort(initState.EncodingPoints)
 	blockCipher, err := aes.NewCipher(initState.Key)
 	if err != nil {
 		return nil, err
 	}
-	s := &RedemptionService{
-		SendChannel:         sendCh,
-		Pending:             pending,
-		UpdateChannel:       make(chan *RedemptionDelegationUpdate),
-		UpdateResultChannel: make(chan error),
-		store:               store,
-		cipher:              blockCipher,
-		resStart:            initState.IdLimitLow,
-		resLimit:            initState.IdLimitHigh,
-		encodingPoints:      initState.EncodingPoints,
-		client:              client,
-		expiration:          initState.ExpirationTime,
-		resIdStore:          &UsedIDStore{},
-	}
-	res, err := s.store.FindUsedReservations(ctx, &db.UsedReservationsQuery{
-		IA:         ia,
-		Limit_low:  initState.IdLimitLow,
-		Limit_high: initState.IdLimitHigh,
-	})
+	idStore := &UsedIDStore{}
+	err = idStore.Init(initState.IdLimitLow, initState.IdLimitHigh, r)
 	if err != nil {
 		return nil, err
 	}
-	err = s.resIdStore.Init(initState.IdLimitLow, initState.IdLimitHigh, res)
-	if err != nil {
-		return nil, err
-	}
-	go s.readRoutine()
-	return s, nil
+	return &RedemptionService{
+		cipher:         blockCipher,
+		resIdStore:     idStore,
+		expiration:     initState.ExpirationTime,
+		encodingPoints: initState.EncodingPoints,
+	}, nil
 }
 
-func (s *RedemptionService) readRoutine() {
-	for {
-		select {
-		case u := <-s.UpdateChannel:
-			if u.ExpirationTime.Before(time.Now()) {
-				s.UpdateResultChannel <- nil
-				return
-			}
-			s.UpdateResultChannel <- s.handleUpdate(u)
-		case r := <-s.SendChannel:
-			now := time.Now()
-			if s.expiration.Before(now) {
-				select {
-				case s.SendChannel <- r:
-				default:
-					log.Debug("Could not return request back to send queue. Request is dropped.")
-				}
-				return
-			}
-			s.handleRequest(now, r)
-		}
-	}
-}
-
-func (s *RedemptionService) handleUpdate(u *RedemptionDelegationUpdate) error {
-	var res []*db.UsedReservation
-	var err error
-	res, err = s.store.FindUsedReservations(context.TODO(), &db.UsedReservationsQuery{
-		IA:         s.client.ia,
-		Limit_low:  u.IdLimitLow,
-		Limit_high: u.IdLimitHigh,
-	})
+func (r *RedemptionService) Redeem(req *hummingbird.RedeemAssetFromASRequest) *hummingbird.RedeemAssetFromASResponse {
+	now := time.Now()
+	resId, err := r.resIdStore.Next(now.Unix(), req.StartsAt.Seconds, req.StartsAt.Seconds)
 	if err != nil {
-		return err
-	}
-	s.expiration = u.ExpirationTime
-	err = s.resIdStore.Migrate(u.IdLimitLow, u.IdLimitHigh, res)
-	if err != nil {
-		return err
-	}
-	slices.Sort(u.EncodingPoints)
-	s.encodingPoints = u.EncodingPoints
-	s.cipher, err = aes.NewCipher(u.Key)
-	return err
-}
-
-func (s *RedemptionService) handleRequest(now time.Time, r *hummingbird.RedeemAssetFromASRequest) {
-	reply := func(msg *hummingbird.RedeemAssetFromASResponse) {
-		s.client.mtx.Lock()
-		defer s.client.mtx.Unlock()
-		ch, ok := s.Pending[r.RequestId]
-		if ok {
-			ch <- msg
-			close(ch)
-			delete(s.client.pending, r.RequestId)
-		} else {
-			log.Debug("Redemption request with invalid request id. Request is dropped.")
-		}
-	}
-	resId, err := s.resIdStore.Next(now.Unix(), r.StartsAt.Seconds, r.StopsAt.Seconds)
-	if err != nil {
-		reply(&hummingbird.RedeemAssetFromASResponse{
+		return &hummingbird.RedeemAssetFromASResponse{
 			Result: &hummingbird.RedeemAssetFromASResponse_Error{
 				Error: err.Error(),
 			},
-			RequestId: r.RequestId,
-		})
-		return
+		}
 	}
 
-	unixStart := uint32(r.StartsAt.Seconds)
-	unixEnd := uint32(r.StopsAt.Seconds)
+	unixStart := uint32(req.StartsAt.Seconds)
+	unixEnd := uint32(req.StopsAt.Seconds)
 	durSeconds := unixEnd - unixStart
-	encoded_bw := s.encodeBandwidth(r.Bandwidth)
+	encoded_bw := r.encodeBandwidth(req.Bandwidth)
 
 	var buff [16]byte
-	ak := hbird.DeriveAuthKey(s.cipher, resId, encoded_bw, uint16(r.IngressId), uint16(r.EgressId), unixStart, uint16(durSeconds), buff[:])
-	reply(&hummingbird.RedeemAssetFromASResponse{
+	ak := hbird.DeriveAuthKey(r.cipher, resId, encoded_bw, uint16(req.IngressId), uint16(req.EgressId), unixStart, uint16(durSeconds), buff[:])
+	return &hummingbird.RedeemAssetFromASResponse{
 		Result: &hummingbird.RedeemAssetFromASResponse_ResInfo{
 			ResInfo: &hummingbird.ReservationInfo{
 				ReservationId:       resId,
-				BandwithRounded:     s.encodingPoints[encoded_bw],
+				BandwithRounded:     r.encodingPoints[encoded_bw],
 				BwDataplaneEncoding: uint32(encoded_bw),
 				AuthenticationKey:   ak,
 			},
 		},
-		RequestId: r.RequestId,
-	})
+	}
 }
 
 func (s *RedemptionService) encodeBandwidth(bw uint32) uint16 {
 	return min(uint16(len(s.encodingPoints)-1), uint16(sort.Search(len(s.encodingPoints), func(i int) bool {
 		return s.encodingPoints[i] >= bw
 	})))
-}
-
-type entry struct {
-	id         uint32
-	expiration int64
-}
-
-type ExpiryHeap []*entry
-
-func (h ExpiryHeap) Len() int {
-	return len(h)
-}
-
-func (h ExpiryHeap) Less(i, j int) bool {
-	return h[i].expiration < h[j].expiration
-}
-
-func (h ExpiryHeap) Swap(i, j int) {
-	h[i], h[j] = h[j], h[i]
-}
-
-func (h *ExpiryHeap) Push(x any) {
-	*h = append(*h, x.(*entry))
-}
-
-func (h *ExpiryHeap) Pop() any {
-	old := *h
-	n := len(old)
-
-	e := old[n-1]
-	*h = old[:n-1]
-
-	return e
-}
-
-type UsedIDStore struct {
-	usedIds     map[uint32]struct{}
-	expirations ExpiryHeap
-	next        uint32
-	limit       uint32
-	base        uint32
-}
-
-func (s *UsedIDStore) Init(limit_low uint32, limit_high uint32, r []*db.UsedReservation) error {
-	s.usedIds = make(map[uint32]struct{})
-	s.base = limit_low
-	s.limit = limit_high
-	s.next = s.base
-	for _, res := range r {
-		s.usedIds[res.Id] = struct{}{}
-		s.expirations = append(s.expirations, &entry{
-			id:         res.Id,
-			expiration: res.StopsAt.Unix(),
-		})
-	}
-	heap.Init(&s.expirations)
-	return nil
-}
-
-func (s *UsedIDStore) Next(now int64, start int64, end int64) (uint32, error) {
-	if len(s.expirations) != 0 && s.expirations[0].expiration <= now {
-		e := heap.Pop(&s.expirations).(*entry)
-		heap.Push(&s.expirations, &entry{
-			id:         e.id,
-			expiration: end,
-		})
-		return e.id, nil
-	}
-	for ; s.next < s.limit; s.next++ {
-		_, found := s.usedIds[s.next]
-		if !found {
-			s.usedIds[s.next] = struct{}{}
-			heap.Push(&s.expirations, &entry{
-				id:         s.next,
-				expiration: end,
-			})
-			tmp := s.next
-			s.next++
-			return tmp, nil
-		}
-	}
-	return 0, serrors.New("no free reservation id")
-}
-
-func (s *UsedIDStore) Migrate(new_limit_low uint32, new_limit_high uint32, r []*db.UsedReservation) error {
-	if s.next >= new_limit_high {
-		return serrors.New("newLimit too small")
-	}
-	s.base = new_limit_low
-	s.limit = new_limit_high
-	s.next = s.base
-	clear(s.usedIds)
-	clear(s.expirations)
-	s.expirations = s.expirations[:0]
-	for _, res := range r {
-		s.usedIds[res.Id] = struct{}{}
-		s.expirations = append(s.expirations, &entry{
-			id:         res.Id,
-			expiration: res.StopsAt.Unix(),
-		})
-	}
-	heap.Init(&s.expirations)
-	return nil
-}
-
-func (s *UsedIDStore) Close() error {
-	clear(s.usedIds)
-	clear(s.expirations)
-	s.expirations = nil
-	return nil
 }
