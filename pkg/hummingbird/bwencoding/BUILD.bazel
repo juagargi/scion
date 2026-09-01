@@ -6,6 +6,7 @@ go_library(
     srcs = [
         "bwencoding.go",
         "encodeBandwidthWithLogStart.go",
+        "parseBandwidth.go",
     ],
     importpath = "github.com/scionproto/scion/pkg/hummingbird/bwencoding",
     visibility = ["//visibility:public"],
@@ -14,7 +15,10 @@ go_library(
 
 go_test(
     name = "go_default_test",
-    srcs = ["bwencoding_test.go"],
+    srcs = [
+        "bwencoding_test.go",
+        "parseBandwidth_test.go",
+    ],
     embed = [":go_default_library"],
     deps = ["@com_github_stretchr_testify//assert:go_default_library"],
 )

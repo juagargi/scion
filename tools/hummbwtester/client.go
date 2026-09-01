@@ -31,7 +31,7 @@ import (
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/daemon"
 	daemontypes "github.com/scionproto/scion/pkg/daemon/types"
-	hummpkg "github.com/scionproto/scion/pkg/hummingbird"
+	marketclient "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/hummingbird/redemption"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
@@ -40,8 +40,6 @@ import (
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
 	"github.com/scionproto/scion/private/keyconf"
 )
-
-const maxHummReservationID = (1 << 22) - 1
 
 // cryptoRandRead is replaceable by tests. Reservation IDs are local client state, rather than a
 // command-line setting, so independently launched clients do not share a token bucket.
@@ -61,19 +59,24 @@ func randomHummReservationID() (uint32, error) {
 	}
 }
 
-// fillerSeed is the fixed seed used to generate the deterministic payload filler pattern, known
-// to both client and server so the server can optionally verify integrity.
-const fillerSeed = 0xC0FFEE1234ABCDEF
+const (
+	maxHummReservationID = (1 << 22) - 1
 
-// payloadPacingCadence is deliberately coarser than the per-packet intervals used by typical
-// experiment rates. Each wake sends a bounded batch based on the absolute payload schedule.
-const payloadPacingCadence = time.Millisecond
+	// fillerSeed is the fixed seed used to generate the deterministic payload filler pattern,
+	// known to both client and server so the server can optionally verify integrity.
+	fillerSeed = 0xC0FFEE1234ABCDEF
 
-// bidirectionalFirstPacketLen is the total packet size (header + filler) used for the one
-// Payload packet sent immediately after attaching a bidirectional reservation (initial dial or
-// renewal), since that packet also carries the reverse-reservation E2E extension option and
-// must stay small.
-const bidirectionalFirstPacketLen = HeaderLen + bidirectionalFirstPacketPayload
+	// payloadPacingCadence is deliberately coarser than typical.
+	// Each wake sends a bounded batch based on the absolute payload schedule.
+	payloadPacingCadence = time.Millisecond
+
+	// bidirectionalFirstPacketLen is the total packet size (header + filler) used for the one
+	// Payload packet sent immediately after attaching a bidirectional reservation
+	// (initial dial or renewal), since that packet also carries the reverse-reservation
+	// E2E extension option and must stay small.
+	// The variable is used only to precompute the size of the first packet.
+	bidirectionalFirstPacketLen = HeaderLen + bidirectionalFirstPacketPayload
+)
 
 // clientConfig collects every value runClient needs, populated from CLI flags in main.go.
 type clientConfig struct {
@@ -90,6 +93,7 @@ type clientConfig struct {
 	hummEnabled        bool
 	hummReservationID  uint32
 	hummKeysDir        string
+	marketplaceJWT     string
 	reportInterval     time.Duration
 	renewalAhead       time.Duration
 	reservationOverlap time.Duration
@@ -109,6 +113,8 @@ type client struct {
 
 	svMu       sync.Mutex
 	hummSVByIA map[addr.IA][]byte
+	marketMu   sync.Mutex
+	market     *marketclient.PathMarketplaces
 
 	// currentAddr is the *snet.UDPAddr (including the current DataplanePath) that the sender
 	// loop must use for the next send. It is swapped atomically by the renewal goroutine;
@@ -237,9 +243,8 @@ func selectPath(
 	return paths[0], nil
 }
 
-// buildReservation redeems a fresh forward (and, if configured, reverse) Hummingbird
-// reservation for path, either through the redemption RPC service or, if -hummKeysDir is set,
-// directly from local AS master keys (for testing, bypassing the redemption service).
+// buildReservation obtains a fresh forward (and, if configured, reverse) Hummingbird
+// reservation for path, either from local AS master keys or from the marketplace.
 func (c *client) buildReservation(
 	ctx context.Context,
 	path snet.Path,
@@ -249,17 +254,100 @@ func (c *client) buildReservation(
 		rsv, err := c.buildReservationWithSecretValues(path, startTime)
 		return rsv, path.UnderlayNextHop(), err
 	}
-	rsv, err := redemption.OneShotReservation(ctx, c.cfg.sdConn, c.cfg.local.Host.IP, path,
-		hummpkg.RedemptionRequestNoHop{
-			StartTime: uint32(startTime.Unix()),
-			Bw:        c.cfg.humm.Bw,
-			Duration:  c.cfg.humm.Duration,
-		},
-		c.cfg.humm.ReverseBw)
+	rsv, err := c.buildReservationWithMarketplace(ctx, path, startTime)
 	if err != nil {
 		return nil, nil, err
 	}
 	return rsv, path.UnderlayNextHop(), nil
+}
+
+func (c *client) buildReservationWithMarketplace(
+	ctx context.Context, path snet.Path, startTime time.Time,
+) (*snetpath.Reservation, error) {
+	scionPath, ok := path.Dataplane().(snetpath.SCION)
+	if !ok {
+		return nil, serrors.New("provided path must be of type scion")
+	}
+	market, err := c.marketplacesOnPath(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	startsAt := startTime.Truncate(time.Second)
+	stopsAt := startsAt.Add(time.Duration(c.cfg.humm.Duration) * time.Second)
+	log.Debug("Buying Hummingbird reservations from the marketplace",
+		"bandwidth_kbps", c.cfg.humm.Bw,
+		"reverse_bandwidth_kbps", c.cfg.humm.ReverseBw,
+		"starts_at", startsAt, "stops_at", stopsAt)
+	forward, reverse, err := market.AcquireReservations(ctx, c.cfg.humm.Bw, c.cfg.humm.ReverseBw,
+		startsAt, stopsAt, marketplaceMaxPrice, marketplaceBuyMode,
+		marketplaceFetchReservations, marketplaceCombineAssets, marketplaceRetries)
+	if err != nil {
+		return nil, serrors.Wrap("obtaining reservations from marketplace", err)
+	}
+	expected := len(snetpath.InterfacesToBaseHops(path.Metadata().Interfaces))
+	if err := checkFlyovers(forward, expected); err != nil {
+		return nil, serrors.Wrap("checking bought reservations", err)
+	}
+	reservation, err := snetpath.NewReservation(
+		snetpath.WithDataplanePath(scionPath, path.Destination(), forward),
+	)
+	if err != nil || c.cfg.humm.ReverseBw == 0 {
+		return reservation, err
+	}
+	if err := checkFlyovers(reverse, expected); err != nil {
+		return nil, serrors.Wrap("checking bought reverse reservations", err)
+	}
+	extn, err := redemption.BuildReverseReservationExtn(scionPath, path.Source(), reverse)
+	if err != nil {
+		return nil, err
+	}
+	reservation.SetReverseReservationExtn(extn)
+	return reservation, nil
+}
+
+func checkFlyovers(hops []*snetpath.Hop, expected int) error {
+	if len(hops) != expected {
+		return serrors.New("unexpected number of hops", "expected", expected, "actual", len(hops))
+	}
+	for _, hop := range hops {
+		if hop == nil {
+			return serrors.New("missing hop")
+		}
+		if hop.Flyover == nil {
+			return serrors.New("hop without flyover, the asset could not be redeemed",
+				"ia", hop.IA, "ingress", hop.Ingress, "egress", hop.Egress)
+		}
+	}
+	return nil
+}
+
+func (c *client) marketplacesOnPath(
+	ctx context.Context, path snet.Path,
+) (*marketclient.PathMarketplaces, error) {
+	c.marketMu.Lock()
+	defer c.marketMu.Unlock()
+	if c.market != nil {
+		return c.market, nil
+	}
+	market, err := marketclient.NewPathMarketplaces(path)
+	if err != nil {
+		return nil, serrors.Wrap("discovering the marketplaces of the path", err)
+	}
+	count, coverage := market.FullCoverageCount()
+	if count != 1 {
+		return nil, serrors.New("the path is not covered by a single marketplace",
+			"marketplaces", count, "ases", len(market.PathASes))
+	}
+	log.Debug("Discovered the marketplace of the path",
+		"name", coverage[0].Name, "api_protocol", coverage[0].APIProtocol,
+		"api_address", coverage[0].APIAddress)
+	querier := daemon.Querier{Connector: c.cfg.sdConn, IA: c.sn.Topology.LocalIA}
+	if err := market.Connect(ctx, coverage[0].APIAddress, c.cfg.marketplaceJWT,
+		querier, c.sn.Topology, marketplaceInsecure); err != nil {
+		return nil, serrors.Wrap("connecting to the marketplace of the path", err)
+	}
+	c.market = market
+	return market, nil
 }
 
 func (c *client) buildReservationWithSecretValues(
@@ -313,7 +401,7 @@ func (c *client) hummSecretValue(ia addr.IA) ([]byte, error) {
 
 func (c *client) deriveFlyoversFromSecretValues(
 	baseHops []snetpath.BaseHop,
-	bandwidth uint16,
+	bandwidth uint32,
 	start time.Time,
 ) ([]*snetpath.Hop, error) {
 	flyovers := make([]*snetpath.Hop, 0, len(baseHops))
@@ -335,7 +423,7 @@ func (c *client) deriveFlyoversFromSecretValues(
 			aesByIA[baseHop.IA] = block
 		}
 		akRaw := hummlib.DeriveAuthKey(
-			block, c.cfg.hummReservationID, bandwidth, baseHop.Ingress, baseHop.Egress,
+			block, c.cfg.hummReservationID, uint16(bandwidth), baseHop.Ingress, baseHop.Egress,
 			startTime, c.cfg.humm.Duration, buffer)
 		var ak [hummlib.AkBufferSize]byte
 		copy(ak[:], akRaw)
@@ -344,7 +432,7 @@ func (c *client) deriveFlyoversFromSecretValues(
 			Flyover: &snetpath.FlyoverData{
 				ResID:     c.cfg.hummReservationID,
 				Ak:        ak,
-				Bw:        bandwidth,
+				Bw:        uint16(bandwidth),
 				StartTime: startTime,
 				Duration:  c.cfg.humm.Duration,
 			},
@@ -459,8 +547,8 @@ func (c *client) renewWithRetry(
 	return nil, nil, false
 }
 
-// pongTracker tracks outstanding pong requests awaiting a reply, evicting (and counting as
-// lost) any that go unanswered for too long.
+// pongTracker tracks outstanding pong requests awaiting a reply,
+// evicting (and counting as lost) any that go unanswered for too long.
 type pongTracker struct {
 	mu          sync.Mutex
 	outstanding map[uint64]time.Time

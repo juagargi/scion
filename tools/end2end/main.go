@@ -35,7 +35,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +44,7 @@ import (
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/daemon"
 	daemontypes "github.com/scionproto/scion/pkg/daemon/types"
+	"github.com/scionproto/scion/pkg/hummingbird/bwencoding"
 	marketclient "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/hummingbird/redemption"
 	"github.com/scionproto/scion/pkg/log"
@@ -715,52 +715,6 @@ type hummingbirdParameters struct {
 	ReverseBw uint32
 }
 
-// bandwidthUnits are the units a bandwidth of the -hummingbird flag can carry,
-// and what one of them is in kbps.
-var bandwidthUnits = []struct {
-	suffix string
-	kbps   uint64
-}{
-	{suffix: "kbps", kbps: 1},
-	{suffix: "mbps", kbps: 1000},
-	{suffix: "gbps", kbps: 1000 * 1000},
-}
-
-// parseBandwidth parses one bandwidth of the -hummingbird flag into kbps. A
-// bandwidth bought from a marketplace is a bandwidth and carries a unit; one
-// derived from the secret values of the ASes is a bandwidth class, and has none.
-func parseBandwidth(raw string, withUnit bool) (uint32, error) {
-	value := strings.ToLower(strings.TrimSpace(raw))
-	for _, unit := range bandwidthUnits {
-		number, hasUnit := strings.CutSuffix(value, unit.suffix)
-		if !hasUnit {
-			continue
-		}
-		if !withUnit {
-			return 0, serrors.New("bandwidth class must not carry a unit", "value", raw)
-		}
-		parsed, err := strconv.ParseUint(strings.TrimSpace(number), 10, 32)
-		if err != nil {
-			return 0, serrors.Wrap("parsing bandwidth", err, "value", raw)
-		}
-		kbps := parsed * unit.kbps
-		if kbps > math.MaxUint32 {
-			return 0, serrors.New("bandwidth too large", "value", raw,
-				"max_kbps", uint64(math.MaxUint32))
-		}
-		return uint32(kbps), nil
-	}
-	if withUnit {
-		return 0, serrors.New("bandwidth must carry a unit", "value", raw,
-			"units", "kbps|mbps|gbps")
-	}
-	parsed, err := strconv.ParseUint(value, 10, 32)
-	if err != nil {
-		return 0, serrors.Wrap("parsing bandwidth class", err, "value", raw)
-	}
-	return uint32(parsed), nil
-}
-
 // parseHummingbirdFlag parses the -hummingbird flag. The bandwidths carry a unit
 // exactly when the reservations are bought from a marketplace, i.e. when no
 // -hummKeysDir is given.
@@ -769,7 +723,7 @@ func parseHummingbirdFlag(raw string, withUnits bool) (hummingbirdParameters, er
 	if len(parts) != 2 && len(parts) != 3 {
 		return hummingbirdParameters{}, serrors.New("expected BW,dur[,reverseBW]")
 	}
-	bw, err := parseBandwidth(parts[0], withUnits)
+	bw, err := bwencoding.ParseBandwidth(parts[0], withUnits)
 	if err != nil {
 		return hummingbirdParameters{}, serrors.Wrap("parsing hummingbird bandwidth", err,
 			"value", parts[0])
@@ -790,7 +744,7 @@ func parseHummingbirdFlag(raw string, withUnits bool) (hummingbirdParameters, er
 		Duration: uint16(dur.Seconds()),
 	}
 	if len(parts) == 3 {
-		reverseBw, err := parseBandwidth(parts[2], withUnits)
+		reverseBw, err := bwencoding.ParseBandwidth(parts[2], withUnits)
 		if err != nil {
 			return hummingbirdParameters{}, serrors.Wrap("parsing reverse hummingbird bandwidth", err,
 				"value", parts[2])

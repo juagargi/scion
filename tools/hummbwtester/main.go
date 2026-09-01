@@ -30,6 +30,8 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/pkg/daemon"
+	"github.com/scionproto/scion/pkg/hummingbird/bwencoding"
+	marketclient "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/snet"
@@ -152,17 +154,30 @@ func realMain() int {
 	case modeClient:
 		var hummParams hummingbirdParameters
 		if hummingbirdFlag != "" {
-			hummParams, err = parseHummingbirdFlag(hummingbirdFlag)
+			hummParams, err = parseHummingbirdFlag(hummingbirdFlag, hummKeysDir == "")
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "error parsing -hummingbird:", err)
 				return 1
 			}
+			if hummKeysDir != "" && (hummParams.Bw > math.MaxUint16 ||
+				hummParams.ReverseBw > math.MaxUint16) {
+				fmt.Fprintln(os.Stderr, "error: key-derived Hummingbird bandwidth must fit in 16 bits")
+				return 1
+			}
 		}
 		var reservationID uint32
-		if hummingbirdFlag != "" {
+		if hummingbirdFlag != "" && hummKeysDir != "" {
 			reservationID, err = randomHummReservationID()
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "error generating Hummingbird reservation ID:", err)
+				return 1
+			}
+		}
+		var marketplaceJWT string
+		if hummingbirdFlag != "" && hummKeysDir == "" {
+			marketplaceJWT = os.Getenv(envMarketplaceJWT)
+			if marketplaceJWT == "" {
+				fmt.Fprintf(os.Stderr, "error: missing marketplace token (env %s)\n", envMarketplaceJWT)
 				return 1
 			}
 		}
@@ -184,6 +199,7 @@ func realMain() int {
 			hummEnabled:        hummingbirdFlag != "",
 			hummReservationID:  reservationID,
 			hummKeysDir:        hummKeysDir,
+			marketplaceJWT:     marketplaceJWT,
 			reportInterval:     reportInterval,
 			renewalAhead:       renewalAhead,
 			reservationOverlap: reservationOverlap,
@@ -216,10 +232,11 @@ func addFlags() {
 	flag.Float64Var(&pongRateHz, "pong-rate", defaultPongRateHz,
 		"(Client only) rate, in Hz, at which to send latency probe (pong-request) packets")
 	flag.StringVar(&hummingbirdFlag, "hummingbird", "",
-		"(Client only, optional) Hummingbird reservation spec: BW,dur[,reverseBW] "+
-			"(e.g. \"3,5s\" or \"3,5s,2\"); if omitted, the client runs best-effort over plain SCION")
+		"(Client only, optional) Hummingbird reservation spec: BW,dur[,reverseBW]. "+
+			"With -hummKeysDir BW is a class without a unit; otherwise BW is a "+
+			"marketplace bandwidth with kbps|mbps|gbps (e.g. \"100kbps,20s\")")
 	flag.StringVar(&hummKeysDir, "hummKeysDir", "",
-		"(Client only, testing) root dir containing AS*/keys/master0.key, bypasses the redemption service")
+		"(Client only, testing) root dir containing AS*/keys/master0.key; without it, buy from the marketplace")
 	flag.DurationVar(&renewalAhead, "renewal-ahead", defaultRenewalAhead,
 		"(Client only) how long before reservation expiry to request its replacement")
 	flag.DurationVar(&reservationOverlap, "reservation-overlap", defaultReservationOverlap,
@@ -282,19 +299,19 @@ func validateRenewalTiming(ahead, overlap time.Duration) error {
 // in seconds, and (if non-zero) reverse-direction bandwidth class for a bidirectional
 // reservation.
 type hummingbirdParameters struct {
-	Bw        uint16
+	Bw        uint32
 	Duration  uint16
-	ReverseBw uint16
+	ReverseBw uint32
 }
 
 // parseHummingbirdFlag parses the "BW,dur[,reverseBW]" convention shared with
-// tools/end2end/main.go, e.g. "3,5s" or "3,5s,2".
-func parseHummingbirdFlag(raw string) (hummingbirdParameters, error) {
+// tools/end2end/main.go. Marketplace bandwidths carry units; key-derived classes do not.
+func parseHummingbirdFlag(raw string, withUnits bool) (hummingbirdParameters, error) {
 	parts := strings.Split(raw, ",")
 	if len(parts) != 2 && len(parts) != 3 {
-		return hummingbirdParameters{}, serrors.New("expected BW,dur[,reverseBW]", "value", raw)
+		return hummingbirdParameters{}, serrors.New("expected BW,dur[,reverseBW]")
 	}
-	bw, err := strconv.ParseUint(parts[0], 10, 16)
+	bw, err := bwencoding.ParseBandwidth(parts[0], withUnits)
 	if err != nil {
 		return hummingbirdParameters{}, serrors.Wrap("parsing hummingbird bandwidth", err,
 			"value", parts[0])
@@ -310,19 +327,30 @@ func parseHummingbirdFlag(raw string) (hummingbirdParameters, error) {
 			"value", dur.Seconds())
 	}
 	params := hummingbirdParameters{
-		Bw:       uint16(bw),
+		Bw:       bw,
 		Duration: uint16(dur.Seconds()),
 	}
 	if len(parts) == 3 {
-		reverseBw, err := strconv.ParseUint(parts[2], 10, 16)
+		reverseBw, err := bwencoding.ParseBandwidth(parts[2], withUnits)
 		if err != nil {
 			return hummingbirdParameters{}, serrors.Wrap("parsing reverse hummingbird bandwidth", err,
 				"value", parts[2])
 		}
-		params.ReverseBw = uint16(reverseBw)
+		params.ReverseBw = reverseBw
 	}
 	return params, nil
 }
+
+const envMarketplaceJWT = "SCION_MARKETPLACE_JWT"
+
+const (
+	marketplaceInsecure          = true
+	marketplaceMaxPrice          = uint64(math.MaxUint64)
+	marketplaceBuyMode           = marketclient.FailOnError
+	marketplaceFetchReservations = true
+	marketplaceCombineAssets     = false
+	marketplaceRetries           = 3
+)
 
 // parseBandwidth parses a target bit-rate flag such as "1Mbps", "500Kbps", "2Gbps", or a plain
 // number of bits per second.

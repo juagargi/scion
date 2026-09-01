@@ -1,4 +1,11 @@
 {
+  "hummingbird": {
+    "reservation_source": "marketplace",
+    "marketplace": {
+      "username": "alice",
+      "password": "1234"
+    }
+  },
   "server": {
     "isd_as": "1-ff00:0:112",
     "host": "fd00:f00d:cafe::7f00:15",
@@ -15,9 +22,9 @@
       "maxburst": "50Mbps",
       "duration": "3h",
       "hummingbird_reservation": {
-        "bandwidth": 1000,
+        "bandwidth": "5mbps",
         "duration": "5m",
-        "reverse_bandwidth": 1000,
+        "reverse_bandwidth": "5mbps",
         "renewal_ahead": "30s",
         "reservation_overlap": "20s",
         "humm_start_offset": "-5s"

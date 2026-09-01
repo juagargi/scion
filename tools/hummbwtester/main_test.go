@@ -564,19 +564,28 @@ func TestRateTrackerSnapshot(t *testing.T) {
 // malformed input.
 func TestParseHummingbirdFlag(t *testing.T) {
 	// Parse the required bandwidth and duration fields.
-	p, err := parseHummingbirdFlag("3,5s")
+	p, err := parseHummingbirdFlag("3,5s", false)
 	require.NoError(t, err)
 	assert.EqualValues(t, 3, p.Bw)
 	assert.EqualValues(t, 5, p.Duration)
 	assert.Zero(t, p.ReverseBw)
 
 	// Parse the optional reverse-bandwidth field.
-	p, err = parseHummingbirdFlag("3,5s,2")
+	p, err = parseHummingbirdFlag("3,5s,2", false)
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, p.ReverseBw)
 
 	// Malformed input should fail early with a parse error.
-	_, err = parseHummingbirdFlag("bad")
+	_, err = parseHummingbirdFlag("bad", false)
+	assert.Error(t, err)
+
+	p, err = parseHummingbirdFlag("100KBPS,20s,1MBps", true)
+	require.NoError(t, err)
+	assert.EqualValues(t, 100, p.Bw)
+	assert.EqualValues(t, 1000, p.ReverseBw)
+	_, err = parseHummingbirdFlag("100,20s", true)
+	assert.Error(t, err)
+	_, err = parseHummingbirdFlag("3kbps,5s", false)
 	assert.Error(t, err)
 }
 

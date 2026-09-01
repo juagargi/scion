@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Docker orchestration for the local hummbwtester experiment.
 
-The JSON file deliberately contains only endpoint placement. Everything else is derived from the
-generated Docker topology so that a stopped topology can be brought back with the same setup.
+Endpoint placement and reservation-source settings come from JSON. Everything else is derived from
+the generated Docker topology so that a stopped topology can be brought back with the same setup.
 """
 
 from __future__ import annotations
@@ -66,9 +66,9 @@ class Endpoint:
 
 @dataclass(frozen=True)
 class HummingbirdReservation:
-    bandwidth: int
+    bandwidth: int | str
     duration: str
-    reverse_bandwidth: int
+    reverse_bandwidth: int | str
     renewal_ahead: str | None
     reservation_overlap: str | None
     humm_start_offset: str | None
@@ -87,6 +87,9 @@ class Client:
     hummingbird_reservation: HummingbirdReservation | None
     payload_size: int | None
     pong_rate: float | int | None
+    reservation_source: str
+    marketplace_username: str | None
+    marketplace_password: str | None
 
 
 @dataclass(frozen=True)
@@ -204,7 +207,10 @@ def parse_endpoint(
     return Endpoint(ia, host, port, receive_buffer_size)
 
 
-def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Client:
+def parse_client(
+    entry: dict[str, Any], hummingbird: bool, context: str, reservation_source: str,
+    marketplace_credentials: tuple[str, str] | None,
+) -> Client:
     """Validate one client configuration and retain its workload and optional tuning settings."""
     required = {"client_id", "isd_as", "host", "port", "bandwidth", "maxburst", "duration"}
     optional = {"payload_size", "pong_rate"}
@@ -233,15 +239,14 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
                        {"renewal_ahead", "reservation_overlap", "humm_start_offset"})
         reservation_bandwidth, duration, reverse_bandwidth = (
             value["bandwidth"], value["duration"], value["reverse_bandwidth"])
-        if (not isinstance(reservation_bandwidth, int) or isinstance(reservation_bandwidth, bool)
-                or not 0 <= reservation_bandwidth <= 65535):
-            raise ConfigError(f"{context}.hummingbird_reservation.bandwidth must be an integer from 0 through 65535")
+        validate_reservation_bandwidth(
+            reservation_bandwidth, reservation_source,
+            f"{context}.hummingbird_reservation.bandwidth")
         if not isinstance(duration, str) or not duration:
             raise ConfigError(f"{context}.hummingbird_reservation.duration must be a non-empty string")
-        if (not isinstance(reverse_bandwidth, int) or isinstance(reverse_bandwidth, bool)
-                or not 0 <= reverse_bandwidth <= 65535):
-            raise ConfigError(
-                f"{context}.hummingbird_reservation.reverse_bandwidth must be an integer from 0 through 65535")
+        validate_reservation_bandwidth(
+            reverse_bandwidth, reservation_source,
+            f"{context}.hummingbird_reservation.reverse_bandwidth")
         timing = {}
         for key in ("renewal_ahead", "reservation_overlap", "humm_start_offset"):
             setting = value.get(key)
@@ -276,7 +281,27 @@ def parse_client(entry: dict[str, Any], hummingbird: bool, context: str) -> Clie
         hummingbird_reservation=reservation,
         payload_size=payload_size,
         pong_rate=pong_rate,
+        reservation_source=reservation_source,
+        marketplace_username=(marketplace_credentials[0] if marketplace_credentials else None),
+        marketplace_password=(marketplace_credentials[1] if marketplace_credentials else None),
     )
+
+
+def validate_reservation_bandwidth(value: Any, source: str, context: str) -> None:
+    """Validate a key-derived class or marketplace bandwidth accepted by the Go client."""
+    if source == "keys":
+        if (not isinstance(value, int) or isinstance(value, bool)
+                or not 0 <= value <= 65535):
+            raise ConfigError(f"{context} must be an integer from 0 through 65535 in keys mode")
+        return
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{context} must be a unit-bearing string in marketplace mode")
+    match = re.fullmatch(r"([0-9]+)\s*(kbps|mbps|gbps)", value.strip(), re.IGNORECASE)
+    if not match:
+        raise ConfigError(f"{context} must use kbps, mbps, or gbps in marketplace mode")
+    amount = int(match.group(1)) * {"kbps": 1, "mbps": 1000, "gbps": 1000_000}[match.group(2).lower()]
+    if amount > 2**32 - 1:
+        raise ConfigError(f"{context} is too large in marketplace mode")
 
 
 def parse_bandwidth(value: str, context: str) -> float:
@@ -303,9 +328,30 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     root = read_json(path)
     require_fields(
         root,
-        {"server", "hummingbird_clients", "best_effort_clients", "router", "tc"},
+        {"server", "hummingbird", "hummingbird_clients", "best_effort_clients", "router", "tc"},
         "configuration",
     )
+    hummingbird_config = root["hummingbird"]
+    if not isinstance(hummingbird_config, dict):
+        raise ConfigError("hummingbird must be an object")
+    require_fields(hummingbird_config, {"reservation_source"}, "hummingbird", {"marketplace"})
+    reservation_source = hummingbird_config["reservation_source"]
+    if reservation_source not in ("keys", "marketplace"):
+        raise ConfigError("hummingbird.reservation_source must be \"keys\" or \"marketplace\"")
+    marketplace_credentials: tuple[str, str] | None = None
+    if reservation_source == "marketplace":
+        marketplace = hummingbird_config.get("marketplace")
+        if not isinstance(marketplace, dict):
+            raise ConfigError("hummingbird.marketplace is required in marketplace mode")
+        require_fields(marketplace, {"username", "password"}, "hummingbird.marketplace")
+        username, password = marketplace["username"], marketplace["password"]
+        if not isinstance(username, str) or not username:
+            raise ConfigError("hummingbird.marketplace.username must be a non-empty string")
+        if not isinstance(password, str) or not password:
+            raise ConfigError("hummingbird.marketplace.password must be a non-empty string")
+        marketplace_credentials = username, password
+    elif "marketplace" in hummingbird_config:
+        raise ConfigError("hummingbird.marketplace is only valid in marketplace mode")
     if not isinstance(root["server"], dict):
         raise ConfigError("server must be an object")
     server = parse_endpoint(root["server"], "server", require_receive_buffer=True)
@@ -327,7 +373,8 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
 
     parsed: list[Client] = []
     for entry, hummingbird, context in raw_clients:
-        parsed.append(parse_client(entry, hummingbird, context))
+        parsed.append(parse_client(entry, hummingbird, context, reservation_source,
+                                   marketplace_credentials))
     # Sorting makes a client's metrics port stable when the JSON array order changes.
     parsed.sort(key=lambda item: item.client_id)
     if len({item.client_id for item in parsed}) != len(parsed):
@@ -662,14 +709,20 @@ def verify_binaries(server: Endpoint, clients: list[Client]) -> None:
         run(dc_args("exec", "-T", service, "test", "-x", "/share/bin/hummbwtester"), cwd=ROOT)
 
 
-def launch(service: str, pidfile: str, args: list[str], logfile: Path) -> subprocess.Popen[str]:
+def launch(
+    service: str, pidfile: str, args: list[str], logfile: Path, marketplace_jwt: str | None = None,
+) -> subprocess.Popen[str]:
     """Start one tester process through Compose and record its in-container PID and output."""
     logfile.parent.mkdir(parents=True, exist_ok=True)
     # The shell PID becomes the tester PID after exec. Saving it lets cleanup target exactly this
     # experiment process instead of broadly killing every hummbwtester in the shared container.
     command = "echo $$ > " + shlex.quote(pidfile) + "; exec " + shlex.join(args)
     print(f"logging {service} to {logfile}")
-    return subprocess.Popen(dc_args("exec", "-T", service, "/bin/bash", "-c", command), cwd=ROOT,
+    compose_args = dc_args("exec", "-T")
+    if marketplace_jwt is not None:
+        compose_args.extend(["-e", f"SCION_MARKETPLACE_JWT={marketplace_jwt}"])
+    compose_args.extend([service, "/bin/bash", "-c", command])
+    return subprocess.Popen(compose_args, cwd=ROOT,
                             stdout=logfile.open("w"), stderr=subprocess.STDOUT, text=True)
 
 
@@ -705,7 +758,9 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
         reservation = client.hummingbird_reservation
         args.extend(["-hummingbird",
                      f"{reservation.bandwidth},{reservation.duration},{reservation.reverse_bandwidth}",
-                     "-hummKeysDir", "/share/gen"])
+                     ])
+        if client.reservation_source == "keys":
+            args.extend(["-hummKeysDir", "/share/gen"])
         for flag, value in (
                 ("-renewal-ahead", reservation.renewal_ahead),
                 ("-reservation-overlap", reservation.reservation_overlap),
@@ -713,6 +768,53 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
             if value is not None:
                 args.extend([flag, value])
     return args
+
+
+def marketplace_registration_website() -> str:
+    """Find the unique TCP registration website advertised by the generated topology."""
+    websites: set[str] = set()
+    for path in sorted(GEN.glob("AS*/staticInfoConfig.json")):
+        try:
+            static_info = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as err:
+            raise ConfigError(f"reading marketplace advertisement {path}: {err}") from err
+        if not isinstance(static_info, dict) or not isinstance(static_info.get("note", "{}"), str):
+            raise ConfigError(f"marketplace advertisement {path} has an invalid note")
+        try:
+            note = json.loads(static_info.get("note", "{}"))
+        except json.JSONDecodeError as err:
+            raise ConfigError(f"reading marketplace advertisement {path}: {err}") from err
+        if not isinstance(note, dict):
+            raise ConfigError(f"marketplace advertisement {path} is not an object")
+        entries = note.get("hummingbird", [])
+        if not isinstance(entries, list):
+            raise ConfigError(f"marketplace advertisement {path} has invalid hummingbird entries")
+        for entry in entries:
+            if not isinstance(entry, dict) or "TLS/TCP" not in str(entry.get("api_protocol", "")):
+                continue
+            website = entry.get("client_registration_website") or entry.get("website")
+            if isinstance(website, str) and website:
+                websites.add(website)
+    if not websites:
+        raise ConfigError("no marketplace registration website advertised in gen/AS*/staticInfoConfig.json")
+    if len(websites) != 1:
+        raise ConfigError("multiple marketplace registration websites advertised: " + ", ".join(sorted(websites)))
+    return next(iter(websites))
+
+
+def obtain_marketplace_jwt(username: str, password: str) -> str:
+    """Log in through the generated marketplace web app and return a fresh JWT."""
+    website = marketplace_registration_website()
+    result = subprocess.run(
+        [str(ROOT / "marketplace" / "tools" / "get-jwt.sh"), username, password, website],
+        cwd=ROOT, check=False, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise ConfigError(f"marketplace login failed at {website}: {result.stderr.strip()}")
+    token = result.stdout.strip()
+    if not token:
+        raise ConfigError("marketplace login returned an empty JWT")
+    return token
 
 
 def metric_samples(body: str, metric: str) -> dict[str, float]:
@@ -968,6 +1070,14 @@ def run_experiment(config_path: Path) -> int:
     args = server_args(server, endpoint_sciond(server, daemons))
     processes: list[tuple[Client, str, subprocess.Popen[str]]] = []
     interfaces = router_interfaces()
+    marketplace_jwt = None
+    hummingbird_clients = [client for client in clients if client.hummingbird]
+    if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
+        client = hummingbird_clients[0]
+        assert client.marketplace_username is not None
+        assert client.marketplace_password is not None
+        marketplace_jwt = obtain_marketplace_jwt(
+            client.marketplace_username, client.marketplace_password)
     server_process = launch(server_service, server_pidfile, args, log_dir / "server.log")
     try:
         # Give the server a predictable head start before clients begin selecting paths and dialing.
@@ -976,8 +1086,9 @@ def run_experiment(config_path: Path) -> int:
             suffix = client.client_id
             args = client_args(client, server, endpoint_sciond(client.endpoint, daemons))
             pidfile = f"/tmp/hummbwtester-{suffix}.pid"
+            jwt = marketplace_jwt if client.hummingbird else None
             processes.append((client, pidfile, launch(tester_service(client.endpoint.isd_as), pidfile, args,
-                                                       log_dir / f"{suffix}.log")))
+                                                       log_dir / f"{suffix}.log", jwt)))
         failure = False
         previous_report = report_snapshot(compose, interfaces)
         next_report = time.monotonic() + 60

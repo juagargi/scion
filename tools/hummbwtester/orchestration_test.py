@@ -13,6 +13,8 @@ from tools.hummbwtester.orchestration import (
     inter_as_router_peers,
     InterfaceCounters,
     load_config,
+    marketplace_registration_website,
+    obtain_marketplace_jwt,
     patch_compose,
     patch_toml_section,
     print_report,
@@ -38,6 +40,7 @@ class ConfigTest(unittest.TestCase):
         # only on client_id, not on whether the client is Hummingbird or best-effort, nor on its
         # position in the JSON arrays.
         return {
+            "hummingbird": {"reservation_source": "keys"},
             "server": {
                 "isd_as": "1-ff00:0:112", "host": "fd00::1", "port": 12345,
                 "receive_buffer_size": 4194304,
@@ -63,6 +66,60 @@ class ConfigTest(unittest.TestCase):
             },
             "tc": {"rate": "10mbit", "burst": "50kb", "limit": "256kb"},
         }
+
+    def test_marketplace_reservation_config_and_args(self):
+        config = self.base_config()
+        config["hummingbird"] = {
+            "reservation_source": "marketplace",
+            "marketplace": {"username": "alice", "password": "1234"},
+        }
+        config["hummingbird_clients"][0]["hummingbird_reservation"].update({
+            "bandwidth": "100kbps", "reverse_bandwidth": "1mbps",
+        })
+        server, clients, _, _ = load_config(self.write_config(config))
+        hummingbird = next(client for client in clients if client.hummingbird)
+        args = client_args(hummingbird, server, "172.20.0.21:30255")
+        self.assertEqual(args[args.index("-hummingbird") + 1], "100kbps,1m,1mbps")
+        self.assertNotIn("-hummKeysDir", args)
+        self.assertEqual(hummingbird.marketplace_username, "alice")
+
+    def test_requires_global_hummingbird_source(self):
+        config = self.base_config()
+        del config["hummingbird"]
+        with self.assertRaises(ConfigError):
+            load_config(self.write_config(config))
+
+    def test_rejects_marketplace_credentials_in_keys_mode(self):
+        config = self.base_config()
+        config["hummingbird"]["marketplace"] = {"username": "alice", "password": "1234"}
+        with self.assertRaises(ConfigError):
+            load_config(self.write_config(config))
+
+    def test_discovers_unique_marketplace_registration_website(self):
+        with tempfile.TemporaryDirectory() as directory:
+            generated = Path(directory)
+            (generated / "ASff00_0_111").mkdir()
+            (generated / "ASff00_0_111" / "staticInfoConfig.json").write_text(json.dumps({
+                "note": json.dumps({"hummingbird": [{
+                    "api_protocol": "connectrpc/TLS/QUIC/SCION",
+                    "api_address": "[1-ff00:0:111,172.20.0.27]:31888",
+                }, {
+                    "api_protocol": "connectrpc/TLS/TCP",
+                    "client_registration_website": "https://172.20.0.27:31888",
+                }]})
+            }))
+            with mock.patch.object(orchestration, "GEN", generated):
+                self.assertEqual(
+                    marketplace_registration_website(), "https://172.20.0.27:31888")
+
+    def test_obtains_marketplace_jwt_without_logging_credentials(self):
+        completed = mock.Mock(returncode=0, stdout="jwt-value\n", stderr="")
+        with mock.patch.object(orchestration, "marketplace_registration_website",
+                               return_value="https://market.invalid"), \
+             mock.patch.object(orchestration.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(obtain_marketplace_jwt("alice", "1234"), "jwt-value")
+        self.assertEqual(run.call_args.kwargs["capture_output"], True)
+        self.assertEqual(run.call_args.args[0][1:4], ["alice", "1234", "https://market.invalid"])
 
     def test_clients_are_sorted_for_metrics_ports(self):
         _, clients, _, _ = load_config(self.write_config(self.base_config()))

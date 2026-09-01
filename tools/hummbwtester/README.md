@@ -26,15 +26,17 @@ In tiny topology this shapes the `110 <-> 111` and `110 <-> 112` links,
 while leaving the intra-AS bridges unshaped.
 
 `tools/hummbwtester/run-humm-bwtester.py` starts the server, waits two seconds, and starts all clients concurrently.
-Hummingbird clients derive reservations from `/share/gen` master keys
-rather than using the redemption service.
-Each Hummingbird client chooses a random nonzero 22-bit reservation ID when
-it starts and reuses it across reservation renewals. Client workload and reservation settings
-are read from the JSON configuration.
+Hummingbird clients either derive reservations from `/share/gen` master keys or buy them from the
+marketplace advertised by the selected SCION path, according to the global `hummingbird` setting.
+Marketplace runs log in through the advertised TCP registration website and pass a fresh JWT to the
+client processes.
+Key-derived Hummingbird clients choose a random nonzero 22-bit reservation ID when they start and
+reuse it across reservation renewals. Marketplace reservations use the IDs returned by the
+marketplace. Client workload and reservation settings are read from the JSON configuration.
 
 ## Configuration
 
-Edit [hummbwtester.json](hummbwtester.json). It has five required top-level sections:
+Edit [hummbwtester.json](hummbwtester.json). It has six required top-level sections:
 
 - `server`: the server's `isd_as`, tester `host`, UDP `port`, and
   `receive_buffer_size`.
@@ -44,6 +46,8 @@ Edit [hummbwtester.json](hummbwtester.json). It has five required top-level sect
   startup: `send_buffer_size`, `receive_buffer_size`, `ingress_batch_size`, `processor_queue_size`,
   `egress_batch_size`, and `egress_queue_size`.
 - `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
+- `hummingbird`: required global reservation source (`keys` or `marketplace`). Marketplace mode also
+  requires a `marketplace` object with `username` and `password`.
 
 Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
 send buffer and uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should
@@ -65,9 +69,11 @@ Every client requires these fields:
 
 Hummingbird clients additionally require `hummingbird_reservation`, an object with:
 
-- `bandwidth`: forward reservation bandwidth class, passed as the first `-hummingbird` value.
+- `bandwidth`: in `keys` mode, a forward reservation bandwidth class (integer); in `marketplace`
+  mode, a unit-bearing bandwidth such as `"100kbps"`, `"1mbps"`, or `"1gbps"`.
 - `duration`: reservation duration, such as `"1m"`.
-- `reverse_bandwidth`: reverse reservation bandwidth class; use `0` for no reverse reservation.
+- `reverse_bandwidth`: reverse reservation bandwidth in the same representation; use `0` in keys
+  mode or `"0kbps"` in marketplace mode for no reverse reservation.
 - `renewal_ahead` (optional): how long before expiry to request the next reservation; defaults to
   `"20s"`.
 - `reservation_overlap` (optional): how long before expiry to switch to the next reservation;
@@ -124,9 +130,9 @@ For example, this commented dummy Hummingbird client shows every supported clien
 //   "maxburst": "4Mbps",
 //   "duration": "5m",
 //   "hummingbird_reservation": {
-//     "bandwidth": 1000,
+//     "bandwidth": "1mbps",
 //     "duration": "1m",
-//     "reverse_bandwidth": 1000,
+//     "reverse_bandwidth": "1mbps",
 //     "renewal_ahead": "20s",
 //     "reservation_overlap": "15s",
 //     "humm_start_offset": "-1s"
@@ -165,7 +171,7 @@ From the repository root, build the Docker images and generate Docker tiny topol
 ```bash
 make build-dev
 make docker-images
-./scion.sh topology -d -c topology/tiny.topo
+./scion.sh topology -d -c topology/tiny.topo -m 1-ff00:0:111
 ```
 
 Review and edit `tools/hummbwtester/hummbwtester.json`, then prepare the experiment:
