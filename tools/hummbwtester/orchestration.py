@@ -999,8 +999,11 @@ def run_experiment(config_path: Path) -> int:
     finally:
         # Always remove the server and any remaining clients on failure or Ctrl-C.
         for client, pidfile, process in processes:
+            # Ctrl-C can terminate the local ``docker compose exec`` wrapper before it reaches
+            # the tester process in the container. The pidfile is the authoritative record of
+            # that process, so always target it even when the local wrapper has already exited.
+            stop_remote(tester_service(client.endpoint.isd_as), pidfile)
             if process.poll() is None:
-                stop_remote(tester_service(client.endpoint.isd_as), pidfile)
                 process.terminate()
         stop_remote(server_service, server_pidfile)
         if server_process.poll() is None:
