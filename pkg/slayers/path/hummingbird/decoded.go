@@ -62,7 +62,6 @@ func (s *Decoded) DecodeFromBytes(data []byte) error {
 	s.HopFields = make([]FlyoverHopField, s.NumLines/HopLines)
 	// Safe default: if we never discover a segment boundary while decoding,
 	// treat the missing boundary as "after the last hop".
-	s.HopFields = make([]FlyoverHopField, s.NumLines/HopLines)
 	s.FirstHopPerSeg[0] = uint8(len(s.HopFields))
 	s.FirstHopPerSeg[1] = uint8(len(s.HopFields))
 
@@ -90,6 +89,11 @@ func (s *Decoded) DecodeFromBytes(data []byte) error {
 	if j == s.NumLines-HopLines {
 		if err := s.HopFields[i].DecodeFromBytes(data[offset : offset+hopLen]); err != nil {
 			return err
+		}
+		if j == int(s.PathMeta.SegLen[0]) {
+			s.FirstHopPerSeg[0] = uint8(i)
+		} else if j == int(s.PathMeta.SegLen[0])+int(s.PathMeta.SegLen[1]) {
+			s.FirstHopPerSeg[1] = uint8(i)
 		}
 		i++
 	}

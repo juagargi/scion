@@ -291,6 +291,31 @@ func TestIsCrossOver(t *testing.T) {
 	assert.Equal(t, 0, dec.IsCrossOver(1))
 }
 
+func TestDecodeSegmentStartingAtLastHopField(t *testing.T) {
+	p := mkDecodedHbirdPath(t,
+		hbirdPathCase{
+			infos: []bool{false, true},
+			hops: [][]hbirdHopCase{
+				{hbirdHopCase{ingress: 0, egress: 1, flyover: false}},
+				{hbirdHopCase{ingress: 2, egress: 0, flyover: false}},
+			},
+		},
+		0, 0)
+	require.Equal(t, [3]uint8{3, 3, 0}, p.PathMeta.SegLen)
+
+	buff := make([]byte, p.Len())
+	require.NoError(t, p.SerializeTo(buff))
+
+	s := &hummingbird.Decoded{}
+	require.NoError(t, s.DecodeFromBytes(buff))
+
+	assert.Equal(t, p.FirstHopPerSeg, s.FirstHopPerSeg)
+	assert.Equal(t, 1, s.NumberOfHFsInSegment(0))
+	assert.Equal(t, 1, s.NumberOfHFsInSegment(1))
+	assert.Equal(t, -1, s.IsCrossOver(0))
+	assert.Equal(t, 1, s.IsCrossOver(1))
+}
+
 func mkTiny2Segments(t *testing.T) *hummingbird.Decoded {
 	return mkDecodedHbirdPath(
 		t,
