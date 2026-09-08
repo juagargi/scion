@@ -243,9 +243,9 @@
             "fillOpacity": 0,
             "lineInterpolation": "linear",
             "lineWidth": 2,
-            "pointSize": 4,
-            "showPoints": "auto",
-            "spanNulls": false
+            "pointSize": 5,
+            "showPoints": "always",
+            "spanNulls": true
           },
           "decimals": 2,
           "unit": "s"
@@ -277,8 +277,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (client_id) (hummbwtester_client_market_roundtrip_seconds_sum{client_id=~\"hummingbird-.*\"}) / sum by (client_id) (hummbwtester_client_market_roundtrip_seconds_count{client_id=~\"hummingbird-.*\"})",
-          "legendFormat": "{{client_id}} average",
+          "expr": "sum by (client_id) (increase(hummbwtester_client_market_roundtrip_seconds_sum{client_id=~\"hummingbird-.*\"}[$__interval])) / sum by (client_id) (increase(hummbwtester_client_market_roundtrip_seconds_count{client_id=~\"hummingbird-.*\"}[$__interval]))",
+          "legendFormat": "{{client_id}} roundtrip",
           "range": true,
           "refId": "A"
         }
