@@ -277,7 +277,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hummbwtester_client_market_roundtrip_last_seconds{client_id=~\"hummingbird-.*\"}",
+          "expr": "hummbwtester_client_market_roundtrip_last_seconds{client_id=~\"hummingbird-.*\"} and on (client_id) (changes(hummbwtester_client_market_roundtrip_last_seconds{client_id=~\"hummingbird-.*\"}[$__interval]) > 0)",
           "legendFormat": "{{client_id}} roundtrip",
           "range": true,
           "refId": "A"
