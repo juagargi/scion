@@ -150,11 +150,13 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	if cfg.hummEnabled {
 		var nextHop *net.UDPAddr
 		startTime := time.Now().Add(c.cfg.hummStartOffset)
+		marketRoundtripStart := time.Now()
 		reservation, nextHop, err = c.buildReservation(ctx, path, startTime)
 		if err != nil {
 			log.Error("Building initial Hummingbird reservation", "err", err)
 			return 1
 		}
+		c.observeMarketRoundtrip(marketRoundtripStart)
 		remoteAddr = &snet.UDPAddr{
 			IA:      cfg.remote.IA,
 			Host:    cfg.remote.Host,
@@ -470,6 +472,7 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 			return
 		}
 
+		marketRoundtripStart := time.Now()
 		newRsv, newNextHop, ok := c.renewWithRetry(runCtx, path, nextStart)
 		if !ok {
 			// Exhausted retries for this window; keep sending on the old reservation and try
@@ -481,6 +484,7 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 			renewAt = time.Now().Add(1 * time.Second)
 			continue
 		}
+		c.observeMarketRoundtrip(marketRoundtripStart)
 
 		select {
 		case <-runCtx.Done():
@@ -503,6 +507,14 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 		renewAt, handoverAt, nextStart = renewalSchedule(
 			expiry, c.cfg.renewalAhead, c.cfg.reservationOverlap, c.cfg.hummStartOffset)
 		log.Info("Renewed Hummingbird reservation", "new_expiry", expiry)
+	}
+}
+
+// observeMarketRoundtrip records a successful marketplace acquisition. Key-derived reservations
+// do not perform a marketplace roundtrip, so they are intentionally omitted from this metric.
+func (c *client) observeMarketRoundtrip(start time.Time) {
+	if c.cfg.hummKeysDir == "" {
+		c.metrics.marketRoundtrip.Observe(time.Since(start).Seconds())
 	}
 }
 

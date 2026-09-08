@@ -248,7 +248,7 @@
             "spanNulls": false
           },
           "decimals": 2,
-          "unit": "short"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -277,13 +277,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (client_id) (increase(hummbwtester_client_reservation_renewals_total{client_id=~\"hummingbird-.*\", result=\"ok\"}[1m]))",
-          "legendFormat": "{{client_id}} rsv/min",
+          "expr": "sum by (client_id) (hummbwtester_client_market_roundtrip_seconds_sum{client_id=~\"hummingbird-.*\"}) / sum by (client_id) (hummbwtester_client_market_roundtrip_seconds_count{client_id=~\"hummingbird-.*\"})",
+          "legendFormat": "{{client_id}} average",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Client Reservations",
+      "title": "Market Roundtrip",
       "type": "timeseries"
     },
     {

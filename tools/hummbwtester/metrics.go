@@ -46,6 +46,8 @@ type clientMetrics struct {
 	pacingDelay prometheus.Histogram
 	// reservationRenewals counts Hummingbird reservation renewal attempts by result.
 	reservationRenewals *prometheus.CounterVec
+	// marketRoundtrip records the time to obtain one Hummingbird reservation from the marketplace.
+	marketRoundtrip prometheus.Histogram
 	// reservationExpiry tracks seconds until the currently active reservation expires.
 	reservationExpiry            prometheus.Gauge
 	remotePayloadPacketsReceived prometheus.Counter
@@ -110,6 +112,11 @@ func newClientMetrics() *clientMetrics {
 			Name: "hummbwtester_client_reservation_renewals_total",
 			Help: "Total number of Hummingbird reservation renewal attempts, by result.",
 		}, []string{"result"}),
+		marketRoundtrip: promauto.NewHistogram(prometheus.HistogramOpts{
+			Name:    "hummbwtester_client_market_roundtrip_seconds",
+			Help:    "Time to obtain one Hummingbird reservation from the marketplace, including retries.",
+			Buckets: prometheus.DefBuckets,
+		}),
 		reservationExpiry: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_reservation_seconds_until_expiry",
 			Help: "Seconds until the currently active reservation expires.",
