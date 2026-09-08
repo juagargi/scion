@@ -448,7 +448,9 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 // do not perform a marketplace roundtrip, so they are intentionally omitted from this metric.
 func (c *client) observeMarketRoundtrip(start time.Time) {
 	if c.cfg.hummKeysDir == "" {
-		c.metrics.marketRoundtrip.Observe(time.Since(start).Seconds())
+		seconds := time.Since(start).Seconds()
+		c.metrics.marketRoundtrip.Observe(seconds)
+		c.metrics.marketRoundtripLast.Set(seconds)
 	}
 }
 

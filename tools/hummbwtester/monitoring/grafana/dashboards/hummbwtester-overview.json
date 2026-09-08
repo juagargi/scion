@@ -277,7 +277,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (client_id) (increase(hummbwtester_client_market_roundtrip_seconds_sum{client_id=~\"hummingbird-.*\"}[$__interval])) / sum by (client_id) (increase(hummbwtester_client_market_roundtrip_seconds_count{client_id=~\"hummingbird-.*\"}[$__interval]))",
+          "expr": "hummbwtester_client_market_roundtrip_last_seconds{client_id=~\"hummingbird-.*\"}",
           "legendFormat": "{{client_id}} roundtrip",
           "range": true,
           "refId": "A"

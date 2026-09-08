@@ -15,6 +15,8 @@
 package main
 
 import (
+	"math"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -48,6 +50,8 @@ type clientMetrics struct {
 	reservationRenewals *prometheus.CounterVec
 	// marketRoundtrip records the time to obtain one Hummingbird reservation from the marketplace.
 	marketRoundtrip prometheus.Histogram
+	// marketRoundtripLast stores the most recent successful marketplace roundtrip duration.
+	marketRoundtripLast prometheus.Gauge
 	// reservationExpiry tracks seconds until the currently active reservation expires.
 	reservationExpiry            prometheus.Gauge
 	remotePayloadPacketsReceived prometheus.Counter
@@ -117,6 +121,10 @@ func newClientMetrics() *clientMetrics {
 			Help:    "Time to obtain one Hummingbird reservation from the marketplace, including retries.",
 			Buckets: prometheus.DefBuckets,
 		}),
+		marketRoundtripLast: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "hummbwtester_client_market_roundtrip_last_seconds",
+			Help: "Duration of the most recent successful marketplace roundtrip, in seconds.",
+		}),
 		reservationExpiry: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_reservation_seconds_until_expiry",
 			Help: "Seconds until the currently active reservation expires.",
@@ -156,5 +164,6 @@ func newClientMetrics() *clientMetrics {
 	}
 	metrics.reservationRenewals.WithLabelValues("ok").Add(0)
 	metrics.reservationRenewals.WithLabelValues("error").Add(0)
+	metrics.marketRoundtripLast.Set(math.NaN())
 	return metrics
 }
