@@ -263,6 +263,7 @@
         "legend": {
           "calcs": [
             "lastNotNull",
+            "mean",
             "max"
           ],
           "displayMode": "list",
@@ -277,7 +278,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hummbwtester_client_market_roundtrip_last_seconds{client_id=~\"hummingbird-.*\"} and on (client_id) (changes(hummbwtester_client_market_roundtrip_last_seconds{client_id=~\"hummingbird-.*\"}[$__interval]) > 0)",
+          "expr": "(hummbwtester_client_market_roundtrip_last_seconds{client_id=~\"hummingbird-.*\"} and on (client_id) ((increase(hummbwtester_client_market_roundtrips_total{client_id=~\"hummingbird-.*\"}[$__rate_interval]) > 0) unless on (client_id) (increase(hummbwtester_client_market_roundtrips_total{client_id=~\"hummingbird-.*\"}[$__rate_interval] offset $__interval) > 0))) or (hummbwtester_client_market_roundtrip_last_seconds{client_id=~\"hummingbird-.*\"} and on (client_id) (hummbwtester_client_market_roundtrips_total{client_id=~\"hummingbird-.*\"} unless on (client_id) hummbwtester_client_market_roundtrips_total{client_id=~\"hummingbird-.*\"} offset $__interval))",
+          "interval": "1s",
           "legendFormat": "{{client_id}} roundtrip",
           "range": true,
           "refId": "A"

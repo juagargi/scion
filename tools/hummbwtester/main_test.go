@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/scionproto/scion/pkg/addr"
 	dppath "github.com/scionproto/scion/pkg/slayers/path"
 	dpscion "github.com/scionproto/scion/pkg/slayers/path/scion"
@@ -30,6 +31,24 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestObserveMarketRoundtrip(t *testing.T) {
+	metrics := newClientMetrics()
+	c := client{
+		cfg:     clientConfig{},
+		metrics: metrics,
+	}
+
+	c.observeMarketRoundtrip(time.Now().Add(-time.Second))
+	assert.InDelta(t, 1, promtest.ToFloat64(metrics.marketRoundtripLast), 0.1)
+	assert.Equal(t, float64(1), promtest.ToFloat64(metrics.marketRoundtrips))
+
+	// Key-derived reservations do not contact the marketplace and must not create events.
+	c.cfg.hummKeysDir = "gen"
+	c.observeMarketRoundtrip(time.Now().Add(-2 * time.Second))
+	assert.InDelta(t, 1, promtest.ToFloat64(metrics.marketRoundtripLast), 0.1)
+	assert.Equal(t, float64(1), promtest.ToFloat64(metrics.marketRoundtrips))
+}
 
 // BenchmarkSerializeWriteTo measures the no-sleep client send path over a real loopback UDP
 // socket. Each operation includes snet packet construction, SCION serialization, UDP checksum

@@ -44,6 +44,8 @@ type clientMetrics struct {
 	sendRateBps prometheus.Gauge
 	// marketRoundtripLast stores the most recent successful marketplace roundtrip duration.
 	marketRoundtripLast prometheus.Gauge
+	// marketRoundtrips counts successful marketplace roundtrips, including the initial one.
+	marketRoundtrips prometheus.Counter
 	// reservationExpiry tracks seconds until the currently active reservation expires.
 	reservationExpiry            prometheus.Gauge
 	remotePayloadPacketsReceived prometheus.Counter
@@ -98,6 +100,10 @@ func newClientMetrics() *clientMetrics {
 		marketRoundtripLast: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_market_roundtrip_last_seconds",
 			Help: "Duration of the most recent successful marketplace roundtrip, in seconds.",
+		}),
+		marketRoundtrips: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_market_roundtrips_total",
+			Help: "Total number of successful marketplace roundtrips.",
 		}),
 		reservationExpiry: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_reservation_seconds_until_expiry",

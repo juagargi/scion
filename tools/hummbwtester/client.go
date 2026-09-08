@@ -450,6 +450,8 @@ func (c *client) observeMarketRoundtrip(start time.Time) {
 	if c.cfg.hummKeysDir == "" {
 		seconds := time.Since(start).Seconds()
 		c.metrics.marketRoundtripLast.Set(seconds)
+		// Increment last so a scrape that observes the event also observes its duration.
+		c.metrics.marketRoundtrips.Inc()
 	}
 }
 

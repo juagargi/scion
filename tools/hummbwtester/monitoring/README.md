@@ -103,6 +103,7 @@ Useful example queries include:
 - `hummbwtester_client_jitter_seconds`
 - `hummbwtester_client_pong_late_replies_received_total`
 - `hummbwtester_client_market_roundtrip_last_seconds`
+- `hummbwtester_client_market_roundtrips_total`
 - `histogram_quantile(0.95, sum by (le) (rate(hummbwtester_client_rtt_seconds_bucket[1m])))`
 - `hummbwtester_client_remote_receive_rate_bps`
 - `hummbwtester_client_remote_stats_age_seconds`
