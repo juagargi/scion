@@ -31,8 +31,8 @@ import (
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/daemon"
 	daemontypes "github.com/scionproto/scion/pkg/daemon/types"
+	humm "github.com/scionproto/scion/pkg/hummingbird"
 	marketclient "github.com/scionproto/scion/pkg/hummingbird/marketplace"
-	"github.com/scionproto/scion/pkg/hummingbird/redemption"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	hummlib "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
@@ -113,8 +113,6 @@ type client struct {
 
 	svMu       sync.Mutex
 	hummSVByIA map[addr.IA][]byte
-	marketMu   sync.Mutex
-	market     *marketclient.PathMarketplaces
 
 	// currentAddr is the *snet.UDPAddr (including the current DataplanePath) that the sender
 	// loop must use for the next send. It is swapped atomically by the renewal goroutine;
@@ -266,90 +264,26 @@ func (c *client) buildReservation(
 func (c *client) buildReservationWithMarketplace(
 	ctx context.Context, path snet.Path, startTime time.Time,
 ) (*snetpath.Reservation, error) {
-	scionPath, ok := path.Dataplane().(snetpath.SCION)
-	if !ok {
-		return nil, serrors.New("provided path must be of type scion")
-	}
-	market, err := c.marketplacesOnPath(ctx, path)
-	if err != nil {
-		return nil, err
-	}
 	startsAt := startTime.Truncate(time.Second)
 	stopsAt := startsAt.Add(time.Duration(c.cfg.humm.Duration) * time.Second)
-	log.Debug("Buying Hummingbird reservations from the marketplace",
-		"bandwidth_kbps", c.cfg.humm.Bw,
-		"reverse_bandwidth_kbps", c.cfg.humm.ReverseBw,
-		"starts_at", startsAt, "stops_at", stopsAt)
-	forward, reverse, err := market.AcquireReservations(ctx, c.cfg.humm.Bw, c.cfg.humm.ReverseBw,
-		startsAt, stopsAt, marketplaceMaxPrice, marketplaceBuyMode,
-		marketplaceFetchReservations, marketplaceCombineAssets, marketplaceRetries)
-	if err != nil {
-		return nil, serrors.Wrap("obtaining reservations from marketplace", err)
-	}
-	expected := len(snetpath.InterfacesToBaseHops(path.Metadata().Interfaces))
-	if err := checkFlyovers(forward, expected); err != nil {
-		return nil, serrors.Wrap("checking bought reservations", err)
-	}
-	reservation, err := snetpath.NewReservation(
-		snetpath.WithDataplanePath(scionPath, path.Destination(), forward),
-	)
-	if err != nil || c.cfg.humm.ReverseBw == 0 {
-		return reservation, err
-	}
-	if err := checkFlyovers(reverse, expected); err != nil {
-		return nil, serrors.Wrap("checking bought reverse reservations", err)
-	}
-	extn, err := redemption.BuildReverseReservationExtn(scionPath, path.Source(), reverse)
-	if err != nil {
-		return nil, err
-	}
-	reservation.SetReverseReservationExtn(extn)
-	return reservation, nil
-}
-
-func checkFlyovers(hops []*snetpath.Hop, expected int) error {
-	if len(hops) != expected {
-		return serrors.New("unexpected number of hops", "expected", expected, "actual", len(hops))
-	}
-	for _, hop := range hops {
-		if hop == nil {
-			return serrors.New("missing hop")
-		}
-		if hop.Flyover == nil {
-			return serrors.New("hop without flyover, the asset could not be redeemed",
-				"ia", hop.IA, "ingress", hop.Ingress, "egress", hop.Egress)
-		}
-	}
-	return nil
-}
-
-func (c *client) marketplacesOnPath(
-	ctx context.Context, path snet.Path,
-) (*marketclient.PathMarketplaces, error) {
-	c.marketMu.Lock()
-	defer c.marketMu.Unlock()
-	if c.market != nil {
-		return c.market, nil
-	}
-	market, err := marketclient.NewPathMarketplaces(path)
-	if err != nil {
-		return nil, serrors.Wrap("discovering the marketplaces of the path", err)
-	}
-	count, coverage := market.FullCoverageCount()
-	if count != 1 {
-		return nil, serrors.New("the path is not covered by a single marketplace",
-			"marketplaces", count, "ases", len(market.PathASes))
-	}
-	log.Debug("Discovered the marketplace of the path",
-		"name", coverage[0].Name, "api_protocol", coverage[0].APIProtocol,
-		"api_address", coverage[0].APIAddress)
 	querier := daemon.Querier{Connector: c.cfg.sdConn, IA: c.sn.Topology.LocalIA}
-	if err := market.Connect(ctx, coverage[0].APIAddress, c.cfg.marketplaceJWT,
-		querier, c.sn.Topology, marketplaceInsecure); err != nil {
-		return nil, serrors.Wrap("connecting to the marketplace of the path", err)
-	}
-	c.market = market
-	return market, nil
+	return marketclient.OneShotReservation(
+		ctx,
+		path,
+		c.cfg.marketplaceJWT,
+		querier,
+		c.sn.Topology,
+		marketplaceInsecure,
+		c.cfg.humm.Bw,
+		c.cfg.humm.ReverseBw,
+		startsAt,
+		stopsAt,
+		marketplaceMaxPrice,
+		marketplaceBuyMode,
+		marketplaceFetchReservations,
+		marketplaceCombineAssets,
+		marketplaceRetries,
+	)
 }
 
 func (c *client) buildReservationWithSecretValues(
@@ -376,7 +310,7 @@ func (c *client) buildReservationWithSecretValues(
 	if err != nil {
 		return nil, err
 	}
-	extn, err := redemption.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
+	extn, err := humm.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
 	if err != nil {
 		return nil, err
 	}

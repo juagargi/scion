@@ -44,9 +44,9 @@ import (
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/daemon"
 	daemontypes "github.com/scionproto/scion/pkg/daemon/types"
+	humm "github.com/scionproto/scion/pkg/hummingbird"
 	"github.com/scionproto/scion/pkg/hummingbird/bwencoding"
 	marketclient "github.com/scionproto/scion/pkg/hummingbird/marketplace"
-	"github.com/scionproto/scion/pkg/hummingbird/redemption"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/common"
 	"github.com/scionproto/scion/pkg/private/serrors"
@@ -506,104 +506,29 @@ func (c *client) buildReservationWithMarketplace(
 	path snet.Path,
 	now time.Time,
 ) (*snetpath.Reservation, error) {
-	scionPath, ok := path.Dataplane().(snetpath.SCION)
-	if !ok {
-		return nil, serrors.New("provided path must be of type scion")
-	}
-	market, err := c.marketplacesOnPath(ctx, path)
-	if err != nil {
-		return nil, err
-	}
 	// Whole seconds: the flyover carries a start time in seconds and a duration
 	// in seconds, and the marketplace matches the assets it sold on exactly the
 	// timestamps it was asked for.
 	startsAt := now.Add(hummStartOffset).Truncate(time.Second)
 	stopsAt := startsAt.Add(time.Duration(c.hummParams.Duration) * time.Second)
-	log.Debug("Buying Hummingbird reservations from the marketplaces of the path",
-		"bandwidth_kbps", c.hummParams.Bw,
-		"reverse_bandwidth_kbps", c.hummParams.ReverseBw,
-		"starts_at", startsAt,
-		"stops_at", stopsAt)
-
-	flyovers, reverseFlyovers, err := market.AcquireReservations(ctx, c.hummParams.Bw,
-		c.hummParams.ReverseBw, startsAt, stopsAt, marketplaceMaxPrice, marketplaceBuyMode,
-		marketplaceFetchReservations, marketplaceCombineAssets, marketplaceRetries)
-	if err != nil {
-		return nil, serrors.Wrap("obtaining reservations from marketplace", err)
-	}
-	// One hop per AS on the path, which is what the marketplace client buys for.
-	expected := len(snetpath.InterfacesToBaseHops(path.Metadata().Interfaces))
-	if err := checkFlyovers(flyovers, expected); err != nil {
-		return nil, serrors.Wrap("checking bought reservations", err)
-	}
-	reservation, err := snetpath.NewReservation(
-		snetpath.WithDataplanePath(scionPath, path.Destination(), flyovers),
-	)
-	if err != nil || c.hummParams.ReverseBw == 0 {
-		return reservation, err
-	}
-
-	if err := checkFlyovers(reverseFlyovers, expected); err != nil {
-		return nil, serrors.Wrap("checking bought reverse reservations", err)
-	}
-	extn, err := redemption.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
-	if err != nil {
-		return nil, err
-	}
-	reservation.SetReverseReservationExtn(extn)
-	return reservation, nil
-}
-
-// checkFlyovers rejects hops that carry no flyover. The marketplace client
-// returns a bare hop when redeeming its asset failed, and a path built from
-// those would silently travel as a plain SCION path.
-func checkFlyovers(hops []*snetpath.Hop, expected int) error {
-	if len(hops) != expected {
-		return serrors.New("unexpected number of hops", "expected", expected, "actual", len(hops))
-	}
-	for _, hop := range hops {
-		if hop == nil {
-			return serrors.New("missing hop")
-		}
-		if hop.Flyover == nil {
-			return serrors.New("hop without flyover, the asset could not be redeemed",
-				"ia", hop.IA, "ingress", hop.Ingress, "egress", hop.Egress)
-		}
-	}
-	return nil
-}
-
-// marketplacesOnPath discovers the marketplaces the ASes of the path advertise, and
-// connects to the one selling the assets of all of them.
-// This test only holds a token for a single marketplace, so a path that no single
-// marketplace covers cannot be reserved here, even though the discovered set could buy
-// each AS from a different one.
-func (c *client) marketplacesOnPath(
-	ctx context.Context,
-	path snet.Path,
-) (*marketclient.PathMarketplaces, error) {
-	market, err := marketclient.NewPathMarketplaces(path)
-	if err != nil {
-		return nil, serrors.Wrap("discovering the marketplaces of the path", err)
-	}
-	count, coverage := market.FullCoverageCount()
-	if count != 1 {
-		return nil, serrors.New("the path is not covered by a single marketplace",
-			"marketplaces", count, "ases", len(market.PathASes))
-	}
-	log.Debug("Discovered the marketplace of the path",
-		"name", coverage[0].Name,
-		"api_protocol", coverage[0].APIProtocol,
-		"api_address", coverage[0].APIAddress)
-	// The querier and the topology are only used for marketplaces reached over
-	// SCION, but they are always available here.
 	querier := daemon.Querier{Connector: c.sdConn, IA: c.topo.LocalIA}
-	err = market.Connect(ctx, coverage[0].APIAddress, c.marketParams.JWT, querier, c.topo,
-		marketplaceInsecure)
-	if err != nil {
-		return nil, serrors.Wrap("connecting to the marketplace of the path", err)
-	}
-	return market, nil
+	return marketclient.OneShotReservation(
+		ctx,
+		path,
+		c.marketParams.JWT,
+		querier,
+		c.topo,
+		marketplaceInsecure,
+		c.hummParams.Bw,
+		c.hummParams.ReverseBw,
+		startsAt,
+		stopsAt,
+		marketplaceMaxPrice,
+		marketplaceBuyMode,
+		marketplaceFetchReservations,
+		marketplaceCombineAssets,
+		marketplaceRetries,
+	)
 }
 
 func (c *client) buildReservationWithSecretValues(
@@ -634,7 +559,7 @@ func (c *client) buildReservationWithSecretValues(
 	if err != nil {
 		return nil, err
 	}
-	extn, err := redemption.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
+	extn, err := humm.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
 	if err != nil {
 		return nil, err
 	}

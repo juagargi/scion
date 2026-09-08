@@ -23,7 +23,6 @@ import (
 	humm "github.com/scionproto/scion/pkg/hummingbird"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
-	dpscion "github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/pkg/snet"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
 )
@@ -84,26 +83,7 @@ func BuildReverseReservationExtn(
 	reverseDst addr.IA,
 	reverseFlyovers []*snetpath.Hop,
 ) (*slayers.EndToEndExtn, error) {
-	reversePath, err := reverseSCIONPath(forwardPath)
-	if err != nil {
-		return nil, err
-	}
-	reservation, err := snetpath.NewReservation(
-		snetpath.WithDataplanePath(reversePath, reverseDst, reverseFlyovers),
-	)
-	if err != nil {
-		return nil, err
-	}
-	state := make([]byte, reservation.SerializedLen())
-	if err := reservation.Serialize(state); err != nil {
-		return nil, err
-	}
-	return &slayers.EndToEndExtn{
-		Options: []*slayers.EndToEndOption{{
-			OptType: slayers.OptTypeReversePath,
-			OptData: state,
-		}},
-	}, nil
+	return humm.BuildReverseReservationExtn(forwardPath, reverseDst, reverseFlyovers)
 }
 
 // reverseReservationExtn redeems the reverse flyovers and wraps the resulting
@@ -160,24 +140,4 @@ func reverseBaseHops(hops []snetpath.BaseHop) []snetpath.BaseHop {
 		}
 	}
 	return reversed
-}
-
-// reverseSCIONPath decodes and reverses a SCION dataplane path while keeping
-// the result in snet's SCION dataplane wrapper type.
-func reverseSCIONPath(scionPath snetpath.SCION) (snetpath.SCION, error) {
-	var dec dpscion.Decoded
-	// Work on a copy so the caller's dataplane path bytes stay untouched.
-	raw := append([]byte(nil), scionPath.Raw...)
-	if err := dec.DecodeFromBytes(raw); err != nil {
-		return snetpath.SCION{}, serrors.Wrap("decoding scion path", err)
-	}
-	reversed, err := dec.Reverse()
-	if err != nil {
-		return snetpath.SCION{}, serrors.Wrap("reversing scion path", err)
-	}
-	reversedDecoded, ok := reversed.(*dpscion.Decoded)
-	if !ok {
-		return snetpath.SCION{}, serrors.New("unexpected reversed path type")
-	}
-	return snetpath.NewSCIONFromDecoded(*reversedDecoded)
 }
