@@ -108,9 +108,7 @@ equal to `bandwidth` retains the debt accounting but provides no acceleration, s
 up while continuously sending.
 
 Pong probes do not contribute to the configured payload bandwidth and retain their independent
-no-catch-up schedule. A pacing tick that leaves its schedule behind increments
-`hummbwtester_client_pacing_overrun_total`, records its lateness in
-`hummbwtester_client_pacing_delay_seconds`, and contributes to the rate-limited
+no-catch-up schedule. A pacing tick that leaves its schedule behind contributes to the rate-limited
 `Pacing schedule behind` log message. A request that exceeds its RTT deadline increments
 `hummbwtester_client_pong_lost_total`, but a later reply is still accepted for latency and remote
 receive/loss statistics. Such replies also increment

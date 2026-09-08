@@ -449,7 +449,6 @@ func (c *client) renewalLoop(runCtx context.Context, path snet.Path, expiry time
 func (c *client) observeMarketRoundtrip(start time.Time) {
 	if c.cfg.hummKeysDir == "" {
 		seconds := time.Since(start).Seconds()
-		c.metrics.marketRoundtrip.Observe(seconds)
 		c.metrics.marketRoundtripLast.Set(seconds)
 	}
 }
@@ -479,12 +478,10 @@ func (c *client) renewWithRetry(
 		rsv, nextHop, err := c.buildReservation(ctx, path, startTime)
 		cancel()
 		if err == nil {
-			c.metrics.reservationRenewals.WithLabelValues("ok").Inc()
 			return rsv, nextHop, true
 		}
 		log.Error("Renewing Hummingbird reservation failed",
 			"attempt", attempt+1, "err", err, "time_until_start", time.Until(startTime))
-		c.metrics.reservationRenewals.WithLabelValues("error").Inc()
 		select {
 		case <-runCtx.Done():
 			return nil, nil, false
@@ -692,8 +689,6 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 	var overrunsSinceLog int
 	lastOverrunLog := now
 	recordPacingDelay := func(delay time.Duration) {
-		c.metrics.pacingOverrunTotal.Inc()
-		c.metrics.pacingDelay.Observe(delay.Seconds())
 		overrunsSinceLog++
 		if time.Since(lastOverrunLog) >= time.Second {
 			log.Error("Pacing schedule behind", "count_since_last_log", overrunsSinceLog)

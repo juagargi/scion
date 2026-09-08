@@ -42,14 +42,6 @@ type clientMetrics struct {
 	jitter prometheus.Gauge
 	// sendRateBps tracks the achieved payload send rate over the last report interval.
 	sendRateBps prometheus.Gauge
-	// pacingOverrunTotal counts pacing events that end behind their absolute send schedule.
-	pacingOverrunTotal prometheus.Counter
-	// pacingDelay records the lateness of pacing overruns.
-	pacingDelay prometheus.Histogram
-	// reservationRenewals counts Hummingbird reservation renewal attempts by result.
-	reservationRenewals *prometheus.CounterVec
-	// marketRoundtrip records the time to obtain one Hummingbird reservation from the marketplace.
-	marketRoundtrip prometheus.Histogram
 	// marketRoundtripLast stores the most recent successful marketplace roundtrip duration.
 	marketRoundtripLast prometheus.Gauge
 	// reservationExpiry tracks seconds until the currently active reservation expires.
@@ -103,24 +95,6 @@ func newClientMetrics() *clientMetrics {
 			Name: "hummbwtester_client_send_rate_bps",
 			Help: "Achieved payload send rate, in bits per second, over the last report interval.",
 		}),
-		pacingOverrunTotal: promauto.NewCounter(prometheus.CounterOpts{
-			Name: "hummbwtester_client_pacing_overrun_total",
-			Help: "Total pacing events that ended behind their absolute send schedule.",
-		}),
-		pacingDelay: promauto.NewHistogram(prometheus.HistogramOpts{
-			Name:    "hummbwtester_client_pacing_delay_seconds",
-			Help:    "Lateness of pacing events that ended behind their absolute send schedule.",
-			Buckets: prometheus.DefBuckets,
-		}),
-		reservationRenewals: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "hummbwtester_client_reservation_renewals_total",
-			Help: "Total number of Hummingbird reservation renewal attempts, by result.",
-		}, []string{"result"}),
-		marketRoundtrip: promauto.NewHistogram(prometheus.HistogramOpts{
-			Name:    "hummbwtester_client_market_roundtrip_seconds",
-			Help:    "Time to obtain one Hummingbird reservation from the marketplace, including retries.",
-			Buckets: prometheus.DefBuckets,
-		}),
 		marketRoundtripLast: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_market_roundtrip_last_seconds",
 			Help: "Duration of the most recent successful marketplace roundtrip, in seconds.",
@@ -162,8 +136,6 @@ func newClientMetrics() *clientMetrics {
 			Help: "Seconds on the client clock since the latest accepted remote statistics snapshot; -1 before the first snapshot.",
 		}),
 	}
-	metrics.reservationRenewals.WithLabelValues("ok").Add(0)
-	metrics.reservationRenewals.WithLabelValues("error").Add(0)
 	metrics.marketRoundtripLast.Set(math.NaN())
 	return metrics
 }
