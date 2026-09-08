@@ -301,6 +301,9 @@ func TestDecodeSegmentStartingAtLastHopField(t *testing.T) {
 			},
 		},
 		0, 0)
+	// A single-hop segment only occurs behind a peering link.
+	p.InfoFields[0].Peer = true
+	p.InfoFields[1].Peer = true
 	require.Equal(t, [3]uint8{3, 3, 0}, p.PathMeta.SegLen)
 
 	buff := make([]byte, p.Len())
