@@ -13,6 +13,7 @@ go_library(
         "//marketplace/db:go_default_library",
         "//pkg/addr:go_default_library",
         "//pkg/hummingbird:go_default_library",
+        "//pkg/hummingbird/marketplace:go_default_library",
         "//pkg/private/serrors:go_default_library",
         "//pkg/proto/hummingbird:go_default_library",
         "//private/config:go_default_library",

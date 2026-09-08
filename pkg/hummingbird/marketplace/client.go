@@ -25,7 +25,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/scionproto/scion/pkg/addr"
-	hbird "github.com/scionproto/scion/pkg/hummingbird"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
@@ -225,7 +224,7 @@ func (c *MarketplaceClient) recursiveSelectStart(
 		}
 	}
 	actualPrice := func(a *hummingbird.SearchAsset, duration time.Duration) uint64 {
-		price, err := hbird.ReservationPrice(
+		price, err := ReservationPrice(
 			a.Price,
 			bwInKbps,
 			a.BandwidthMin,
@@ -507,7 +506,7 @@ func (c *MarketplaceClient) checkoutAssetForInterfacePair(
 
 	duration := stopsAt.Sub(startsAt)
 	actualPrice := func(a *hummingbird.SearchAsset) uint64 {
-		price, err := hbird.ReservationPrice(
+		price, err := ReservationPrice(
 			a.Price,
 			bwInKbps,
 			a.BandwidthMin,
@@ -522,7 +521,7 @@ func (c *MarketplaceClient) checkoutAssetForInterfacePair(
 	filterAssets := func(assets []*hummingbird.SearchAsset) []*hummingbird.SearchAsset {
 		return filter(assets, func(a *hummingbird.SearchAsset) bool {
 			billableDuration, err :=
-				hbird.ReservationDuration(duration, a.TimeMinDuration, a.TimeGranularity)
+				ReservationDuration(duration, a.TimeMinDuration, a.TimeGranularity)
 			if err != nil || a.StopsAt.AsTime().Before(startsAt.Add(billableDuration)) {
 				return false
 			}
@@ -537,7 +536,7 @@ func (c *MarketplaceClient) checkoutAssetForInterfacePair(
 	}
 	buildBuyRequest := func(a *hummingbird.SearchAsset) *hummingbird.BuyAsset {
 		billableDuration, _ :=
-			hbird.ReservationDuration(duration, a.TimeMinDuration, a.TimeGranularity)
+			ReservationDuration(duration, a.TimeMinDuration, a.TimeGranularity)
 		return &hummingbird.BuyAsset{
 			AssetId:         a.AssetId,
 			BandwidthExact:  max(bwInKbps, a.BandwidthMin),

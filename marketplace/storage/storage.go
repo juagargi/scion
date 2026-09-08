@@ -24,6 +24,7 @@ import (
 	marketplacedb "github.com/scionproto/scion/marketplace/db"
 	"github.com/scionproto/scion/pkg/addr"
 	hbird "github.com/scionproto/scion/pkg/hummingbird"
+	hbirdmarketplace "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 	"github.com/scionproto/scion/private/config"
@@ -666,7 +667,7 @@ func (s *MarketplaceStorage) BuyAssets(
 			if err != nil {
 				return err
 			}
-			totalAssetPrice, err := hbird.ReservationPrice(
+			totalAssetPrice, err := hbirdmarketplace.ReservationPrice(
 				dbAsset.Price,
 				split.Split.Bandwidth,
 				dbAsset.BandwidthMin,
