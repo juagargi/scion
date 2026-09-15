@@ -830,6 +830,8 @@ func deserializeHops(buff []byte) ([]*Hop, error) {
 type FlyoverSequence []*Hop
 
 // InterfacesToBaseHops maps path metadata interfaces to per-AS ingress/egress hop tuples.
+// Crossovers are removed directly by the metadata setting logic at pathSolution.Path()
+// in package private/path/combinator .
 func InterfacesToBaseHops(ifaces []snet.PathInterface) []BaseHop {
 	if len(ifaces) == 0 {
 		return nil
