@@ -587,9 +587,11 @@ func dataplaneToBaseHops(
 				in, eg = eg, in
 			}
 
-			// Check for crossovers.
+			// Check for crossovers and shortcuts.
 			if segIdx > 0 && hopInSegment == 0 && !inf.Peer {
-				// Crossover. Replace the previous zero egress with the one in this hop field.
+				// Crossover. Replace the previous egress with the one in this hop field:
+				// - If it is a core AS (crossover): Previous egress was zero.
+				// - If not core AS (shortcut): Previous egress was the parent-facing interface ID.
 				baseHops[len(baseHops)-1].Egress = eg
 			} else {
 				// Not a crossover. Add the new hop field.

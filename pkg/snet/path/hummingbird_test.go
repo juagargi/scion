@@ -555,6 +555,24 @@ func TestDataplaneToBaseHops(t *testing.T) {
 			},
 			wantIndices: []uint8{0, 1, 3},
 		},
+		// A shortcut joins two segments at a non-core AS, so that AS sits mid-segment in both,
+		// and each of its hop fields carries a non-zero ConsIngress: interface 99,
+		// toward its parent, which the packet never traverses.
+		// The crossover fold must still produce 71->72 and drop 99 unconditionally without
+		// assuming that egress was zero.
+		// The control plane makes the same choice from the other side,
+		// by leaving interface 99 out of the path metadata entirely.
+		"two segments, shortcut at a non-core AS": {
+			infos: []dppath.InfoField{{ConsDir: false}, {ConsDir: true}},
+			hops: [][]dphumm.FlyoverHopField{
+				{plain(41, 0), plain(99, 71)},
+				{plain(99, 72), plain(1, 0)},
+			},
+			wantHops: []path.BaseHop{
+				{Ingress: 0, Egress: 41}, {Ingress: 71, Egress: 72}, {Ingress: 1, Egress: 0},
+			},
+			wantIndices: []uint8{0, 1, 3},
+		},
 		"three segments, two crossovers": {
 			infos: []dppath.InfoField{{ConsDir: false}, {ConsDir: true}, {ConsDir: true}},
 			hops: [][]dphumm.FlyoverHopField{
