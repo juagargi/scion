@@ -578,7 +578,7 @@ func (h *Handler) reservationsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reservations, err := h.store.FetchReservations(r.Context(), &db.ReservationQuery{
-		AccountId: filterAccount.ID,
+		AccountId: &filterAccount.ID,
 	})
 	if err != nil {
 		log.Debug("User assets handler", "err", err)

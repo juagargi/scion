@@ -16,10 +16,15 @@ package marketplace
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/scionproto/scion/marketplace/db"
 	"github.com/scionproto/scion/marketplace/storage"
 	"github.com/scionproto/scion/pkg/addr"
@@ -55,8 +60,9 @@ type RedemptionServerHandler struct {
 	remote *RemoteConn
 	// Requests handed to the remote redemption server and not answered yet,
 	// keyed by the request id that correlates the two.
-	pending   map[uint64]chan *hummingbird.RedeemAssetFromASResponse
-	nextReqID uint64
+	pending       map[uint64]chan *hummingbird.RedeemAssetFromASResponse
+	nextReqID     uint64
+	reprovisioner Reprovisioner
 }
 
 // RemoteConn is one connection of an AS redemption server.
@@ -303,6 +309,157 @@ func (h *RedemptionServerHandler) ApplyDelegation(
 	return nil
 }
 
+type Reprovisioner struct {
+	mu        sync.Mutex
+	operation *ReprovisionOperation
+}
+
+type ReprovisionOperation struct {
+	cancelF   context.CancelFunc
+	done      chan struct{}
+	total     int64
+	processed atomic.Int64
+	status    hummingbird.ReprovisionState
+	err       error
+}
+
+func (h *RedemptionServerHandler) ReprovisionCancel() error {
+	h.reprovisioner.mu.Lock()
+	op := h.reprovisioner.operation
+	defer h.reprovisioner.mu.Unlock()
+
+	if op == nil || op.status != hummingbird.ReprovisionState_Running {
+		return serrors.New("no running reprovision operation")
+	}
+	op.cancelF()
+	return nil
+}
+
+func (h *RedemptionServerHandler) ReprovisionReservationStatus() *hummingbird.ReprovisionStatusResponse {
+	h.reprovisioner.mu.Lock()
+	defer h.reprovisioner.mu.Unlock()
+	if h.reprovisioner.operation == nil {
+		return &hummingbird.ReprovisionStatusResponse{
+			State:     hummingbird.ReprovisionState_Idle,
+			Total:     0,
+			Processed: 0,
+		}
+	}
+	var err_string *string
+	if h.reprovisioner.operation.err != nil {
+		tmp := h.reprovisioner.operation.err.Error()
+		err_string = &tmp
+	}
+	return &hummingbird.ReprovisionStatusResponse{
+		State:     h.reprovisioner.operation.status,
+		Total:     uint64(h.reprovisioner.operation.total),
+		Processed: uint64(h.reprovisioner.operation.processed.Load()),
+		Error:     err_string,
+	}
+}
+
+func (h *RedemptionServerHandler) ReprovisionReservations() error {
+	h.reprovisioner.mu.Lock()
+	if h.reprovisioner.operation != nil &&
+		h.reprovisioner.operation.status == hummingbird.ReprovisionState_Running {
+		h.reprovisioner.mu.Unlock()
+		return serrors.New("reprovision already in progress")
+	}
+	// the operation should not cancel if the requester disconnects
+	ctx, cancelF := context.WithCancel(context.Background())
+	defer cancelF()
+	earliestStop := time.Now().Format(time.RFC3339)
+	reservations, err := h.store.FetchReservations(ctx, &db.ReservationQuery{
+		IA:      &h.ia,
+		StopsAt: &earliestStop,
+	})
+	if err != nil {
+		return err
+	}
+	log.Debug("reprovision", "ia", h.ia, "loaded reservations", len(reservations))
+	op := &ReprovisionOperation{
+		cancelF: cancelF,
+		status:  hummingbird.ReprovisionState_Running,
+		done:    make(chan struct{}),
+		total:   int64(len(reservations)),
+	}
+	op.processed.Store(0)
+	h.reprovisioner.operation = op
+	h.reprovisioner.mu.Unlock()
+
+	go func() {
+		defer close(op.done)
+
+		handleResponse := func(dbID int64, resp *hummingbird.RedeemAssetFromASResponse) error {
+			switch result := resp.Result.(type) {
+			case *hummingbird.RedeemAssetFromASResponse_ResInfo:
+				n, err := h.store.UpdateReservation(ctx, dbID, &db.DBReservation{
+					ID:               dbID,
+					ReservationID:    result.ResInfo.ReservationId,
+					Bandwidth:        result.ResInfo.BandwithRounded,
+					EncodedBandwidth: uint16(result.ResInfo.BwDataplaneEncoding),
+					Key:              result.ResInfo.AuthenticationKey,
+				})
+				if err != nil {
+					return err
+				}
+				if n != 1 {
+					return serrors.New("invalid number of rows modified")
+				}
+			case *hummingbird.RedeemAssetFromASResponse_Error:
+				return serrors.New(result.Error)
+			}
+			return nil
+		}
+		g := errgroup.Group{}
+		g.SetLimit(redemptionChannelSize)
+	loop:
+		for _, reservation := range reservations {
+			select {
+			case <-ctx.Done():
+				break loop
+			default:
+			}
+			g.Go(func() error {
+				resp, err := h.Redeem(ctx, &hummingbird.RedeemAssetFromASRequest{
+					IngressId: reservation.Ingress,
+					EgressId:  reservation.Egress,
+					Bandwidth: reservation.Bandwidth,
+					StartsAt:  timestamppb.New(reservation.StartsAt),
+					StopsAt:   timestamppb.New(reservation.StopsAt),
+				})
+				if err != nil {
+					log.Debug("error while reprovisioning reservation", "err", err)
+					return err
+				}
+				if err = handleResponse(reservation.ID, resp); err != nil {
+					log.Debug("error while reprovisioning reservation", "err", err)
+					return err
+				}
+				h.reprovisioner.operation.processed.Add(1)
+				return nil
+			})
+		}
+		err = g.Wait()
+
+		h.reprovisioner.mu.Lock()
+		defer h.reprovisioner.mu.Unlock()
+		if err != nil {
+			op.err = err
+			if errors.Is(err, context.Canceled) {
+				op.status = hummingbird.ReprovisionState_Canceled
+			} else {
+				op.status = hummingbird.ReprovisionState_Failed
+			}
+		} else {
+			op.status = hummingbird.ReprovisionState_Completed
+		}
+	}()
+
+	<-op.done
+	return op.err
+}
+
 func (s *Service) RedeemASAsset(
 	ctx context.Context,
 	stream *connect.BidiStream[
@@ -379,4 +536,55 @@ func (s *Service) DelegateRedemption(
 		},
 	}, nil
 
+}
+
+// ReprovisionReservations will depend on the operation start the reprovisioning, return its status
+// or cancel it.
+// When starting reprovisioning, it processed the reprovisioning and returns success or an error.
+// Reprovisioning continues even if the client disconnects and will terminute on completion
+// or upon cancellation.
+// Status returns the state of the current reprovisioning operation and the number of elements
+// that were processed and how many elements in total are processed.
+// Cancellation will cancel the current reprovision operation, but will not undo already performed
+// reprovisions.
+func (s *Service) ReprovisionReservations(
+	ctx context.Context,
+	req *connect.Request[hummingbird.ReprovisionReservationRequest],
+) (*connect.Response[hummingbird.ReprovisionReservationResponse], error) {
+	clientID, ok := ctx.Value("user").(addr.IA)
+	if !ok {
+		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("ia not provided"))
+	}
+	handler := s.FindRedemptionServerHandler(clientID)
+
+	var operationResult *hummingbird.ReprovisionReservationResponse
+	switch req.Msg.Operation.(type) {
+	case *hummingbird.ReprovisionReservationRequest_Start:
+		if err := handler.ReprovisionReservations(); err != nil {
+			return nil, connect.NewError(connect.CodeUnavailable, err)
+		}
+		operationResult = &hummingbird.ReprovisionReservationResponse{
+			Operation: &hummingbird.ReprovisionReservationResponse_Start{
+				Start: &hummingbird.ReprovisionStartResponse{},
+			},
+		}
+	case *hummingbird.ReprovisionReservationRequest_Status:
+		operationResult = &hummingbird.ReprovisionReservationResponse{
+			Operation: &hummingbird.ReprovisionReservationResponse_Status{
+				Status: handler.ReprovisionReservationStatus(),
+			},
+		}
+	case *hummingbird.ReprovisionReservationRequest_Cancel:
+		if err := handler.ReprovisionCancel(); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		operationResult = &hummingbird.ReprovisionReservationResponse{
+			Operation: &hummingbird.ReprovisionReservationResponse_Cancel{
+				Cancel: &hummingbird.ReprovisionCancelResponse{},
+			},
+		}
+	}
+	return &connect.Response[hummingbird.ReprovisionReservationResponse]{
+		Msg: operationResult,
+	}, nil
 }

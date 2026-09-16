@@ -137,7 +137,7 @@ func TestAssetTransitionAndRowScanners(t *testing.T) {
 	_, err = backend.InsertReservation(ctx, reservation)
 	require.NoError(t, err)
 
-	reservations, err := backend.FetchReservations(ctx, &ReservationQuery{AccountId: accountID})
+	reservations, err := backend.FetchReservations(ctx, &ReservationQuery{AccountId: &accountID})
 	require.NoError(t, err)
 	require.Len(t, reservations, 1)
 	got := reservations[0]
