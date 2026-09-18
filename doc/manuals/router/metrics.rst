@@ -155,6 +155,18 @@ fields.
 
 **Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
 
+Hummingbird MAC verification failures total
+-------------------------------------------
+
+**Name**: ``router_humm_mac_verification_failures_total``
+
+**Type**: Counter
+
+**Description**: Total number of Hummingbird packets whose SCION or aggregate
+MAC verification failed.
+
+**Labels**: ``interface``, ``isd_as``, ``neighbor_isd_as`` and ``sizeclass``.
+
 Hummingbird freshness demotions total
 -------------------------------------
 
