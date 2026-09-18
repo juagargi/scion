@@ -112,6 +112,54 @@ func TestCombine(t *testing.T) {
 				},
 			},
 		},
+		"combine rounds up to asset minimum duration": {
+			duration: time.Second,
+			bw:       1,
+			expectedResponse: []*hummingbird.BuyAsset{
+				{
+					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
+					StartsAtExactly: timestamppb.New(start),
+					StopsAtExactly:  timestamppb.New(start.Add(10 * time.Second)),
+					BandwidthExact:  1,
+				},
+			},
+			assets: []*hummingbird.SearchAsset{
+				{
+					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
+					Bandwidth:       1,
+					StartsAt:        timestamppb.New(start),
+					StopsAt:         timestamppb.New(start.Add(time.Minute)),
+					TimeGranularity: 1,
+					BandwidthMin:    1,
+					TimeMinDuration: 10,
+					Price:           1,
+				},
+			},
+		},
+		"combine rounds up to asset duration granularity": {
+			duration: 11 * time.Second,
+			bw:       1,
+			expectedResponse: []*hummingbird.BuyAsset{
+				{
+					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
+					StartsAtExactly: timestamppb.New(start),
+					StopsAtExactly:  timestamppb.New(start.Add(20 * time.Second)),
+					BandwidthExact:  1,
+				},
+			},
+			assets: []*hummingbird.SearchAsset{
+				{
+					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
+					Bandwidth:       1,
+					StartsAt:        timestamppb.New(start),
+					StopsAt:         timestamppb.New(start.Add(time.Minute)),
+					TimeGranularity: 10,
+					BandwidthMin:    1,
+					TimeMinDuration: 1,
+					Price:           1,
+				},
+			},
+		},
 		"baseCombineChooseCheaper": {
 			duration: time.Second * 2,
 			bw:       1,
