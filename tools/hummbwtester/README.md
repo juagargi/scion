@@ -215,6 +215,54 @@ The runner creates SSH metric tunnels and Prometheus file-SD targets under `gen/
 removes remote PID/JWT files on exit, and removes a `tc`-set TBF only when
 the inventory explicitly declares a `noqueue` dedicated-link interface.
 
+### Shaping one production BR flow on a shared interface
+
+`veth_shaper.py` provides an IPv4-only veth hairpin for a border router that runs directly on the host.
+The router remains in the host network namespace and retains its configured underlay endpoint.
+An exact local-to-remote UDP flow is marked and policy-routed through a private veth;
+the veth's root TBF shapes it before the peer end reinjects it into normal host routing.
+Incoming traffic and all other outgoing traffic continue to use the original interface directly.
+
+Inspect compatibility without changing the host:
+
+```bash
+sudo ./tools/hummbwtester/veth_shaper.py diagnose \
+  --device ens192 \
+  --local 10.6.7.1:50001 \
+  --remote 10.6.7.2:50001
+```
+
+Install the temporary veth, exact-flow firewall rules, policy route, and TBF:
+
+```bash
+sudo ./tools/hummbwtester/veth_shaper.py up \
+  --device ens192 \
+  --local 10.6.7.1:50001 \
+  --remote 10.6.7.2:50001 \
+  --rate 10mbit --burst 50kb --limit 256kb
+```
+
+The tool enables forwarding and `accept_local` only on the private reinjection veth;
+it does not enable global IP forwarding or replace the original interface's qdisc.
+It records ownership under `/run/hummbwtester-veth/`,
+labels both veth devices, installs the traffic-diverting rule last,
+and rolls back partial setup failures.
+Only one managed hairpin may be active at a time.
+
+Inspect counters and remove all managed state with:
+
+```bash
+sudo ./tools/hummbwtester/veth_shaper.py status
+sudo ./tools/hummbwtester/veth_shaper.py down
+```
+
+<!--
+deleteme
+
+The SSH runner does not yet invoke this helper automatically. Its existing `shaping` inventory
+entries remain restricted to dedicated `noqueue` devices.
+-->
+
 ## Regular run cycle
 
 For a configuration change, run setup again before running the experiment:
