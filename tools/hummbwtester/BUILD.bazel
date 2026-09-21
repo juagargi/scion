@@ -80,9 +80,22 @@ py_test(
 )
 
 py_test(
-    name = "veth_shaper_test",
+    name = "selective_qdisc_test",
     srcs = [
-        "veth_shaper.py",
-        "veth_shaper_test.py",
+        "selective_qdisc.py",
+        "selective_qdisc_test.py",
+    ],
+)
+
+py_test(
+    name = "selective_qdisc_integration_test",
+    size = "large",
+    srcs = [
+        "selective_qdisc.py",
+        "selective_qdisc_integration_test.py",
+    ],
+    tags = [
+        "integration",
+        "manual",
     ],
 )
