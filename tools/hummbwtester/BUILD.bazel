@@ -78,3 +78,11 @@ py_test(
     srcs = ["ssh_orchestration_test.py"],
     deps = [":orchestration"],
 )
+
+py_test(
+    name = "veth_shaper_test",
+    srcs = [
+        "veth_shaper.py",
+        "veth_shaper_test.py",
+    ],
+)
