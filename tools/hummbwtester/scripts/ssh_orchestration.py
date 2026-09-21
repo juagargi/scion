@@ -28,7 +28,7 @@ except ImportError:
 
 ROOT = workload.ROOT
 BIN = workload.BIN
-TC_HELPER = ROOT / "tools" / "hummbwtester" / "tc_remote.sh"
+TC_HELPER = ROOT / "tools" / "hummbwtester" / "scripts" / "tc_remote.sh"
 INVENTORY_DEFAULT = ROOT / "tools" / "hummbwtester" / "ssh-inventory.json"
 TARGET_DIR = workload.TARGET_DIR
 

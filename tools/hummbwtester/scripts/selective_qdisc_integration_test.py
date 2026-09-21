@@ -3,7 +3,7 @@
 
 Run directly from the repository root:
 
-    sudo ./tools/hummbwtester/selective_qdisc_integration_test.py
+    sudo ./tools/hummbwtester/scripts/selective_qdisc_integration_test.py
 
 The outer process re-executes the tests in a new network and mount namespace.
 The tests create only disposable veth devices in that namespace;

@@ -2,7 +2,7 @@ import argparse
 import unittest
 from unittest import mock
 
-from tools.hummbwtester import selective_qdisc
+from tools.hummbwtester.scripts import selective_qdisc
 
 
 class SelectiveQdiscTest(unittest.TestCase):
