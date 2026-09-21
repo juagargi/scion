@@ -217,51 +217,91 @@ the inventory explicitly declares a `noqueue` dedicated-link interface.
 
 ### Shaping one production BR flow on a shared interface
 
-`veth_shaper.py` provides an IPv4-only veth hairpin for a border router that runs directly on the host.
-The router remains in the host network namespace and retains its configured underlay endpoint.
-An exact local-to-remote UDP flow is marked and policy-routed through a private veth;
-the veth's root TBF shapes it before the peer end reinjects it into normal host routing.
-Incoming traffic and all other outgoing traffic continue to use the original interface directly.
+`selective_qdisc.py` rate-limits one exact, locally generated IPv4 or IPv6 UDP flow without changing
+the border router or its topology.
+It replaces an explicitly acknowledged automatic root qdisc with a two-band PRIO qdisc.
+A flower filter sends only the selected flow to a TBF in the first band;
+everything else uses the unshaped second band. Incoming traffic is unchanged.
+
+This replacement is deliberately explicit.
+Pass `--expected-root noqueue` for the SCION VLAN devices on RNP and UFMS,
+or `--expected-root mq` for UFES `ens192`.
+The latter temporarily replaces the physical NIC's automatic multiqueue hierarchy,
+although nonmatching traffic remains rate-unlimited.
+`down` deletes the managed hierarchy and verifies that the acknowledged automatic root was restored.
 
 Inspect compatibility without changing the host:
 
 ```bash
-sudo ./tools/hummbwtester/veth_shaper.py diagnose \
-  --device ens192 \
-  --local 10.6.7.1:50001 \
-  --remote 10.6.7.2:50001
-```
-
-Install the temporary veth, exact-flow firewall rules, policy route, and TBF:
-
-```bash
-sudo ./tools/hummbwtester/veth_shaper.py up \
+sudo ./tools/hummbwtester/selective_qdisc.py diagnose \
   --device ens192 \
   --local 10.6.7.1:50001 \
   --remote 10.6.7.2:50001 \
-  --rate 10mbit --burst 50kb --limit 256kb
+  --expected-root mq
 ```
 
-The tool enables forwarding and `accept_local` only on the private reinjection veth;
-it does not enable global IP forwarding or replace the original interface's qdisc.
-It records ownership under `/run/hummbwtester-veth/`,
-labels both veth devices, installs the traffic-diverting rule last,
-and rolls back partial setup failures.
-Only one managed hairpin may be active at a time.
+For an IPv6 link-local endpoint, retain brackets and quote the shell arguments:
+
+```bash
+sudo ./tools/hummbwtester/selective_qdisc.py diagnose \
+  --name rnp-ufms \
+  --device eno4.140 \
+  --local '[fe80::77c:140%eno4.140]:50031' \
+  --remote '[fe80::2:0:5c:140]:50031' \
+  --expected-root noqueue
+```
+
+Install the selective qdisc after reviewing the diagnostic report:
+
+```bash
+sudo ./tools/hummbwtester/selective_qdisc.py up \
+  --device ens192 \
+  --local 10.6.7.1:50001 \
+  --remote 10.6.7.2:50001 \
+  --expected-root mq \
+  --rate 10mbit --burst 50kb --limit 1mb
+```
+
+The TBF queue must be larger than the UDP socket's effective send buffer
+if the experiment relies on back pressure.
+Otherwise, TBF can drop a packet before the socket reaches `EAGAIN`,
+and UDP will not report that qdisc drop to the router.
+`diagnose` reports the host's `wmem_default` and `wmem_max`;
+also account for an explicit SCION `router.send_buffer_size`.
+During a run, `status` should show TBF backlog and zero drops until the
+BR's own bounded egress queues become the intended drop point.
+
+State is stored under `/run/hummbwtester-qdisc/`. One managed flow is allowed per interface,
+but different `--name` values can manage separate interfaces on the same host.
+Partial setup failures restore the acknowledged baseline.
+Cleanup refuses to delete a root qdisc that no longer looks like
+the hierarchy installed by this helper.
 
 Inspect counters and remove all managed state with:
 
 ```bash
-sudo ./tools/hummbwtester/veth_shaper.py status
-sudo ./tools/hummbwtester/veth_shaper.py down
+sudo ./tools/hummbwtester/selective_qdisc.py status
+sudo ./tools/hummbwtester/selective_qdisc.py down
 ```
 
-<!--
-deleteme
+The implementation uses the Linux [PRIO qdisc](https://man7.org/linux/man-pages/man8/tc-prio.8.html),
+[flower classifier](https://man7.org/linux/man-pages/man8/tc-flower.8.html), and
+[Token Bucket Filter](https://man7.org/linux/man-pages/man8/tc-tbf.8.html).
 
-The SSH runner does not yet invoke this helper automatically. Its existing `shaping` inventory
-entries remain restricted to dedicated `noqueue` devices.
--->
+An alternative for IPv4 is a veth hairpin: mark the exact locally generated flow,
+policy-route it through one end of a veth pair carrying a TBF,
+and forward the packet from the peer back to the real egress interface.
+This preserves the real interface's root qdisc, but adds policy routing, firewall, forwarding,
+and cleanup state.
+It is not appropriate for the link-local IPv6 BR links here because
+link-local packets cannot be forwarded between the veth and physical links.
+Background material:
+[veth(4)](https://man7.org/linux/man-pages/man4/veth.4.html),
+[Linux network namespaces on Wikipedia](https://en.wikipedia.org/wiki/Linux_namespaces),
+and a [web search for veth hairpin policy routing](https://www.google.com/search?q=Linux+veth+hairpin+policy+routing+tc).
+
+The SSH runner does not yet invoke this helper automatically.
+Its existing `shaping` inventory entries remain restricted to dedicated `noqueue` devices.
 
 ## Regular run cycle
 
@@ -319,7 +359,7 @@ Run the focused Go and orchestration tests from the repository root:
 ```bash
 go test ./tools/hummbwtester
 bazel test //tools/hummbwtester:go_default_test //tools/hummbwtester:orchestration_test \\
-  //tools/hummbwtester:ssh_orchestration_test
+  //tools/hummbwtester:ssh_orchestration_test //tools/hummbwtester:selective_qdisc_test
 ```
 
 Run the no-sleep client send-path benchmark with:
@@ -328,8 +368,17 @@ Run the no-sleep client send-path benchmark with:
 go test ./tools/hummbwtester -run '^$' -bench '^BenchmarkSerializeWriteTo$' -benchmem
 ```
 
-The Python test covers configuration validation, deterministic metrics-port assignment, and
-per-minute report aggregation.
+The Python tests cover configuration validation, deterministic metrics-port assignment,
+per-minute report aggregation, and selective IPv4/IPv6 qdisc command construction.
 The Go test covers random Hummingbird reservation-ID generation.
-A practical Docker smoke test is to run setup, stop SCION, and rerun setup. The generated
-`hummbwtester_tc_*` helpers inspect qdiscs inside the BR network namespaces.
+A privileged integration test creates disposable network namespaces and verifies IPv4 and
+link-local IPv6 selection, UDP back pressure, zero TBF drops, cleanup, and partial-install rollback:
+
+```bash
+sudo ./tools/hummbwtester/selective_qdisc_integration_test.py
+```
+
+It self-reexecutes inside an isolated network namespace and does not inspect or modify other interfaces.
+The corresponding Bazel target is tagged `manual` because it requires `CAP_NET_ADMIN`.
+A practical Docker smoke test is to run setup, stop SCION, and rerun setup.
+The generated `hummbwtester_tc_*` helpers inspect qdiscs inside the BR network namespaces.
