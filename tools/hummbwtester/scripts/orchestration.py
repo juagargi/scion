@@ -27,14 +27,14 @@ from typing import Any
 import yaml
 
 
-# This module lives in tools/hummbwtester/, so two parents up is the repository root.
-ROOT = Path(__file__).resolve().parents[2]
+# This module lives in tools/hummbwtester/scripts/, so three parents up is the repository root.
+ROOT = Path(__file__).resolve().parents[3]
 GEN = ROOT / "gen"
 COMPOSE = GEN / "scion-dc.yml"
 SCIOND_ADDRESSES = GEN / "sciond_addresses.json"
 CONFIG_DEFAULT = ROOT / "tools" / "hummbwtester" / "hummbwtester.json"
 BIN = ROOT / "bin" / "hummbwtester"
-TC_SCRIPT = ROOT / "tools" / "hummbwtester" / "tc_setup.sh"
+TC_SCRIPT = ROOT / "tools" / "hummbwtester" / "scripts" / "tc_setup.sh"
 TARGET_DIR = GEN / "hummbwtester-prometheus"
 # Metrics ports are intentionally derived rather than stored in the JSON file.
 METRICS_BASE_PORT = 9090

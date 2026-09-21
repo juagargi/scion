@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script runs in a short-lived helper that shares one border router's network namespace.
+# orchestration.py runs this in a short-lived helper sharing a border router's network namespace.
 # Setup arguments are TBF settings followed by inter-AS peer addresses. Verify receives only peers.
 set -euo pipefail
 

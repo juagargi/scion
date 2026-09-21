@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rate-limit one locally generated UDP flow with a classful egress qdisc.
+"""Manage a classful egress qdisc that rate-limits one locally generated UDP flow.
 
 The helper replaces an explicitly acknowledged automatic root qdisc with a two-band PRIO qdisc.
 An exact IPv4 or IPv6 UDP flow is classified into the first band, which contains a TBF.

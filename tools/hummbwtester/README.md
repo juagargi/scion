@@ -217,7 +217,7 @@ the inventory explicitly declares a `noqueue` dedicated-link interface.
 
 ### Shaping one production BR flow on a shared interface
 
-`selective_qdisc.py` rate-limits one exact, locally generated IPv4 or IPv6 UDP flow without changing
+`scripts/selective_qdisc.py` rate-limits one exact, locally generated IPv4 or IPv6 UDP flow without changing
 the border router or its topology.
 It replaces an explicitly acknowledged automatic root qdisc with a two-band PRIO qdisc.
 A flower filter sends only the selected flow to a TBF in the first band;
@@ -233,7 +233,7 @@ although nonmatching traffic remains rate-unlimited.
 Inspect compatibility without changing the host:
 
 ```bash
-sudo ./tools/hummbwtester/selective_qdisc.py diagnose \
+sudo ./tools/hummbwtester/scripts/selective_qdisc.py diagnose \
   --device ens192 \
   --local 10.6.7.1:50001 \
   --remote 10.6.7.2:50001 \
@@ -243,7 +243,7 @@ sudo ./tools/hummbwtester/selective_qdisc.py diagnose \
 For an IPv6 link-local endpoint, retain brackets and quote the shell arguments:
 
 ```bash
-sudo ./tools/hummbwtester/selective_qdisc.py diagnose \
+sudo ./tools/hummbwtester/scripts/selective_qdisc.py diagnose \
   --name rnp-ufms \
   --device eno4.140 \
   --local '[fe80::77c:140%eno4.140]:50031' \
@@ -254,7 +254,7 @@ sudo ./tools/hummbwtester/selective_qdisc.py diagnose \
 Install the selective qdisc after reviewing the diagnostic report:
 
 ```bash
-sudo ./tools/hummbwtester/selective_qdisc.py up \
+sudo ./tools/hummbwtester/scripts/selective_qdisc.py up \
   --device ens192 \
   --local 10.6.7.1:50001 \
   --remote 10.6.7.2:50001 \
@@ -280,8 +280,8 @@ the hierarchy installed by this helper.
 Inspect counters and remove all managed state with:
 
 ```bash
-sudo ./tools/hummbwtester/selective_qdisc.py status
-sudo ./tools/hummbwtester/selective_qdisc.py down
+sudo ./tools/hummbwtester/scripts/selective_qdisc.py status
+sudo ./tools/hummbwtester/scripts/selective_qdisc.py down
 ```
 
 The implementation uses the Linux [PRIO qdisc](https://man7.org/linux/man-pages/man8/tc-prio.8.html),
@@ -375,7 +375,7 @@ A privileged integration test creates disposable network namespaces and verifies
 link-local IPv6 selection, UDP back pressure, zero TBF drops, cleanup, and partial-install rollback:
 
 ```bash
-sudo ./tools/hummbwtester/selective_qdisc_integration_test.py
+sudo ./tools/hummbwtester/scripts/selective_qdisc_integration_test.py
 ```
 
 It self-reexecutes inside an isolated network namespace and does not inspect or modify other interfaces.

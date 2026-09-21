@@ -61,29 +61,31 @@ go_test(
 py_library(
     name = "orchestration",
     srcs = [
-        "orchestration.py",
-        "ssh_orchestration.py",
+        "scripts/__init__.py",
+        "scripts/orchestration.py",
+        "scripts/ssh_orchestration.py",
     ],
     deps = [requirement("pyyaml")],
 )
 
 py_test(
     name = "orchestration_test",
-    srcs = ["orchestration_test.py"],
+    srcs = ["scripts/orchestration_test.py"],
     deps = [":orchestration"],
 )
 
 py_test(
     name = "ssh_orchestration_test",
-    srcs = ["ssh_orchestration_test.py"],
+    srcs = ["scripts/ssh_orchestration_test.py"],
     deps = [":orchestration"],
 )
 
 py_test(
     name = "selective_qdisc_test",
     srcs = [
-        "selective_qdisc.py",
-        "selective_qdisc_test.py",
+        "scripts/__init__.py",
+        "scripts/selective_qdisc.py",
+        "scripts/selective_qdisc_test.py",
     ],
 )
 
@@ -91,8 +93,9 @@ py_test(
     name = "selective_qdisc_integration_test",
     size = "large",
     srcs = [
-        "selective_qdisc.py",
-        "selective_qdisc_integration_test.py",
+        "scripts/__init__.py",
+        "scripts/selective_qdisc.py",
+        "scripts/selective_qdisc_integration_test.py",
     ],
     tags = [
         "integration",

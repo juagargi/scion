@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tools.hummbwtester import orchestration
-from tools.hummbwtester.orchestration import (
+from tools.hummbwtester.scripts import orchestration
+from tools.hummbwtester.scripts.orchestration import (
     ConfigError,
     client_args,
     interface_counters,

@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tools.hummbwtester import orchestration
-from tools.hummbwtester import ssh_orchestration as ssh
+from tools.hummbwtester.scripts import orchestration
+from tools.hummbwtester.scripts import ssh_orchestration as ssh
 
 
 class InventoryTest(unittest.TestCase):

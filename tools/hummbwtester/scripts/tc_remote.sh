@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run via sudo on an explicitly configured, dedicated experiment interface.
+# Deployed by ssh_orchestration.py and run via sudo on a dedicated experiment interface.
 set -eu
 
 action=$1
