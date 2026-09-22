@@ -3,6 +3,8 @@
 # Setup arguments are TBF settings followed by inter-AS peer addresses. Verify receives only peers.
 set -euo pipefail
 
+managed_handle="b17d:"
+
 action="$1"
 shift
 
@@ -20,7 +22,8 @@ device_for_peer() {
 require_tbf() {
     local device="$1"
     tc qdisc show dev "$device" | awk \
-        '$1 == "qdisc" && $2 == "tbf" && $3 != "0:" { found = 1 } END { exit !found }'
+        -v handle="$managed_handle" \
+        '$1 == "qdisc" && $2 == "tbf" && $3 == handle { found = 1 } END { exit !found }'
 }
 
 stat_value() {
@@ -57,7 +60,8 @@ setup() {
         device=$(device_for_peer "$peer")
         [ -z "${configured[$device]:-}" ] || continue
         configured[$device]=1
-        tc qdisc replace dev "$device" root tbf rate "$rate" burst "$burst" limit "$limit"
+        tc qdisc replace dev "$device" root handle "$managed_handle" tbf \
+            rate "$rate" burst "$burst" limit "$limit"
         require_tbf "$device"
         dropped=$(tc -s qdisc show dev "$device" | stat_value dropped)
         if [ -z "$dropped" ]; then
@@ -141,6 +145,22 @@ stats() {
     done
 }
 
+cleanup() {
+    if [ "$#" -eq 0 ]; then
+        echo "no inter-AS peers supplied" >&2
+        exit 1
+    fi
+    local peer device
+    declare -A cleaned=()
+    for peer in "$@"; do
+        device=$(device_for_peer "$peer")
+        [ -z "${cleaned[$device]:-}" ] || continue
+        cleaned[$device]=1
+        require_tbf "$device"
+        tc qdisc del dev "$device" root
+    done
+}
+
 case "$action" in
     setup)
         setup "$@"
@@ -150,6 +170,9 @@ case "$action" in
         ;;
     stats)
         stats "$@"
+        ;;
+    cleanup)
+        cleanup "$@"
         ;;
     *)
         echo "usage: $0 setup RATE BURST LIMIT PEER... | verify PEER... | stats PEER..." >&2

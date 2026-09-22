@@ -43,13 +43,16 @@
       "duration": "3h"
     }
   ],
-  "router": {
-    "send_buffer_size": 16384,
-    "receive_buffer_size": 4194304,
-    "ingress_batch_size": 64,
-    "processor_queue_size": 640,
-    "egress_batch_size": 1,
-    "egress_queue_size": 640
+  "deployment": {
+    "kind": "docker",
+    "router": {
+      "send_buffer_size": 16384,
+      "receive_buffer_size": 4194304,
+      "ingress_batch_size": 64,
+      "processor_queue_size": 640,
+      "egress_batch_size": 1,
+      "egress_queue_size": 640
+    }
   },
   "tc": {
     "rate": "10mbit",

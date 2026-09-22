@@ -59,13 +59,29 @@ go_test(
 )
 
 py_library(
+    name = "selective_qdisc",
+    srcs = ["scripts/selective_qdisc.py"],
+)
+
+py_library(
     name = "orchestration",
     srcs = [
         "scripts/__init__.py",
+        "scripts/experiment.py",
         "scripts/orchestration.py",
         "scripts/ssh_orchestration.py",
+        "scripts/ssh_setup.py",
     ],
-    deps = [requirement("pyyaml")],
+    deps = [
+        ":selective_qdisc",
+        requirement("pyyaml"),
+    ],
+)
+
+py_test(
+    name = "experiment_test",
+    srcs = ["scripts/experiment_test.py"],
+    deps = [":orchestration"],
 )
 
 py_test(
@@ -81,12 +97,15 @@ py_test(
 )
 
 py_test(
+    name = "ssh_setup_test",
+    srcs = ["scripts/ssh_setup_test.py"],
+    deps = [":orchestration"],
+)
+
+py_test(
     name = "selective_qdisc_test",
-    srcs = [
-        "scripts/__init__.py",
-        "scripts/selective_qdisc.py",
-        "scripts/selective_qdisc_test.py",
-    ],
+    srcs = ["scripts/selective_qdisc_test.py"],
+    deps = [":selective_qdisc"],
 )
 
 py_test(

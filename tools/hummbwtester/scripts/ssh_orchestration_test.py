@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import shlex
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -17,19 +19,18 @@ class InventoryTest(unittest.TestCase):
     def workload(self):
         return {
             "hummingbird": {"reservation_source": "keys"},
-            "server": {"isd_as": "1-ff00:0:112", "host": "fd00::1", "port": 12345,
+            "server": {"node": "a", "isd_as": "1-ff00:0:112", "host": "fd00::1", "port": 12345,
                        "receive_buffer_size": 4096},
             "hummingbird_clients": [{
-                "client_id": "hummingbird-1", "isd_as": "1-ff00:0:111", "host": "fd00::2",
+                "client_id": "hummingbird-1", "node": "b", "isd_as": "1-ff00:0:111", "host": "fd00::2",
                 "port": 0, "bandwidth": "1Mbps", "maxburst": "2Mbps", "duration": "1m",
                 "hummingbird_reservation": {"bandwidth": 1, "duration": "1m", "reverse_bandwidth": 0},
             }],
             "best_effort_clients": [{
-                "client_id": "best-effort-1", "isd_as": "1-ff00:0:110", "host": "fd00::3",
+                "client_id": "best-effort-1", "node": "a", "isd_as": "1-ff00:0:110", "host": "fd00::3",
                 "port": 0, "bandwidth": "1Mbps", "maxburst": "2Mbps", "duration": "1m",
             }],
-            "router": {"send_buffer_size": 1, "receive_buffer_size": 1, "ingress_batch_size": 1,
-                       "processor_queue_size": 1, "egress_batch_size": 1, "egress_queue_size": 1},
+            "deployment": {"kind": "ssh", **self.inventory()},
             "tc": {"rate": "10mbit", "burst": "50kb", "limit": "256kb"},
         }
 
@@ -41,36 +42,54 @@ class InventoryTest(unittest.TestCase):
                 "b": {"ssh": "sciera-ufes", "sciond": "127.0.0.1:30255",
                       "run_dir": "/var/tmp/hummbwtester"},
             },
-            "placements": {"server": "a", "clients": {"hummingbird-1": "b", "best-effort-1": "a"}},
-            "metrics": {"local_port_base": 19090, "routers": [{
+            "metrics": {"prometheus": "b", "local_port_base": 19090, "routers": [{
                 "host": "a", "address": "127.0.0.1:30442", "labels": {"br": "br-1"},
             }]},
-            "shaping": [{"host": "a", "device": "eno4.140", "baseline": "noqueue"}],
+            "shaping": [{
+                "host": "a", "name": "a-to-b", "device": "eno4.140",
+                "local": "[fe80::1%eno4.140]:50000", "remote": "[fe80::2]:50000",
+                "expected_root": "noqueue",
+            }],
         }
 
     def test_inventory_matches_clients_and_accepts_proxyjump_aliases(self):
         with tempfile.TemporaryDirectory() as directory:
-            _, clients, _, _ = orchestration.load_config(
-                self.write_json(directory, "workload.json", self.workload()))
-            inventory = ssh.load_inventory(self.write_json(directory, "inventory.json", self.inventory()), clients)
+            path = self.write_json(directory, "experiment.json", self.workload())
+            server, clients, _, _ = orchestration.load_config(path)
+            inventory = ssh.load_inventory(path, server, clients)
         self.assertEqual(inventory.hosts["a"].alias, "sciera-rnp")
         self.assertEqual(inventory.client_hosts["hummingbird-1"], "b")
-        self.assertEqual(inventory.shaping[0].baseline, "noqueue")
+        self.assertEqual(inventory.prometheus_host, "b")
+        self.assertEqual(inventory.shaping[0].expected_root, "noqueue")
 
     def test_rejects_missing_client_placement(self):
         with tempfile.TemporaryDirectory() as directory:
-            _, clients, _, _ = orchestration.load_config(
-                self.write_json(directory, "workload.json", self.workload()))
-            inventory = self.inventory()
-            del inventory["placements"]["clients"]["best-effort-1"]
-            with self.assertRaisesRegex(orchestration.ConfigError, "placements"):
-                ssh.load_inventory(self.write_json(directory, "inventory.json", inventory), clients)
+            config = self.workload()
+            del config["best_effort_clients"][0]["node"]
+            with self.assertRaisesRegex(orchestration.ConfigError, "node"):
+                orchestration.load_config(self.write_json(directory, "experiment.json", config))
 
-    def test_ssh_command_keeps_alias_as_ssh_destination(self):
+    def test_rejects_unknown_prometheus_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            config["deployment"]["metrics"]["prometheus"] = "unknown"
+            path = self.write_json(directory, "experiment.json", config)
+            server, clients, _, _ = orchestration.load_config(path)
+            with self.assertRaisesRegex(orchestration.ConfigError, "metrics.prometheus"):
+                ssh.load_inventory(path, server, clients)
+
+    def test_ssh_command_quotes_script_for_remote_shell(self):
         host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
+        script = "test -f /etc/hosts && printf '%s' 'quoted value'"
         with mock.patch.object(ssh.subprocess, "run") as run:
-            ssh.ssh_command(host, "true")
-        self.assertEqual(run.call_args.args[0][:4], ["ssh", "--", "sciera-rnp", "sh"])
+            ssh.ssh_command(host, script)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[:3], ["ssh", "--", "sciera-rnp"])
+        self.assertEqual(shlex.split(argv[3]), ["sh", "-c", script])
+        # SSH hands the remote command line to a shell; emulate that parsing locally.
+        result = subprocess.run(["sh", "-c", argv[3]], check=True,
+                                capture_output=True, text=True)
+        self.assertEqual(result.stdout, "quoted value")
 
     def test_launch_never_places_jwt_in_ssh_arguments(self):
         host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
@@ -81,6 +100,18 @@ class InventoryTest(unittest.TestCase):
         command = popen.call_args.args[0]
         self.assertNotIn("jwt-value", command)
         self.assertIn("marketplace.jwt", command[-1])
+        self.assertEqual(shlex.split(command[-1])[:2], ["sh", "-c"])
+        self.assertIn("; exec ", shlex.split(command[-1])[2])
+
+    def test_rejects_duplicate_shaping_device(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            shaping = config["deployment"]["shaping"]
+            shaping.append({**shaping[0], "name": "second"})
+            path = self.write_json(directory, "experiment.json", config)
+            server, clients, _, _ = orchestration.load_config(path)
+            with self.assertRaisesRegex(orchestration.ConfigError, "duplicates a host device"):
+                ssh.load_inventory(path, server, clients)
 
 
 if __name__ == "__main__":

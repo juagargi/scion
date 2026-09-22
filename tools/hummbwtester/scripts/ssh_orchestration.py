@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """Run hummbwtester on explicitly inventoried SSH-accessible SCION hosts.
 
-This module deliberately knows nothing about generated Docker topology. The workload stays in
-hummbwtester.json; ssh-inventory.json says exactly where each workload participant runs.
+This module deliberately knows nothing about generated Docker topology. The SSH deployment and
+workload are both read from one experiment configuration.
 """
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 import hashlib
-import json
-import os
 from pathlib import Path
 import shlex
+import signal
 import subprocess
-import sys
 import time
 import uuid
 from typing import Any
@@ -28,9 +25,8 @@ except ImportError:
 
 ROOT = workload.ROOT
 BIN = workload.BIN
-TC_HELPER = ROOT / "tools" / "hummbwtester" / "scripts" / "tc_remote.sh"
-INVENTORY_DEFAULT = ROOT / "tools" / "hummbwtester" / "ssh-inventory.json"
-TARGET_DIR = workload.TARGET_DIR
+SETUP_DIR_NAME = "setup"
+RUNS_DIR_NAME = "runs"
 
 
 @dataclass(frozen=True)
@@ -50,10 +46,13 @@ class RouterMetrics:
 
 
 @dataclass(frozen=True)
-class ShapedInterface:
+class ShapedFlow:
     host: str
+    name: str
     device: str
-    baseline: str
+    local: str
+    remote: str
+    expected_root: str
 
 
 @dataclass(frozen=True)
@@ -61,9 +60,10 @@ class Inventory:
     hosts: dict[str, SSHHost]
     server_host: str
     client_hosts: dict[str, str]
+    prometheus_host: str
     local_port_base: int
     routers: tuple[RouterMetrics, ...]
-    shaping: tuple[ShapedInterface, ...]
+    shaping: tuple[ShapedFlow, ...]
 
 
 class SSHError(RuntimeError):
@@ -94,11 +94,14 @@ def _host_port(value: str, context: str) -> tuple[str, str]:
     return host.strip("[]"), port
 
 
-def load_inventory(path: Path, clients: list[workload.Client]) -> Inventory:
-    """Read an explicit, closed SSH inventory and validate its workload placements."""
+def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload.Client]) -> Inventory:
+    """Read SSH deployment details and inline participant placements from one experiment file."""
     root = workload.read_json(path)
-    _fields(root, {"hosts", "placements", "metrics", "shaping"}, "ssh inventory")
-    raw_hosts = _object(root["hosts"], "ssh inventory.hosts")
+    deployment = root.get("deployment")
+    if not isinstance(deployment, dict) or deployment.get("kind") != "ssh":
+        raise workload.ConfigError("deployment.kind must be ssh")
+    _fields(deployment, {"kind", "hosts", "metrics", "shaping"}, "deployment")
+    raw_hosts = _object(deployment["hosts"], "deployment.hosts")
     if not raw_hosts:
         raise workload.ConfigError("ssh inventory.hosts must not be empty")
     hosts: dict[str, SSHHost] = {}
@@ -118,21 +121,20 @@ def load_inventory(path: Path, clients: list[workload.Client]) -> Inventory:
         hosts[name] = SSHHost(name, _name(entry["ssh"], f"ssh inventory.hosts.{name}.ssh"), sciond,
                               run_dir, readiness)
 
-    placements = _object(root["placements"], "ssh inventory.placements")
-    _fields(placements, {"server", "clients"}, "ssh inventory.placements")
-    server_host = _name(placements["server"], "ssh inventory.placements.server")
-    raw_clients = _object(placements["clients"], "ssh inventory.placements.clients")
-    client_hosts = {str(client_id): _name(host, f"ssh inventory placement for {client_id}")
-                    for client_id, host in raw_clients.items()}
-    expected = {client.client_id for client in clients}
-    if set(client_hosts) != expected:
-        raise workload.ConfigError("ssh inventory client placements must match workload client_id values")
+    server_host = _name(server.node, "server.node")
+    client_hosts = {client.client_id: _name(client.endpoint.node, f"{client.client_id}.node")
+                    for client in clients}
     for host in [server_host, *client_hosts.values()]:
         if host not in hosts:
-            raise workload.ConfigError(f"ssh inventory placement references unknown host {host}")
+            raise workload.ConfigError(f"participant node references unknown host {host}")
 
-    metrics = _object(root["metrics"], "ssh inventory.metrics")
-    _fields(metrics, {"local_port_base", "routers"}, "ssh inventory.metrics")
+    metrics = _object(deployment["metrics"], "deployment.metrics")
+    _fields(metrics, {"prometheus", "local_port_base", "routers"}, "ssh inventory.metrics")
+    prometheus_host = _name(metrics["prometheus"], "ssh inventory.metrics.prometheus")
+    if prometheus_host not in hosts:
+        raise workload.ConfigError(
+            "ssh inventory.metrics.prometheus must reference a declared host",
+        )
     base = metrics["local_port_base"]
     if not isinstance(base, int) or isinstance(base, bool) or not 1024 <= base <= 65000:
         raise workload.ConfigError("ssh inventory.metrics.local_port_base must be an integer from 1024 through 65000")
@@ -153,28 +155,58 @@ def load_inventory(path: Path, clients: list[workload.Client]) -> Inventory:
             raise workload.ConfigError(f"ssh inventory.metrics.routers[{index}].labels must be string pairs")
         routers.append(RouterMetrics(host, address, labels))
 
-    raw_shaping = root["shaping"]
+    raw_shaping = deployment["shaping"]
     if not isinstance(raw_shaping, list):
         raise workload.ConfigError("ssh inventory.shaping must be an array")
-    shaping: list[ShapedInterface] = []
-    seen: set[tuple[str, str]] = set()
+    shaping: list[ShapedFlow] = []
+    seen_devices: set[tuple[str, str]] = set()
+    seen_names: set[tuple[str, str]] = set()
     for index, raw in enumerate(raw_shaping):
         entry = _object(raw, f"ssh inventory.shaping[{index}]")
-        _fields(entry, {"host", "device", "baseline"}, f"ssh inventory.shaping[{index}]")
-        shape = ShapedInterface(_name(entry["host"], f"ssh inventory.shaping[{index}].host"),
-                                _name(entry["device"], f"ssh inventory.shaping[{index}].device"),
-                                _name(entry["baseline"], f"ssh inventory.shaping[{index}].baseline"))
-        if shape.host not in hosts or shape.baseline != "noqueue" or (shape.host, shape.device) in seen:
-            raise workload.ConfigError(f"ssh inventory.shaping[{index}] must name a unique host device with baseline noqueue")
-        seen.add((shape.host, shape.device))
+        _fields(
+            entry, {"host", "name", "device", "local", "remote", "expected_root"},
+            f"ssh inventory.shaping[{index}]",
+        )
+        shape = ShapedFlow(
+            _name(entry["host"], f"ssh inventory.shaping[{index}].host"),
+            _name(entry["name"], f"ssh inventory.shaping[{index}].name"),
+            _name(entry["device"], f"ssh inventory.shaping[{index}].device"),
+            _name(entry["local"], f"ssh inventory.shaping[{index}].local"),
+            _name(entry["remote"], f"ssh inventory.shaping[{index}].remote"),
+            _name(entry["expected_root"], f"ssh inventory.shaping[{index}].expected_root"),
+        )
+        if shape.host not in hosts:
+            raise workload.ConfigError(
+                f"ssh inventory.shaping[{index}] references unknown host {shape.host}",
+            )
+        if shape.expected_root not in {"noqueue", "mq"}:
+            raise workload.ConfigError(
+                f"ssh inventory.shaping[{index}].expected_root must be noqueue or mq",
+            )
+        if (shape.host, shape.device) in seen_devices:
+            raise workload.ConfigError(
+                f"ssh inventory.shaping[{index}] duplicates a host device",
+            )
+        if (shape.host, shape.name) in seen_names:
+            raise workload.ConfigError(
+                f"ssh inventory.shaping[{index}] duplicates a host qdisc name",
+            )
+        seen_devices.add((shape.host, shape.device))
+        seen_names.add((shape.host, shape.name))
         shaping.append(shape)
-    return Inventory(hosts, server_host, client_hosts, base, tuple(routers), tuple(shaping))
+    return Inventory(
+        hosts, server_host, client_hosts, prometheus_host, base, tuple(routers), tuple(shaping),
+    )
+
+
+def _ssh_argv(host: SSHHost, command: str) -> list[str]:
+    # SSH joins remote arguments into a command line; quote the whole sh -c argument for that shell.
+    return ["ssh", "--", host.alias, shlex.join(["sh", "-c", command])]
 
 
 def ssh_command(host: SSHHost, command: str, *, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
     """Run an already quoted, non-secret command through the configured SSH alias."""
-    return subprocess.run(["ssh", "--", host.alias, "sh", "-c", command], check=check,
-                          text=True, **kwargs)
+    return subprocess.run(_ssh_argv(host, command), check=check, text=True, **kwargs)
 
 
 def scp_to(host: SSHHost, local: Path, remote: str) -> None:
@@ -189,8 +221,12 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def setup_dir(host: SSHHost) -> str:
+    return f"{host.run_dir}/{SETUP_DIR_NAME}"
+
+
 def remote_dir(host: SSHHost, run_id: str) -> str:
-    return f"{host.run_dir}/{run_id}"
+    return f"{host.run_dir}/{RUNS_DIR_NAME}/{run_id}"
 
 
 def preflight(host: SSHHost) -> None:
@@ -205,26 +241,22 @@ def preflight(host: SSHHost) -> None:
     ssh_command(host, command)
 
 
-def deploy(host: SSHHost, run_id: str, digest: str, need_tc: bool) -> None:
-    directory = remote_dir(host, run_id)
-    ssh_command(host, f"install -d -m 700 {shlex.quote(directory)}")
-    scp_to(host, BIN, f"{directory}/hummbwtester")
-    if need_tc:
-        scp_to(host, TC_HELPER, f"{directory}/tc_remote.sh")
-    command = (
-        f"test \"$(sha256sum {shlex.quote(directory + '/hummbwtester')} | awk '{{print $1}}')\" = {shlex.quote(digest)}"
-        f" && chmod 700 {shlex.quote(directory + '/hummbwtester')}"
+def verify_setup(host: SSHHost, digest: str, need_jwt: bool) -> None:
+    binary = setup_dir(host) + "/hummbwtester"
+    checks = [
+        f"test -x {shlex.quote(binary)}",
+        f"test \"$(sha256sum {shlex.quote(binary)} | awk '{{print $1}}')\" = {shlex.quote(digest)}",
+    ]
+    if need_jwt:
+        checks.append(f"test -r {shlex.quote(setup_dir(host) + '/marketplace.jwt')}")
+    result = ssh_command(
+        host, " && ".join(checks), check=False,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    if need_tc:
-        command += f" && chmod 700 {shlex.quote(directory + '/tc_remote.sh')}"
-    ssh_command(host, command)
-
-
-def upload_jwt(host: SSHHost, run_id: str, local_jwt: Path) -> str:
-    target = remote_dir(host, run_id) + "/marketplace.jwt"
-    scp_to(host, local_jwt, target)
-    ssh_command(host, f"chmod 600 {shlex.quote(target)}")
-    return target
+    if result.returncode:
+        raise SSHError(
+            f"SSH setup on {host.name} is missing or stale; run experiment.py setup first",
+        )
 
 
 def launch(host: SSHHost, run_id: str, name: str, args: list[str], logfile: Path,
@@ -232,7 +264,7 @@ def launch(host: SSHHost, run_id: str, name: str, args: list[str], logfile: Path
     """Launch a tester tied to its SSH session and retain a remote PID for cleanup."""
     logfile.parent.mkdir(parents=True, exist_ok=True)
     directory = remote_dir(host, run_id)
-    args = [directory + "/hummbwtester", *args[1:]]
+    args = [setup_dir(host) + "/hummbwtester", *args[1:]]
     command = f"echo $$ > {shlex.quote(directory + '/' + name + '.pid')}; "
     if jwt_file is not None:
         command += f"export SCION_MARKETPLACE_JWT=$(cat {shlex.quote(jwt_file)}); "
@@ -240,7 +272,7 @@ def launch(host: SSHHost, run_id: str, name: str, args: list[str], logfile: Path
     print(f"logging {name} on {host.name} to {logfile}")
     output = logfile.open("w")
     try:
-        process = subprocess.Popen(["ssh", "--", host.alias, "sh", "-c", command], text=True,
+        process = subprocess.Popen(_ssh_argv(host, command), text=True,
                                    stdout=output, stderr=subprocess.STDOUT)
     finally:
         output.close()
@@ -258,93 +290,34 @@ def cleanup_host(host: SSHHost, run_id: str) -> None:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def apply_shaping(inventory: Inventory, run_id: str, tc: dict[str, str]) -> list[ShapedInterface]:
-    applied: list[ShapedInterface] = []
-    for shape in inventory.shaping:
-        host = inventory.hosts[shape.host]
-        helper = remote_dir(host, run_id) + "/tc_remote.sh"
-        ssh_command(host, "sudo -n " + shlex.join(
-            [helper, "apply", shape.device, tc["rate"], tc["burst"], tc["limit"]]))
-        applied.append(shape)
-    return applied
-
-
-def cleanup_shaping(inventory: Inventory, run_id: str, shapes: list[ShapedInterface]) -> None:
-    for shape in shapes:
-        host = inventory.hosts[shape.host]
-        helper = remote_dir(host, run_id) + "/tc_remote.sh"
-        ssh_command(host, "sudo -n " + shlex.join([helper, "cleanup", shape.device]), check=False)
-
-
-def collect_shaping_stats(inventory: Inventory, run_id: str, shapes: list[ShapedInterface]) -> None:
-    """Print the explicit dedicated-link qdisc counters without inspecting other interfaces."""
-    for shape in shapes:
-        host = inventory.hosts[shape.host]
-        helper = remote_dir(host, run_id) + "/tc_remote.sh"
-        result = ssh_command(host, "sudo -n " + shlex.join([helper, "stats", shape.device]),
-                             check=False, capture_output=True)
-        if result.returncode:
-            print(f"HUMMBWTESTER_TC_STATS_ERROR host={host.name} dev={shape.device} "
-                  f"error={result.stderr.strip()}", file=sys.stderr)
-        else:
-            print(f"host={host.name} {result.stdout.strip()}")
-
-
-def start_tunnel(host: SSHHost, local_port: int, remote_address: str) -> subprocess.Popen[str]:
-    return subprocess.Popen(["ssh", "-N", "-L", f"127.0.0.1:{local_port}:{remote_address}", "--", host.alias],
-                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL, text=True)
-
-
-def write_targets(inventory: Inventory, clients: list[workload.Client]) -> list[subprocess.Popen[str]]:
-    """Open controller-owned tunnels and publish the corresponding Prometheus file-SD files."""
-    TARGET_DIR.mkdir(parents=True, exist_ok=True)
-    tunnels: list[subprocess.Popen[str]] = []
-    client_targets = []
-    for index, client in enumerate(clients):
-        port = inventory.local_port_base + index
-        tunnels.append(start_tunnel(inventory.hosts[inventory.client_hosts[client.client_id]], port,
-                                    f"127.0.0.1:{client.metrics_port}"))
-        client_targets.append({"targets": [f"127.0.0.1:{port}"], "labels": {"client_id": client.client_id}})
-    router_targets = []
-    for index, router in enumerate(inventory.routers, start=len(clients)):
-        port = inventory.local_port_base + index
-        tunnels.append(start_tunnel(inventory.hosts[router.host], port, router.address))
-        router_targets.append({"targets": [f"127.0.0.1:{port}"], "labels": router.labels})
-    (TARGET_DIR / "clients.json").write_text(json.dumps(client_targets, indent=2) + "\n")
-    (TARGET_DIR / "border_routers.json").write_text(json.dumps(router_targets, indent=2) + "\n")
-    return tunnels
-
-
-def run_experiment(config_path: Path, inventory_path: Path) -> int:
+def run_experiment(
+    config_path: Path,
+    config: tuple[workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str]] | None = None,
+    inventory: Inventory | None = None,
+) -> int:
     workload.require_built_binary()
-    server, clients, _, tc = workload.load_config(config_path)
-    inventory = load_inventory(inventory_path, clients)
+    server, clients, _, _ = config if config is not None else workload.load_config(config_path)
+    if inventory is None:
+        inventory = load_inventory(config_path, server, clients)
     if inventory.local_port_base + len(clients) + len(inventory.routers) > 65535:
         raise workload.ConfigError("SSH metrics tunnel ports exceed 65535")
     run_id = "hummbwtester-" + uuid.uuid4().hex[:12]
     used_hosts = {inventory.server_host, *inventory.client_hosts.values()}
     digest = sha256(BIN)
-    local_jwt: Path | None = None
     processes: list[tuple[SSHHost, str, subprocess.Popen[str]]] = []
-    tunnels: list[subprocess.Popen[str]] = []
-    applied_shaping: list[ShapedInterface] = []
     try:
-        for name in sorted(used_hosts):
-            preflight(inventory.hosts[name])
-            deploy(inventory.hosts[name], run_id, digest,
-                   any(shape.host == name for shape in inventory.shaping))
         hummingbird_clients = [client for client in clients if client.hummingbird]
-        jwt_files: dict[str, str] = {}
-        if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
-            marketplace = hummingbird_clients[0].marketplace
-            assert marketplace is not None
-            local_jwt = workload.write_private_jwt(workload.obtain_marketplace_jwt(marketplace))
-            for name in {inventory.client_hosts[client.client_id] for client in hummingbird_clients}:
-                jwt_files[name] = upload_jwt(inventory.hosts[name], run_id, local_jwt)
-        applied_shaping = apply_shaping(inventory, run_id, tc)
-        collect_shaping_stats(inventory, run_id, applied_shaping)
-        tunnels = write_targets(inventory, clients)
+        marketplace_mode = bool(
+            hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace"
+        )
+        marketplace_hosts = {
+            inventory.client_hosts[client.client_id] for client in hummingbird_clients
+        } if marketplace_mode else set()
+        for name in sorted(used_hosts):
+            host = inventory.hosts[name]
+            preflight(host)
+            verify_setup(host, digest, name in marketplace_hosts)
+            ssh_command(host, f"install -d -m 700 {shlex.quote(remote_dir(host, run_id))}")
         server_host = inventory.hosts[inventory.server_host]
         processes.append((server_host, "server", launch(
             server_host, run_id, "server", workload.server_args(server, server_host.sciond),
@@ -352,55 +325,32 @@ def run_experiment(config_path: Path, inventory_path: Path) -> int:
         time.sleep(2)
         for client in clients:
             host = inventory.hosts[inventory.client_hosts[client.client_id]]
-            jwt_file = jwt_files.get(host.name) if client.hummingbird else None
+            jwt_file = (
+                setup_dir(host) + "/marketplace.jwt"
+                if client.hummingbird and marketplace_mode else None
+            )
             processes.append((host, client.client_id, launch(
                 host, run_id, client.client_id, workload.client_args(client, server, host.sciond),
                 ROOT / "logs" / "hummbwtester" / f"ssh-{client.client_id}.log", jwt_file)))
         failure = False
-        next_stats = time.monotonic() + 60
         while any(process.poll() is None for _, _, process in processes[1:]):
             if processes[0][2].poll() is not None:
                 failure = True
                 break
-            if time.monotonic() >= next_stats:
-                collect_shaping_stats(inventory, run_id, applied_shaping)
-                next_stats += 60
             time.sleep(0.25)
         return 1 if failure or any(process.wait() != 0 for _, _, process in processes) else 0
     except KeyboardInterrupt:
         return 130
     finally:
-        for host, name, process in processes:
-            stop(host, run_id, name)
-            if process.poll() is None:
-                process.terminate()
-        for tunnel in tunnels:
-            if tunnel.poll() is None:
-                tunnel.terminate()
-        for _, _, process in processes:
-            process.wait(timeout=10)
-        for tunnel in tunnels:
-            tunnel.wait(timeout=10)
-        if applied_shaping:
-            collect_shaping_stats(inventory, run_id, applied_shaping)
-            cleanup_shaping(inventory, run_id, applied_shaping)
-        for name in used_hosts:
-            cleanup_host(inventory.hosts[name], run_id)
-        if local_jwt is not None:
-            local_jwt.unlink(missing_ok=True)
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=workload.CONFIG_DEFAULT)
-    parser.add_argument("--inventory", type=Path, default=INVENTORY_DEFAULT)
-    args = parser.parse_args()
-    try:
-        return run_experiment(args.config, args.inventory)
-    except (workload.ConfigError, SSHError, subprocess.SubprocessError, RuntimeError) as err:
-        print(f"error: {err}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        previous_sigint = workload.ignore_sigint_during_cleanup()
+        try:
+            for host, name, process in processes:
+                stop(host, run_id, name)
+                if process.poll() is None:
+                    process.terminate()
+            for _, _, process in processes:
+                process.wait(timeout=10)
+            for name in used_hosts:
+                cleanup_host(inventory.hosts[name], run_id)
+        finally:
+            signal.signal(signal.SIGINT, previous_sigint)

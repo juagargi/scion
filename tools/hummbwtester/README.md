@@ -1,7 +1,9 @@
 # Hummingbird bandwidth tester
 
-`hummbwtester` is a continuous-traffic experiment for comparing Hummingbird-reserved SCION traffic with ordinary best-effort SCION traffic.
-It runs one UDP server and any number of clients inside the Docker test topology.
+`hummbwtester` is a continuous-traffic experiment for comparing Hummingbird-reserved SCION traffic
+with ordinary best-effort SCION traffic.
+It runs one UDP server and any number of clients either inside the Docker test topology or on
+explicitly inventoried SSH hosts.
 Clients send paced payload traffic and periodic probes;
 replies report remote receive, loss, and ordering information back to the client.
 
@@ -11,7 +13,8 @@ including the server observations returned in probe replies.
 
 ## How it works
 
-The experiment uses the generated Docker topology in `gen/`; it never generates a topology itself. `tools/hummbwtester/setup-topology.py` reads the generated Docker Compose file and topology files, then:
+The Docker deployment uses the generated topology in `gen/`; it never generates a topology itself.
+`experiment.py setup` reads the generated Docker Compose file and topology files, then:
 
 - configures every generated border router with the experiment's ingress and egress sizing;
 - starts the existing Docker topology;
@@ -25,7 +28,7 @@ border router's network namespace.
 In tiny topology this shapes the `110 <-> 111` and `110 <-> 112` links,
 while leaving the intra-AS bridges unshaped.
 
-`tools/hummbwtester/run-humm-bwtester-local.py` starts the Docker-topology server,
+`experiment.py run` starts the Docker-topology server,
 waits two seconds, and starts all clients concurrently.
 Hummingbird clients either derive reservations from `/share/gen` master keys or buy them from the
 marketplace advertised by the selected SCION path, according to the global `hummingbird` setting.
@@ -37,20 +40,21 @@ marketplace. Client workload and reservation settings are read from the JSON con
 
 ## Configuration
 
-Edit [hummbwtester.json](hummbwtester.json). It has six required top-level sections:
+Each run uses one self-contained JSON file.
+[hummbwtester.json](hummbwtester.json) configures the generated Docker topology;
+`hummbwtester-sciera.json` configures SSH hosts. Both files use the same six required top-level sections:
 
-- `server`: the server's `isd_as`, tester `host`, UDP `port`, and
-  `receive_buffer_size`.
+- `server`: the server's `isd_as`, tester `host`, UDP `port`, and `receive_buffer_size`.
 - `hummingbird_clients`: zero or more Hummingbird client endpoint objects.
 - `best_effort_clients`: zero or more best-effort client endpoint objects.
-- `router`: experiment-only socket and queue settings written to every generated BR TOML before
-  startup: `send_buffer_size`, `receive_buffer_size`, `ingress_batch_size`, `processor_queue_size`,
-  `egress_batch_size`, and `egress_queue_size`.
+- `deployment`: `kind` is `docker` or `ssh`. Docker derives placement, daemon addresses,
+  BR metrics and shaped links from `gen/`; `deployment.router` sets its BR socket and queue sizes.
+  SSH declares `hosts`, `metrics`, and `shaping` here, while each endpoint names its host with `node`.
+  The endpoint `host` remains its SCION bind IP.
 - `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
-- `hummingbird`: required global reservation source (`keys` or `marketplace`). Marketplace mode also
-  requires a `marketplace` object with `url`, `username`, and `password_env`; `sub_account` is
-  optional. The password is read from the named environment variable, never from JSON. The Docker
-  runner discovers the reachable registration URL from `gen/`; `url` is used by SSH runs.
+- `hummingbird`: required global reservation source (`keys` or `marketplace`).
+  Marketplace mode also requires a `marketplace` object with `url`, `username`, and `password_env`; `sub_account` is optional. The password is read from the named environment variable, never from JSON.
+  The Docker runner discovers the reachable registration URL from `gen/`; `url` is used by SSH runs.
 
 Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
 send buffer and uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should
@@ -145,8 +149,8 @@ For example, this commented dummy Hummingbird client shows every supported clien
 
 Client IDs must be unique and match `[A-Za-z0-9._-]+`.
 
-Daemon connectors are deliberately not configured:
-they are derived from `gen/sciond_addresses.json` for the configured AS.
+Docker daemon connectors are derived from `gen/sciond_addresses.json` for the configured AS.
+SSH daemon connectors are declared in `deployment.hosts`.
 Metrics ports are also derived:
 after sorting all clients lexicographically by `client_id`,
 the first receives `9090`, the next `9091`, and so on.
@@ -178,7 +182,7 @@ make docker-images
 Review and edit `tools/hummbwtester/hummbwtester.json`, then prepare the experiment:
 
 ```bash
-./tools/hummbwtester/setup-topology.py
+python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester.json
 ```
 
 Setup prints the derived metrics-port mapping, starts the topology,
@@ -186,34 +190,57 @@ applies the qdiscs, and copies the binary built by `make build-dev`.
 Start the experiment with:
 
 ```bash
-./tools/hummbwtester/run-humm-bwtester-local.py
+python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester.json
 ```
 
 Logs are written beneath `logs/hummbwtester/`, one file per `client_id` plus `server.log`.
 
 ## SSH real-topology runs
 
-For SSH-accessible SCION hosts, copy [ssh-inventory.json.example](ssh-inventory.json.example) to
-`ssh-inventory.json` and configure it. List only dedicated interfaces that may be shaped.
-SSH aliases may use `ProxyJump`; the runner uses them unchanged.
+For SSH-accessible SCION hosts, configure one file such as `hummbwtester-sciera.json`.
+Declare only the exact egress flows that may be shaped.
+The SCIERA file still contains Docker-derived tester IAs and bind IPs;
+Replace the IAs and bind IPs with the actual SCIERA endpoints before running setup or
+the experiment on SSH hosts. SSH aliases may use `ProxyJump`; the runner uses them unchanged.
 
-Set the password named by `hummingbird.marketplace.password_env`, build the artifact, then run:
+Set the password named by `hummingbird.marketplace.password_env`, build the artifact,
+set up the persistent SSH resources, and then run the experiment:
 
 ```bash
 make build-dev
-./tools/hummbwtester/run-humm-bwtester-ssh.py \
-  --config tools/hummbwtester/hummbwtester.json \
-  --inventory tools/hummbwtester/ssh-inventory.json
+python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester-sciera.json
+python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester-sciera.json
 ```
 
-The controller verifies and uploads the built binary,
+SSH setup verifies and uploads the built binary,
 obtains the configured user's JWT from `hummingbird.marketplace.url`,
-and uploads it to an owner-only per-run remote file.
+and uploads it to owner-only setup directories.
 The SSH launch shell reads that file only immediately before `exec`;
-it is never placed in command arguments or the inventory.
-The runner creates SSH metric tunnels and Prometheus file-SD targets under `gen/hummbwtester-prometheus/`,
-removes remote PID/JWT files on exit, and removes a `tc`-set TBF only when
-the inventory explicitly declares a `noqueue` dedicated-link interface.
+it is never placed in command arguments or the configuration.
+Set `deployment.metrics.prometheus` to the declared host on which Prometheus runs.
+Setup generates the same file-SD targets used locally, copies them together with a Prometheus
+configuration and Docker Compose file to `/tmp/hummbwtester/prometheus/` on that host,
+and starts the `hummbwtester-prometheus` container using host networking on port `8090`.
+It also creates persistent, controller-owned SSH relays from every client and router endpoint
+to the loopback target ports on the Prometheus host.
+If the remote files, running container configuration, and tunnels already match, setup leaves them untouched.
+If the Prometheus files or container differ,
+setup stops the old container, replaces the files, and starts it again.
+
+The SSH runner only launches the already-deployed server and clients.
+It fails with an instruction to rerun setup if the deployed binary is missing or differs
+from the local build.
+
+When finished, remove the persistent setup with:
+
+```bash
+python3 tools/hummbwtester/experiment.py teardown --config tools/hummbwtester/hummbwtester-sciera.json
+```
+
+Teardown removes configured selective qdiscs, closes the persistent metric tunnels,
+stops Prometheus, deletes its files under `/tmp`, and removes the deployed binary and JWT.
+Run it from the same controller as setup because the SSH control sockets are kept under
+`/tmp/hummbwtester/ssh-tunnels/` on that controller.
 
 ### Shaping one production BR flow on a shared interface
 
@@ -271,7 +298,8 @@ also account for an explicit SCION `router.send_buffer_size`.
 During a run, `status` should show TBF backlog and zero drops until the
 BR's own bounded egress queues become the intended drop point.
 
-State is stored under `/run/hummbwtester-qdisc/`. One managed flow is allowed per interface,
+State is stored under `/run/hummbwtester-qdisc/`.
+One managed flow is allowed per interface,
 but different `--name` values can manage separate interfaces on the same host.
 Partial setup failures restore the acknowledged baseline.
 Cleanup refuses to delete a root qdisc that no longer looks like
@@ -300,24 +328,42 @@ Background material:
 [Linux network namespaces on Wikipedia](https://en.wikipedia.org/wiki/Linux_namespaces),
 and a [web search for veth hairpin policy routing](https://www.google.com/search?q=Linux+veth+hairpin+policy+routing+tc).
 
-The SSH runner does not yet invoke this helper automatically.
-Its existing `shaping` inventory entries remain restricted to dedicated `noqueue` devices.
+SSH setup invokes this helper for every exact flow declared in `deployment.shaping`.
+The TBF parameters come from the workload's `tc` object. For example:
+
+```json
+"shaping": [
+  {
+    "host": "ufes",
+    "name": "ufes-peer",
+    "device": "ens192",
+    "local": "10.6.7.1:50001",
+    "remote": "10.6.7.2:50001",
+    "expected_root": "mq"
+  }
+]
+```
+
+Setup compares the desired configuration with the helper's state and verifies that its managed
+root qdisc is present.
+An identical active qdisc is retained; stale configured state is removed and recreated.
+An empty `deployment.shaping` array disables SSH-mode shaping.
 
 ## Regular run cycle
 
 For a configuration change, run setup again before running the experiment:
 
 ```bash
-./tools/hummbwtester/setup-topology.py
-./tools/hummbwtester/run-humm-bwtester-local.py
+python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester.json
+python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester.json
 ```
 
 For a tester source change, first rebuild the standard development artifacts, then run setup:
 
 ```bash
 make build-dev
-./tools/hummbwtester/setup-topology.py
-./tools/hummbwtester/run-humm-bwtester-local.py
+python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester.json
+python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester.json
 ```
 
 For a router source change, rebuild and reload the Docker images as well before setup:
@@ -325,27 +371,27 @@ For a router source change, rebuild and reload the Docker images as well before 
 ```bash
 make build-dev
 make docker-images
-./tools/hummbwtester/setup-topology.py
-./tools/hummbwtester/run-humm-bwtester-local.py
+python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester.json
+python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester.json
 ```
 
 After `./scion.sh stop`, Docker removes the bridges and their qdiscs.
 Do not use `./scion.sh start` alone for another experiment;
-rerun `./tools/hummbwtester/setup-topology.py` so it starts the existing generated topology,
+rerun `experiment.py setup` so it starts the existing generated topology,
 recreates the bandwidth caps, and recopies the binary.
 
-`tools/hummbwtester/setup-topology.py` requires an existing `gen/scion-dc.yml`.
+Docker setup requires an existing `gen/scion-dc.yml`.
 If `gen/` was generated for supervisord instead,
 regenerate Docker topology with the command in the first-run section.
 
 ## Monitoring
 
-The optional Prometheus/Grafana stack is in [monitoring](monitoring/README.md).
-After setup has generated targets, start it with:
+Docker setup starts Prometheus automatically. Grafana remains optional and separately managed;
+see [monitoring](monitoring/README.md). To start Grafana:
 
 ```bash
 cd tools/hummbwtester/monitoring
-docker compose up -d
+docker compose up -d grafana
 ```
 
 Prometheus is available at `http://localhost:8090`;
@@ -359,7 +405,8 @@ Run the focused Go and orchestration tests from the repository root:
 ```bash
 go test ./tools/hummbwtester
 bazel test //tools/hummbwtester:go_default_test //tools/hummbwtester:orchestration_test \\
-  //tools/hummbwtester:ssh_orchestration_test //tools/hummbwtester:selective_qdisc_test
+  //tools/hummbwtester:ssh_orchestration_test //tools/hummbwtester:ssh_setup_test \\
+  //tools/hummbwtester:selective_qdisc_test
 ```
 
 Run the no-sleep client send-path benchmark with:
