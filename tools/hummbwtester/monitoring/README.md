@@ -6,7 +6,7 @@ exported by `./tools/hummbwtester`.
 It follows the same basic pattern as `./monitoring-prometheus-grafana/topology`: a local
 Prometheus instance scrapes metrics from the running SCION tooling, and Grafana is provided for
 interactive dashboards. For `hummbwtester`, the scrape targets are taken from
-`tools/hummbwtester/hummbwtester.json` and `tools/hummbwtester/run-humm-bwtester-local.py`:
+`tools/hummbwtester/hummbwtester.json` and `experiment.py setup`:
 
 - client metrics, including observations reported by the server: ports derived from sorted
   `client_id` values, beginning at `9090`
@@ -38,15 +38,15 @@ the configured `client_id` as the sole custom label on each client target.
 1. Set up the existing Docker topology from the repository root:
 
    ```bash
-   ./tools/hummbwtester/setup-topology.py
-   ./tools/hummbwtester/run-humm-bwtester-local.py
+   python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester.json
+   python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester.json
    ```
 
-2. In another terminal, start the monitoring stack:
+2. Setup starts Prometheus. Optionally start Grafana in another terminal:
 
    ```bash
    cd tools/hummbwtester/monitoring
-   docker compose up -d
+   docker compose up -d grafana
    ```
 
 3. Check that the containers are running:
@@ -57,10 +57,10 @@ the configured `client_id` as the sole custom label on each client target.
 
 ## Stop
 
-Stop the monitoring stack from this directory:
+Stop Grafana from this directory; `experiment.py teardown` stops its owned Prometheus service:
 
 ```bash
-docker compose down
+docker compose stop grafana
 ```
 
 If you also want to remove the persisted Prometheus and Grafana data volumes:

@@ -7,8 +7,8 @@ the generated Docker topology so that a stopped topology can be brought back wit
 
 from __future__ import annotations
 
-import argparse
 from datetime import datetime
+import hashlib
 import ipaddress
 import json
 import math
@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,7 @@ CONFIG_DEFAULT = ROOT / "tools" / "hummbwtester" / "hummbwtester.json"
 BIN = ROOT / "bin" / "hummbwtester"
 TC_SCRIPT = ROOT / "tools" / "hummbwtester" / "scripts" / "tc_setup.sh"
 TARGET_DIR = GEN / "hummbwtester-prometheus"
+DOCKER_QDISC_STATE = GEN / "hummbwtester-docker-qdiscs.json"
 # Metrics ports are intentionally derived rather than stored in the JSON file.
 METRICS_BASE_PORT = 9090
 CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -61,6 +63,7 @@ class Endpoint:
     port: int
     # Only the server endpoint sets this; client endpoints keep the zero default.
     receive_buffer_size: int = 0
+    node: str | None = None
 
     def local(self) -> str:
         return f"{self.isd_as},{join_host_port(self.host, self.port)}"
@@ -197,7 +200,7 @@ def parse_endpoint(
     required = {"isd_as", "host", "port"}
     if require_receive_buffer:
         required.add("receive_buffer_size")
-    require_fields(value, required, context)
+    require_fields(value, required, context, {"node"})
     ia, host, port = value["isd_as"], value["host"], value["port"]
     if not isinstance(ia, str) or not ia:
         raise ConfigError(f"{context}.isd_as must be a non-empty string")
@@ -215,7 +218,10 @@ def parse_endpoint(
         raise ConfigError(f"{context}.receive_buffer_size must be a non-negative integer")
     if require_receive_buffer and receive_buffer_size == 0:
         raise ConfigError(f"{context}.receive_buffer_size must be a positive integer")
-    return Endpoint(ia, host, port, receive_buffer_size)
+    node = value.get("node")
+    if node is not None and (not isinstance(node, str) or not node or any(c.isspace() for c in node)):
+        raise ConfigError(f"{context}.node must be a non-empty name without whitespace")
+    return Endpoint(ia, host, port, receive_buffer_size, node)
 
 
 def parse_client(
@@ -224,7 +230,7 @@ def parse_client(
 ) -> Client:
     """Validate one client configuration and retain its workload and optional tuning settings."""
     required = {"client_id", "isd_as", "host", "port", "bandwidth", "maxburst", "duration"}
-    optional = {"payload_size", "pong_rate"}
+    optional = {"payload_size", "pong_rate", "node"}
     if hummingbird:
         required.add("hummingbird_reservation")
     require_fields(entry, required, context, optional)
@@ -283,7 +289,8 @@ def parse_client(
         raise ConfigError(f"{context}.pong_rate must be a number")
     return Client(
         client_id=client_id,
-        endpoint=parse_endpoint({key: entry[key] for key in ("isd_as", "host", "port")}, context),
+        endpoint=parse_endpoint({key: entry[key] for key in ("isd_as", "host", "port", "node")
+                                 if key in entry}, context),
         hummingbird=hummingbird,
         metrics_port=0,
         bandwidth=entry["bandwidth"],
@@ -336,11 +343,22 @@ def parse_bandwidth(value: str, context: str) -> float:
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
+    if "deployment" not in root:
+        raise ConfigError(
+            "legacy configuration: add deployment.kind and merge SSH inventory into this file",
+        )
     require_fields(
         root,
-        {"server", "hummingbird", "hummingbird_clients", "best_effort_clients", "router", "tc"},
+        {"server", "hummingbird", "hummingbird_clients", "best_effort_clients", "deployment", "tc"},
         "configuration",
     )
+    deployment = root["deployment"]
+    if not isinstance(deployment, dict) or deployment.get("kind") not in ("docker", "ssh"):
+        raise ConfigError("deployment.kind must be docker or ssh")
+    if deployment["kind"] == "docker":
+        require_fields(deployment, {"kind", "router"}, "deployment")
+    else:
+        require_fields(deployment, {"kind", "hosts", "metrics", "shaping"}, "deployment")
     hummingbird_config = root["hummingbird"]
     if not isinstance(hummingbird_config, dict):
         raise ConfigError("hummingbird must be an object")
@@ -372,6 +390,8 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     if not isinstance(root["server"], dict):
         raise ConfigError("server must be an object")
     server = parse_endpoint(root["server"], "server", require_receive_buffer=True)
+    if (server.node is None) != (deployment["kind"] == "docker"):
+        raise ConfigError("server.node is required only for SSH deployments")
     if server.port == 0:
         raise ConfigError("server.port must not be zero")
 
@@ -400,10 +420,13 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         raise ConfigError("too many clients for the derived Prometheus port range")
     clients = [replace(client, metrics_port=METRICS_BASE_PORT + index)
                for index, client in enumerate(parsed)]
+    for client in clients:
+        if (client.endpoint.node is None) != (deployment["kind"] == "docker"):
+            raise ConfigError(f"{client.client_id}.node is required only for SSH deployments")
 
-    router = root["router"]
+    router = deployment.get("router", {})
     if not isinstance(router, dict):
-        raise ConfigError("router must be an object")
+        raise ConfigError("deployment.router must be an object")
     router_keys = {
         "send_buffer_size",
         "receive_buffer_size",
@@ -412,11 +435,13 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         "egress_batch_size",
         "egress_queue_size",
     }
-    require_fields(router, router_keys, "router")
-    for key in router_keys:
-        value = router[key]
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise ConfigError(f"router.{key} must be a positive integer")
+    if deployment["kind"] == "docker":
+        require_fields(router, router_keys, "deployment.router")
+    if deployment["kind"] == "docker":
+        for key in router_keys:
+            value = router[key]
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ConfigError(f"deployment.router.{key} must be a positive integer")
 
     tc = root["tc"]
     if not isinstance(tc, dict):
@@ -428,7 +453,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     return (
         server,
         clients,
-        {key: router[key] for key in sorted(router_keys)},
+        {key: router[key] for key in sorted(router_keys)} if deployment["kind"] == "docker" else {},
         {key: tc[key] for key in ("rate", "burst", "limit")},
     )
 
@@ -627,7 +652,9 @@ def patch_compose(compose: dict[str, Any], peers: dict[str, list[str]], tc: dict
             "entrypoint": ["/bin/bash", "/share/hummbwtester_tc_setup.sh"],
             "command": ["setup", tc["rate"], tc["burst"], tc["limit"], *peer_addresses],
         }
-    COMPOSE.write_text(yaml.safe_dump(compose, sort_keys=False))
+    rendered = yaml.safe_dump(compose, sort_keys=False)
+    if not COMPOSE.exists() or COMPOSE.read_text() != rendered:
+        COMPOSE.write_text(rendered)
 
 
 def run(command: list[str], *, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -640,6 +667,15 @@ def run(command: list[str], *, check: bool = True, **kwargs: Any) -> subprocess.
 def dc_args(*args: str) -> list[str]:
     """Build a Docker Compose command targeting the generated SCION Compose file."""
     return ["docker", "compose", "-f", str(COMPOSE), *args]
+
+
+def ignore_sigint_during_cleanup() -> object:
+    """Handle a burst of terminal interrupts before cleanup can begin."""
+    while True:
+        try:
+            return signal.signal(signal.SIGINT, signal.SIG_IGN)
+        except KeyboardInterrupt:
+            continue
 
 
 def require_built_binary() -> None:
@@ -673,7 +709,10 @@ def write_targets(compose: dict[str, Any], clients: list[Client]) -> None:
         "targets": [join_host_port(client.endpoint.host, client.metrics_port)],
         "labels": {"client_id": client.client_id},
     } for client in clients]
-    (TARGET_DIR / "clients.json").write_text(json.dumps(client_targets, indent=2) + "\n")
+    clients_path = TARGET_DIR / "clients.json"
+    clients_text = json.dumps(client_targets, indent=2) + "\n"
+    if not clients_path.exists() or clients_path.read_text() != clients_text:
+        clients_path.write_text(clients_text)
 
     ia_by_br = br_ias()
     targets = []
@@ -688,12 +727,18 @@ def write_targets(compose: dict[str, Any], clients: list[Client]) -> None:
                 targets.append({"targets": [join_host_port(host, 30442)],
                                 "labels": {"as": ia.split("-", 1)[1].replace(":", "_"), "br": service}})
                 break
-    (TARGET_DIR / "border_routers.json").write_text(json.dumps(targets, indent=2) + "\n")
+    routers_path = TARGET_DIR / "border_routers.json"
+    routers_text = json.dumps(targets, indent=2) + "\n"
+    if not routers_path.exists() or routers_path.read_text() != routers_text:
+        routers_path.write_text(routers_text)
 
 
-def setup(config_path: Path) -> int:
+def setup(
+    config_path: Path,
+    config: tuple[Endpoint, list[Client], dict[str, int], dict[str, str]] | None = None,
+) -> int:
     """Build, start, shape, populate, and publish targets for one configured experiment."""
-    server, clients, router, tc = load_config(config_path)
+    server, clients, router, tc = config if config is not None else load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
     _ = [endpoint_sciond(endpoint, sciond_map()) for endpoint in [server, *(c.endpoint for c in clients)]]
@@ -706,12 +751,39 @@ def setup(config_path: Path) -> int:
     # This is safe after `scion.sh stop`: Compose recreates the removed bridges before tc runs.
     run([str(ROOT / "scion.sh"), "start"], cwd=ROOT)
     wait_for_reachability(server, clients[0])
+    try:
+        previous = json.loads(DOCKER_QDISC_STATE.read_text())
+    except (OSError, json.JSONDecodeError):
+        previous = {}
+    if not isinstance(previous, dict):
+        previous = {}
+    previous_peers = previous.get("peers", {}) if previous.get("tc") == tc else {}
+    if not isinstance(previous_peers, dict):
+        previous_peers = {}
+    applied_peers: dict[str, list[str]] = {}
     for router_service in peers:
-        run(dc_args("run", "--rm", "--no-deps", tc_helper_name(router_service)), cwd=ROOT)
+        if previous_peers.get(router_service) == peers[router_service]:
+            check = run(dc_args(
+                "run", "--rm", "--no-deps", tc_helper_name(router_service),
+                "stats", *peers[router_service],
+            ), cwd=ROOT, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if check.returncode:
+                run(dc_args("run", "--rm", "--no-deps", tc_helper_name(router_service)), cwd=ROOT)
+        else:
+            run(dc_args("run", "--rm", "--no-deps", tc_helper_name(router_service)), cwd=ROOT)
+        applied_peers[router_service] = peers[router_service]
+        DOCKER_QDISC_STATE.write_text(json.dumps(
+            {"tc": tc, "peers": applied_peers}, sort_keys=True, indent=2,
+        ) + "\n")
     for client in clients:
         print(f"client_id={client.client_id} metrics_port={client.metrics_port}")
+    with BIN.open("rb") as binary:
+        digest = hashlib.file_digest(binary, "sha256").hexdigest()
     for service in sorted({tester_service(server.isd_as), *(tester_service(c.endpoint.isd_as) for c in clients)}):
-        run(dc_args("cp", str(BIN), f"{service}:/share/bin/hummbwtester"), cwd=ROOT)
+        current = run(dc_args("exec", "-T", service, "sha256sum", "/share/bin/hummbwtester"),
+                      cwd=ROOT, check=False, capture_output=True)
+        if current.returncode or not current.stdout.split() or current.stdout.split()[0] != digest:
+            run(dc_args("cp", str(BIN), f"{service}:/share/bin/hummbwtester"), cwd=ROOT)
         run(dc_args("exec", "-T", service, "test", "-x", "/share/bin/hummbwtester"), cwd=ROOT)
     write_targets(compose, clients)
     return 0
@@ -1114,9 +1186,12 @@ def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: 
         print(f"HUMMBWTESTER_REPORT observation_error={error}")
 
 
-def run_experiment(config_path: Path) -> int:
+def run_experiment(
+    config_path: Path,
+    config: tuple[Endpoint, list[Client], dict[str, int], dict[str, str]] | None = None,
+) -> int:
     """Launch the server and all clients, then return their aggregate experiment status."""
-    server, clients, _, _ = load_config(config_path)
+    server, clients, _, _ = config if config is not None else load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
     daemons = sciond_map()
@@ -1173,43 +1248,24 @@ def run_experiment(config_path: Path) -> int:
     except KeyboardInterrupt:
         return 130
     finally:
-        # Always remove the server and any remaining clients on failure or Ctrl-C.
-        for client, pidfile, process in processes:
-            # Ctrl-C can terminate the local ``docker compose exec`` wrapper before it reaches
-            # the tester process in the container. The pidfile is the authoritative record of
-            # that process, so always target it even when the local wrapper has already exited.
-            stop_remote(tester_service(client.endpoint.isd_as), pidfile)
-            if process.poll() is None:
-                process.terminate()
-        stop_remote(server_service, server_pidfile)
-        if server_process is not None and server_process.poll() is None:
-            server_process.terminate()
-        for _, _, process in processes:
-            process.wait(timeout=10)
-        if server_process is not None:
-            server_process.wait(timeout=10)
-        if remote_jwt_file is not None:
-            remove_docker_jwt(marketplace_services, remote_jwt_file)
-        if marketplace_jwt_file is not None:
-            marketplace_jwt_file.unlink(missing_ok=True)
-
-
-def main(default_mode: str | None = None) -> int:
-    """Parse CLI arguments and dispatch to setup or run, optionally forcing the mode."""
-    # The two small entrypoint scripts pass "setup" or "run" directly. Running this module
-    # itself leaves the mode as None, so argparse requires the user to choose one.
-    parser = argparse.ArgumentParser()
-    if default_mode is None:
-        parser.add_argument("mode", choices=("setup", "run"))
-    parser.add_argument("--config", type=Path, default=CONFIG_DEFAULT)
-    args = parser.parse_args()
-    try:
-        mode = default_mode if default_mode is not None else args.mode
-        return setup(args.config) if mode == "setup" else run_experiment(args.config)
-    except (ConfigError, RuntimeError, subprocess.SubprocessError) as err:
-        print(f"error: {err}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        # A second Ctrl-C while cleanup is running must not strand tester processes or a JWT.
+        previous_sigint = ignore_sigint_during_cleanup()
+        try:
+            for client, pidfile, process in processes:
+                # The pidfile is authoritative even if the Compose wrapper exited already.
+                stop_remote(tester_service(client.endpoint.isd_as), pidfile)
+                if process.poll() is None:
+                    process.terminate()
+            stop_remote(server_service, server_pidfile)
+            if server_process is not None and server_process.poll() is None:
+                server_process.terminate()
+            for _, _, process in processes:
+                process.wait(timeout=10)
+            if server_process is not None:
+                server_process.wait(timeout=10)
+            if remote_jwt_file is not None:
+                remove_docker_jwt(marketplace_services, remote_jwt_file)
+            if marketplace_jwt_file is not None:
+                marketplace_jwt_file.unlink(missing_ok=True)
+        finally:
+            signal.signal(signal.SIGINT, previous_sigint)

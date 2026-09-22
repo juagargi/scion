@@ -56,14 +56,14 @@ class ConfigTest(unittest.TestCase):
                 "client_id": "alpha", "isd_as": "1-ff00:0:110", "host": "172.20.0.22", "port": 0,
                 "bandwidth": "1Mbps", "maxburst": "2Mbps", "duration": "30s",
             }],
-            "router": {
+            "deployment": {"kind": "docker", "router": {
                 "send_buffer_size": 16384,
                 "receive_buffer_size": 4194304,
                 "ingress_batch_size": 64,
                 "processor_queue_size": 640,
                 "egress_batch_size": 1,
                 "egress_queue_size": 64,
-            },
+            }},
             "tc": {"rate": "10mbit", "burst": "50kb", "limit": "256kb"},
         }
 
@@ -94,6 +94,20 @@ class ConfigTest(unittest.TestCase):
         del config["hummingbird"]
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
+
+    def test_rejects_legacy_two_file_configuration(self):
+        config = self.base_config()
+        del config["deployment"]
+        with self.assertRaisesRegex(ConfigError, "merge SSH inventory"):
+            load_config(self.write_config(config))
+
+    def test_cleanup_ignores_an_interrupt_burst(self):
+        with mock.patch.object(orchestration.signal, "signal", side_effect=[
+            KeyboardInterrupt(), mock.sentinel.previous_handler,
+        ]) as set_handler:
+            self.assertIs(orchestration.ignore_sigint_during_cleanup(),
+                          mock.sentinel.previous_handler)
+        self.assertEqual(set_handler.call_count, 2)
 
     def test_rejects_marketplace_configuration_in_keys_mode(self):
         config = self.base_config()
@@ -205,24 +219,24 @@ class ConfigTest(unittest.TestCase):
             load_config(self.write_config(config))
 
     def test_requires_positive_router_tuning(self):
-        for key in self.base_config()["router"]:
+        for key in self.base_config()["deployment"]["router"]:
             with self.subTest(key=key):
                 config = self.base_config()
-                config["router"][key] = 0
+                config["deployment"]["router"][key] = 0
                 with self.assertRaises(ConfigError):
                     load_config(self.write_config(config))
 
     def test_rejects_legacy_router_batch_size(self):
         config = self.base_config()
-        config["router"]["batch_size"] = 1
+        config["deployment"]["router"]["batch_size"] = 1
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
 
     def test_requires_all_router_tuning_values(self):
-        for key in self.base_config()["router"]:
+        for key in self.base_config()["deployment"]["router"]:
             with self.subTest(key=key):
                 config = self.base_config()
-                del config["router"][key]
+                del config["deployment"]["router"][key]
                 with self.assertRaises(ConfigError):
                     load_config(self.write_config(config))
 

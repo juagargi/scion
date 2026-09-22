@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Single configuration and command surface for Docker and SSH experiments."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+try:
+    from . import orchestration as planner
+    from . import ssh_orchestration as ssh
+    from . import ssh_setup
+except ImportError:
+    import orchestration as planner
+    import ssh_orchestration as ssh
+    import ssh_setup
+
+
+MONITORING_COMPOSE = planner.ROOT / "tools" / "hummbwtester" / "monitoring" / "docker-compose.yml"
+LOCAL_PROMETHEUS_PROJECT = "monitoring"
+LOCAL_PROMETHEUS_CONTAINER = "hummbwtester-prometheus"
+
+
+@dataclass(frozen=True)
+class ExperimentPlan:
+    path: Path
+    config: tuple[planner.Endpoint, list[planner.Client], dict[str, int], dict[str, str]]
+    kind: str
+    inventory: ssh.Inventory | None
+
+
+def load_plan(path: Path, action: str) -> ExperimentPlan:
+    config = planner.load_config(path)
+    server, clients, _, _ = config
+    kind = planner.read_json(path)["deployment"]["kind"]
+    if kind == "docker":
+        if action != "teardown":
+            planner.validate_endpoints(planner.compose_data(), server, clients)
+        return ExperimentPlan(path, config, kind, None)
+    inventory = ssh.load_inventory(path, server, clients)
+    return ExperimentPlan(path, config, kind, inventory)
+
+
+def _compose(*args: str) -> list[str]:
+    return ["docker", "compose", "--project-name", LOCAL_PROMETHEUS_PROJECT,
+            "-f", str(MONITORING_COMPOSE), *args]
+
+
+def _local_prometheus_owner() -> str | None:
+    result = subprocess.run(
+        ["docker", "inspect", "--format",
+         '{{index .Config.Labels "com.docker.compose.project"}}/{{index .Config.Labels "com.docker.compose.service"}}',
+         LOCAL_PROMETHEUS_CONTAINER],
+        check=False, capture_output=True, text=True,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _check_local_prometheus_owner() -> bool:
+    owner = _local_prometheus_owner()
+    expected = f"{LOCAL_PROMETHEUS_PROJECT}/prometheus"
+    if owner is not None and owner != expected:
+        raise RuntimeError(
+            f"{LOCAL_PROMETHEUS_CONTAINER} exists but belongs to {owner}, not {expected}",
+        )
+    return owner is not None
+
+
+def setup_local(plan: ExperimentPlan) -> int:
+    _check_local_prometheus_owner()
+    result = planner.setup(plan.path, plan.config)
+    subprocess.run(_compose("up", "-d", "prometheus"), check=True, text=True)
+    return result
+
+
+def teardown_local() -> int:
+    if _check_local_prometheus_owner():
+        subprocess.run(_compose("rm", "--stop", "--force", "prometheus"), check=True,
+                       text=True)
+    try:
+        peers = json.loads(planner.DOCKER_QDISC_STATE.read_text())
+    except FileNotFoundError:
+        return 0
+    if isinstance(peers, dict) and "peers" in peers:
+        peers = peers["peers"]
+    if not isinstance(peers, dict) or not all(
+        isinstance(router, str) and isinstance(addresses, list)
+        and all(isinstance(address, str) for address in addresses)
+        for router, addresses in peers.items()
+    ):
+        raise RuntimeError(f"invalid qdisc manifest: {planner.DOCKER_QDISC_STATE}")
+    for router, addresses in peers.items():
+        running = subprocess.run(planner.dc_args("ps", "-q", router), cwd=planner.ROOT,
+                                 check=True, capture_output=True, text=True)
+        if not running.stdout.strip():
+            continue  # A stopped container has no network namespace or qdisc to remove.
+        subprocess.run(planner.dc_args(
+            "run", "--rm", "--no-deps", planner.tc_helper_name(router), "cleanup", *addresses,
+        ), cwd=planner.ROOT, check=True, text=True)
+    planner.DOCKER_QDISC_STATE.unlink()
+    return 0
+
+
+def run_local(plan: ExperimentPlan) -> int:
+    # The generated local marketplace account uses this development-only password.
+    hummingbird_clients = [client for client in plan.config[1] if client.hummingbird]
+    marketplace = hummingbird_clients[0].marketplace if hummingbird_clients else None
+    if marketplace is not None and marketplace.password_env == "HUMMBWTESTER_MARKETPLACE_PASSWORD":
+        os.environ.setdefault("HUMMBWTESTER_MARKETPLACE_PASSWORD", "1234")
+    return planner.run_experiment(plan.path, plan.config)
+
+
+def execute(action: str, config_path: Path) -> int:
+    plan = load_plan(config_path, action)
+    if plan.kind == "docker":
+        if action == "setup":
+            return setup_local(plan)
+        if action == "run":
+            return run_local(plan)
+        return teardown_local()
+    # plan.kind is ssh:
+    assert plan.inventory is not None
+    if action == "setup":
+        return ssh_setup.setup(plan.path, plan.config, plan.inventory)
+    if action == "run":
+        return ssh.run_experiment(plan.path, plan.config, plan.inventory)
+    return ssh_setup.teardown(plan.path, plan.config, plan.inventory)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("setup", "run", "teardown"))
+    parser.add_argument("--config", required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        return execute(args.action, args.config)
+    except (planner.ConfigError, ssh.SSHError, ssh_setup.selective_qdisc.Error,
+            argparse.ArgumentTypeError, subprocess.SubprocessError,
+            RuntimeError, OSError, ValueError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
