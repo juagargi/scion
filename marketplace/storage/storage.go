@@ -736,6 +736,14 @@ func (s *MarketplaceStorage) InsertReservation(
 	return s.db.InsertReservation(ctx, r)
 }
 
+func (s *MarketplaceStorage) UpdateReservation(
+	ctx context.Context,
+	id int64,
+	reservation *marketplacedb.DBReservation,
+) (int64, error) {
+	return s.db.UpdateReservation(ctx, id, reservation)
+}
+
 func (s *MarketplaceStorage) UndoRedemption(
 	ctx context.Context,
 	user_id int64,
