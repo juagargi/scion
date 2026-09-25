@@ -70,11 +70,27 @@
       "local_port_base": 19090,
       "routers": [
         {
+          "host": "rnp",
+          "address": "127.0.0.1:38401",
+          "labels": {
+            "as": "71_1916",
+            "br": "br-2"
+          }
+        },
+        {
           "host": "ufes",
-          "address": "127.0.0.1:30442",
+          "address": "127.0.0.1:38401",
           "labels": {
             "as": "71_2_0_152",
-            "br": "br-1"
+            "br": "br-2"
+          }
+        },
+        {
+          "host": "ufms",
+          "address": "127.0.0.1:38401",
+          "labels": {
+            "as": "71_2_0_5c",
+            "br": "br-2"
           }
         }
       ]
