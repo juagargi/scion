@@ -71,8 +71,20 @@ def _check_local_prometheus_owner() -> bool:
     return owner is not None
 
 
-def setup_local(plan: ExperimentPlan) -> int:
-    _check_local_prometheus_owner()
+def setup_local(plan: ExperimentPlan, dry_run: bool = False) -> int:
+    exists = _check_local_prometheus_owner()
+    if dry_run:
+        steps = planner.describe_setup(plan.path, plan.config)
+        steps.append(
+            f"would run docker compose --project-name {LOCAL_PROMETHEUS_PROJECT} up -d prometheus, "
+            + (f"which keeps the running {LOCAL_PROMETHEUS_CONTAINER} container" if exists
+               else f"which starts the local {LOCAL_PROMETHEUS_CONTAINER} container"),
+        )
+        print("dry-run: docker setup would perform these steps:")
+        for index, step in enumerate(steps, start=1):
+            print(f"  {index}. {step}")
+        print(planner.DRY_RUN_NOTICE)
+        return 0
     result = planner.setup(plan.path, plan.config)
     subprocess.run(_compose("up", "-d", "prometheus"), check=True, text=True)
     return result
@@ -115,18 +127,18 @@ def run_local(plan: ExperimentPlan) -> int:
     return planner.run_experiment(plan.path, plan.config)
 
 
-def execute(action: str, config_path: Path) -> int:
+def execute(action: str, config_path: Path, dry_run: bool = False) -> int:
     plan = load_plan(config_path, action)
     if plan.kind == "docker":
         if action == "setup":
-            return setup_local(plan)
+            return setup_local(plan, dry_run)
         if action == "run":
             return run_local(plan)
         return teardown_local()
     # plan.kind is ssh:
     assert plan.inventory is not None
     if action == "setup":
-        return ssh_setup.setup(plan.path, plan.config, plan.inventory)
+        return ssh_setup.setup(plan.path, plan.config, plan.inventory, dry_run)
     if action == "run":
         return ssh.run_experiment(plan.path, plan.config, plan.inventory)
     return ssh_setup.teardown(plan.path, plan.config, plan.inventory)
@@ -136,9 +148,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("setup", "run", "teardown"))
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="setup only: run every check and read, report what would change, change nothing",
+    )
     args = parser.parse_args()
+    if args.dry_run and args.action != "setup":
+        parser.error("--dry-run is only supported with setup")
     try:
-        return execute(args.action, args.config)
+        return execute(args.action, args.config, args.dry_run)
     except (planner.ConfigError, ssh.SSHError, ssh_setup.selective_qdisc.Error,
             argparse.ArgumentTypeError, subprocess.SubprocessError,
             RuntimeError, OSError, ValueError) as err:

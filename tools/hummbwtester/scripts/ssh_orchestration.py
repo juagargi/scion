@@ -264,16 +264,24 @@ def remote_dir(host: SSHHost, run_id: str) -> str:
     return f"{host.run_dir}/{RUNS_DIR_NAME}/{run_id}"
 
 
-def preflight(host: SSHHost) -> None:
+def preflight(host: SSHHost, dry_run: bool = False) -> None:
+    """Check the host's tools, SCION daemon, and readiness command, and create run_dir.
+
+    A dry run only reports a missing run_dir. The readiness command runs in both modes, so it
+    must be read-only.
+    """
     daemon_host, daemon_port = _host_port(host.sciond, f"SSH host {host.name} sciond")
     command = " && ".join([
         "command -v sha256sum >/dev/null",
         "command -v nc >/dev/null",
-        f"install -d -m 700 {shlex.quote(host.run_dir)}",
+        "true" if dry_run else f"install -d -m 700 {shlex.quote(host.run_dir)}",
         f"nc -z -w 3 {shlex.quote(daemon_host)} {shlex.quote(daemon_port)}",
         host.readiness_command or "true",
     ])
     ssh_command(host, command)
+    if dry_run and ssh_command(host, f"test -d {shlex.quote(host.run_dir)}", check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+        print(f"dry-run: would create {host.run_dir} on {host.name}")
 
 
 def jwt_path(host: SSHHost) -> str:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import hashlib
+import copy
 import ipaddress
 import json
 import math
@@ -53,6 +54,11 @@ SCION_ADDRESS_RE = re.compile(
     r"\[(?P<ia>[0-9]+-(?:[0-9]+|[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4})),"
     r"(?P<host>[^\]]+)\]:(?P<port>[0-9]{1,5})",
 )
+
+
+# Printed last by every dry run, so that its "would" lines are not mistaken for pending work.
+DRY_RUN_NOTICE = ("dry-run: this was only a dry run; nothing was modified, and none of the steps "
+                  "above needs to be run manually")
 
 
 class ConfigError(ValueError):
@@ -582,14 +588,13 @@ def br_config_paths() -> dict[str, Path]:
     return result
 
 
-def patch_toml_section(
-    path: Path,
+def patched_toml_section(
+    text: str,
     section: str,
     values: dict[str, int],
     remove: set[str] | None = None,
-) -> None:
-    """Idempotently replace, insert, and remove integer keys in one TOML section."""
-    text = path.read_text()
+) -> str:
+    """Return text with integer keys of one TOML section replaced, inserted, and removed."""
     section_match = re.search(rf"(?m)^\[{re.escape(section)}\][ \t]*(?:#.*)?$", text)
     rendered = [f"{key} = {value}" for key, value in values.items()]
     if section_match is None:
@@ -612,6 +617,18 @@ def patch_toml_section(
         if missing:
             body = body.rstrip("\n") + "\n" + "\n".join(missing) + "\n"
         updated = text[:body_start] + body + text[body_end:]
+    return updated
+
+
+def patch_toml_section(
+    path: Path,
+    section: str,
+    values: dict[str, int],
+    remove: set[str] | None = None,
+) -> None:
+    """Idempotently replace, insert, and remove integer keys in one TOML section."""
+    text = path.read_text()
+    updated = patched_toml_section(text, section, values, remove)
     if updated != text:
         path.write_text(updated)
 
@@ -677,6 +694,15 @@ def tc_helper_name(router: str) -> str:
 
 def patch_compose(compose: dict[str, Any], peers: dict[str, list[str]], tc: dict[str, str]) -> None:
     """Add one profiled, network-namespace-sharing tc helper per border router."""
+    rendered = compose_with_tc_helpers(compose, peers, tc)
+    if not COMPOSE.exists() or COMPOSE.read_text() != rendered:
+        COMPOSE.write_text(rendered)
+
+
+def compose_with_tc_helpers(
+    compose: dict[str, Any], peers: dict[str, list[str]], tc: dict[str, str],
+) -> str:
+    """Replace the tc helper services in compose and return its rendered YAML."""
     services = compose["services"]
     for name in [name for name in services if name == "hummbwtester_tc_setup"
                  or name.startswith(TC_HELPER_PREFIX)]:
@@ -698,9 +724,7 @@ def patch_compose(compose: dict[str, Any], peers: dict[str, list[str]], tc: dict
             "entrypoint": ["/bin/bash", "/share/hummbwtester_tc_setup.sh"],
             "command": ["setup", tc["rate"], tc["burst"], tc["limit"], *peer_addresses],
         }
-    rendered = yaml.safe_dump(compose, sort_keys=False)
-    if not COMPOSE.exists() or COMPOSE.read_text() != rendered:
-        COMPOSE.write_text(rendered)
+    return yaml.safe_dump(compose, sort_keys=False)
 
 
 def run(command: list[str], *, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -750,15 +774,18 @@ def wait_for_reachability(server: Endpoint, client: Client, timeout: float = 60)
 def write_targets(compose: dict[str, Any], clients: list[Client]) -> None:
     """Write Prometheus file-SD target files for client and border-router metrics."""
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
+    for path, text in target_files(clients).items():
+        if not path.exists() or path.read_text() != text:
+            path.write_text(text)
+
+
+def target_files(clients: list[Client]) -> dict[Path, str]:
+    """The Prometheus file-SD target files for client and border-router metrics."""
     # client_id is the only custom Prometheus label for client metrics.
     client_targets = [{
         "targets": [join_host_port(client.endpoint.host, client.metrics_port)],
         "labels": {"client_id": client.client_id},
     } for client in clients]
-    clients_path = TARGET_DIR / "clients.json"
-    clients_text = json.dumps(client_targets, indent=2) + "\n"
-    if not clients_path.exists() or clients_path.read_text() != clients_text:
-        clients_path.write_text(clients_text)
 
     ia_by_br = br_ias()
     targets = []
@@ -773,10 +800,10 @@ def write_targets(compose: dict[str, Any], clients: list[Client]) -> None:
                 targets.append({"targets": [join_host_port(host, 30442)],
                                 "labels": {"as": ia.split("-", 1)[1].replace(":", "_"), "br": service}})
                 break
-    routers_path = TARGET_DIR / "border_routers.json"
-    routers_text = json.dumps(targets, indent=2) + "\n"
-    if not routers_path.exists() or routers_path.read_text() != routers_text:
-        routers_path.write_text(routers_text)
+    return {
+        TARGET_DIR / "clients.json": json.dumps(client_targets, indent=2) + "\n",
+        TARGET_DIR / "border_routers.json": json.dumps(targets, indent=2) + "\n",
+    }
 
 
 def setup(
@@ -797,15 +824,7 @@ def setup(
     # This is safe after `scion.sh stop`: Compose recreates the removed bridges before tc runs.
     run([str(ROOT / "scion.sh"), "start"], cwd=ROOT)
     wait_for_reachability(server, clients[0])
-    try:
-        previous = json.loads(DOCKER_QDISC_STATE.read_text())
-    except (OSError, json.JSONDecodeError):
-        previous = {}
-    if not isinstance(previous, dict):
-        previous = {}
-    previous_peers = previous.get("peers", {}) if previous.get("tc") == tc else {}
-    if not isinstance(previous_peers, dict):
-        previous_peers = {}
+    previous_peers = recorded_qdisc_peers(tc)
     applied_peers: dict[str, list[str]] = {}
     for router_service in peers:
         if previous_peers.get(router_service) == peers[router_service]:
@@ -833,6 +852,112 @@ def setup(
         run(dc_args("exec", "-T", service, "test", "-x", "/share/bin/hummbwtester"), cwd=ROOT)
     write_targets(compose, clients)
     return 0
+
+
+def recorded_qdisc_peers(tc: dict[str, str]) -> dict[str, Any]:
+    """The peers per router whose qdiscs an earlier setup applied with the same tc settings."""
+    try:
+        previous = json.loads(DOCKER_QDISC_STATE.read_text())
+    except (OSError, json.JSONDecodeError):
+        previous = {}
+    if not isinstance(previous, dict):
+        previous = {}
+    previous_peers = previous.get("peers", {}) if previous.get("tc") == tc else {}
+    return previous_peers if isinstance(previous_peers, dict) else {}
+
+
+def _relative(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def describe_setup(
+    config_path: Path,
+    config: tuple[Endpoint, list[Client], dict[str, int], dict[str, str]] | None = None,
+) -> list[str]:
+    """Describe the steps setup would perform, using only reads; nothing is changed.
+
+    It performs setup's validation, then compares each file setup would write with what it
+    would contain. Container state is only read with sha256sum in running tester containers.
+    """
+    server, clients, router, tc = config if config is not None else load_config(config_path)
+    compose = compose_data()
+    validate_endpoints(compose, server, clients)
+    _ = [endpoint_sciond(endpoint, sciond_map()) for endpoint in [server, *(c.endpoint for c in clients)]]
+    peers = inter_as_router_peers(compose)
+    require_built_binary()
+    steps: list[str] = []
+
+    values = ", ".join(f"{key} = {value}" for key, value in router.items())
+    stale = [path for path in sorted(br_config_paths().values())
+             if patched_toml_section(path.read_text(), "router", router, {"batch_size"})
+             != path.read_text()]
+    if stale:
+        steps.append(
+            f"would edit {len(stale)} border-router configs ({', '.join(map(_relative, stale))}): "
+            f"set their [router] section to {values} and drop the deprecated batch_size",
+        )
+    else:
+        steps.append(f"keep the border-router configs: their [router] section already has {values}")
+
+    helpers = ", ".join(tc_helper_name(router_service) for router_service in peers)
+    rendered = compose_with_tc_helpers(copy.deepcopy(compose), peers, tc)
+    if not COMPOSE.exists() or COMPOSE.read_text() != rendered:
+        steps.append(
+            f"would rewrite {_relative(COMPOSE)} to define one privileged, one-shot tc helper "
+            f"service per inter-AS border router ({helpers}) in the hummbwtester-setup profile, "
+            f"each applying a TBF with rate {tc['rate']}, burst {tc['burst']}, limit {tc['limit']}",
+        )
+    else:
+        steps.append(f"keep {_relative(COMPOSE)}: its tc helper services ({helpers}) are current")
+
+    steps.append("would run ./scion.sh start, which starts the generated topology")
+    steps.append(
+        f"would wait up to 60 s until the tester of {clients[0].client_id} can SCION-ping "
+        f"the server {server.isd_as},{server.host}",
+    )
+
+    recorded = recorded_qdisc_peers(tc)
+    for router_service, addresses in peers.items():
+        if recorded.get(router_service) == addresses:
+            steps.append(
+                f"would check the TBF qdiscs of {router_service} towards {', '.join(addresses)} "
+                f"with {tc_helper_name(router_service)} and reinstall them if missing",
+            )
+        else:
+            steps.append(
+                f"would install TBF qdiscs on {router_service} towards {', '.join(addresses)} "
+                f"with {tc_helper_name(router_service)}",
+            )
+    steps.append(f"would record the applied qdiscs in {_relative(DOCKER_QDISC_STATE)}")
+
+    with BIN.open("rb") as binary:
+        digest = hashlib.file_digest(binary, "sha256").hexdigest()
+    target = "/share/bin/hummbwtester"
+    for service in sorted({tester_service(server.isd_as),
+                           *(tester_service(c.endpoint.isd_as) for c in clients)}):
+        # The tester image has no shell; sha256sum's own error tells a missing binary apart
+        # from a container that cannot be reached.
+        current = run(dc_args("exec", "-T", service, "sha256sum", target),
+                      cwd=ROOT, check=False, capture_output=True)
+        if current.returncode == 0 and current.stdout.split()[:1] == [digest]:
+            steps.append(f"keep {target} in {service}: it matches bin/hummbwtester")
+        elif current.returncode == 0:
+            steps.append(f"would copy bin/hummbwtester to {target} in {service}: it differs")
+        elif "No such file or directory" in current.stderr:
+            steps.append(f"would copy bin/hummbwtester to {target} in {service}: it is missing")
+        else:
+            steps.append(f"would copy bin/hummbwtester to {target} in {service} unless it "
+                         "already matches; it cannot be read now (is the container running?)")
+
+    for path, text in target_files(clients).items():
+        if path.exists() and path.read_text() == text:
+            steps.append(f"keep {_relative(path)}: its Prometheus targets are current")
+        else:
+            steps.append(f"would write the Prometheus targets {_relative(path)}")
+    return steps
 
 
 def verify_binaries(server: Endpoint, clients: list[Client]) -> None:

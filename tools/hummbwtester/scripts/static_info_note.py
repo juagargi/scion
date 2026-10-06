@@ -151,6 +151,9 @@ def main() -> int:
     remove = subparsers.add_parser("remove")
     remove.add_argument("--file", required=True, type=Path)
     remove.add_argument("--name", required=True)
+    for subparser in (ensure, remove):
+        subparser.add_argument("--dry-run", action="store_true",
+                               help="report whether the file would change without writing it")
     args = parser.parse_args()
     try:
         config = load(args.file)
@@ -159,7 +162,7 @@ def main() -> int:
         else:
             # remove
             changed = remove_entry(config, args.name)
-        if changed:
+        if changed and not args.dry_run:
             store(args.file, config)
     except (Error, OSError) as err:
         print(f"error: {err}", file=sys.stderr)
