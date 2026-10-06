@@ -141,10 +141,10 @@ class InventoryTest(unittest.TestCase):
         with mock.patch.object(ssh.subprocess, "run") as run:
             ssh.ssh_command(host, script)
         argv = run.call_args.args[0]
-        self.assertEqual(argv[:3], ["ssh", "--", "sciera-rnp"])
-        self.assertEqual(shlex.split(argv[3]), ["sh", "-c", script])
+        self.assertEqual(argv[:5], ["ssh", "-o", "LogLevel=ERROR", "--", "sciera-rnp"])
+        self.assertEqual(shlex.split(argv[5]), ["sh", "-c", script])
         # SSH hands the remote command line to a shell; emulate that parsing locally.
-        result = subprocess.run(["sh", "-c", argv[3]], check=True,
+        result = subprocess.run(["sh", "-c", argv[5]], check=True,
                                 capture_output=True, text=True)
         self.assertEqual(result.stdout, "quoted value")
 

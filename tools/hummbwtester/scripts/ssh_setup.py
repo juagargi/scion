@@ -628,13 +628,13 @@ ControlMaster = dict[str, str]
 
 
 def _control_command(socket: str, operation: str, alias: str) -> list[str]:
-    return ["ssh", "-S", socket, "-O", operation, "--", alias]
+    return ["ssh", *remote.SSH_OPTIONS, "-S", socket, "-O", operation, "--", alias]
 
 
 def _start_ssh_control_master(arguments: list[str], socket: Path, alias: str) -> ControlMaster:
     """Start an ssh-control-master carrying the given -L or -R forward."""
     command = [
-        "ssh", "-M", "-S", str(socket), "-f", "-N",
+        "ssh", *remote.SSH_OPTIONS, "-M", "-S", str(socket), "-f", "-N",
         # Fail instead of running without the forward, e.g. when its port is taken.
         "-o", "ExitOnForwardFailure=yes",
         "-o", "ServerAliveInterval=15",
