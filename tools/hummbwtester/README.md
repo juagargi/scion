@@ -54,6 +54,9 @@ Each run uses one self-contained JSON file.
 - `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
 - `hummingbird`: required global reservation source (`keys` or `marketplace`).
   Marketplace mode also requires a `marketplace` object with `url`, `username`, and `password_env`; `sub_account` is optional. The password is read from the named environment variable, never from JSON.
+  In SSH deployments, the optional `host` names a `deployment.hosts` entry from which `url` is reachable,
+  e.g. `"host": "ufms"` with `"url": "https://127.0.0.1:8888"` for a marketplace bound to the loopback of that host.
+  Without `host`, `url` must be reachable from the controller. Docker deployments reject `host`.
   The Docker runner discovers the reachable registration URL from `gen/`; `url` is used by SSH runs.
 
 Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
@@ -215,6 +218,8 @@ python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwt
 SSH setup verifies and uploads the built binary,
 obtains the configured user's JWT from `hummingbird.marketplace.url`,
 and uploads it to owner-only setup directories.
+When `hummingbird.marketplace.host` is set, setup opens a temporary SSH forward from a free
+controller loopback port to that url as seen from the host, logs in through it, and closes it.
 The SSH launch shell reads that file only immediately before `exec`;
 it is never placed in command arguments or the configuration.
 Set `deployment.metrics.prometheus` to the declared host on which Prometheus runs.
