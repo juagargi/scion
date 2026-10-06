@@ -23,6 +23,7 @@ class InventoryTest(unittest.TestCase):
                 "marketplace": {
                     "host": marketplace_host, "url": "https://127.0.0.1:8888", "username": "alice",
                     "password_env": "MARKETPLACE_PASSWORD",
+                    "scion_address": "[1-ff00:0:111,127.0.0.1]:31888",
                 },
             },
             "server": {"node": "a", "isd_as": "1-ff00:0:112", "host": "fd00::1", "port": 12345,

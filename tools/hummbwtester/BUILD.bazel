@@ -80,6 +80,7 @@ py_library(
     deps = [
         ":selective_qdisc",
         ":static_info_note",
+        "//tools/topology:py_default_library",
         requirement("pyyaml"),
     ],
 )

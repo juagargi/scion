@@ -430,8 +430,13 @@ def interfacePairs(ifids):
     return pairs
 
 
-def defaultEntries(gen_dir, now=None):
-    """Builds the default users, ASes, assets and delegations for a topology."""
+def defaultEntries(gen_dir, now=None, secret_values=None):
+    """Builds the default users, ASes, assets and delegations for a topology.
+
+    secret_values optionally maps an IA to its Hummingbird secret value; an AS without one
+    gets the value derived from the master key in its gen directory. This lets the SSH
+    experiment setup derive the values on the hosts, so that master keys are never copied.
+    """
     if now is None:
         now = datetime.now(timezone.utc)
     startsAt = now.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -480,7 +485,8 @@ def defaultEntries(gen_dir, now=None):
                 "res_id_limit_high": DEFAULT_DELEGATION_RES_ID_LIMIT_HIGH,
                 "expiration": stopsAt,
                 "paid_until": stopsAt,
-                "key": secretValue(as_dir).hex(),
+                "key": (secret_values[ia] if secret_values and ia in secret_values
+                        else secretValue(as_dir)).hex(),
                 "encodings": encodingPoints(),
             }
             for ia, _, as_dir in ases

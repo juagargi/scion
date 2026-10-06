@@ -61,9 +61,13 @@ Each run uses one self-contained JSON file.
   reachable, e.g. `"host": "ufms"` with `"url": "https://127.0.0.1:8888"` for a marketplace bound to
   the loopback of that host. Every SSH command (`setup`, `run`, `teardown`) rejects a configuration
   without it. Docker deployments reject `host`.
-  In SSH deployments, the optional `scion_address` is the SCION API address of the marketplace,
-  e.g. `"[71-2:0:5c,127.0.0.1]:31888"`; see the static info Note below. Docker deployments reject it,
-  because their generated topology already advertises its marketplace.
+  In SSH deployments, `scion_address` is required too: the SCION API address of the marketplace,
+  e.g. `"[71-2:0:5c,127.0.0.1]:31888"`, whose ISD-AS must be that of `host`. SSH setup deploys the
+  marketplace bound to the `url` (TCP, TLS) and `scion_address` (UDP, SCION) endpoints, so both must
+  use a loopback address and `url` must be `https://<loopback>:<port>`: the web app and API are
+  then reachable only on the marketplace host, and the SCION API only over SCION through that
+  host's border routers. Docker deployments reject `scion_address`, because their generated
+  topology already advertises its marketplace.
   The Docker runner discovers the reachable registration URL from `gen/`; `url` is used by SSH runs.
 
 Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
@@ -220,8 +224,9 @@ Place every endpoint with `node` on a declared host and give it the IA of that h
 declare only the exact egress flows that may be shaped.
 SSH aliases may use `ProxyJump`; the runner uses them unchanged.
 
-Set the password named by `hummingbird.marketplace.password_env`, build the artifact,
-set up the persistent SSH resources, and then run the experiment:
+Set the password named by `hummingbird.marketplace.password_env` (the marketplace that setup
+deploys has the Docker topology's users `alice` and `bob`, both with password `1234`), build the
+artifacts, set up the persistent SSH resources, and then run the experiment:
 
 ```bash
 make build-dev
@@ -239,9 +244,10 @@ A dry run performs every check and read of the steps below and prints what a rea
 change (`dry-run: would ...`), including the manual steps it would require. It writes nothing on the
 hosts and starts, stops, or restarts no service, container, qdisc, or relay: the qdisc and Note
 helpers are piped in rather than copied and run read-only (`diagnose`/`status` and `--dry-run`),
-and the local Prometheus targets are not written. It does log in to the marketplace through the
-temporary forward of step 2, because issuing a JWT only reads the marketplace, and then discards
-the token. A failing step does not stop a dry run: it is reported and the next step still runs,
+and the local Prometheus targets are not written. It still reads the hosts' topologies and derived
+secret values for the marketplace database, and logs in to the marketplace through the temporary
+forward of step 3, because issuing a JWT only reads the marketplace, and then discards the token.
+A failing step does not stop a dry run: it is reported and the next step still runs,
 and the dry run ends with a summary and exit status 1. Its last line always says that it was only
 a dry run: nothing was modified, and the listed manual steps need not be run. `--dry-run` is
 accepted only with `setup`.
@@ -259,16 +265,38 @@ what differs. Setup performs these steps in order:
    `readiness_command`. It then copies `bin/hummbwtester` to `<run_dir>/setup/hummbwtester` unless
    the remote SHA-256 already matches. Copies are atomic: `scp` to a `.tmp` file, verify its digest,
    `chmod`, and `mv`.
-2. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
+2. **Marketplace service.** On `hummingbird.marketplace.host` it checks that `scion_address`
+   names that host's AS and a port in its `dispatched_ports` range, then installs, each only when
+   it differs:
+   - `bin/marketplace` (from `make build-dev`) as `/usr/local/bin/hummingbird-marketplace`, with
+     `sudo install`;
+   - the `hummingbird-marketplace.service` unit in `/etc/systemd/system/`, with `sudo install` and
+     `systemctl daemon-reload`. It runs the marketplace as the SSH user (e.g. `sciera`), never
+     restarts it by itself, and has no `[Install]` section, so it cannot be enabled;
+   - `/etc/scion/marketplace/` with `marketplace.toml` (the Docker topology's template, bound to
+     `url` and `scion_address`) and links to `/etc/scion/topology.json` and `/etc/scion/certs`.
+     The marketplace keeps its TLS certificate and JWT signing keys there;
+   - `/var/lib/scion/marketplace/` for its database.
+
+   The service keeps running untouched when nothing changed and both APIs answer: HTTPS at `url`,
+   and a UDP socket bound to the `scion_address` port. Otherwise (something replaced, not running,
+   or unreachable) setup stops it if it runs, rebuilds the database, starts it, and waits up to
+   30 s until both APIs answer. The database gets the Docker topology's default entries for the
+   server, client, and marketplace ASes: users `alice` and `bob` with password `1234`, assets for
+   every interface pair, and redemption delegations. Each delegation holds the AS's Hummingbird
+   secret value, which is derived on its host from `/etc/scion/keys/master0.key` with `sudo`;
+   the master key itself never leaves the host. The database is rebuilt only for such a
+   (re)start, so earlier purchases are lost then.
+3. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
    loopback port to `hummingbird.marketplace.url` as seen from `hummingbird.marketplace.host`,
    logs in through it with `marketplace/tools/get_jwt.py`, and closes it. The JWT is copied with
    mode `600` to `<run_dir>/setup/marketplace.jwt` on the Hummingbird client hosts, and the
    controller's copy is deleted. The SSH launch shell reads the JWT file only immediately before
    `exec`; it is never placed in command arguments or the configuration.
-3. **Selective qdiscs.** On each shaping host it copies `scripts/selective_qdisc.py` to
+4. **Selective qdiscs.** On each shaping host it copies `scripts/selective_qdisc.py` to
    `<run_dir>/setup/` and runs it with `sudo -n`, unless the recorded state in
    `/run/hummbwtester-qdisc/` and the live root qdisc already match (see below).
-4. **Static info Note.** Clients find the marketplace of a path in the static info Note that every
+5. **Static info Note.** Clients find the marketplace of a path in the static info Note that every
    on-path AS puts into its beacons. When `hummingbird.marketplace.scion_address` is set, setup
    pipes `scripts/static_info_note.py` to `sudo -n python3 -` on the server, client, and
    marketplace hosts. The helper inserts or updates one entry named `hummbwtester` at the front of
@@ -278,14 +306,14 @@ what differs. Setup performs these steps in order:
    under another name is replaced, because clients would treat it as a different marketplace.
    The file keeps its owner and mode and is created if missing. Each host's file is `static_info`
    (default `/etc/scion/staticInfoConfig.json`).
-5. **Prometheus.** It writes the file-SD targets to `gen/hummbwtester-prometheus/` locally and, with
+6. **Prometheus.** It writes the file-SD targets to `gen/hummbwtester-prometheus/` locally and, with
    a Prometheus configuration and a Docker Compose file, to `/tmp/hummbwtester/prometheus/` on
    `deployment.metrics.prometheus`, where it runs the `hummbwtester-prometheus` container with host
    networking on port `8090`. It first checks that `docker`, `docker compose`, and access to the
    Docker daemon (`docker info`) work for the SSH user. If the files or the container's
    configuration hash differ, setup removes the old container, replaces the files, and starts it
    again; otherwise it leaves both alone.
-6. **Metric relays.** Each client metrics port and each `deployment.metrics.routers` address gets
+7. **Metric relays.** Each client metrics port and each `deployment.metrics.routers` address gets
    relay port `local_port_base + i`, carried by two ssh-control-masters: one to the source host with
    `-L 127.0.0.1:<port>:<source address>`, and one to the Prometheus host with
    `-R 127.0.0.1:<port>:127.0.0.1:<port>`. Prometheus scrapes its own `127.0.0.1:<port>`, and the
@@ -293,7 +321,7 @@ what differs. Setup performs these steps in order:
    (a hash of the relay list and every ssh-control-master) live in `/tmp/hummbwtester/ssh-tunnels/`
    on the controller. If the hash matches and every ssh-control-master answers `-O check`, the
    relays are kept; otherwise all of them are replaced.
-7. **Manual steps.** Setup never restarts host services. It ends by printing the steps that must be
+8. **Manual steps.** Setup never restarts host services other than the marketplace. It ends by printing the steps that must be
    done manually, or that none are required; if it fails after changing a file, it still prints the
    steps that change needs. The control service reads its static info file only at startup, so
    every host whose Note changed gets a step to restart its control service, for example:
@@ -309,8 +337,8 @@ what differs. Setup performs these steps in order:
 
 An ssh-control-master is a background `ssh -M -S <socket> -f -N` connection that only carries one
 port forward. Its control socket lets setup check (`ssh -S <socket> -O check -- <alias>`) and close
-(`-O exit`) the connection without tracking process IDs. The marketplace forward of step 2 is a
-temporary one whose socket lives in a private temporary directory; the relays of step 6 persist
+(`-O exit`) the connection without tracking process IDs. The marketplace forward of step 3 is a
+temporary one whose socket lives in a private temporary directory; the relays of step 7 persist
 until teardown.
 
 ### Running and tearing down
@@ -325,9 +353,12 @@ When finished, remove the persistent setup with:
 python3 tools/hummbwtester/experiment.py teardown --config tools/hummbwtester/hummbwtester-sciera.json
 ```
 
-Teardown removes configured selective qdiscs, closes the ssh-control-masters recorded in the
+Teardown stops `hummingbird-marketplace.service` and waits until neither marketplace API answers,
+removes configured selective qdiscs, closes the ssh-control-masters recorded in the
 manifest, removes the Prometheus container and its files under `/tmp`, and deletes
-`<run_dir>/setup/` (binary, JWT, and helpers). It continues past failures and reports them at the end.
+`<run_dir>/setup/` (binary, JWT, and helpers). The marketplace's binary, unit, configuration, and
+database stay, so `ssh -t <alias> sudo systemctl start hummingbird-marketplace.service` restarts it
+with its data. It continues past failures and reports them at the end.
 Run it from the same controller as setup, because the control sockets and the manifest are kept
 under `/tmp/hummbwtester/ssh-tunnels/` on that controller.
 It does not touch the static info files: the `hummbwtester` Note entry that setup advertised stays,

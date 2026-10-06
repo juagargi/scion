@@ -11,32 +11,41 @@ setup performs, in this order:
 1. Binary: on the server, client and shaping hosts, preflight checks (tools, run_dir, SCION
    daemon, readiness_command), then copy bin/hummbwtester to <run_dir>/setup/ unless its SHA-256
    already matches. Copies are atomic: scp to a .tmp file, verify its digest, chmod, mv.
-2. Marketplace JWT: open a temporary ssh-control-master that forwards a free controller loopback
+2. Marketplace service: on hummingbird.marketplace.host, install bin/marketplace as
+   /usr/local/bin/hummingbird-marketplace and the hummingbird-marketplace.service unit with sudo,
+   and its config (/etc/scion/marketplace/) and database directory (/var/lib/scion/marketplace/)
+   for the SSH user, which the service runs as. Each is replaced only when it differs. The
+   service is never enabled and does not restart by itself. It is (re)started, with a database
+   rebuilt from the Docker topology's default entries, only when something was replaced, it is
+   not running, or its APIs are unreachable; setup then waits until both APIs answer.
+3. Marketplace JWT: open a temporary ssh-control-master that forwards a free controller loopback
    port to hummingbird.marketplace.url as seen from hummingbird.marketplace.host, log in through
    it with marketplace/tools/get_jwt.py, close it, and copy the JWT (mode 600) to the hosts of the
    Hummingbird clients. The controller's copy is deleted.
-3. Selective qdiscs: on each shaping host, copy selective_qdisc.py to <run_dir>/setup/ and run it
+4. Selective qdiscs: on each shaping host, copy selective_qdisc.py to <run_dir>/setup/ and run it
    with sudo -n, unless its recorded state and the live root qdisc already match.
-4. Static info Note: on the server, client and marketplace hosts, pipe static_info_note.py to
+5. Static info Note: on the server, client and marketplace hosts, pipe static_info_note.py to
    `sudo -n python3 -` to insert or update the hummbwtester entry of the Note's hummingbird list.
-   Services are never restarted; a changed file becomes a manual step.
-5. Prometheus: write the file-SD targets locally and to /tmp/hummbwtester/prometheus/ on the
+   Control services are never restarted; a changed file becomes a manual step.
+6. Prometheus: write the file-SD targets locally and to /tmp/hummbwtester/prometheus/ on the
    Prometheus host, and (re)create the hummbwtester-prometheus container when files or its
    configuration hash differ.
-6. Metric relays: two ssh-control-masters per metric source, an -L to the source host and an -R
+7. Metric relays: two ssh-control-masters per metric source, an -L to the source host and an -R
    to the Prometheus host, so that Prometheus scrapes its own loopback. Their sockets and a
    manifest live in /tmp/hummbwtester/ssh-tunnels/ on the controller.
-7. Print the manual steps, e.g. restarting a control service whose static info file changed.
+8. Print the manual steps, e.g. restarting a control service whose static info file changed.
 
-teardown removes the qdiscs, closes the ssh-control-masters of the manifest, removes the
-Prometheus container and files, and deletes <run_dir>/setup/ (binary, JWT, helpers). It keeps the
-static info Note.
+teardown stops the marketplace service and waits until it is unreachable, removes the qdiscs,
+closes the ssh-control-masters of the manifest, removes the Prometheus container and files, and
+deletes <run_dir>/setup/ (binary, JWT, helpers). It keeps the static info Note and the
+marketplace's binary, unit, config, and database.
 
 With dry_run (`experiment.py setup --dry-run`), every step runs its checks and reads and prints
 what it would change ("dry-run: would ..."), but nothing is written on the hosts, no service or
 container is started, stopped, or restarted, and no relay is started or stopped. The qdisc and
 Note helpers are piped in instead of copied, and run read-only (diagnose/status, --dry-run). The
-marketplace login of step 2 still happens, because issuing a JWT only reads the marketplace.
+marketplace step still reads the hosts' topologies and derived secret values, and the login of
+step 3 still happens, because issuing a JWT only reads the marketplace.
 
 An ssh-control-master is an `ssh -M -S <socket> -f -N` connection that only carries one port
 forward; its control socket lets setup check (`ssh -S <socket> -O check`) and close (`-O exit`)
@@ -56,6 +65,7 @@ from pathlib import Path
 import shlex
 import socket
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import urllib.parse
@@ -71,6 +81,20 @@ except ImportError:
 
 
 SELECTIVE_HELPER = workload.ROOT / "tools" / "hummbwtester" / "scripts" / "selective_qdisc.py"
+MARKETPLACE_BIN = workload.ROOT / "bin" / "marketplace"
+MARKETPLACE_SCHEMA = workload.ROOT / "marketplace" / "db" / "schema.sql"
+# The marketplace runs on its host as a manually started, never enabled systemd service.
+MARKETPLACE_SERVICE = "hummingbird-marketplace.service"
+REMOTE_MARKETPLACE_BIN = "/usr/local/bin/hummingbird-marketplace"
+REMOTE_MARKETPLACE_UNIT = f"/etc/systemd/system/{MARKETPLACE_SERVICE}"
+REMOTE_MARKETPLACE_CONFIG_DIR = "/etc/scion/marketplace"
+REMOTE_MARKETPLACE_CONFIG = f"{REMOTE_MARKETPLACE_CONFIG_DIR}/marketplace.toml"
+REMOTE_MARKETPLACE_DB_DIR = "/var/lib/scion/marketplace"
+REMOTE_MARKETPLACE_DB = f"{REMOTE_MARKETPLACE_DB_DIR}/marketplace.db"
+# The SCION configuration of every host: topology.json, certs/, and keys/master0.key.
+SCION_CONFIG_DIR = "/etc/scion"
+# How long setup waits for a started marketplace, and teardown for a stopped one.
+MARKETPLACE_WAIT_SECONDS = 30
 STATIC_INFO_HELPER = workload.ROOT / "tools" / "hummbwtester" / "scripts" / "static_info_note.py"
 # The Note entry name that marks the marketplace advertisement owned by these experiments.
 NOTE_NAME = "hummbwtester"
@@ -211,6 +235,321 @@ def deploy_jwt(
             print(f"{'dry-run: would upload' if dry_run else 'uploaded'} marketplace JWT to {name}")
         else:
             print(f"marketplace JWT on {name} is current")
+
+
+def _topology_marketplace():
+    """The marketplace module of the topology generator, which also configures Docker mode."""
+    tools = str(workload.ROOT / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from topology import marketplace as topology_marketplace
+    return topology_marketplace
+
+
+def _url_endpoint(url: str) -> tuple[str, int]:
+    parts = urllib.parse.urlsplit(url)
+    return parts.hostname or "", parts.port or (443 if parts.scheme == "https" else 80)
+
+
+def _scion_endpoint(scion_address: str) -> tuple[str, str, int]:
+    match = workload.SCION_ADDRESS_RE.fullmatch(scion_address)
+    assert match is not None  # load_config validated it.
+    return match.group("ia"), match.group("host"), int(match.group("port"))
+
+
+def _host_port(host: str, port: int) -> str:
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+
+
+def marketplace_toml(marketplace: workload.MarketplaceConfig) -> str:
+    """The marketplace config, rendered from the same template as the Docker topology's."""
+    assert marketplace.scion_address is not None  # load_config requires it for SSH deployments.
+    _, scion_host, scion_port = _scion_endpoint(marketplace.scion_address)
+    return _topology_marketplace().MARKETPLACE_TOML.format(
+        config_dir=REMOTE_MARKETPLACE_CONFIG_DIR,
+        api_addr=_host_port(*_url_endpoint(marketplace.url)),
+        scion_api_addr=_host_port(scion_host, scion_port),
+        db_path=REMOTE_MARKETPLACE_DB,
+    )
+
+
+def marketplace_unit(user: str, group: str) -> str:
+    """The systemd unit; without an [Install] section it cannot be enabled, only started."""
+    return f"""[Unit]
+Description=Hummingbird marketplace for hummbwtester experiments
+After=network-online.target
+
+[Service]
+Type=simple
+User={user}
+Group={group}
+Environment=TZ=UTC
+ExecStart={REMOTE_MARKETPLACE_BIN} --config {REMOTE_MARKETPLACE_CONFIG}
+Restart=no
+"""
+
+
+# Run on the marketplace host. The TLS web app counts as reachable once it answers any HTTP
+# status; its certificate is self-signed, so it is not verified.
+_HTTPS_PROBE = """import ssl, sys, urllib.error, urllib.request
+context = ssl.create_default_context()
+context.check_hostname = False
+context.verify_mode = ssl.CERT_NONE
+try:
+    urllib.request.urlopen(sys.argv[1], context=context, timeout=3)
+except urllib.error.HTTPError:
+    pass
+except Exception:
+    sys.exit(1)
+"""
+
+
+def _marketplace_probe(marketplace: workload.MarketplaceConfig) -> str:
+    """A shell test that succeeds while both marketplace APIs listen on the marketplace host."""
+    assert marketplace.scion_address is not None
+    _, _, scion_port = _scion_endpoint(marketplace.scion_address)
+    login = marketplace.url.rstrip("/") + "/login"
+    return (f"python3 -c {shlex.quote(_HTTPS_PROBE)} {shlex.quote(login)} && "
+            f"ss -Hlun {shlex.quote(f'sport = :{scion_port}')} | grep -q .")
+
+
+def _wait_for(host: remote.SSHHost, probe: str, reachable: bool, seconds: int) -> bool:
+    """Poll probe on host once per second until it succeeds (or fails, if not reachable)."""
+    condition = probe if reachable else f"! {{ {probe}; }}"
+    script = (f"i=0; while [ $i -lt {seconds} ]; do if {condition}; then exit 0; fi; "
+              "i=$((i + 1)); sleep 1; done; exit 1")
+    return _remote_test(host, script)
+
+
+def _service_active(host: remote.SSHHost) -> bool:
+    return _remote_test(host, f"systemctl is-active --quiet {MARKETPLACE_SERVICE}")
+
+
+def _systemctl(host: remote.SSHHost, verb: str) -> None:
+    remote.ssh_command(host, shlex.join(["sudo", "-n", "systemctl", verb, MARKETPLACE_SERVICE]))
+
+
+def install_root_file(
+    host: remote.SSHHost, local: Path, target: str, mode: str, dry_run: bool = False,
+) -> bool:
+    """Install a root-owned file with sudo when its content differs; return whether it changed.
+
+    Like copy_if_changed, it compares SHA-256 digests and verifies the copy before installing it.
+    """
+    digest = remote.sha256(local)
+    if _remote_test(host, remote.digest_matches(target, digest)):
+        return False
+    if dry_run:
+        return True
+    staging = remote.ssh_command(host, "mktemp -d", capture_output=True).stdout.strip()
+    temporary = f"{staging}/{Path(target).name}"
+    try:
+        remote.scp_to(host, local, temporary)
+        remote.ssh_command(host, " && ".join([
+            remote.digest_matches(temporary, digest),
+            shlex.join(["sudo", "-n", "install", "-o", "root", "-g", "root", "-m", mode,
+                        temporary, target]),
+        ]))
+    finally:
+        remote.ssh_command(host, f"rm -rf {shlex.quote(staging)}", check=False)
+    return True
+
+
+def _ensure_directory(
+    host: remote.SSHHost, path: str, owner: str, mode: str, dry_run: bool,
+) -> bool:
+    """Create path owned by owner (user:group) with mode, using sudo, unless it already is."""
+    if _remote_test(host, f"test \"$(stat -c %U:%G:%a {shlex.quote(path)})\" = "
+                          f"{shlex.quote(f'{owner}:{mode}')}"):
+        return False
+    if not dry_run:
+        user, group = owner.split(":")
+        remote.ssh_command(host, shlex.join(["sudo", "-n", "install", "-d", "-o", user, "-g", group,
+                                             "-m", mode, path]))
+    return True
+
+
+def _ensure_symlink(host: remote.SSHHost, link: str, target: str, dry_run: bool) -> bool:
+    if _remote_test(host, f"test \"$(readlink {shlex.quote(link)})\" = {shlex.quote(target)}"):
+        return False
+    if not dry_run:
+        remote.ssh_command(host, f"ln -sfn {shlex.quote(target)} {shlex.quote(link)}")
+    return True
+
+
+def _read_topology(host: remote.SSHHost) -> dict[str, object]:
+    result = remote.ssh_command(host, f"cat {SCION_CONFIG_DIR}/topology.json", capture_output=True)
+    try:
+        topology = json.loads(result.stdout)
+    except json.JSONDecodeError as err:
+        raise remote.SSHError(f"invalid {SCION_CONFIG_DIR}/topology.json on {host.name}") from err
+    if not isinstance(topology, dict) or not isinstance(topology.get("isd_as"), str):
+        raise remote.SSHError(f"{SCION_CONFIG_DIR}/topology.json on {host.name} has no isd_as")
+    return topology
+
+
+# Run as root on a host: print the Hummingbird secret value derived from the AS master key, the
+# same derivation as the routers and the Docker topology, so that the key itself stays there.
+_SECRET_VALUE = """import base64, hashlib, sys
+master = base64.b64decode(open(sys.argv[1]).read().strip(), validate=True)
+print(hashlib.pbkdf2_hmac("sha256", master, b"Derive hbird sv", 1000, 16).hex())
+"""
+
+
+def _secret_value(host: remote.SSHHost) -> bytes:
+    result = remote.ssh_command(
+        host, shlex.join(["sudo", "-n", "python3", "-c", _SECRET_VALUE,
+                          f"{SCION_CONFIG_DIR}/keys/master0.key"]),
+        check=False, capture_output=True,
+    )
+    try:
+        return bytes.fromhex(result.stdout.strip()) if result.returncode == 0 else b""
+    except ValueError:
+        return b""
+
+
+def marketplace_entries(inventory: remote.Inventory) -> dict[str, object]:
+    """The Docker topology's default marketplace entries for the ASes advertising the marketplace.
+
+    Users, accounts, assets for every interface pair, and redemption delegations are exactly the
+    ones a generated Docker topology starts with. Only topology.json and the derived secret value
+    of every AS are read from the hosts.
+    """
+    topology_marketplace = _topology_marketplace()
+    secret_values: dict[str, bytes] = {}
+    with tempfile.TemporaryDirectory(prefix="hummbwtester-market-gen-") as directory:
+        for name in note_hosts(inventory):
+            host = inventory.hosts[name]
+            topology = _read_topology(host)
+            ia = str(topology["isd_as"])
+            secret = _secret_value(host)
+            if len(secret) != topology_marketplace.SECRET_VALUE_LENGTH:
+                raise remote.SSHError(
+                    f"cannot derive the Hummingbird secret value from "
+                    f"{SCION_CONFIG_DIR}/keys/master0.key on {name}",
+                )
+            secret_values[ia] = secret
+            as_dir = Path(directory) / f"AS{name}"
+            as_dir.mkdir()
+            (as_dir / "topology.json").write_text(json.dumps(topology))
+        return topology_marketplace.defaultEntries(directory, secret_values=secret_values)
+
+
+def _reconfigure_marketplace_db(host: remote.SSHHost, entries: dict[str, object]) -> None:
+    """Replace the database of the stopped marketplace with a freshly built one."""
+    with tempfile.TemporaryDirectory(prefix="hummbwtester-market-db-") as directory:
+        database = Path(directory) / "marketplace.db"
+        _topology_marketplace().populateDB(str(database), str(MARKETPLACE_SCHEMA), entries)
+        # Journal files of the old database would be applied to the new one.
+        remote.ssh_command(host, "rm -f " + " ".join(
+            shlex.quote(REMOTE_MARKETPLACE_DB + suffix)
+            for suffix in ("", "-wal", "-shm", "-journal")
+        ))
+        copy_if_changed(host, database, REMOTE_MARKETPLACE_DB, "600")
+
+
+def _check_marketplace_host(host: remote.SSHHost, marketplace: workload.MarketplaceConfig) -> None:
+    """Check the tools the marketplace step uses, and that scion_address fits the host's AS."""
+    remote.ssh_command(host, " && ".join(
+        f"command -v {tool} >/dev/null" for tool in ("python3", "systemctl", "ss", "sha256sum")
+    ))
+    assert marketplace.scion_address is not None
+    ia, _, port = _scion_endpoint(marketplace.scion_address)
+    topology = _read_topology(host)
+    if topology["isd_as"] != ia:
+        raise workload.ConfigError(
+            f"hummingbird.marketplace.scion_address names {ia}, but {host.name} is in "
+            f"{topology['isd_as']}",
+        )
+    topology_marketplace = _topology_marketplace()
+    with tempfile.TemporaryDirectory() as directory:
+        (Path(directory) / "topology.json").write_text(json.dumps(topology))
+        try:
+            topology_marketplace.checkDispatchedPorts(directory, port)
+        except topology_marketplace.MarketplaceError as err:
+            raise workload.ConfigError(f"{host.name}: {err}") from err
+
+
+def ensure_marketplace(inventory: remote.Inventory, dry_run: bool = False) -> None:
+    """Install, configure, and run the marketplace on its host until it is reachable.
+
+    The binary, unit, and config are replaced when they differ. The service is (re)started, with
+    a rebuilt database, only when one of them changed, it is not running, or it is unreachable.
+    """
+    if not MARKETPLACE_BIN.is_file():
+        raise RuntimeError(f"{MARKETPLACE_BIN} does not exist; run `make build-dev` first")
+    marketplace = inventory.marketplace
+    host = inventory.hosts[inventory.marketplace_host]
+    _check_marketplace_host(host, marketplace)
+    owner = remote.ssh_command(host, "printf '%s:%s' \"$(id -un)\" \"$(id -gn)\"",
+                               capture_output=True).stdout.strip()
+
+    changed = []
+    if install_root_file(host, MARKETPLACE_BIN, REMOTE_MARKETPLACE_BIN, "755", dry_run):
+        changed.append(f"binary {REMOTE_MARKETPLACE_BIN}")
+    with tempfile.TemporaryDirectory(prefix="hummbwtester-market-") as directory:
+        unit = Path(directory) / MARKETPLACE_SERVICE
+        unit.write_text(marketplace_unit(*owner.split(":")))
+        if install_root_file(host, unit, REMOTE_MARKETPLACE_UNIT, "644", dry_run):
+            changed.append(f"unit {REMOTE_MARKETPLACE_UNIT}")
+            if not dry_run:
+                remote.ssh_command(host, "sudo -n systemctl daemon-reload")
+        # Only the service user needs them; copy_if_changed also keeps its target directory at 700.
+        for path in (REMOTE_MARKETPLACE_CONFIG_DIR, REMOTE_MARKETPLACE_DB_DIR):
+            if _ensure_directory(host, path, owner, "700", dry_run):
+                changed.append(f"directory {path}")
+        config = Path(directory) / "marketplace.toml"
+        config.write_text(marketplace_toml(marketplace))
+        if copy_if_changed(host, config, REMOTE_MARKETPLACE_CONFIG, "640", dry_run):
+            changed.append(f"config {REMOTE_MARKETPLACE_CONFIG}")
+    for name in ("topology.json", "certs"):
+        if _ensure_symlink(host, f"{REMOTE_MARKETPLACE_CONFIG_DIR}/{name}",
+                           f"{SCION_CONFIG_DIR}/{name}", dry_run):
+            changed.append(f"link {REMOTE_MARKETPLACE_CONFIG_DIR}/{name}")
+    for item in changed:
+        print(f"{'dry-run: would install' if dry_run else 'installed'} marketplace {item} "
+              f"on {host.name}")
+
+    probe = _marketplace_probe(marketplace)
+    active = _service_active(host)
+    if active and not changed:
+        if _remote_test(host, probe):
+            print(f"marketplace {MARKETPLACE_SERVICE} on {host.name} is running and reachable")
+            return
+        print(f"marketplace {MARKETPLACE_SERVICE} on {host.name} is running but unreachable")
+    # The database is rebuilt only while the service is stopped for a (re)start.
+    entries = marketplace_entries(inventory)
+    if dry_run:
+        print(f"dry-run: would {'restart' if active else 'start'} {MARKETPLACE_SERVICE} on "
+              f"{host.name} with a rebuilt database ({len(entries['assets'])} assets of "
+              f"{len(entries['ases'])} ASes) and wait until it is reachable")
+        return
+    if active:
+        _systemctl(host, "stop")
+    _reconfigure_marketplace_db(host, entries)
+    _systemctl(host, "start")
+    if not _wait_for(host, probe, True, MARKETPLACE_WAIT_SECONDS):
+        raise remote.SSHError(
+            f"{MARKETPLACE_SERVICE} on {host.name} is not reachable after "
+            f"{MARKETPLACE_WAIT_SECONDS} s; see: ssh -t {host.alias} "
+            f"sudo journalctl -u {MARKETPLACE_SERVICE}",
+        )
+    print(f"{'restarted' if active else 'started'} {MARKETPLACE_SERVICE} on {host.name}; "
+          "it is reachable")
+
+
+def stop_marketplace(inventory: remote.Inventory) -> None:
+    """Stop the marketplace service and wait until neither of its APIs listens anymore."""
+    host = inventory.hosts[inventory.marketplace_host]
+    if _service_active(host):
+        _systemctl(host, "stop")
+        print(f"stopped {MARKETPLACE_SERVICE} on {host.name}")
+    if not _wait_for(host, _marketplace_probe(inventory.marketplace), False,
+                     MARKETPLACE_WAIT_SECONDS):
+        raise remote.SSHError(
+            f"the marketplace on {host.name} is still reachable after stopping "
+            f"{MARKETPLACE_SERVICE}",
+        )
 
 
 def note_entry(marketplace: workload.MarketplaceConfig) -> dict[str, str] | None:
@@ -801,12 +1140,13 @@ def setup(
 
     steps = [
         ("1. binary", binary),
-        ("2. marketplace JWT", marketplace_jwt),
-        ("3. selective qdiscs", lambda: ensure_selective_qdiscs(inventory, tc, dry_run)),
-        ("4. static info Note",
+        ("2. marketplace service", lambda: ensure_marketplace(inventory, dry_run)),
+        ("3. marketplace JWT", marketplace_jwt),
+        ("4. selective qdiscs", lambda: ensure_selective_qdiscs(inventory, tc, dry_run)),
+        ("5. static info Note",
          lambda: manual.extend(ensure_marketplace_notes(inventory, dry_run))),
-        ("5. Prometheus", prometheus),
-        ("6. metric relays", lambda: ensure_tunnels(tunnel_specs(inventory, clients), dry_run)),
+        ("6. Prometheus", prometheus),
+        ("7. metric relays", lambda: ensure_tunnels(tunnel_specs(inventory, clients), dry_run)),
     ]
     failures: list[str] = []
     completed = False
@@ -826,7 +1166,7 @@ def setup(
             local_jwt.unlink(missing_ok=True)
         # A later failure must not hide the steps that files already changed on the hosts need.
         if completed or manual:
-            # 7. Manual steps.
+            # 8. Manual steps.
             print_manual_steps("setup", manual, dry_run)
     if failures:
         print(f"dry-run: setup would fail; {len(failures)} step(s) failed:")
@@ -842,13 +1182,17 @@ def teardown(
     config: tuple[workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str]] | None = None,
     inventory: remote.Inventory | None = None,
 ) -> int:
-    """Remove what setup installed, except the static info Note; continue past failures."""
+    """Remove what setup installed, except the static info Note; continue past failures.
+
+    The marketplace service is stopped, but its binary, unit, config, and database stay.
+    """
     server, clients, _, tc = config if config is not None else workload.load_config(config_path)
     if inventory is None:
         inventory = remote.load_inventory(config_path, server, clients)
     errors = []
     # The static info Note that setup advertised is deliberately kept.
     actions = [
+        lambda: stop_marketplace(inventory),
         lambda: remove_selective_qdiscs(inventory, tc),
         stop_tunnels,
         lambda: stop_prometheus(inventory.hosts[inventory.prometheus_host]),

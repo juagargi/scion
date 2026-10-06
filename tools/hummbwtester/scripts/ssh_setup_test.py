@@ -118,6 +118,7 @@ class SSHSetupTest(unittest.TestCase):
     def marketplace(self, **changes):
         return replace(orchestration.MarketplaceConfig(
             "https://127.0.0.1:8888/", "alice", "MARKETPLACE_PASSWORD", None, "monitor",
+            "[1-ff00:0:110,127.0.0.1]:31888",
         ), **changes)
 
     def test_marketplace_password_is_checked_before_opening_the_tunnel(self):
@@ -204,7 +205,9 @@ class SSHSetupTest(unittest.TestCase):
 
     def test_marketplace_note_is_skipped_without_scion_address(self):
         with mock.patch.object(ssh_setup.remote, "ssh_command") as run:
-            ssh_setup.ensure_marketplace_notes(self.inventory())
+            ssh_setup.ensure_marketplace_notes(replace(
+                self.inventory(), marketplace=self.marketplace(scion_address=None),
+            ))
         run.assert_not_called()
 
     def test_static_info_helper_failure_is_reported(self):
@@ -218,10 +221,23 @@ class SSHSetupTest(unittest.TestCase):
 
     def fake_hosts(self, commands, diagnose='{"result": "ready", "warnings": []}'):
         """An SSH stand-in that records commands and answers as unconfigured hosts would."""
+        topology = json.dumps({
+            "isd_as": "1-ff00:0:110", "dispatched_ports": "30000-32767",
+            "border_routers": {"br1": {"interfaces": {"1": {}, "2": {}}}},
+        })
+
         def run(host, command, check=True, **kwargs):
             commands.append((host.name, command))
-            if "sha256sum" in command or command.startswith("test -d") \
-                    or command.startswith("docker inspect"):
+            if command.startswith("command -v"):
+                return subprocess.CompletedProcess([], 0, "", "")
+            if command.startswith("cat /etc/scion/topology.json"):
+                return subprocess.CompletedProcess([], 0, topology, "")
+            if command.startswith("printf"):
+                return subprocess.CompletedProcess([], 0, "sciera:sciera", "")
+            if "master0.key" in command:
+                return subprocess.CompletedProcess([], 0, "11" * 16 + "\n", "")
+            if "sha256sum" in command or command.startswith("test") \
+                    or command.startswith("docker inspect") or "is-active" in command:
                 return subprocess.CompletedProcess([], 1, "", "")
             if "hummbwtester-qdisc" in command:
                 return subprocess.CompletedProcess([], 44, "", "")
@@ -244,6 +260,7 @@ class SSHSetupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
              mock.patch.object(ssh_setup, "TUNNEL_MANIFEST", Path(directory) / "manifest.json"), \
              mock.patch.object(ssh_setup.workload, "require_built_binary"), \
+             mock.patch.object(ssh_setup, "MARKETPLACE_BIN", Path(__file__)), \
              mock.patch.object(ssh_setup.remote, "sha256", return_value="digest"), \
              mock.patch.object(ssh_setup.remote, "ssh_command",
                                side_effect=self.fake_hosts(commands)), \
@@ -256,8 +273,9 @@ class SSHSetupTest(unittest.TestCase):
         scp.assert_not_called()
         write_targets.assert_not_called()
         local_run.assert_not_called()  # no ssh-control-master is started or stopped
-        mutating = ("install -d", "mv -f", "chmod", "rm -", "--force-recreate", "docker rm",
-                    "systemctl", " up ", " down ")
+        mutating = ("install", "mv -f", "chmod", "rm -", "--force-recreate", "docker rm",
+                    "systemctl start", "systemctl stop", "daemon-reload", "ln -s", "mktemp",
+                    " up ", " down ")
         for host, command in commands:
             self.assertFalse(any(word in command for word in mutating), (host, command))
         self.assertTrue(any(" diagnose " in command for _, command in commands))
@@ -271,6 +289,8 @@ class SSHSetupTest(unittest.TestCase):
                          "would advertise marketplace",
                          "would create hummbwtester-prometheus",
                          "would start 2 Prometheus metric relays",
+                         "would install marketplace binary /usr/local/bin/hummingbird-marketplace",
+                         "would start hummingbird-marketplace.service on monitor with a rebuilt",
                          "dry-run: setup would require these manual steps:"):
             self.assertTrue(any(expected in line for line in lines), expected)
         self.assertEqual(lines[-1], orchestration.DRY_RUN_NOTICE)
@@ -285,6 +305,7 @@ class SSHSetupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
              mock.patch.object(ssh_setup, "TUNNEL_MANIFEST", Path(directory) / "manifest.json"), \
              mock.patch.object(ssh_setup.workload, "require_built_binary"), \
+             mock.patch.object(ssh_setup, "MARKETPLACE_BIN", Path(__file__)), \
              mock.patch.object(ssh_setup.remote, "sha256", return_value="digest"), \
              mock.patch.object(ssh_setup.remote, "ssh_command",
                                side_effect=self.fake_hosts(commands)), \
@@ -296,7 +317,7 @@ class SSHSetupTest(unittest.TestCase):
         self.assertTrue(any(" diagnose " in command for _, command in commands))
         self.assertTrue(any("docker info" in command for _, command in commands))
         lines = [str(call.args[0]) for call in output.call_args_list if call.args]
-        self.assertIn("  - 2. marketplace JWT: cannot reach marketplace", lines)
+        self.assertIn("  - 3. marketplace JWT: cannot reach marketplace", lines)
         self.assertEqual(lines[-1], orchestration.DRY_RUN_NOTICE)
 
     def test_real_setup_stops_at_the_first_failed_step(self):
@@ -305,6 +326,7 @@ class SSHSetupTest(unittest.TestCase):
         with mock.patch.object(ssh_setup.workload, "require_built_binary"), \
              mock.patch.object(ssh_setup.remote, "preflight"), \
              mock.patch.object(ssh_setup, "deploy_binary"), \
+             mock.patch.object(ssh_setup, "ensure_marketplace"), \
              mock.patch.object(ssh_setup, "obtain_marketplace_jwt",
                                side_effect=orchestration.ConfigError("cannot reach marketplace")), \
              mock.patch.object(ssh_setup, "ensure_selective_qdiscs") as qdiscs:
@@ -366,6 +388,107 @@ class SSHSetupTest(unittest.TestCase):
         self.assertIn(" down ", run.call_args_list[0].args[1])
         self.assertIn(" up ", run.call_args_list[1].args[1])
 
+
+
+class MarketplaceServiceTest(unittest.TestCase):
+    def inventory(self):
+        return SSHSetupTest.inventory(SSHSetupTest())
+
+    def ensure(self, *, changed=False, active=True, reachable=(True,), started=True):
+        """Run ensure_marketplace with mocked host state; return the mocks of interest."""
+        mocks = {}
+        with mock.patch.object(ssh_setup, "MARKETPLACE_BIN", Path(__file__)), \
+             mock.patch.object(ssh_setup, "_check_marketplace_host"), \
+             mock.patch.object(ssh_setup.remote, "ssh_command", return_value=subprocess.CompletedProcess(
+                 [], 0, "sciera:sciera", "")), \
+             mock.patch.object(ssh_setup, "install_root_file",
+                               side_effect=[changed, False]) as install, \
+             mock.patch.object(ssh_setup, "_ensure_directory", return_value=False), \
+             mock.patch.object(ssh_setup, "copy_if_changed", return_value=False), \
+             mock.patch.object(ssh_setup, "_ensure_symlink", return_value=False), \
+             mock.patch.object(ssh_setup, "_service_active", return_value=active), \
+             mock.patch.object(ssh_setup, "_remote_test", side_effect=reachable), \
+             mock.patch.object(ssh_setup, "marketplace_entries",
+                               return_value={"assets": [], "ases": []}) as entries, \
+             mock.patch.object(ssh_setup, "_reconfigure_marketplace_db") as database, \
+             mock.patch.object(ssh_setup, "_systemctl") as systemctl, \
+             mock.patch.object(ssh_setup, "_wait_for", return_value=started) as wait, \
+             mock.patch("builtins.print"):
+            mocks.update(install=install, entries=entries, database=database,
+                         systemctl=systemctl, wait=wait)
+            try:
+                ssh_setup.ensure_marketplace(self.inventory())
+            except remote.SSHError as err:
+                mocks["error"] = err
+        return mocks
+
+    def test_running_reachable_unchanged_marketplace_is_left_alone(self):
+        mocks = self.ensure()
+        mocks["systemctl"].assert_not_called()
+        mocks["entries"].assert_not_called()
+        mocks["database"].assert_not_called()
+
+    def test_replaced_binary_restarts_with_a_rebuilt_database(self):
+        mocks = self.ensure(changed=True)
+        self.assertEqual([call.args[1] for call in mocks["systemctl"].call_args_list],
+                         ["stop", "start"])
+        mocks["database"].assert_called_once()
+        mocks["wait"].assert_called_once()
+
+    def test_stopped_marketplace_is_started_without_a_stop(self):
+        mocks = self.ensure(active=False)
+        self.assertEqual([call.args[1] for call in mocks["systemctl"].call_args_list], ["start"])
+        mocks["database"].assert_called_once()
+
+    def test_running_but_unreachable_marketplace_is_restarted(self):
+        mocks = self.ensure(reachable=(False,))
+        self.assertEqual([call.args[1] for call in mocks["systemctl"].call_args_list],
+                         ["stop", "start"])
+
+    def test_marketplace_that_never_becomes_reachable_is_an_error(self):
+        mocks = self.ensure(active=False, started=False)
+        self.assertIn("not reachable after", str(mocks["error"]))
+        self.assertIn("journalctl -u hummingbird-marketplace.service", str(mocks["error"]))
+
+    def test_teardown_stops_and_waits_until_unreachable(self):
+        with mock.patch.object(ssh_setup, "_service_active", return_value=True), \
+             mock.patch.object(ssh_setup, "_systemctl") as systemctl, \
+             mock.patch.object(ssh_setup, "_wait_for", return_value=True) as wait, \
+             mock.patch("builtins.print"):
+            ssh_setup.stop_marketplace(self.inventory())
+        systemctl.assert_called_once_with(self.inventory().hosts["monitor"], "stop")
+        self.assertIs(wait.call_args.args[2], False)
+        with mock.patch.object(ssh_setup, "_service_active", return_value=False), \
+             mock.patch.object(ssh_setup, "_wait_for", return_value=False):
+            with self.assertRaisesRegex(remote.SSHError, "still reachable"):
+                ssh_setup.stop_marketplace(self.inventory())
+
+    def test_unit_runs_as_the_ssh_user_and_can_be_neither_enabled_nor_restarted(self):
+        unit = ssh_setup.marketplace_unit("sciera", "sciera")
+        self.assertIn("User=sciera\nGroup=sciera\n", unit)
+        self.assertIn("Restart=no\n", unit)
+        self.assertNotIn("[Install]", unit)
+        self.assertIn("ExecStart=/usr/local/bin/hummingbird-marketplace "
+                      "--config /etc/scion/marketplace/marketplace.toml", unit)
+
+    def test_config_binds_both_apis_to_the_configured_loopback_addresses(self):
+        config = ssh_setup.marketplace_toml(SSHSetupTest.marketplace(SSHSetupTest()))
+        self.assertIn('config_dir = "/etc/scion/marketplace"', config)
+        self.assertIn('api_addr = "127.0.0.1:8888"', config)
+        self.assertIn('scion_api_addr = "127.0.0.1:31888"', config)
+        self.assertIn('connection = "/var/lib/scion/marketplace/marketplace.db"', config)
+
+    def test_database_entries_use_secret_values_derived_on_the_hosts(self):
+        commands = []
+        fake = SSHSetupTest.fake_hosts(SSHSetupTest(), commands)
+        with mock.patch.object(ssh_setup.remote, "ssh_command", side_effect=fake):
+            entries = ssh_setup.marketplace_entries(self.inventory())
+        self.assertEqual({entry["key"] for entry in entries["delegations"]}, {"11" * 16})
+        self.assertEqual([user["name"] for user in entries["users"]], ["alice", "bob"])
+        self.assertTrue(entries["assets"])
+        key_reads = [command for _, command in commands if "master0.key" in command]
+        self.assertTrue(key_reads and all(command.startswith("sudo -n python3 -c")
+                                          for command in key_reads))
 
 if __name__ == "__main__":
     unittest.main()

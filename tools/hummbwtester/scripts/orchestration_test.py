@@ -103,6 +103,19 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "only valid for SSH"):
             load_config(self.write_config(config))
 
+    def test_ssh_marketplace_must_bind_loopback_addresses(self):
+        orchestration.validate_ssh_marketplace("https://127.0.0.1:8888",
+                                               "[71-2:0:5c,127.0.0.1]:31888")
+        orchestration.validate_ssh_marketplace("https://[::1]:8888", "[71-2:0:5c,::1]:31888")
+        for url, scion_address in (
+                ("https://200.129.206.243:8888", "[71-2:0:5c,127.0.0.1]:31888"),
+                ("http://127.0.0.1:8888", "[71-2:0:5c,127.0.0.1]:31888"),
+                ("https://127.0.0.1", "[71-2:0:5c,127.0.0.1]:31888"),
+                ("https://127.0.0.1:8888", "[71-2:0:5c,10.6.7.1]:31888"),
+                ("https://127.0.0.1:8888", None)):
+            with self.subTest(url=url, scion_address=scion_address), self.assertRaises(ConfigError):
+                orchestration.validate_ssh_marketplace(url, scion_address)
+
     def test_validates_marketplace_scion_address(self):
         orchestration.validate_scion_address("[71-2:0:5c,127.0.0.1]:31888", "address")
         orchestration.validate_scion_address("[1-64512,fd00::1]:31888", "address")
