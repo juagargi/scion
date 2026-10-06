@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, replace
 from typing import Any
@@ -368,6 +369,41 @@ def validate_scion_address(value: Any, context: str) -> None:
         raise ConfigError(f"{context} has an invalid port: {value}")
 
 
+def is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_ssh_marketplace(url: str, scion_address: Any) -> None:
+    """SSH setup deploys the marketplace bound to these addresses, which must stay on loopback.
+
+    The TLS web app and API are then reachable only on the marketplace host itself (setup uses an
+    SSH forward), and the SCION API only through the border routers of that host.
+    """
+    if scion_address is None:
+        raise ConfigError("hummingbird.marketplace.scion_address is required for SSH deployments")
+    parts = urllib.parse.urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError as err:
+        raise ConfigError(f"hummingbird.marketplace.url has an invalid port: {url}") from err
+    if parts.scheme != "https" or port is None or not is_loopback(parts.hostname or ""):
+        raise ConfigError(
+            "hummingbird.marketplace.url must be https://<loopback address>:<port> in SSH "
+            "deployments, e.g. https://127.0.0.1:8888",
+        )
+    match = SCION_ADDRESS_RE.fullmatch(scion_address)
+    assert match is not None  # validate_scion_address accepted it.
+    if not is_loopback(match.group("host")):
+        raise ConfigError(
+            "hummingbird.marketplace.scion_address must use a loopback host in SSH deployments",
+        )
+
+
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
@@ -434,6 +470,8 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
                     "hummingbird.marketplace.scion_address is only valid for SSH deployments",
                 )
             validate_scion_address(scion_address, "hummingbird.marketplace.scion_address")
+        if deployment["kind"] == "ssh":
+            validate_ssh_marketplace(url, scion_address)
         marketplace_config = MarketplaceConfig(
             url, username, password_env, sub_account, host, scion_address,
         )
