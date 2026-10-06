@@ -48,6 +48,11 @@ TC_STATS_RE = re.compile(
     r"backlog_bytes=(\d+)$",
 )
 PROMETHEUS_LABEL_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"])*)"')
+# [ISD-AS,host]:port with a decimal or colon-separated hexadecimal AS number.
+SCION_ADDRESS_RE = re.compile(
+    r"\[(?P<ia>[0-9]+-(?:[0-9]+|[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4})),"
+    r"(?P<host>[^\]]+)\]:(?P<port>[0-9]{1,5})",
+)
 
 
 class ConfigError(ValueError):
@@ -89,6 +94,8 @@ class MarketplaceConfig:
     sub_account: str | None
     # SSH inventory host from which url is reachable; None means reachable from the controller.
     host: str | None = None
+    # SCION API address that SSH setup advertises in the static info Note of the participant ASes.
+    scion_address: str | None = None
 
 
 @dataclass(frozen=True)
@@ -342,6 +349,19 @@ def parse_bandwidth(value: str, context: str) -> float:
     return result
 
 
+def validate_scion_address(value: Any, context: str) -> None:
+    """Check a [ISD-AS,host]:port SCION address, as advertised for a marketplace API."""
+    match = isinstance(value, str) and SCION_ADDRESS_RE.fullmatch(value)
+    if not match:
+        raise ConfigError(f"{context} must be a SCION address such as [1-ff00:0:110,127.0.0.1]:31888")
+    try:
+        ipaddress.ip_address(match.group("host"))
+    except ValueError as err:
+        raise ConfigError(f"{context} has an invalid host address: {value}") from err
+    if not 1 <= int(match.group("port")) <= 65535:
+        raise ConfigError(f"{context} has an invalid port: {value}")
+
+
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
@@ -374,7 +394,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         if not isinstance(marketplace, dict):
             raise ConfigError("hummingbird.marketplace is required in marketplace mode")
         require_fields(marketplace, {"url", "username", "password_env"},
-                       "hummingbird.marketplace", {"sub_account", "host"})
+                       "hummingbird.marketplace", {"sub_account", "host", "scion_address"})
         url, username, password_env = (
             marketplace["url"], marketplace["username"], marketplace["password_env"])
         if not isinstance(url, str) or not url.startswith(("https://", "http://")):
@@ -394,7 +414,20 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
                 )
             if deployment["kind"] == "docker":
                 raise ConfigError("hummingbird.marketplace.host is only valid for SSH deployments")
-        marketplace_config = MarketplaceConfig(url, username, password_env, sub_account, host)
+        elif deployment["kind"] == "ssh":
+            # SSH setup reaches the marketplace url only through a tunnel to the host it runs on.
+            raise ConfigError("hummingbird.marketplace.host is required for SSH deployments")
+        scion_address = marketplace.get("scion_address")
+        if scion_address is not None:
+            if deployment["kind"] == "docker":
+                # The generated Docker topology already advertises its marketplace.
+                raise ConfigError(
+                    "hummingbird.marketplace.scion_address is only valid for SSH deployments",
+                )
+            validate_scion_address(scion_address, "hummingbird.marketplace.scion_address")
+        marketplace_config = MarketplaceConfig(
+            url, username, password_env, sub_account, host, scion_address,
+        )
     elif "marketplace" in hummingbird_config:
         raise ConfigError("hummingbird.marketplace is only valid in marketplace mode")
     if not isinstance(root["server"], dict):

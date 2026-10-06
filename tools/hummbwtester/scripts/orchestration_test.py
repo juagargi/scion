@@ -102,6 +102,14 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "only valid for SSH"):
             load_config(self.write_config(config))
 
+    def test_validates_marketplace_scion_address(self):
+        orchestration.validate_scion_address("[71-2:0:5c,127.0.0.1]:31888", "address")
+        orchestration.validate_scion_address("[1-64512,fd00::1]:31888", "address")
+        for value in ("71-2:0:5c,127.0.0.1:31888", "[71-2:0:5c,host]:31888",
+                      "[71-2:0:5c,127.0.0.1]:70000", "https://127.0.0.1:31888", 31888):
+            with self.subTest(value=value), self.assertRaises(ConfigError):
+                orchestration.validate_scion_address(value, "address")
+
     def test_requires_global_hummingbird_source(self):
         config = self.base_config()
         del config["hummingbird"]

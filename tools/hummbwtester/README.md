@@ -54,9 +54,13 @@ Each run uses one self-contained JSON file.
 - `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
 - `hummingbird`: required global reservation source (`keys` or `marketplace`).
   Marketplace mode also requires a `marketplace` object with `url`, `username`, and `password_env`; `sub_account` is optional. The password is read from the named environment variable, never from JSON.
-  In SSH deployments, the optional `host` names a `deployment.hosts` entry from which `url` is reachable,
-  e.g. `"host": "ufms"` with `"url": "https://127.0.0.1:8888"` for a marketplace bound to the loopback of that host.
-  Without `host`, `url` must be reachable from the controller. Docker deployments reject `host`.
+  In SSH deployments, `host` is required: it names the `deployment.hosts` entry from which `url` is
+  reachable, e.g. `"host": "ufms"` with `"url": "https://127.0.0.1:8888"` for a marketplace bound to
+  the loopback of that host. Every SSH command (`setup`, `run`, `teardown`) rejects a configuration
+  without it. Docker deployments reject `host`.
+  In SSH deployments, the optional `scion_address` is the SCION API address of the marketplace,
+  e.g. `"[71-2:0:5c,127.0.0.1]:31888"`; see the static info Note below. Docker deployments reject it,
+  because their generated topology already advertises its marketplace.
   The Docker runner discovers the reachable registration URL from `gen/`; `url` is used by SSH runs.
 
 Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
@@ -218,10 +222,21 @@ python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwt
 SSH setup verifies and uploads the built binary,
 obtains the configured user's JWT from `hummingbird.marketplace.url`,
 and uploads it to owner-only setup directories.
-When `hummingbird.marketplace.host` is set, setup opens a temporary SSH forward from a free
-controller loopback port to that url as seen from the host, logs in through it, and closes it.
-The SSH launch shell reads that file only immediately before `exec`;
+To log in, setup opens a temporary SSH forward from a free controller loopback port to that url
+as seen from `hummingbird.marketplace.host`, logs in through it, and closes it.
+The SSH launch shell reads the JWT file only immediately before `exec`;
 it is never placed in command arguments or the configuration.
+
+Clients find the marketplace of a path in the static info Note that every on-path AS puts into its
+beacons. When `hummingbird.marketplace.scion_address` is set, setup advertises it on the server,
+client, and marketplace hosts: it pipes `scripts/static_info_note.py` to `sudo -n python3` and
+inserts or updates one entry named `hummbwtester` at the front of the Note's `hummingbird` list,
+with `api_protocol` `connectrpc/TLS/QUIC/SCION`, `api_address` the `scion_address`, and
+`client_registration_website` the `url`. Other static info settings, other Note keys, and other
+marketplaces' entries are kept; an entry for the same `api_address` under another name is replaced,
+because clients would treat it as a different marketplace. The file keeps its owner and mode and is
+created if missing. Each host's file is `static_info` (default `/etc/scion/staticInfoConfig.json`).
+
 Set `deployment.metrics.prometheus` to the declared host on which Prometheus runs.
 Setup generates the same file-SD targets used locally, copies them together with a Prometheus
 configuration and Docker Compose file to `/tmp/hummbwtester/prometheus/` on that host,
@@ -231,6 +246,20 @@ to the loopback target ports on the Prometheus host.
 If the remote files, running container configuration, and tunnels already match, setup leaves them untouched.
 If the Prometheus files or container differ,
 setup stops the old container, replaces the files, and starts it again.
+
+Setup never restarts host services. It ends by printing the steps that must be done manually,
+or that none are required; if it fails after changing a file, it still prints the steps that change needs.
+The control service reads its static info file only at startup, so every host whose Note changed
+gets a step to restart its control service, for example:
+
+```text
+setup: the following steps must be done manually:
+  1. restart the control service on ufms so it reads /etc/scion/staticInfoConfig.json: ssh -t sciera-ufms sudo systemctl restart scion-control@cs-1.service
+```
+
+The optional `deployment.hosts.<name>.control_service` names the systemd unit in that step;
+without it, the step shows a `<control service unit>` placeholder.
+Until the restart, and until new beacons have propagated, paths keep advertising the old Note.
 
 The SSH runner only launches the already-deployed server and clients.
 It fails with an instruction to rerun setup if the deployed binary is missing or differs
@@ -246,6 +275,17 @@ Teardown removes configured selective qdiscs, closes the persistent metric tunne
 stops Prometheus, deletes its files under `/tmp`, and removes the deployed binary and JWT.
 Run it from the same controller as setup because the SSH control sockets are kept under
 `/tmp/hummbwtester/ssh-tunnels/` on that controller.
+It does not touch the static info files: the `hummbwtester` Note entry that setup advertised stays,
+so the marketplace remains discoverable for later experiments. To withdraw it manually, pipe the
+helper from the controller to each host, e.g. ufms, and then restart that host's control service:
+
+```bash
+ssh sciera-ufms sudo -n python3 - remove --file /etc/scion/staticInfoConfig.json --name hummbwtester \
+    < tools/hummbwtester/scripts/static_info_note.py
+ssh -t sciera-ufms sudo systemctl restart scion-control@cs-1.service
+```
+
+The helper removes only entries with that name and deletes a file that held nothing else.
 
 ### Shaping one production BR flow on a shared interface
 

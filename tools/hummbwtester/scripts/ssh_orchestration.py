@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
+import re
 import shlex
 import signal
 import subprocess
@@ -27,6 +28,8 @@ ROOT = workload.ROOT
 BIN = workload.BIN
 SETUP_DIR_NAME = "setup"
 RUNS_DIR_NAME = "runs"
+DEFAULT_STATIC_INFO = "/etc/scion/staticInfoConfig.json"
+UNIT_RE = re.compile(r"[A-Za-z0-9@._:-]+\.service")
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,10 @@ class SSHHost:
     sciond: str
     run_dir: str
     readiness_command: str | None
+    # The control service reads its static info config, which carries the marketplace Note.
+    static_info: str = DEFAULT_STATIC_INFO
+    # systemd unit named in the manual restart step that a Note change needs; never restarted here.
+    control_service: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,7 +71,7 @@ class Inventory:
     local_port_base: int
     routers: tuple[RouterMetrics, ...]
     shaping: tuple[ShapedFlow, ...]
-    # Host through which setup tunnels to the marketplace; None means reach its url directly.
+    # Host through which setup tunnels to the marketplace; None only without a marketplace.
     marketplace_host: str | None = None
 
 
@@ -111,7 +118,7 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         name = _name(name, "ssh inventory host name")
         entry = _object(raw, f"ssh inventory.hosts.{name}")
         _fields(entry, {"ssh", "sciond", "run_dir"}, f"ssh inventory.hosts.{name}",
-                {"readiness_command"})
+                {"readiness_command", "static_info", "control_service"})
         run_dir = _name(entry["run_dir"], f"ssh inventory.hosts.{name}.run_dir")
         if not run_dir.startswith("/"):
             raise workload.ConfigError(f"ssh inventory.hosts.{name}.run_dir must be absolute")
@@ -120,8 +127,18 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
             raise workload.ConfigError(f"ssh inventory.hosts.{name}.readiness_command must be a string")
         sciond = _name(entry["sciond"], f"ssh inventory.hosts.{name}.sciond")
         _host_port(sciond, f"ssh inventory.hosts.{name}.sciond")
+        static_info = _name(entry.get("static_info", DEFAULT_STATIC_INFO),
+                            f"ssh inventory.hosts.{name}.static_info")
+        if not static_info.startswith("/"):
+            raise workload.ConfigError(f"ssh inventory.hosts.{name}.static_info must be absolute")
+        control_service = entry.get("control_service")
+        if control_service is not None and (
+                not isinstance(control_service, str) or not UNIT_RE.fullmatch(control_service)):
+            raise workload.ConfigError(
+                f"ssh inventory.hosts.{name}.control_service must be a systemd .service unit name",
+            )
         hosts[name] = SSHHost(name, _name(entry["ssh"], f"ssh inventory.hosts.{name}.ssh"), sciond,
-                              run_dir, readiness)
+                              run_dir, readiness, static_info, control_service)
 
     server_host = _name(server.node, "server.node")
     client_hosts = {client.client_id: _name(client.endpoint.node, f"{client.client_id}.node")

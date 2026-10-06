@@ -28,6 +28,10 @@ except ImportError:
 
 
 SELECTIVE_HELPER = workload.ROOT / "tools" / "hummbwtester" / "scripts" / "selective_qdisc.py"
+STATIC_INFO_HELPER = workload.ROOT / "tools" / "hummbwtester" / "scripts" / "static_info_note.py"
+# The Note entry name that marks the marketplace advertisement owned by these experiments.
+NOTE_NAME = "hummbwtester"
+NOTE_PROTOCOL = "connectrpc/TLS/QUIC/SCION"
 PROMETHEUS_CONFIG = workload.ROOT / "tools" / "hummbwtester" / "monitoring" / "prometheus.yml"
 REMOTE_PROMETHEUS_DIR = "/tmp/hummbwtester/prometheus"
 PROMETHEUS_CONTAINER = "hummbwtester-prometheus"
@@ -136,9 +140,9 @@ def marketplace_tunnel(host: remote.SSHHost, url: str) -> Generator[str, None, N
 def obtain_marketplace_jwt(
     inventory: remote.Inventory, marketplace: workload.MarketplaceConfig,
 ) -> str:
-    """Log in at the marketplace url, through a temporary tunnel when it is only reachable from a host."""
+    """Log in at the marketplace url as seen from its host, through a temporary tunnel."""
     if inventory.marketplace_host is None:
-        return workload.obtain_marketplace_jwt(marketplace)
+        raise workload.ConfigError("hummingbird.marketplace.host is required for SSH deployments")
     host = inventory.hosts[inventory.marketplace_host]
     with marketplace_tunnel(host, marketplace.url) as local_url:
         try:
@@ -163,6 +167,82 @@ def deploy_jwt(
             print(f"uploaded marketplace JWT to {name}")
         else:
             print(f"marketplace JWT on {name} is current")
+
+
+def note_entry(marketplace: workload.MarketplaceConfig) -> dict[str, str] | None:
+    """The hummingbird Note entry advertising the configured marketplace over SCION."""
+    if marketplace.scion_address is None:
+        return None
+    return {
+        "name": NOTE_NAME,
+        "api_protocol": NOTE_PROTOCOL,
+        "api_address": marketplace.scion_address,
+        "client_registration_website": marketplace.url,
+    }
+
+
+def note_hosts(inventory: remote.Inventory) -> list[str]:
+    """The hosts whose ASes advertise the marketplace: every participant and the marketplace."""
+    names = {inventory.server_host, *inventory.client_hosts.values()}
+    if inventory.marketplace_host is not None:
+        names.add(inventory.marketplace_host)
+    return sorted(names)
+
+
+def _static_info_note(host: remote.SSHHost, action: str, *arguments: str) -> bool:
+    """Run the Note helper as root on host, piping it in; return whether the file changed."""
+    command = shlex.join([
+        "sudo", "-n", "python3", "-", action, "--file", host.static_info, *arguments,
+    ])
+    result = remote.ssh_command(
+        host, command, check=False, capture_output=True, input=STATIC_INFO_HELPER.read_text(),
+    )
+    if result.returncode:
+        raise remote.SSHError(
+            f"updating {host.static_info} on {host.name}: {result.stderr.strip()}",
+        )
+    try:
+        return json.loads(result.stdout)["changed"] is True
+    except (json.JSONDecodeError, KeyError, TypeError) as err:
+        raise remote.SSHError(
+            f"unexpected static info helper output on {host.name}: {result.stdout!r}",
+        ) from err
+
+
+def restart_instruction(host: remote.SSHHost) -> str:
+    """The manual step that makes the control service of host read a changed static info file."""
+    # Setup never restarts production services; the operator decides when the restart happens.
+    unit = host.control_service or "<control service unit>"
+    return (f"restart the control service on {host.name} so it reads {host.static_info}: "
+            f"ssh -t {host.alias} sudo systemctl restart {unit}")
+
+
+def ensure_marketplace_notes(
+    inventory: remote.Inventory, marketplace: workload.MarketplaceConfig,
+) -> list[str]:
+    """Advertise the marketplace and return the manual steps the changed files need."""
+    entry = note_entry(marketplace)
+    if entry is None:
+        print("hummingbird.marketplace.scion_address is not set; static info Notes are unchanged")
+        return []
+    manual = []
+    for name in note_hosts(inventory):
+        host = inventory.hosts[name]
+        if _static_info_note(host, "ensure", "--entry", json.dumps(entry, sort_keys=True)):
+            print(f"advertised marketplace {entry['api_address']} in {host.static_info} on {name}")
+            manual.append(restart_instruction(host))
+        else:
+            print(f"marketplace Note in {host.static_info} on {name} is current")
+    return manual
+
+
+def print_manual_steps(action: str, steps: list[str]) -> None:
+    if not steps:
+        print(f"{action}: no manual steps are required")
+        return
+    print(f"{action}: the following steps must be done manually:")
+    for index, step in enumerate(steps, start=1):
+        print(f"  {index}. {step}")
 
 
 def selective_config(shape: remote.ShapedFlow, tc: dict[str, str]) -> selective_qdisc.Config:
@@ -573,22 +653,32 @@ def setup(
         deploy_binary(host)
 
     hummingbird_clients = [client for client in clients if client.hummingbird]
+    marketplace: workload.MarketplaceConfig | None = None
+    if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
+        marketplace = hummingbird_clients[0].marketplace
+        assert marketplace is not None
     local_jwt: Path | None = None
+    manual: list[str] = []
+    completed = False
     try:
-        if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
-            marketplace = hummingbird_clients[0].marketplace
-            assert marketplace is not None
+        if marketplace is not None:
             local_jwt = workload.write_private_jwt(obtain_marketplace_jwt(inventory, marketplace))
             deploy_jwt(inventory, hummingbird_clients, local_jwt)
         ensure_selective_qdiscs(inventory, tc)
+        if marketplace is not None:
+            manual.extend(ensure_marketplace_notes(inventory, marketplace))
         targets = target_documents(inventory, clients)
         write_local_targets(targets)
         ensure_prometheus(inventory, targets)
         ensure_tunnels(tunnel_specs(inventory, clients))
+        completed = True
         return 0
     finally:
         if local_jwt is not None:
             local_jwt.unlink(missing_ok=True)
+        # A later failure must not hide the steps that files already changed on the hosts need.
+        if completed or manual:
+            print_manual_steps("setup", manual)
 
 
 def teardown(
@@ -600,6 +690,7 @@ def teardown(
     if inventory is None:
         inventory = remote.load_inventory(config_path, server, clients)
     errors = []
+    # The static info Note that setup advertised is deliberately kept.
     actions = [
         lambda: remove_selective_qdiscs(inventory, tc),
         stop_tunnels,
