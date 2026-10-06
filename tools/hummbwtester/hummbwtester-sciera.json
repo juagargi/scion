@@ -2,6 +2,7 @@
   "hummingbird": {
     "reservation_source": "marketplace",
     "marketplace": {
+      "host": "ufms",
       "url": "https://127.0.0.1:8888",
       "username": "alice",
       "password_env": "HUMMBWTESTER_MARKETPLACE_PASSWORD"
@@ -9,7 +10,7 @@
   },
   "server": {
     "node": "ufms",
-    "isd_as": "71-2:0:152",
+    "isd_as": "71-2:0:5c",
     "host": "127.0.0.1",
     "port": 12345,
     "receive_buffer_size": 4194304

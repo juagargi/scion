@@ -4,14 +4,18 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from collections.abc import Generator
+import contextlib
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 from pathlib import Path
 import shlex
+import socket
 import subprocess
 import tempfile
 from types import SimpleNamespace
+import urllib.parse
 
 try:  # Support both ``python -m``/tests and the small direct entrypoint scripts.
     from . import orchestration as workload
@@ -86,6 +90,63 @@ def deploy_binary(host: remote.SSHHost) -> None:
         print(f"deployed hummbwtester to {host.name}")
     else:
         print(f"hummbwtester on {host.name} is current")
+
+
+def _free_local_port() -> int:
+    # The port may be taken again before ssh binds it; ExitOnForwardFailure turns that into an error.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _tunneled_url(url: str, local_port: int) -> tuple[str, str]:
+    """Return the remote host:port that url names and url rewritten to a local forward."""
+    parts = urllib.parse.urlsplit(url)
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError as err:
+        raise workload.ConfigError(f"hummingbird.marketplace.url has an invalid port: {url}") from err
+    if not parts.hostname:
+        raise workload.ConfigError(f"hummingbird.marketplace.url has no host: {url}")
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    local = parts._replace(netloc=f"127.0.0.1:{local_port}")
+    return f"{host}:{port}", urllib.parse.urlunsplit(local)
+
+
+@contextlib.contextmanager
+def marketplace_tunnel(host: remote.SSHHost, url: str) -> Generator[str, None, None]:
+    """Forward a controller loopback port to url as seen from host, yielding the local url."""
+    local_port = _free_local_port()
+    target, local_url = _tunneled_url(url, local_port)
+    with tempfile.TemporaryDirectory(prefix="hummbwtester-market-") as directory:
+        master = _start_master(
+            ["-L", f"127.0.0.1:{local_port}:{target}"],
+            Path(directory) / "marketplace.sock", host.alias,
+        )
+        print(f"tunneling 127.0.0.1:{local_port} to marketplace {target} on {host.name}")
+        try:
+            yield local_url
+        finally:
+            subprocess.run(
+                _control_command(master["socket"], "exit", master["alias"]), check=False,
+                text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+
+
+def obtain_marketplace_jwt(
+    inventory: remote.Inventory, marketplace: workload.MarketplaceConfig,
+) -> str:
+    """Log in at the marketplace url, through a temporary tunnel when it is only reachable from a host."""
+    if inventory.marketplace_host is None:
+        return workload.obtain_marketplace_jwt(marketplace)
+    host = inventory.hosts[inventory.marketplace_host]
+    with marketplace_tunnel(host, marketplace.url) as local_url:
+        try:
+            return workload.obtain_marketplace_jwt(replace(marketplace, url=local_url))
+        except workload.ConfigError as err:
+            raise workload.ConfigError(
+                f"{err} (tunneled to {marketplace.url} on {host.name})",
+            ) from err
 
 
 def deploy_jwt(
@@ -517,7 +578,7 @@ def setup(
         if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
             marketplace = hummingbird_clients[0].marketplace
             assert marketplace is not None
-            local_jwt = workload.write_private_jwt(workload.obtain_marketplace_jwt(marketplace))
+            local_jwt = workload.write_private_jwt(obtain_marketplace_jwt(inventory, marketplace))
             deploy_jwt(inventory, hummingbird_clients, local_jwt)
         ensure_selective_qdiscs(inventory, tc)
         targets = target_documents(inventory, clients)

@@ -62,6 +62,31 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(inventory.prometheus_host, "b")
         self.assertEqual(inventory.shaping[0].expected_root, "noqueue")
 
+    def marketplace_workload(self, host):
+        config = self.workload()
+        config["hummingbird"] = {
+            "reservation_source": "marketplace",
+            "marketplace": {
+                "host": host, "url": "https://127.0.0.1:8888", "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD",
+            },
+        }
+        config["hummingbird_clients"][0]["hummingbird_reservation"] = {
+            "bandwidth": "1mbps", "duration": "1m", "reverse_bandwidth": "0kbps",
+        }
+        return config
+
+    def test_marketplace_host_must_be_declared(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "experiment.json", self.marketplace_workload("b"))
+            server, clients, _, _ = orchestration.load_config(path)
+            self.assertEqual(ssh.load_inventory(path, server, clients).marketplace_host, "b")
+
+            path = self.write_json(directory, "unknown.json", self.marketplace_workload("unknown"))
+            server, clients, _, _ = orchestration.load_config(path)
+            with self.assertRaisesRegex(orchestration.ConfigError, "marketplace.host"):
+                ssh.load_inventory(path, server, clients)
+
     def test_rejects_missing_client_placement(self):
         with tempfile.TemporaryDirectory() as directory:
             config = self.workload()

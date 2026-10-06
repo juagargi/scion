@@ -64,6 +64,8 @@ class Inventory:
     local_port_base: int
     routers: tuple[RouterMetrics, ...]
     shaping: tuple[ShapedFlow, ...]
+    # Host through which setup tunnels to the marketplace; None means reach its url directly.
+    marketplace_host: str | None = None
 
 
 class SSHError(RuntimeError):
@@ -127,6 +129,14 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
     for host in [server_host, *client_hosts.values()]:
         if host not in hosts:
             raise workload.ConfigError(f"participant node references unknown host {host}")
+    # Every client carries the same global marketplace configuration.
+    marketplace_host = next(
+        (client.marketplace.host for client in clients if client.marketplace is not None), None,
+    )
+    if marketplace_host is not None and marketplace_host not in hosts:
+        raise workload.ConfigError(
+            f"hummingbird.marketplace.host references unknown host {marketplace_host}",
+        )
 
     metrics = _object(deployment["metrics"], "deployment.metrics")
     _fields(metrics, {"prometheus", "local_port_base", "routers"}, "ssh inventory.metrics")
@@ -196,6 +206,7 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         shaping.append(shape)
     return Inventory(
         hosts, server_host, client_hosts, prometheus_host, base, tuple(routers), tuple(shaping),
+        marketplace_host,
     )
 
 

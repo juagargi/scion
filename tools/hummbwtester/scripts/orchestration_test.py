@@ -88,6 +88,19 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(hummingbird.marketplace.username, "alice")
         self.assertEqual(hummingbird.marketplace.url, "https://marketplace.invalid")
         self.assertIsNone(hummingbird.marketplace.sub_account)
+        self.assertIsNone(hummingbird.marketplace.host)
+
+    def test_rejects_marketplace_host_in_docker_mode(self):
+        config = self.base_config()
+        config["hummingbird"] = {
+            "reservation_source": "marketplace",
+            "marketplace": {
+                "host": "ufms", "url": "https://127.0.0.1:8888", "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD",
+            },
+        }
+        with self.assertRaisesRegex(ConfigError, "only valid for SSH"):
+            load_config(self.write_config(config))
 
     def test_requires_global_hummingbird_source(self):
         config = self.base_config()

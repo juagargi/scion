@@ -87,6 +87,8 @@ class MarketplaceConfig:
     username: str
     password_env: str
     sub_account: str | None
+    # SSH inventory host from which url is reachable; None means reachable from the controller.
+    host: str | None = None
 
 
 @dataclass(frozen=True)
@@ -372,7 +374,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         if not isinstance(marketplace, dict):
             raise ConfigError("hummingbird.marketplace is required in marketplace mode")
         require_fields(marketplace, {"url", "username", "password_env"},
-                       "hummingbird.marketplace", {"sub_account"})
+                       "hummingbird.marketplace", {"sub_account", "host"})
         url, username, password_env = (
             marketplace["url"], marketplace["username"], marketplace["password_env"])
         if not isinstance(url, str) or not url.startswith(("https://", "http://")):
@@ -384,7 +386,15 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         sub_account = marketplace.get("sub_account")
         if sub_account is not None and (not isinstance(sub_account, str) or not sub_account):
             raise ConfigError("hummingbird.marketplace.sub_account must be a non-empty string")
-        marketplace_config = MarketplaceConfig(url, username, password_env, sub_account)
+        host = marketplace.get("host")
+        if host is not None:
+            if not isinstance(host, str) or not host or any(char.isspace() for char in host):
+                raise ConfigError(
+                    "hummingbird.marketplace.host must be a non-empty string without whitespace",
+                )
+            if deployment["kind"] == "docker":
+                raise ConfigError("hummingbird.marketplace.host is only valid for SSH deployments")
+        marketplace_config = MarketplaceConfig(url, username, password_env, sub_account, host)
     elif "marketplace" in hummingbird_config:
         raise ConfigError("hummingbird.marketplace is only valid in marketplace mode")
     if not isinstance(root["server"], dict):
