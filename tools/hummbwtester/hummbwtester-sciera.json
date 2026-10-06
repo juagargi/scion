@@ -4,6 +4,7 @@
     "marketplace": {
       "host": "ufms",
       "url": "https://127.0.0.1:8888",
+      "scion_address": "[71-2:0:5c,127.0.0.1]:31888",
       "username": "alice",
       "password_env": "HUMMBWTESTER_MARKETPLACE_PASSWORD"
     }
@@ -53,17 +54,20 @@
       "rnp": {
         "ssh": "sciera-rnp",
         "sciond": "127.0.0.1:30255",
-        "run_dir": "/var/tmp/hummbwtester"
+        "run_dir": "/var/tmp/hummbwtester",
+        "control_service": "scion-control-service-cs1.service"
       },
       "ufes": {
         "ssh": "sciera-ufes",
         "sciond": "127.0.0.1:30255",
-        "run_dir": "/var/tmp/hummbwtester"
+        "run_dir": "/var/tmp/hummbwtester",
+        "control_service": "scion-control-service-cs1.service"
       },
       "ufms": {
         "ssh": "sciera-ufms",
         "sciond": "127.0.0.1:30255",
-        "run_dir": "/var/tmp/hummbwtester"
+        "run_dir": "/var/tmp/hummbwtester",
+        "control_service": "scion-control@cs-1.service"
       }
     },
     "metrics": {

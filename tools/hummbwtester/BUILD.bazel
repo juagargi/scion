@@ -64,6 +64,11 @@ py_library(
 )
 
 py_library(
+    name = "static_info_note",
+    srcs = ["scripts/static_info_note.py"],
+)
+
+py_library(
     name = "orchestration",
     srcs = [
         "scripts/__init__.py",
@@ -74,6 +79,7 @@ py_library(
     ],
     deps = [
         ":selective_qdisc",
+        ":static_info_note",
         requirement("pyyaml"),
     ],
 )
@@ -106,6 +112,12 @@ py_test(
     name = "selective_qdisc_test",
     srcs = ["scripts/selective_qdisc_test.py"],
     deps = [":selective_qdisc"],
+)
+
+py_test(
+    name = "static_info_note_test",
+    srcs = ["scripts/static_info_note_test.py"],
+    deps = [":static_info_note"],
 )
 
 py_test(

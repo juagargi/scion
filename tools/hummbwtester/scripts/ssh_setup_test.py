@@ -1,5 +1,7 @@
 from dataclasses import replace
+import json
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -117,13 +119,12 @@ class SSHSetupTest(unittest.TestCase):
             "https://127.0.0.1:8888/", "alice", "MARKETPLACE_PASSWORD", None,
         )
 
-    def test_marketplace_without_host_is_reached_directly(self):
-        with mock.patch.object(ssh_setup.workload, "obtain_marketplace_jwt",
-                               return_value="jwt") as obtain, \
+    def test_marketplace_without_host_is_rejected(self):
+        with mock.patch.object(ssh_setup.workload, "obtain_marketplace_jwt") as obtain, \
              mock.patch.object(ssh_setup.subprocess, "run") as run:
-            jwt = ssh_setup.obtain_marketplace_jwt(self.inventory(), self.marketplace())
-        self.assertEqual(jwt, "jwt")
-        obtain.assert_called_once_with(self.marketplace())
+            with self.assertRaisesRegex(orchestration.ConfigError, "host is required"):
+                ssh_setup.obtain_marketplace_jwt(self.inventory(), self.marketplace())
+        obtain.assert_not_called()
         run.assert_not_called()
 
     def test_marketplace_on_host_is_reached_through_a_temporary_tunnel(self):
@@ -151,6 +152,64 @@ class SSHSetupTest(unittest.TestCase):
             with self.assertRaisesRegex(orchestration.ConfigError, "on monitor"):
                 ssh_setup.obtain_marketplace_jwt(inventory, self.marketplace())
         self.assertIn("exit", run.call_args_list[-1].args[0])
+
+    def test_marketplace_note_is_advertised_on_participant_and_marketplace_hosts(self):
+        hosts = {
+            **self.inventory().hosts,
+            "market": remote.SSHHost("market", "market-alias", "127.0.0.1:30255",
+                                     "/var/tmp/humm", None, "/etc/scion/staticInfoConfig.json",
+                                     "scion-control@cs-1.service"),
+        }
+        inventory = replace(self.inventory(), hosts=hosts, marketplace_host="market")
+        marketplace = replace(self.marketplace(), scion_address="[1-ff00:0:110,127.0.0.1]:31888")
+        changed = subprocess.CompletedProcess([], 0, '{"changed": true}\n', "")
+        current = subprocess.CompletedProcess([], 0, '{"changed": false}\n', "")
+        # Hosts are visited in sorted order: market changes, monitor and source are current.
+        with mock.patch.object(ssh_setup.remote, "ssh_command",
+                               side_effect=[changed, current, current]) as run:
+            manual = ssh_setup.ensure_marketplace_notes(inventory, marketplace)
+        helper = run.call_args_list[0]
+        # Only the helper runs; no service is restarted on any host.
+        self.assertEqual([call.args[0].name for call in run.call_args_list],
+                         ["market", "monitor", "source"])
+        self.assertFalse(any("systemctl" in call.args[1] for call in run.call_args_list))
+        argv = shlex.split(helper.args[1])
+        self.assertEqual(argv[:5], ["sudo", "-n", "python3", "-", "ensure"])
+        self.assertEqual(json.loads(argv[argv.index("--entry") + 1]), {
+            "name": "hummbwtester",
+            "api_protocol": "connectrpc/TLS/QUIC/SCION",
+            "api_address": "[1-ff00:0:110,127.0.0.1]:31888",
+            "client_registration_website": "https://127.0.0.1:8888/",
+        })
+        self.assertEqual(helper.kwargs["input"], ssh_setup.STATIC_INFO_HELPER.read_text())
+        self.assertEqual(len(manual), 1)
+        self.assertIn("on market", manual[0])
+        self.assertIn("ssh -t market-alias sudo systemctl restart scion-control@cs-1.service",
+                      manual[0])
+
+    def test_manual_steps_are_numbered_or_reported_as_none(self):
+        with mock.patch("builtins.print") as output:
+            ssh_setup.print_manual_steps("setup", ["restart a", "restart b"])
+            ssh_setup.print_manual_steps("setup", [])
+        lines = [call.args[0] for call in output.call_args_list]
+        self.assertEqual(lines, [
+            "setup: the following steps must be done manually:",
+            "  1. restart a",
+            "  2. restart b",
+            "setup: no manual steps are required",
+        ])
+
+    def test_marketplace_note_is_skipped_without_scion_address(self):
+        with mock.patch.object(ssh_setup.remote, "ssh_command") as run:
+            ssh_setup.ensure_marketplace_notes(self.inventory(), self.marketplace())
+        run.assert_not_called()
+
+    def test_static_info_helper_failure_is_reported(self):
+        failed = subprocess.CompletedProcess([], 1, "", "error: the Note field is not JSON")
+        marketplace = replace(self.marketplace(), scion_address="[1-ff00:0:110,127.0.0.1]:31888")
+        with mock.patch.object(ssh_setup.remote, "ssh_command", return_value=failed):
+            with self.assertRaisesRegex(remote.SSHError, "not JSON"):
+                ssh_setup.ensure_marketplace_notes(self.inventory(), marketplace)
 
     def test_tunneled_url_keeps_path_and_brackets_ipv6(self):
         self.assertEqual(

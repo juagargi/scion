@@ -87,6 +87,34 @@ class InventoryTest(unittest.TestCase):
             with self.assertRaisesRegex(orchestration.ConfigError, "marketplace.host"):
                 ssh.load_inventory(path, server, clients)
 
+    def test_marketplace_host_is_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.marketplace_workload("b")
+            del config["hummingbird"]["marketplace"]["host"]
+            path = self.write_json(directory, "experiment.json", config)
+            with self.assertRaisesRegex(orchestration.ConfigError,
+                                        "marketplace.host is required for SSH"):
+                orchestration.load_config(path)
+
+    def test_static_info_path_and_control_service_are_per_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            config["deployment"]["hosts"]["a"]["control_service"] = "scion-control@cs-1.service"
+            path = self.write_json(directory, "experiment.json", config)
+            server, clients, _, _ = orchestration.load_config(path)
+            inventory = ssh.load_inventory(path, server, clients)
+            self.assertEqual(inventory.hosts["a"].control_service, "scion-control@cs-1.service")
+            self.assertEqual(inventory.hosts["b"].static_info, "/etc/scion/staticInfoConfig.json")
+            self.assertIsNone(inventory.hosts["b"].control_service)
+
+            for key, value in (("control_service", "cs; reboot"), ("static_info", "relative.json")):
+                config = self.workload()
+                config["deployment"]["hosts"]["a"][key] = value
+                path = self.write_json(directory, "invalid.json", config)
+                server, clients, _, _ = orchestration.load_config(path)
+                with self.subTest(key=key), self.assertRaisesRegex(orchestration.ConfigError, key):
+                    ssh.load_inventory(path, server, clients)
+
     def test_rejects_missing_client_placement(self):
         with tempfile.TemporaryDirectory() as directory:
             config = self.workload()
