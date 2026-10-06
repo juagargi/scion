@@ -29,6 +29,8 @@ BIN = workload.BIN
 SETUP_DIR_NAME = "setup"
 RUNS_DIR_NAME = "runs"
 DEFAULT_STATIC_INFO = "/etc/scion/staticInfoConfig.json"
+# Hide login banners and other informational client messages; errors are still printed.
+SSH_OPTIONS = ["-o", "LogLevel=ERROR"]
 UNIT_RE = re.compile(r"[A-Za-z0-9@._:-]+\.service")
 
 
@@ -236,7 +238,7 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
 
 def _ssh_argv(host: SSHHost, command: str) -> list[str]:
     # SSH joins remote arguments into a command line; quote the whole sh -c argument for that shell.
-    return ["ssh", "--", host.alias, shlex.join(["sh", "-c", command])]
+    return ["ssh", *SSH_OPTIONS, "--", host.alias, shlex.join(["sh", "-c", command])]
 
 
 def ssh_command(host: SSHHost, command: str, *, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -245,7 +247,8 @@ def ssh_command(host: SSHHost, command: str, *, check: bool = True, **kwargs: An
 
 
 def scp_to(host: SSHHost, local: Path, remote: str) -> None:
-    subprocess.run(["scp", str(local), f"{host.alias}:{remote}"], check=True, text=True)
+    subprocess.run(["scp", *SSH_OPTIONS, str(local), f"{host.alias}:{remote}"],
+                   check=True, text=True)
 
 
 def sha256(path: Path) -> str:
@@ -271,11 +274,14 @@ def preflight(host: SSHHost, dry_run: bool = False) -> None:
     must be read-only.
     """
     daemon_host, daemon_port = _host_port(host.sciond, f"SSH host {host.name} sciond")
+    unreachable = shlex.quote(f"SCION daemon {host.sciond} is not reachable on {host.name}")
     command = " && ".join([
         "command -v sha256sum >/dev/null",
         "command -v nc >/dev/null",
         "true" if dry_run else f"install -d -m 700 {shlex.quote(host.run_dir)}",
-        f"nc -z -w 3 {shlex.quote(daemon_host)} {shlex.quote(daemon_port)}",
+        # Some nc variants report success on stderr; only a failure is worth printing.
+        f"{{ nc -z -w 3 {shlex.quote(daemon_host)} {shlex.quote(daemon_port)} >/dev/null 2>&1 "
+        f"|| {{ echo {unreachable} >&2; exit 1; }}; }}",
         host.readiness_command or "true",
     ])
     ssh_command(host, command)
