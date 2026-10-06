@@ -205,6 +205,14 @@ python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwt
 
 Logs are written beneath `logs/hummbwtester/`, one file per `client_id` plus `server.log`.
 
+`setup --dry-run` lists, as numbered steps, what setup would do without doing any of it:
+whether it would edit the `[router]` section of the generated border-router configs or rewrite the
+tc helper services in `gen/scion-dc.yml` (described, not shown as a diff), that it would start the
+topology and wait for SCION reachability, which border routers would get TBF qdiscs (or only a
+check of the recorded ones), into which tester containers it would copy the binary, which
+Prometheus target files it would write, and that it would start the local Prometheus. It only
+reads files and runs `sha256sum` in running tester containers; it starts no container.
+
 ## SSH real-topology runs
 
 For SSH-accessible SCION hosts, configure one file such as `hummbwtester-sciera.json`.
@@ -220,6 +228,23 @@ make build-dev
 python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester-sciera.json
 python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester-sciera.json
 ```
+
+To check a deployment without changing anything, run setup as a dry run first:
+
+```bash
+python3 tools/hummbwtester/experiment.py setup --dry-run --config tools/hummbwtester/hummbwtester-sciera.json
+```
+
+A dry run performs every check and read of the steps below and prints what a real setup would
+change (`dry-run: would ...`), including the manual steps it would require. It writes nothing on the
+hosts and starts, stops, or restarts no service, container, qdisc, or relay: the qdisc and Note
+helpers are piped in rather than copied and run read-only (`diagnose`/`status` and `--dry-run`),
+and the local Prometheus targets are not written. It does log in to the marketplace through the
+temporary forward of step 2, because issuing a JWT only reads the marketplace, and then discards
+the token. A failing step does not stop a dry run: it is reported and the next step still runs,
+and the dry run ends with a summary and exit status 1. Its last line always says that it was only
+a dry run: nothing was modified, and the listed manual steps need not be run. `--dry-run` is
+accepted only with `setup`.
 
 ### How SSH setup works
 
@@ -256,8 +281,10 @@ what differs. Setup performs these steps in order:
 5. **Prometheus.** It writes the file-SD targets to `gen/hummbwtester-prometheus/` locally and, with
    a Prometheus configuration and a Docker Compose file, to `/tmp/hummbwtester/prometheus/` on
    `deployment.metrics.prometheus`, where it runs the `hummbwtester-prometheus` container with host
-   networking on port `8090`. If the files or the container's configuration hash differ, setup
-   removes the old container, replaces the files, and starts it again; otherwise it leaves both alone.
+   networking on port `8090`. It first checks that `docker`, `docker compose`, and access to the
+   Docker daemon (`docker info`) work for the SSH user. If the files or the container's
+   configuration hash differ, setup removes the old container, replaces the files, and starts it
+   again; otherwise it leaves both alone.
 6. **Metric relays.** Each client metrics port and each `deployment.metrics.routers` address gets
    relay port `local_port_base + i`, carried by two ssh-control-masters: one to the source host with
    `-L 127.0.0.1:<port>:<source address>`, and one to the Prometheus host with

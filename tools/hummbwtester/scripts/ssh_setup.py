@@ -32,6 +32,12 @@ teardown removes the qdiscs, closes the ssh-control-masters of the manifest, rem
 Prometheus container and files, and deletes <run_dir>/setup/ (binary, JWT, helpers). It keeps the
 static info Note.
 
+With dry_run (`experiment.py setup --dry-run`), every step runs its checks and reads and prints
+what it would change ("dry-run: would ..."), but nothing is written on the hosts, no service or
+container is started, stopped, or restarted, and no relay is started or stopped. The qdisc and
+Note helpers are piped in instead of copied, and run read-only (diagnose/status, --dry-run). The
+marketplace login of step 2 still happens, because issuing a JWT only reads the marketplace.
+
 An ssh-control-master is an `ssh -M -S <socket> -f -N` connection that only carries one port
 forward; its control socket lets setup check (`ssh -S <socket> -O check`) and close (`-O exit`)
 it without tracking PIDs.
@@ -45,6 +51,7 @@ import contextlib
 from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
+import os
 from pathlib import Path
 import shlex
 import socket
@@ -103,11 +110,15 @@ def _remote_test(host: remote.SSHHost, command: str) -> bool:
     return result.returncode == 0
 
 
-def copy_if_changed(host: remote.SSHHost, local: Path, target: str, mode: str) -> bool:
-    """Copy a file atomically when its content differs; return whether it changed."""
+def copy_if_changed(
+    host: remote.SSHHost, local: Path, target: str, mode: str, dry_run: bool = False,
+) -> bool:
+    """Copy a file atomically when its content differs; return whether it changed (or would)."""
     digest = remote.sha256(local)
     if _remote_test(host, remote.digest_matches(target, digest)):
         return False
+    if dry_run:
+        return True
     temporary = target + ".tmp"
     remote.ssh_command(
         host, f"install -d -m 700 {shlex.quote(str(Path(target).parent))}",
@@ -121,10 +132,10 @@ def copy_if_changed(host: remote.SSHHost, local: Path, target: str, mode: str) -
     return True
 
 
-def deploy_binary(host: remote.SSHHost) -> None:
+def deploy_binary(host: remote.SSHHost, dry_run: bool = False) -> None:
     target = remote.setup_dir(host) + "/hummbwtester"
-    if copy_if_changed(host, remote.BIN, target, "700"):
-        print(f"deployed hummbwtester to {host.name}")
+    if copy_if_changed(host, remote.BIN, target, "700", dry_run):
+        print(f"{'dry-run: would deploy' if dry_run else 'deployed'} hummbwtester to {host.name}")
     else:
         print(f"hummbwtester on {host.name} is current")
 
@@ -177,6 +188,10 @@ def obtain_marketplace_jwt(inventory: remote.Inventory) -> str:
     """Log in at the marketplace url as seen from its host, through a temporary tunnel."""
     marketplace = inventory.marketplace
     host = inventory.hosts[inventory.marketplace_host]
+    if not os.environ.get(marketplace.password_env):
+        # Checked before the tunnel is opened, which would be pointless without a password.
+        raise workload.ConfigError(
+            f"marketplace password environment variable {marketplace.password_env} is not set")
     with marketplace_tunnel(host, marketplace.url) as local_url:
         try:
             return workload.obtain_marketplace_jwt(replace(marketplace, url=local_url))
@@ -188,11 +203,12 @@ def obtain_marketplace_jwt(inventory: remote.Inventory) -> str:
 
 def deploy_jwt(
     inventory: remote.Inventory, clients: list[workload.Client], local_jwt: Path,
+    dry_run: bool = False,
 ) -> None:
     for name in sorted(remote.hummingbird_hosts(inventory, clients)):
         host = inventory.hosts[name]
-        if copy_if_changed(host, local_jwt, remote.jwt_path(host), "600"):
-            print(f"uploaded marketplace JWT to {name}")
+        if copy_if_changed(host, local_jwt, remote.jwt_path(host), "600", dry_run):
+            print(f"{'dry-run: would upload' if dry_run else 'uploaded'} marketplace JWT to {name}")
         else:
             print(f"marketplace JWT on {name} is current")
 
@@ -216,10 +232,16 @@ def note_hosts(inventory: remote.Inventory) -> list[str]:
     })
 
 
-def _static_info_note(host: remote.SSHHost, action: str, *arguments: str) -> bool:
-    """Run the Note helper as root on host, piping it in; return whether the file changed."""
+def _static_info_note(
+    host: remote.SSHHost, action: str, *arguments: str, dry_run: bool = False,
+) -> bool:
+    """Run the Note helper as root on host, piping it in; return whether the file changed.
+
+    With dry_run the helper only reports whether the file would change.
+    """
     command = shlex.join([
         "sudo", "-n", "python3", "-", action, "--file", host.static_info, *arguments,
+        *(["--dry-run"] if dry_run else []),
     ])
     result = remote.ssh_command(
         host, command, check=False, capture_output=True, input=STATIC_INFO_HELPER.read_text(),
@@ -244,7 +266,7 @@ def restart_instruction(host: remote.SSHHost) -> str:
             f"ssh -t {host.alias} sudo systemctl restart {unit}")
 
 
-def ensure_marketplace_notes(inventory: remote.Inventory) -> list[str]:
+def ensure_marketplace_notes(inventory: remote.Inventory, dry_run: bool = False) -> list[str]:
     """Advertise the marketplace and return the manual steps the changed files need."""
     entry = note_entry(inventory.marketplace)
     if entry is None:
@@ -253,19 +275,27 @@ def ensure_marketplace_notes(inventory: remote.Inventory) -> list[str]:
     manual = []
     for name in note_hosts(inventory):
         host = inventory.hosts[name]
-        if _static_info_note(host, "ensure", "--entry", json.dumps(entry, sort_keys=True)):
-            print(f"advertised marketplace {entry['api_address']} in {host.static_info} on {name}")
+        if _static_info_note(host, "ensure", "--entry", json.dumps(entry, sort_keys=True),
+                             dry_run=dry_run):
+            print(f"{'dry-run: would advertise' if dry_run else 'advertised'} marketplace "
+                  f"{entry['api_address']} in {host.static_info} on {name}")
             manual.append(restart_instruction(host))
         else:
             print(f"marketplace Note in {host.static_info} on {name} is current")
     return manual
 
 
-def print_manual_steps(action: str, steps: list[str]) -> None:
-    if not steps:
+def print_manual_steps(action: str, steps: list[str], dry_run: bool = False) -> None:
+    if dry_run:
+        if not steps:
+            print(f"dry-run: {action} would require no manual steps")
+            return
+        print(f"dry-run: {action} would require these manual steps:")
+    elif not steps:
         print(f"{action}: no manual steps are required")
         return
-    print(f"{action}: the following steps must be done manually:")
+    else:
+        print(f"{action}: the following steps must be done manually:")
     for index, step in enumerate(steps, start=1):
         print(f"  {index}. {step}")
 
@@ -289,7 +319,7 @@ def selective_config(shape: remote.ShapedFlow, tc: dict[str, str]) -> selective_
 
 def _selective_command(helper: str, action: str, config: selective_qdisc.Config) -> str:
     arguments = ["sudo", "-n", "python3", helper, action, "--name", config.name]
-    if action == "up":
+    if action in ("up", "diagnose"):
         arguments.extend([
             "--device", config.device,
             "--local", str(config.local),
@@ -325,12 +355,19 @@ def _qdisc_state(host: remote.SSHHost, name: str) -> dict[str, object] | None:
     return value
 
 
+def _run_selective(
+    host: remote.SSHHost, helper: str, action: str, config: selective_qdisc.Config, **kwargs,
+) -> subprocess.CompletedProcess[str]:
+    """Run the qdisc helper; helper "-" pipes the local copy in instead of using a deployed one."""
+    if helper == "-":
+        kwargs["input"] = SELECTIVE_HELPER.read_text()
+    return remote.ssh_command(host, _selective_command(helper, action, config), **kwargs)
+
+
 def _qdisc_is_active(
     host: remote.SSHHost, helper: str, config: selective_qdisc.Config,
 ) -> bool:
-    result = remote.ssh_command(
-        host, _selective_command(helper, "status", config), check=False, capture_output=True,
-    )
+    result = _run_selective(host, helper, "status", config, check=False, capture_output=True)
     if result.returncode:
         return False
     try:
@@ -339,18 +376,48 @@ def _qdisc_is_active(
         return False
 
 
+def _diagnose_selective_qdisc(host: remote.SSHHost, config: selective_qdisc.Config) -> None:
+    """Run the read-only diagnose action; raise if installing the qdisc would fail."""
+    result = _run_selective(host, "-", "diagnose", config, check=False, capture_output=True)
+    try:
+        report = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        report = None
+    if not isinstance(report, dict):
+        raise remote.SSHError(
+            f"diagnosing selective qdisc {config.name} on {host.name}: {result.stderr.strip()}",
+        )
+    if report.get("warnings"):
+        raise remote.SSHError(
+            f"selective qdisc {config.name} on {host.name} could not be installed: "
+            + "; ".join(report["warnings"]),
+        )
+
+
 def ensure_selective_qdiscs(
-    inventory: remote.Inventory, tc: dict[str, str],
+    inventory: remote.Inventory, tc: dict[str, str], dry_run: bool = False,
 ) -> None:
     for shape in inventory.shaping:
         host = inventory.hosts[shape.host]
-        helper = remote.setup_dir(host) + "/selective_qdisc.py"
-        copy_if_changed(host, SELECTIVE_HELPER, helper, "700")
         config = selective_config(shape, tc)
+        if dry_run:
+            helper = "-"
+        else:
+            helper = remote.setup_dir(host) + "/selective_qdisc.py"
+            copy_if_changed(host, SELECTIVE_HELPER, helper, "700")
         desired = asdict(config)
         current = _qdisc_state(host, config.name)
         if current == desired and _qdisc_is_active(host, helper, config):
             print(f"selective qdisc {config.name} on {host.name} is current")
+            continue
+        if dry_run:
+            if current is None:
+                # The helper checks the interface, address, route, and root qdisc that up needs.
+                _diagnose_selective_qdisc(host, config)
+                print(f"dry-run: would install selective qdisc {config.name} on {host.name}")
+            else:
+                # Its diagnosis would only report the qdisc that setup first removes.
+                print(f"dry-run: would replace selective qdisc {config.name} on {host.name}")
             continue
         if current is not None:
             remote.ssh_command(host, _selective_command(helper, "down", config))
@@ -452,7 +519,8 @@ def _prometheus_container_current(host: remote.SSHHost, config_hash: str) -> boo
     return result.returncode == 0 and result.stdout.strip() == f"true {config_hash}"
 
 
-def stop_prometheus(host: remote.SSHHost) -> None:
+def _owned_prometheus_exists(host: remote.SSHHost) -> bool:
+    """Whether our Prometheus container exists; raise if a foreign one has its name."""
     owner = remote.ssh_command(
         host,
         "docker inspect --format "
@@ -461,18 +529,23 @@ def stop_prometheus(host: remote.SSHHost) -> None:
         check=False, capture_output=True,
     )
     if owner.returncode:
-        return
+        return False
     expected = f"{PROMETHEUS_PROJECT}/prometheus"
     if owner.stdout.strip() != expected:
         raise remote.SSHError(
             f"refusing to stop {PROMETHEUS_CONTAINER} on {host.name}: "
             f"container belongs to {owner.stdout.strip()!r}, not {expected}",
         )
-    remote.ssh_command(host, f"docker rm -f {shlex.quote(PROMETHEUS_CONTAINER)}")
+    return True
+
+
+def stop_prometheus(host: remote.SSHHost) -> None:
+    if _owned_prometheus_exists(host):
+        remote.ssh_command(host, f"docker rm -f {shlex.quote(PROMETHEUS_CONTAINER)}")
 
 
 def ensure_prometheus(
-    inventory: remote.Inventory, targets: dict[str, str],
+    inventory: remote.Inventory, targets: dict[str, str], dry_run: bool = False,
 ) -> None:
     host = inventory.hosts[inventory.prometheus_host]
     documents, config_hash = prometheus_documents(targets)
@@ -480,11 +553,19 @@ def ensure_prometheus(
         "command -v sha256sum >/dev/null",
         "command -v docker >/dev/null",
         "docker compose version >/dev/null",
-        f"install -d -m 755 {shlex.quote(REMOTE_PROMETHEUS_DIR + '/targets')}",
+        # Fails early when the SSH user may not use the Docker daemon.
+        "docker info >/dev/null",
+        "true" if dry_run
+        else f"install -d -m 755 {shlex.quote(REMOTE_PROMETHEUS_DIR + '/targets')}",
     ]))
     if (_remote_prometheus_files_current(host, documents)
             and _prometheus_container_current(host, config_hash)):
         print(f"Prometheus on {host.name} is current")
+        return
+    if dry_run:
+        replacing = _owned_prometheus_exists(host)
+        print(f"dry-run: would {'replace' if replacing else 'create'} {PROMETHEUS_CONTAINER} "
+              f"and its files in {REMOTE_PROMETHEUS_DIR} on {host.name}")
         return
 
     stop_prometheus(host)
@@ -623,7 +704,7 @@ def stop_tunnels() -> None:
         pass
 
 
-def ensure_tunnels(specs: list[TunnelSpec]) -> None:
+def ensure_tunnels(specs: list[TunnelSpec], dry_run: bool = False) -> None:
     """Relay every metric source to the Prometheus host through two ssh-control-masters.
 
     For relay port P, one ssh-control-master to the source host forwards controller 127.0.0.1:P
@@ -632,17 +713,25 @@ def ensure_tunnels(specs: list[TunnelSpec]) -> None:
     records a hash of the specs and every ssh-control-master; if the hash matches and all of
     them answer -O check, nothing changes, otherwise all are replaced.
     """
+    manifest = _load_tunnel_manifest()
     if not specs:
+        if dry_run:
+            if manifest is not None:
+                print("dry-run: would stop the existing Prometheus metric relays")
+            return
         stop_tunnels()
         print("no Prometheus metric relays are configured")
         return
     digest = _tunnel_hash(specs)
-    manifest = _load_tunnel_manifest()
     if manifest is not None and manifest.get("spec_sha256") == digest:
         control_masters, complete = _manifest_ssh_control_masters(manifest)
         if control_masters and complete and all(map(_ssh_control_master_running, control_masters)):
             print("Prometheus SSH tunnels are current")
             return
+    if dry_run:
+        print(f"dry-run: would {'replace the relays and ' if manifest is not None else ''}"
+              f"start {len(specs)} Prometheus metric relays ({2 * len(specs)} ssh-control-masters)")
+        return
 
     stop_tunnels()
     TUNNEL_STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -674,45 +763,78 @@ def setup(
     config_path: Path,
     config: tuple[workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str]] | None = None,
     inventory: remote.Inventory | None = None,
+    dry_run: bool = False,
 ) -> int:
-    """Bring the hosts to the configured state; the steps are listed in the module docstring."""
+    """Bring the hosts to the configured state; the steps are listed in the module docstring.
+
+    A real setup stops at the first failing step. With dry_run, every step performs its checks
+    and reads but only reports what it would change; a failing step is reported and the next one
+    still runs, so that one dry run shows every problem. It then returns 1.
+    """
     workload.require_built_binary()
     server, clients, _, tc = config if config is not None else workload.load_config(config_path)
     if inventory is None:
         inventory = remote.load_inventory(config_path, server, clients)
-    # 1. Binary.
-    for name in setup_hosts(inventory):
-        host = inventory.hosts[name]
-        remote.preflight(host)
-        deploy_binary(host)
-
+    if dry_run:
+        print("dry-run: checking only; nothing is changed on the hosts")
     local_jwt: Path | None = None
     manual: list[str] = []
-    completed = False
-    try:
-        # 2. Marketplace JWT.
+
+    def binary() -> None:
+        for name in setup_hosts(inventory):
+            host = inventory.hosts[name]
+            remote.preflight(host, dry_run)
+            deploy_binary(host, dry_run)
+
+    def marketplace_jwt() -> None:
+        # Logging in only reads the marketplace, so a dry run does it too.
+        nonlocal local_jwt
         if remote.hummingbird_hosts(inventory, clients):
             local_jwt = workload.write_private_jwt(obtain_marketplace_jwt(inventory))
-            deploy_jwt(inventory, clients, local_jwt)
-        # 3. Selective qdiscs.
-        ensure_selective_qdiscs(inventory, tc)
-        # 4. Static info Note.
-        manual.extend(ensure_marketplace_notes(inventory))
-        # 5. Prometheus.
+            deploy_jwt(inventory, clients, local_jwt, dry_run)
+
+    def prometheus() -> None:
         targets = target_documents(inventory, clients)
-        write_local_targets(targets)
-        ensure_prometheus(inventory, targets)
-        # 6. Metric relays.
-        ensure_tunnels(tunnel_specs(inventory, clients))
+        if not dry_run:
+            write_local_targets(targets)
+        ensure_prometheus(inventory, targets, dry_run)
+
+    steps = [
+        ("1. binary", binary),
+        ("2. marketplace JWT", marketplace_jwt),
+        ("3. selective qdiscs", lambda: ensure_selective_qdiscs(inventory, tc, dry_run)),
+        ("4. static info Note",
+         lambda: manual.extend(ensure_marketplace_notes(inventory, dry_run))),
+        ("5. Prometheus", prometheus),
+        ("6. metric relays", lambda: ensure_tunnels(tunnel_specs(inventory, clients), dry_run)),
+    ]
+    failures: list[str] = []
+    completed = False
+    try:
+        for label, step in steps:
+            if not dry_run:
+                step()
+                continue
+            try:
+                step()
+            except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as err:
+                failures.append(f"{label}: {err}")
+                print(f"dry-run: step {label} FAILED: {err}")
         completed = True
-        return 0
     finally:
         if local_jwt is not None:
             local_jwt.unlink(missing_ok=True)
         # A later failure must not hide the steps that files already changed on the hosts need.
         if completed or manual:
             # 7. Manual steps.
-            print_manual_steps("setup", manual)
+            print_manual_steps("setup", manual, dry_run)
+    if failures:
+        print(f"dry-run: setup would fail; {len(failures)} step(s) failed:")
+        for failure in failures:
+            print(f"  - {failure}")
+    if dry_run:
+        print(workload.DRY_RUN_NOTICE)
+    return 1 if failures else 0
 
 
 def teardown(

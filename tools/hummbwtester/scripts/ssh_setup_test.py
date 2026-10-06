@@ -120,6 +120,14 @@ class SSHSetupTest(unittest.TestCase):
             "https://127.0.0.1:8888/", "alice", "MARKETPLACE_PASSWORD", None, "monitor",
         ), **changes)
 
+    def test_marketplace_password_is_checked_before_opening_the_tunnel(self):
+        with mock.patch.dict(ssh_setup.os.environ, {}, clear=True), \
+             mock.patch.object(ssh_setup.subprocess, "run") as run:
+            with self.assertRaisesRegex(orchestration.ConfigError, "MARKETPLACE_PASSWORD"):
+                ssh_setup.obtain_marketplace_jwt(self.inventory())
+        run.assert_not_called()
+
+    @mock.patch.dict(ssh_setup.os.environ, {"MARKETPLACE_PASSWORD": "secret"})
     def test_marketplace_on_host_is_reached_through_a_temporary_tunnel(self):
         inventory = self.inventory()
         completed = subprocess.CompletedProcess([], 0, "", "")
@@ -135,6 +143,7 @@ class SSHSetupTest(unittest.TestCase):
         self.assertEqual(start[-1], "monitor-alias")
         self.assertEqual(stop[stop.index("-O") + 1], "exit")
 
+    @mock.patch.dict(ssh_setup.os.environ, {"MARKETPLACE_PASSWORD": "secret"})
     def test_marketplace_tunnel_is_closed_when_login_fails(self):
         inventory = self.inventory()
         completed = subprocess.CompletedProcess([], 0, "", "")
@@ -206,6 +215,115 @@ class SSHSetupTest(unittest.TestCase):
         with mock.patch.object(ssh_setup.remote, "ssh_command", return_value=failed):
             with self.assertRaisesRegex(remote.SSHError, "not JSON"):
                 ssh_setup.ensure_marketplace_notes(inventory)
+
+    def fake_hosts(self, commands, diagnose='{"result": "ready", "warnings": []}'):
+        """An SSH stand-in that records commands and answers as unconfigured hosts would."""
+        def run(host, command, check=True, **kwargs):
+            commands.append((host.name, command))
+            if "sha256sum" in command or command.startswith("test -d") \
+                    or command.startswith("docker inspect"):
+                return subprocess.CompletedProcess([], 1, "", "")
+            if "hummbwtester-qdisc" in command:
+                return subprocess.CompletedProcess([], 44, "", "")
+            if " diagnose " in command:
+                return subprocess.CompletedProcess([], 0, diagnose, "")
+            if " ensure " in command:
+                return subprocess.CompletedProcess([], 0, '{"changed": true}', "")
+            return subprocess.CompletedProcess([], 0, "", "")
+        return run
+
+    def test_dry_run_setup_checks_everything_and_changes_nothing(self):
+        shape = remote.ShapedFlow("source", "source-peer", "ens192", "10.6.7.1:50001",
+                                  "10.6.7.2:50001", "mq")
+        inventory = replace(self.inventory(), shaping=(shape,), marketplace=self.marketplace(
+            scion_address="[1-ff00:0:110,127.0.0.1]:31888",
+        ))
+        clients = [SimpleNamespace(client_id="client-1", metrics_port=9090, hummingbird=True)]
+        config = (None, clients, {}, {"rate": "10mbit", "burst": "50kb", "limit": "1mb"})
+        commands = []
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(ssh_setup, "TUNNEL_MANIFEST", Path(directory) / "manifest.json"), \
+             mock.patch.object(ssh_setup.workload, "require_built_binary"), \
+             mock.patch.object(ssh_setup.remote, "sha256", return_value="digest"), \
+             mock.patch.object(ssh_setup.remote, "ssh_command",
+                               side_effect=self.fake_hosts(commands)), \
+             mock.patch.object(ssh_setup, "obtain_marketplace_jwt", return_value="jwt"), \
+             mock.patch.object(ssh_setup.remote, "scp_to") as scp, \
+             mock.patch.object(ssh_setup, "write_local_targets") as write_targets, \
+             mock.patch.object(ssh_setup.subprocess, "run") as local_run, \
+             mock.patch("builtins.print") as output:
+            self.assertEqual(ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 0)
+        scp.assert_not_called()
+        write_targets.assert_not_called()
+        local_run.assert_not_called()  # no ssh-control-master is started or stopped
+        mutating = ("install -d", "mv -f", "chmod", "rm -", "--force-recreate", "docker rm",
+                    "systemctl", " up ", " down ")
+        for host, command in commands:
+            self.assertFalse(any(word in command for word in mutating), (host, command))
+        self.assertTrue(any(" diagnose " in command for _, command in commands))
+        notes = [command for _, command in commands if " ensure " in command]
+        self.assertTrue(notes and all(command.endswith("--dry-run") for command in notes))
+        lines = [str(call.args[0]) for call in output.call_args_list if call.args]
+        for expected in ("would create /var/tmp/humm on monitor",
+                         "would deploy hummbwtester to source",
+                         "would upload marketplace JWT to source",
+                         "would install selective qdisc source-peer on source",
+                         "would advertise marketplace",
+                         "would create hummbwtester-prometheus",
+                         "would start 2 Prometheus metric relays",
+                         "dry-run: setup would require these manual steps:"):
+            self.assertTrue(any(expected in line for line in lines), expected)
+        self.assertEqual(lines[-1], orchestration.DRY_RUN_NOTICE)
+
+    def test_dry_run_continues_after_a_failed_step_and_returns_failure(self):
+        shape = remote.ShapedFlow("source", "source-peer", "ens192", "10.6.7.1:50001",
+                                  "10.6.7.2:50001", "mq")
+        inventory = replace(self.inventory(), shaping=(shape,))
+        clients = [SimpleNamespace(client_id="client-1", metrics_port=9090, hummingbird=True)]
+        config = (None, clients, {}, {"rate": "10mbit", "burst": "50kb", "limit": "1mb"})
+        commands = []
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(ssh_setup, "TUNNEL_MANIFEST", Path(directory) / "manifest.json"), \
+             mock.patch.object(ssh_setup.workload, "require_built_binary"), \
+             mock.patch.object(ssh_setup.remote, "sha256", return_value="digest"), \
+             mock.patch.object(ssh_setup.remote, "ssh_command",
+                               side_effect=self.fake_hosts(commands)), \
+             mock.patch.object(ssh_setup, "obtain_marketplace_jwt",
+                               side_effect=orchestration.ConfigError("cannot reach marketplace")), \
+             mock.patch("builtins.print") as output:
+            self.assertEqual(ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 1)
+        # The qdisc and Prometheus checks still ran after the marketplace login failed.
+        self.assertTrue(any(" diagnose " in command for _, command in commands))
+        self.assertTrue(any("docker info" in command for _, command in commands))
+        lines = [str(call.args[0]) for call in output.call_args_list if call.args]
+        self.assertIn("  - 2. marketplace JWT: cannot reach marketplace", lines)
+        self.assertEqual(lines[-1], orchestration.DRY_RUN_NOTICE)
+
+    def test_real_setup_stops_at_the_first_failed_step(self):
+        clients = [SimpleNamespace(client_id="client-1", metrics_port=9090, hummingbird=True)]
+        config = (None, clients, {}, {"rate": "10mbit", "burst": "50kb", "limit": "1mb"})
+        with mock.patch.object(ssh_setup.workload, "require_built_binary"), \
+             mock.patch.object(ssh_setup.remote, "preflight"), \
+             mock.patch.object(ssh_setup, "deploy_binary"), \
+             mock.patch.object(ssh_setup, "obtain_marketplace_jwt",
+                               side_effect=orchestration.ConfigError("cannot reach marketplace")), \
+             mock.patch.object(ssh_setup, "ensure_selective_qdiscs") as qdiscs:
+            with self.assertRaisesRegex(orchestration.ConfigError, "cannot reach"):
+                ssh_setup.setup(Path("config.json"), config, self.inventory())
+        qdiscs.assert_not_called()
+
+    def test_dry_run_reports_a_qdisc_that_could_not_be_installed(self):
+        shape = remote.ShapedFlow("source", "source-peer", "ens192", "10.6.7.1:50001",
+                                  "10.6.7.2:50001", "mq")
+        inventory = replace(self.inventory(), shaping=(shape,))
+        commands = []
+        diagnose = '{"result": "warnings", "warnings": ["root qdisc is noqueue, not expected mq"]}'
+        with mock.patch.object(ssh_setup.remote, "ssh_command",
+                               side_effect=self.fake_hosts(commands, diagnose)):
+            with self.assertRaisesRegex(remote.SSHError, "could not be installed: root qdisc"):
+                ssh_setup.ensure_selective_qdiscs(
+                    inventory, {"rate": "10mbit", "burst": "50kb", "limit": "1mb"}, dry_run=True,
+                )
 
     def test_tunneled_url_keeps_path_and_brackets_ipv6(self):
         self.assertEqual(

@@ -1,6 +1,7 @@
 import json
 import io
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -410,6 +411,60 @@ class SetupPatchTest(unittest.TestCase):
             self.assertEqual(helper["command"], [
                 "setup", "10mbit", "50kb", "256kb", *peer_addresses,
             ])
+
+
+class DescribeSetupTest(unittest.TestCase):
+    def test_describes_every_step_without_changing_files(self):
+        router = {"send_buffer_size": 16384, "receive_buffer_size": 4194304,
+                  "ingress_batch_size": 64, "processor_queue_size": 640,
+                  "egress_batch_size": 1, "egress_queue_size": 64}
+        tc = {"rate": "10mbit", "burst": "50kb", "limit": "256kb"}
+        server = orchestration.Endpoint("1-ff00:0:112", "172.20.0.30", 12345, 4096)
+        client = mock.Mock(client_id="hummingbird-1", metrics_port=9090,
+                           endpoint=orchestration.Endpoint("1-ff00:0:111", "172.20.0.20", 0))
+        peers = {"br1-ff00_0_111-1": ["172.20.0.3"]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            toml = root / "br1.toml"
+            toml.write_text("[general]\nid = \"br1\"\nbatch_size = 1\n")
+            compose_file = root / "scion-dc.yml"
+            compose_file.write_text("services: {}\n")
+            binary = root / "hummbwtester"
+            binary.write_bytes(b"binary")
+            before = {path: path.read_bytes() for path in (toml, compose_file, binary)}
+            stale = subprocess.CompletedProcess([], 0, "other  /share/bin/hummbwtester\n", "")
+            with mock.patch.object(orchestration, "compose_data",
+                                   return_value={"services": {}}), \
+                 mock.patch.object(orchestration, "validate_endpoints"), \
+                 mock.patch.object(orchestration, "sciond_map", return_value={}), \
+                 mock.patch.object(orchestration, "endpoint_sciond"), \
+                 mock.patch.object(orchestration, "inter_as_router_peers", return_value=peers), \
+                 mock.patch.object(orchestration, "require_built_binary"), \
+                 mock.patch.object(orchestration, "br_config_paths", return_value={"br1": toml}), \
+                 mock.patch.object(orchestration, "COMPOSE", compose_file), \
+                 mock.patch.object(orchestration, "DOCKER_QDISC_STATE", root / "qdiscs.json"), \
+                 mock.patch.object(orchestration, "BIN", binary), \
+                 mock.patch.object(orchestration, "GEN", root / "gen"), \
+                 mock.patch.object(orchestration, "TARGET_DIR", root / "targets"), \
+                 mock.patch.object(orchestration, "run", return_value=stale) as run:
+                steps = orchestration.describe_setup(Path("config.json"),
+                                                     (server, [client], router, tc))
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+            self.assertFalse((root / "qdiscs.json").exists())
+            self.assertFalse((root / "targets").exists())
+        # The only commands run read the binary digest inside the tester containers.
+        self.assertTrue(run.call_args_list)
+        for call in run.call_args_list:
+            self.assertEqual(call.args[0][-5:], ["exec", "-T", call.args[0][-3], "sha256sum",
+                                                 "/share/bin/hummbwtester"])
+        text = "\n".join(steps)
+        for expected in ("would edit 1 border-router configs", "drop the deprecated batch_size",
+                         "would rewrite", "tc helper service per inter-AS border router",
+                         "would run ./scion.sh start", "SCION-ping the server",
+                         "would install TBF qdiscs on br1-ff00_0_111-1 towards 172.20.0.3",
+                         "would copy bin/hummbwtester to /share/bin/hummbwtester in "
+                         "tester_1-ff00_0_111: it differs", "would write the Prometheus targets"):
+            self.assertIn(expected, text)
 
 
 class ReportTest(unittest.TestCase):
