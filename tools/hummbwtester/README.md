@@ -32,8 +32,9 @@ while leaving the intra-AS bridges unshaped.
 waits two seconds, and starts all clients concurrently.
 Hummingbird clients either derive reservations from `/share/gen` master keys or buy them from the
 marketplace advertised by the selected SCION path, according to the global `hummingbird` setting.
-Marketplace runs log in through the registration website configured in the workload JSON and pass
-the resulting JWT to client processes through an owner-only file.
+Marketplace runs log in through the registration website advertised in `gen/AS*/staticInfoConfig.json`
+(the workload `url` is only used by SSH deployments) and pass the resulting JWT to client processes
+through an owner-only file.
 Key-derived Hummingbird clients choose a random nonzero 22-bit reservation ID when they start and
 reuse it across reservation renewals. Marketplace reservations use the IDs returned by the
 marketplace. Client workload and reservation settings are read from the JSON configuration.
@@ -53,6 +54,8 @@ Each run uses one self-contained JSON file.
   The endpoint `host` remains its SCION bind IP.
 - `tc`: TBF `rate`, `burst`, and explicit queue `limit` values passed to `tc`.
 - `hummingbird`: required global reservation source (`keys` or `marketplace`).
+  SSH deployments support only `marketplace`: key-derived reservations need the master keys of every
+  on-path AS, which only a generated Docker topology provides.
   Marketplace mode also requires a `marketplace` object with `url`, `username`, and `password_env`; `sub_account` is optional. The password is read from the named environment variable, never from JSON.
   In SSH deployments, `host` is required: it names the `deployment.hosts` entry from which `url` is
   reachable, e.g. `"host": "ufms"` with `"url": "https://127.0.0.1:8888"` for a marketplace bound to
@@ -205,10 +208,9 @@ Logs are written beneath `logs/hummbwtester/`, one file per `client_id` plus `se
 ## SSH real-topology runs
 
 For SSH-accessible SCION hosts, configure one file such as `hummbwtester-sciera.json`.
-Declare only the exact egress flows that may be shaped.
-The SCIERA file still contains Docker-derived tester IAs and bind IPs;
-Replace the IAs and bind IPs with the actual SCIERA endpoints before running setup or
-the experiment on SSH hosts. SSH aliases may use `ProxyJump`; the runner uses them unchanged.
+Place every endpoint with `node` on a declared host and give it the IA of that host's AS;
+declare only the exact egress flows that may be shaped.
+SSH aliases may use `ProxyJump`; the runner uses them unchanged.
 
 Set the password named by `hummingbird.marketplace.password_env`, build the artifact,
 set up the persistent SSH resources, and then run the experiment:
@@ -219,47 +221,72 @@ python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummb
 python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester-sciera.json
 ```
 
-SSH setup verifies and uploads the built binary,
-obtains the configured user's JWT from `hummingbird.marketplace.url`,
-and uploads it to owner-only setup directories.
-To log in, setup opens a temporary SSH forward from a free controller loopback port to that url
-as seen from `hummingbird.marketplace.host`, logs in through it, and closes it.
-The SSH launch shell reads the JWT file only immediately before `exec`;
-it is never placed in command arguments or the configuration.
+### How SSH setup works
 
-Clients find the marketplace of a path in the static info Note that every on-path AS puts into its
-beacons. When `hummingbird.marketplace.scion_address` is set, setup advertises it on the server,
-client, and marketplace hosts: it pipes `scripts/static_info_note.py` to `sudo -n python3` and
-inserts or updates one entry named `hummbwtester` at the front of the Note's `hummingbird` list,
-with `api_protocol` `connectrpc/TLS/QUIC/SCION`, `api_address` the `scion_address`, and
-`client_registration_website` the `url`. Other static info settings, other Note keys, and other
-marketplaces' entries are kept; an entry for the same `api_address` under another name is replaced,
-because clients would treat it as a different marketplace. The file keeps its owner and mode and is
-created if missing. Each host's file is `static_info` (default `/etc/scion/staticInfoConfig.json`).
+`scripts/ssh_setup.py` runs entirely on the controller, the machine where `experiment.py` is started.
+It reaches the hosts only through their configured SSH aliases: commands run as
+`ssh -- <alias> sh -c '<script>'` and files are copied with `scp`.
+Every step first compares the current state with the desired one, so repeating setup only changes
+what differs. Setup performs these steps in order:
 
-Set `deployment.metrics.prometheus` to the declared host on which Prometheus runs.
-Setup generates the same file-SD targets used locally, copies them together with a Prometheus
-configuration and Docker Compose file to `/tmp/hummbwtester/prometheus/` on that host,
-and starts the `hummbwtester-prometheus` container using host networking on port `8090`.
-It also creates persistent, controller-owned SSH relays from every client and router endpoint
-to the loopback target ports on the Prometheus host.
-If the remote files, running container configuration, and tunnels already match, setup leaves them untouched.
-If the Prometheus files or container differ,
-setup stops the old container, replaces the files, and starts it again.
+1. **Binary.** On the server, client, and shaping hosts it checks for `sha256sum` and `nc`,
+   creates `run_dir`, checks that the SCION daemon port is open, and runs the optional
+   `readiness_command`. It then copies `bin/hummbwtester` to `<run_dir>/setup/hummbwtester` unless
+   the remote SHA-256 already matches. Copies are atomic: `scp` to a `.tmp` file, verify its digest,
+   `chmod`, and `mv`.
+2. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
+   loopback port to `hummingbird.marketplace.url` as seen from `hummingbird.marketplace.host`,
+   logs in through it with `marketplace/tools/get_jwt.py`, and closes it. The JWT is copied with
+   mode `600` to `<run_dir>/setup/marketplace.jwt` on the Hummingbird client hosts, and the
+   controller's copy is deleted. The SSH launch shell reads the JWT file only immediately before
+   `exec`; it is never placed in command arguments or the configuration.
+3. **Selective qdiscs.** On each shaping host it copies `scripts/selective_qdisc.py` to
+   `<run_dir>/setup/` and runs it with `sudo -n`, unless the recorded state in
+   `/run/hummbwtester-qdisc/` and the live root qdisc already match (see below).
+4. **Static info Note.** Clients find the marketplace of a path in the static info Note that every
+   on-path AS puts into its beacons. When `hummingbird.marketplace.scion_address` is set, setup
+   pipes `scripts/static_info_note.py` to `sudo -n python3 -` on the server, client, and
+   marketplace hosts. The helper inserts or updates one entry named `hummbwtester` at the front of
+   the Note's `hummingbird` list, with `api_protocol` `connectrpc/TLS/QUIC/SCION`, `api_address`
+   the `scion_address`, and `client_registration_website` the `url`. Other static info settings,
+   other Note keys, and other marketplaces' entries are kept; an entry for the same `api_address`
+   under another name is replaced, because clients would treat it as a different marketplace.
+   The file keeps its owner and mode and is created if missing. Each host's file is `static_info`
+   (default `/etc/scion/staticInfoConfig.json`).
+5. **Prometheus.** It writes the file-SD targets to `gen/hummbwtester-prometheus/` locally and, with
+   a Prometheus configuration and a Docker Compose file, to `/tmp/hummbwtester/prometheus/` on
+   `deployment.metrics.prometheus`, where it runs the `hummbwtester-prometheus` container with host
+   networking on port `8090`. If the files or the container's configuration hash differ, setup
+   removes the old container, replaces the files, and starts it again; otherwise it leaves both alone.
+6. **Metric relays.** Each client metrics port and each `deployment.metrics.routers` address gets
+   relay port `local_port_base + i`, carried by two ssh-control-masters: one to the source host with
+   `-L 127.0.0.1:<port>:<source address>`, and one to the Prometheus host with
+   `-R 127.0.0.1:<port>:127.0.0.1:<port>`. Prometheus scrapes its own `127.0.0.1:<port>`, and the
+   traffic flows Prometheus host → controller → source host. The control sockets and a manifest
+   (a hash of the relay list and every ssh-control-master) live in `/tmp/hummbwtester/ssh-tunnels/`
+   on the controller. If the hash matches and every ssh-control-master answers `-O check`, the
+   relays are kept; otherwise all of them are replaced.
+7. **Manual steps.** Setup never restarts host services. It ends by printing the steps that must be
+   done manually, or that none are required; if it fails after changing a file, it still prints the
+   steps that change needs. The control service reads its static info file only at startup, so
+   every host whose Note changed gets a step to restart its control service, for example:
 
-Setup never restarts host services. It ends by printing the steps that must be done manually,
-or that none are required; if it fails after changing a file, it still prints the steps that change needs.
-The control service reads its static info file only at startup, so every host whose Note changed
-gets a step to restart its control service, for example:
+   ```text
+   setup: the following steps must be done manually:
+     1. restart the control service on ufms so it reads /etc/scion/staticInfoConfig.json: ssh -t sciera-ufms sudo systemctl restart scion-control@cs-1.service
+   ```
 
-```text
-setup: the following steps must be done manually:
-  1. restart the control service on ufms so it reads /etc/scion/staticInfoConfig.json: ssh -t sciera-ufms sudo systemctl restart scion-control@cs-1.service
-```
+   The optional `deployment.hosts.<name>.control_service` names the systemd unit in that step;
+   without it, the step shows a `<control service unit>` placeholder.
+   Until the restart, and until new beacons have propagated, paths keep advertising the old Note.
 
-The optional `deployment.hosts.<name>.control_service` names the systemd unit in that step;
-without it, the step shows a `<control service unit>` placeholder.
-Until the restart, and until new beacons have propagated, paths keep advertising the old Note.
+An ssh-control-master is a background `ssh -M -S <socket> -f -N` connection that only carries one
+port forward. Its control socket lets setup check (`ssh -S <socket> -O check -- <alias>`) and close
+(`-O exit`) the connection without tracking process IDs. The marketplace forward of step 2 is a
+temporary one whose socket lives in a private temporary directory; the relays of step 6 persist
+until teardown.
+
+### Running and tearing down
 
 The SSH runner only launches the already-deployed server and clients.
 It fails with an instruction to rerun setup if the deployed binary is missing or differs
@@ -271,10 +298,11 @@ When finished, remove the persistent setup with:
 python3 tools/hummbwtester/experiment.py teardown --config tools/hummbwtester/hummbwtester-sciera.json
 ```
 
-Teardown removes configured selective qdiscs, closes the persistent metric tunnels,
-stops Prometheus, deletes its files under `/tmp`, and removes the deployed binary and JWT.
-Run it from the same controller as setup because the SSH control sockets are kept under
-`/tmp/hummbwtester/ssh-tunnels/` on that controller.
+Teardown removes configured selective qdiscs, closes the ssh-control-masters recorded in the
+manifest, removes the Prometheus container and its files under `/tmp`, and deletes
+`<run_dir>/setup/` (binary, JWT, and helpers). It continues past failures and reports them at the end.
+Run it from the same controller as setup, because the control sockets and the manifest are kept
+under `/tmp/hummbwtester/ssh-tunnels/` on that controller.
 It does not touch the static info files: the `hummbwtester` Note entry that setup advertised stays,
 so the marketplace remains discoverable for later experiments. To withdraw it manually, pipe the
 helper from the controller to each host, e.g. ufms, and then restart that host's control service:
@@ -449,9 +477,10 @@ Run the focused Go and orchestration tests from the repository root:
 
 ```bash
 go test ./tools/hummbwtester
-bazel test //tools/hummbwtester:go_default_test //tools/hummbwtester:orchestration_test \\
-  //tools/hummbwtester:ssh_orchestration_test //tools/hummbwtester:ssh_setup_test \\
-  //tools/hummbwtester:selective_qdisc_test
+bazel test //tools/hummbwtester:go_default_test //tools/hummbwtester:experiment_test \
+  //tools/hummbwtester:orchestration_test //tools/hummbwtester:ssh_orchestration_test \
+  //tools/hummbwtester:ssh_setup_test //tools/hummbwtester:selective_qdisc_test \
+  //tools/hummbwtester:static_info_note_test
 ```
 
 Run the no-sleep client send-path benchmark with:
@@ -461,7 +490,8 @@ go test ./tools/hummbwtester -run '^$' -bench '^BenchmarkSerializeWriteTo$' -ben
 ```
 
 The Python tests cover configuration validation, deterministic metrics-port assignment,
-per-minute report aggregation, and selective IPv4/IPv6 qdisc command construction.
+per-minute report aggregation, selective IPv4/IPv6 qdisc command construction, the SSH setup steps
+(with SSH, scp, and ssh-control-masters mocked), and the static info Note edits.
 The Go test covers random Hummingbird reservation-ID generation.
 A privileged integration test creates disposable network namespaces and verifies IPv4 and
 link-local IPv6 selection, UDP back pressure, zero TBF drops, cleanup, and partial-install rollback:

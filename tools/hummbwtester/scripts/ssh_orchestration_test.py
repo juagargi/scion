@@ -16,15 +16,23 @@ class InventoryTest(unittest.TestCase):
         path.write_text(json.dumps(value))
         return path
 
-    def workload(self):
+    def workload(self, marketplace_host="b"):
         return {
-            "hummingbird": {"reservation_source": "keys"},
+            "hummingbird": {
+                "reservation_source": "marketplace",
+                "marketplace": {
+                    "host": marketplace_host, "url": "https://127.0.0.1:8888", "username": "alice",
+                    "password_env": "MARKETPLACE_PASSWORD",
+                },
+            },
             "server": {"node": "a", "isd_as": "1-ff00:0:112", "host": "fd00::1", "port": 12345,
                        "receive_buffer_size": 4096},
             "hummingbird_clients": [{
                 "client_id": "hummingbird-1", "node": "b", "isd_as": "1-ff00:0:111", "host": "fd00::2",
                 "port": 0, "bandwidth": "1Mbps", "maxburst": "2Mbps", "duration": "1m",
-                "hummingbird_reservation": {"bandwidth": 1, "duration": "1m", "reverse_bandwidth": 0},
+                "hummingbird_reservation": {
+                    "bandwidth": "1mbps", "duration": "1m", "reverse_bandwidth": "0kbps",
+                },
             }],
             "best_effort_clients": [{
                 "client_id": "best-effort-1", "node": "a", "isd_as": "1-ff00:0:110", "host": "fd00::3",
@@ -62,34 +70,30 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(inventory.prometheus_host, "b")
         self.assertEqual(inventory.shaping[0].expected_root, "noqueue")
 
-    def marketplace_workload(self, host):
-        config = self.workload()
-        config["hummingbird"] = {
-            "reservation_source": "marketplace",
-            "marketplace": {
-                "host": host, "url": "https://127.0.0.1:8888", "username": "alice",
-                "password_env": "MARKETPLACE_PASSWORD",
-            },
-        }
-        config["hummingbird_clients"][0]["hummingbird_reservation"] = {
-            "bandwidth": "1mbps", "duration": "1m", "reverse_bandwidth": "0kbps",
-        }
-        return config
+    def test_rejects_key_derived_reservations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            config["hummingbird"] = {"reservation_source": "keys"}
+            config["hummingbird_clients"][0]["hummingbird_reservation"] = {
+                "bandwidth": 1, "duration": "1m", "reverse_bandwidth": 0,
+            }
+            with self.assertRaisesRegex(orchestration.ConfigError, "require .*marketplace"):
+                orchestration.load_config(self.write_json(directory, "experiment.json", config))
 
     def test_marketplace_host_must_be_declared(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = self.write_json(directory, "experiment.json", self.marketplace_workload("b"))
+            path = self.write_json(directory, "experiment.json", self.workload())
             server, clients, _, _ = orchestration.load_config(path)
             self.assertEqual(ssh.load_inventory(path, server, clients).marketplace_host, "b")
 
-            path = self.write_json(directory, "unknown.json", self.marketplace_workload("unknown"))
+            path = self.write_json(directory, "unknown.json", self.workload("unknown"))
             server, clients, _, _ = orchestration.load_config(path)
             with self.assertRaisesRegex(orchestration.ConfigError, "marketplace.host"):
                 ssh.load_inventory(path, server, clients)
 
     def test_marketplace_host_is_required(self):
         with tempfile.TemporaryDirectory() as directory:
-            config = self.marketplace_workload("b")
+            config = self.workload()
             del config["hummingbird"]["marketplace"]["host"]
             path = self.write_json(directory, "experiment.json", config)
             with self.assertRaisesRegex(orchestration.ConfigError,

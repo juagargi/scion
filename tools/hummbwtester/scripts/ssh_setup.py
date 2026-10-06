@@ -1,5 +1,41 @@
 #!/usr/bin/env python3
-"""Install and remove persistent infrastructure for SSH hummbwtester experiments."""
+"""Install and remove persistent infrastructure for SSH hummbwtester experiments.
+
+Everything runs on the controller, the machine where experiment.py is started. Remote work is
+done through the configured SSH aliases: commands go through ssh_orchestration.ssh_command
+(`ssh -- <alias> sh -c '<script>'`) and files through scp. Every step compares the current state
+with the desired one first, so a repeated setup only changes what differs.
+
+setup performs, in this order:
+
+1. Binary: on the server, client and shaping hosts, preflight checks (tools, run_dir, SCION
+   daemon, readiness_command), then copy bin/hummbwtester to <run_dir>/setup/ unless its SHA-256
+   already matches. Copies are atomic: scp to a .tmp file, verify its digest, chmod, mv.
+2. Marketplace JWT: open a temporary ssh-control-master that forwards a free controller loopback
+   port to hummingbird.marketplace.url as seen from hummingbird.marketplace.host, log in through
+   it with marketplace/tools/get_jwt.py, close it, and copy the JWT (mode 600) to the hosts of the
+   Hummingbird clients. The controller's copy is deleted.
+3. Selective qdiscs: on each shaping host, copy selective_qdisc.py to <run_dir>/setup/ and run it
+   with sudo -n, unless its recorded state and the live root qdisc already match.
+4. Static info Note: on the server, client and marketplace hosts, pipe static_info_note.py to
+   `sudo -n python3 -` to insert or update the hummbwtester entry of the Note's hummingbird list.
+   Services are never restarted; a changed file becomes a manual step.
+5. Prometheus: write the file-SD targets locally and to /tmp/hummbwtester/prometheus/ on the
+   Prometheus host, and (re)create the hummbwtester-prometheus container when files or its
+   configuration hash differ.
+6. Metric relays: two ssh-control-masters per metric source, an -L to the source host and an -R
+   to the Prometheus host, so that Prometheus scrapes its own loopback. Their sockets and a
+   manifest live in /tmp/hummbwtester/ssh-tunnels/ on the controller.
+7. Print the manual steps, e.g. restarting a control service whose static info file changed.
+
+teardown removes the qdiscs, closes the ssh-control-masters of the manifest, removes the
+Prometheus container and files, and deletes <run_dir>/setup/ (binary, JWT, helpers). It keeps the
+static info Note.
+
+An ssh-control-master is an `ssh -M -S <socket> -f -N` connection that only carries one port
+forward; its control socket lets setup check (`ssh -S <socket> -O check`) and close (`-O exit`)
+it without tracking PIDs.
+"""
 
 from __future__ import annotations
 
@@ -51,20 +87,18 @@ class TunnelSpec:
     source_address: str
 
 
-def _check_metrics_ports(inventory: remote.Inventory, clients: list[workload.Client]) -> None:
-    if inventory.local_port_base + len(clients) + len(inventory.routers) > 65535:
-        raise workload.ConfigError("SSH metrics tunnel ports exceed 65535")
+def setup_hosts(inventory: remote.Inventory) -> list[str]:
+    """The hosts that receive the binary and helpers: participants and shaping hosts."""
+    return sorted({
+        inventory.server_host,
+        *inventory.client_hosts.values(),
+        *(shape.host for shape in inventory.shaping),
+    })
 
 
-def _remote_file_matches(host: remote.SSHHost, path: str, digest: str) -> bool:
-    command = (
-        f"test -f {shlex.quote(path)}"
-        f" && test \"$(sha256sum {shlex.quote(path)} | awk '{{print $1}}')\""
-        f" = {shlex.quote(digest)}"
-    )
+def _remote_test(host: remote.SSHHost, command: str) -> bool:
     result = remote.ssh_command(
-        host, command, check=False,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        host, command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     return result.returncode == 0
 
@@ -72,7 +106,7 @@ def _remote_file_matches(host: remote.SSHHost, path: str, digest: str) -> bool:
 def copy_if_changed(host: remote.SSHHost, local: Path, target: str, mode: str) -> bool:
     """Copy a file atomically when its content differs; return whether it changed."""
     digest = remote.sha256(local)
-    if _remote_file_matches(host, target, digest):
+    if _remote_test(host, remote.digest_matches(target, digest)):
         return False
     temporary = target + ".tmp"
     remote.ssh_command(
@@ -80,8 +114,7 @@ def copy_if_changed(host: remote.SSHHost, local: Path, target: str, mode: str) -
     )
     remote.scp_to(host, local, temporary)
     remote.ssh_command(host, " && ".join([
-        f"test \"$(sha256sum {shlex.quote(temporary)} | awk '{{print $1}}')\""
-        f" = {shlex.quote(digest)}",
+        remote.digest_matches(temporary, digest),
         f"chmod {mode} {shlex.quote(temporary)}",
         f"mv -f {shlex.quote(temporary)} {shlex.quote(target)}",
     ]))
@@ -97,7 +130,7 @@ def deploy_binary(host: remote.SSHHost) -> None:
 
 
 def _free_local_port() -> int:
-    # The port may be taken again before ssh binds it; ExitOnForwardFailure turns that into an error.
+    # The port may be taken again before ssh binds it; ExitOnForwardFailure then makes ssh fail.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
@@ -109,7 +142,9 @@ def _tunneled_url(url: str, local_port: int) -> tuple[str, str]:
     try:
         port = parts.port or (443 if parts.scheme == "https" else 80)
     except ValueError as err:
-        raise workload.ConfigError(f"hummingbird.marketplace.url has an invalid port: {url}") from err
+        raise workload.ConfigError(
+            f"hummingbird.marketplace.url has an invalid port: {url}",
+        ) from err
     if not parts.hostname:
         raise workload.ConfigError(f"hummingbird.marketplace.url has no host: {url}")
     host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
@@ -119,11 +154,15 @@ def _tunneled_url(url: str, local_port: int) -> tuple[str, str]:
 
 @contextlib.contextmanager
 def marketplace_tunnel(host: remote.SSHHost, url: str) -> Generator[str, None, None]:
-    """Forward a controller loopback port to url as seen from host, yielding the local url."""
+    """Forward a controller loopback port to url as seen from host, yielding the local url.
+
+    The forward is a temporary ssh-control-master whose socket lives in a private temporary
+    directory; it exists only inside the with block and is not recorded in the tunnel manifest.
+    """
     local_port = _free_local_port()
     target, local_url = _tunneled_url(url, local_port)
     with tempfile.TemporaryDirectory(prefix="hummbwtester-market-") as directory:
-        master = _start_master(
+        control_master = _start_ssh_control_master(
             ["-L", f"127.0.0.1:{local_port}:{target}"],
             Path(directory) / "marketplace.sock", host.alias,
         )
@@ -131,18 +170,12 @@ def marketplace_tunnel(host: remote.SSHHost, url: str) -> Generator[str, None, N
         try:
             yield local_url
         finally:
-            subprocess.run(
-                _control_command(master["socket"], "exit", master["alias"]), check=False,
-                text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+            _stop_ssh_control_master(control_master)
 
 
-def obtain_marketplace_jwt(
-    inventory: remote.Inventory, marketplace: workload.MarketplaceConfig,
-) -> str:
+def obtain_marketplace_jwt(inventory: remote.Inventory) -> str:
     """Log in at the marketplace url as seen from its host, through a temporary tunnel."""
-    if inventory.marketplace_host is None:
-        raise workload.ConfigError("hummingbird.marketplace.host is required for SSH deployments")
+    marketplace = inventory.marketplace
     host = inventory.hosts[inventory.marketplace_host]
     with marketplace_tunnel(host, marketplace.url) as local_url:
         try:
@@ -156,14 +189,9 @@ def obtain_marketplace_jwt(
 def deploy_jwt(
     inventory: remote.Inventory, clients: list[workload.Client], local_jwt: Path,
 ) -> None:
-    names = {
-        inventory.client_hosts[client.client_id]
-        for client in clients if client.hummingbird
-    }
-    for name in sorted(names):
+    for name in sorted(remote.hummingbird_hosts(inventory, clients)):
         host = inventory.hosts[name]
-        target = remote.setup_dir(host) + "/marketplace.jwt"
-        if copy_if_changed(host, local_jwt, target, "600"):
+        if copy_if_changed(host, local_jwt, remote.jwt_path(host), "600"):
             print(f"uploaded marketplace JWT to {name}")
         else:
             print(f"marketplace JWT on {name} is current")
@@ -183,10 +211,9 @@ def note_entry(marketplace: workload.MarketplaceConfig) -> dict[str, str] | None
 
 def note_hosts(inventory: remote.Inventory) -> list[str]:
     """The hosts whose ASes advertise the marketplace: every participant and the marketplace."""
-    names = {inventory.server_host, *inventory.client_hosts.values()}
-    if inventory.marketplace_host is not None:
-        names.add(inventory.marketplace_host)
-    return sorted(names)
+    return sorted({
+        inventory.server_host, *inventory.client_hosts.values(), inventory.marketplace_host,
+    })
 
 
 def _static_info_note(host: remote.SSHHost, action: str, *arguments: str) -> bool:
@@ -217,11 +244,9 @@ def restart_instruction(host: remote.SSHHost) -> str:
             f"ssh -t {host.alias} sudo systemctl restart {unit}")
 
 
-def ensure_marketplace_notes(
-    inventory: remote.Inventory, marketplace: workload.MarketplaceConfig,
-) -> list[str]:
+def ensure_marketplace_notes(inventory: remote.Inventory) -> list[str]:
     """Advertise the marketplace and return the manual steps the changed files need."""
-    entry = note_entry(marketplace)
+    entry = note_entry(inventory.marketplace)
     if entry is None:
         print("hummingbird.marketplace.scion_address is not set; static info Notes are unchanged")
         return []
@@ -340,8 +365,7 @@ def remove_selective_qdiscs(inventory: remote.Inventory, tc: dict[str, str]) -> 
         config = selective_config(shape, tc)
         if _qdisc_state(host, config.name) is None:
             continue
-        if not _remote_file_matches(host, helper, remote.sha256(SELECTIVE_HELPER)):
-            copy_if_changed(host, SELECTIVE_HELPER, helper, "700")
+        copy_if_changed(host, SELECTIVE_HELPER, helper, "700")
         remote.ssh_command(host, _selective_command(helper, "down", config))
         print(f"removed selective qdisc {config.name} from {host.name}")
 
@@ -410,20 +434,11 @@ def prometheus_documents(targets: dict[str, str]) -> tuple[dict[str, str], str]:
 def _remote_prometheus_files_current(
     host: remote.SSHHost, documents: dict[str, str],
 ) -> bool:
-    checks = []
-    for relative, content in sorted(documents.items()):
-        path = f"{REMOTE_PROMETHEUS_DIR}/{relative}"
-        digest = hashlib.sha256(content.encode()).hexdigest()
-        checks.extend([
-            f"test -f {shlex.quote(path)}",
-            f"test \"$(sha256sum {shlex.quote(path)} | awk '{{print $1}}')\""
-            f" = {shlex.quote(digest)}",
-        ])
-    result = remote.ssh_command(
-        host, " && ".join(checks), check=False,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    return result.returncode == 0
+    return _remote_test(host, " && ".join(
+        remote.digest_matches(f"{REMOTE_PROMETHEUS_DIR}/{relative}",
+                              hashlib.sha256(content.encode()).hexdigest())
+        for relative, content in sorted(documents.items())
+    ))
 
 
 def _prometheus_container_current(host: remote.SSHHost, config_hash: str) -> bool:
@@ -499,6 +514,11 @@ def ensure_prometheus(
 def tunnel_specs(
     inventory: remote.Inventory, clients: list[workload.Client],
 ) -> list[TunnelSpec]:
+    """One relay per metric source: every client's metrics port, then every router target.
+
+    Relay i uses controller and Prometheus-host loopback port local_port_base + i, which is also
+    the target that target_documents gives Prometheus for that source.
+    """
     prometheus_alias = inventory.hosts[inventory.prometheus_host].alias
     specs = []
     for index, client in enumerate(clients):
@@ -520,13 +540,42 @@ def _tunnel_hash(specs: list[TunnelSpec]) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
+# An ssh-control-master is a background `ssh -M -S <socket> -f -N` connection that only carries
+# port forwards. It is identified by its control socket and host alias: `ssh -S <socket> -O check`
+# tells whether it is alive and `-O exit` closes it, so no PIDs need to be tracked.
+ControlMaster = dict[str, str]
+
+
 def _control_command(socket: str, operation: str, alias: str) -> list[str]:
     return ["ssh", "-S", socket, "-O", operation, "--", alias]
 
 
-def _master_running(master: dict[str, str]) -> bool:
+def _start_ssh_control_master(arguments: list[str], socket: Path, alias: str) -> ControlMaster:
+    """Start an ssh-control-master carrying the given -L or -R forward."""
+    command = [
+        "ssh", "-M", "-S", str(socket), "-f", "-N",
+        # Fail instead of running without the forward, e.g. when its port is taken.
+        "-o", "ExitOnForwardFailure=yes",
+        "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=3",
+        *arguments, "--", alias,
+    ]
+    subprocess.run(command, check=True, text=True)
+    return {"socket": str(socket), "alias": alias}
+
+
+def _ssh_control_master_running(control_master: ControlMaster) -> bool:
     result = subprocess.run(
-        _control_command(master["socket"], "check", master["alias"]),
+        _control_command(control_master["socket"], "check", control_master["alias"]),
+        check=False, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def _stop_ssh_control_master(control_master: ControlMaster) -> bool:
+    """Close an ssh-control-master; return whether it is gone."""
+    result = subprocess.run(
+        _control_command(control_master["socket"], "exit", control_master["alias"]),
         check=False, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     return result.returncode == 0
@@ -540,32 +589,33 @@ def _load_tunnel_manifest() -> dict[str, object] | None:
     return value if isinstance(value, dict) else None
 
 
+def _manifest_ssh_control_masters(
+    manifest: dict[str, object] | None,
+) -> tuple[list[ControlMaster], bool]:
+    """The well-formed ssh-control-masters of a manifest, and whether all recorded ones were."""
+    recorded = manifest.get("ssh_control_masters", []) if manifest is not None else []
+    if not isinstance(recorded, list):
+        return [], False
+    valid = [
+        {"socket": entry["socket"], "alias": entry["alias"]} for entry in recorded
+        if isinstance(entry, dict)
+        and isinstance(entry.get("socket"), str) and isinstance(entry.get("alias"), str)
+    ]
+    return valid, len(valid) == len(recorded)
+
+
 def stop_tunnels() -> None:
-    manifest = _load_tunnel_manifest()
+    """Close every ssh-control-master in the manifest, newest first, and remove the state."""
+    control_masters, _ = _manifest_ssh_control_masters(_load_tunnel_manifest())
     failures = []
-    if manifest is not None:
-        masters = manifest.get("masters", [])
-        if isinstance(masters, list):
-            for master in reversed(masters):
-                if not isinstance(master, dict):
-                    continue
-                socket = master.get("socket")
-                alias = master.get("alias")
-                if not isinstance(socket, str) or not isinstance(alias, str):
-                    continue
-                if _master_running({"socket": socket, "alias": alias}):
-                    result = subprocess.run(
-                        _control_command(socket, "exit", alias), check=False, text=True,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    )
-                    if result.returncode:
-                        failures.append(alias)
-                        continue
-                Path(socket).unlink(missing_ok=True)
+    for control_master in reversed(control_masters):
+        if _ssh_control_master_running(control_master) and not _stop_ssh_control_master(
+                control_master):
+            failures.append(control_master["alias"])
+            continue
+        Path(control_master["socket"]).unlink(missing_ok=True)
     if failures:
-        raise remote.SSHError(
-            "failed to stop SSH tunnel masters for " + ", ".join(failures),
-        )
+        raise remote.SSHError("failed to stop ssh-control-masters for " + ", ".join(failures))
     TUNNEL_MANIFEST.unlink(missing_ok=True)
     try:
         TUNNEL_STATE_DIR.rmdir()
@@ -573,19 +623,15 @@ def stop_tunnels() -> None:
         pass
 
 
-def _start_master(arguments: list[str], socket: Path, alias: str) -> dict[str, str]:
-    command = [
-        "ssh", "-M", "-S", str(socket), "-f", "-N",
-        "-o", "ExitOnForwardFailure=yes",
-        "-o", "ServerAliveInterval=15",
-        "-o", "ServerAliveCountMax=3",
-        *arguments, "--", alias,
-    ]
-    subprocess.run(command, check=True, text=True)
-    return {"socket": str(socket), "alias": alias}
-
-
 def ensure_tunnels(specs: list[TunnelSpec]) -> None:
+    """Relay every metric source to the Prometheus host through two ssh-control-masters.
+
+    For relay port P, one ssh-control-master to the source host forwards controller 127.0.0.1:P
+    to the source address (-L), and one to the Prometheus host forwards its 127.0.0.1:P back to
+    controller 127.0.0.1:P (-R). Prometheus therefore scrapes its own loopback. The manifest
+    records a hash of the specs and every ssh-control-master; if the hash matches and all of
+    them answer -O check, nothing changes, otherwise all are replaced.
+    """
     if not specs:
         stop_tunnels()
         print("no Prometheus metric relays are configured")
@@ -593,40 +639,32 @@ def ensure_tunnels(specs: list[TunnelSpec]) -> None:
     digest = _tunnel_hash(specs)
     manifest = _load_tunnel_manifest()
     if manifest is not None and manifest.get("spec_sha256") == digest:
-        masters = manifest.get("masters")
-        if isinstance(masters, list) and masters and all(
-            isinstance(master, dict)
-            and isinstance(master.get("socket"), str)
-            and isinstance(master.get("alias"), str)
-            and _master_running(master)
-            for master in masters
-        ):
+        control_masters, complete = _manifest_ssh_control_masters(manifest)
+        if control_masters and complete and all(map(_ssh_control_master_running, control_masters)):
             print("Prometheus SSH tunnels are current")
             return
 
     stop_tunnels()
     TUNNEL_STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    masters: list[dict[str, str]] = []
+    control_masters: list[ControlMaster] = []
     try:
         for index, spec in enumerate(specs):
-            source_socket = TUNNEL_STATE_DIR / f"source-{index}.sock"
-            masters.append(_start_master(
+            control_masters.append(_start_ssh_control_master(
                 ["-L", f"127.0.0.1:{spec.port}:{spec.source_address}"],
-                source_socket, spec.source_alias,
+                TUNNEL_STATE_DIR / f"source-{index}.sock", spec.source_alias,
             ))
-            prometheus_socket = TUNNEL_STATE_DIR / f"prometheus-{index}.sock"
-            masters.append(_start_master(
+            control_masters.append(_start_ssh_control_master(
                 ["-R", f"127.0.0.1:{spec.port}:127.0.0.1:{spec.port}"],
-                prometheus_socket, spec.prometheus_alias,
+                TUNNEL_STATE_DIR / f"prometheus-{index}.sock", spec.prometheus_alias,
             ))
     except BaseException:
-        temporary_manifest = {"masters": masters}
-        TUNNEL_MANIFEST.write_text(json.dumps(temporary_manifest))
+        # Record what did start, so that stop_tunnels can close it.
+        TUNNEL_MANIFEST.write_text(json.dumps({"ssh_control_masters": control_masters}))
         stop_tunnels()
         raise
     TUNNEL_MANIFEST.write_text(json.dumps({
         "spec_sha256": digest,
-        "masters": masters,
+        "ssh_control_masters": control_masters,
     }, indent=2) + "\n")
     TUNNEL_MANIFEST.chmod(0o600)
     print(f"started {len(specs)} Prometheus metric relays")
@@ -637,39 +675,34 @@ def setup(
     config: tuple[workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str]] | None = None,
     inventory: remote.Inventory | None = None,
 ) -> int:
+    """Bring the hosts to the configured state; the steps are listed in the module docstring."""
     workload.require_built_binary()
     server, clients, _, tc = config if config is not None else workload.load_config(config_path)
     if inventory is None:
         inventory = remote.load_inventory(config_path, server, clients)
-    _check_metrics_ports(inventory, clients)
-    used_hosts = {
-        inventory.server_host,
-        *inventory.client_hosts.values(),
-        *(shape.host for shape in inventory.shaping),
-    }
-    for name in sorted(used_hosts):
+    # 1. Binary.
+    for name in setup_hosts(inventory):
         host = inventory.hosts[name]
         remote.preflight(host)
         deploy_binary(host)
 
-    hummingbird_clients = [client for client in clients if client.hummingbird]
-    marketplace: workload.MarketplaceConfig | None = None
-    if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
-        marketplace = hummingbird_clients[0].marketplace
-        assert marketplace is not None
     local_jwt: Path | None = None
     manual: list[str] = []
     completed = False
     try:
-        if marketplace is not None:
-            local_jwt = workload.write_private_jwt(obtain_marketplace_jwt(inventory, marketplace))
-            deploy_jwt(inventory, hummingbird_clients, local_jwt)
+        # 2. Marketplace JWT.
+        if remote.hummingbird_hosts(inventory, clients):
+            local_jwt = workload.write_private_jwt(obtain_marketplace_jwt(inventory))
+            deploy_jwt(inventory, clients, local_jwt)
+        # 3. Selective qdiscs.
         ensure_selective_qdiscs(inventory, tc)
-        if marketplace is not None:
-            manual.extend(ensure_marketplace_notes(inventory, marketplace))
+        # 4. Static info Note.
+        manual.extend(ensure_marketplace_notes(inventory))
+        # 5. Prometheus.
         targets = target_documents(inventory, clients)
         write_local_targets(targets)
         ensure_prometheus(inventory, targets)
+        # 6. Metric relays.
         ensure_tunnels(tunnel_specs(inventory, clients))
         completed = True
         return 0
@@ -678,6 +711,7 @@ def setup(
             local_jwt.unlink(missing_ok=True)
         # A later failure must not hide the steps that files already changed on the hosts need.
         if completed or manual:
+            # 7. Manual steps.
             print_manual_steps("setup", manual)
 
 
@@ -686,6 +720,7 @@ def teardown(
     config: tuple[workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str]] | None = None,
     inventory: remote.Inventory | None = None,
 ) -> int:
+    """Remove what setup installed, except the static info Note; continue past failures."""
     server, clients, _, tc = config if config is not None else workload.load_config(config_path)
     if inventory is None:
         inventory = remote.load_inventory(config_path, server, clients)
@@ -702,12 +737,7 @@ def teardown(
         except (OSError, RuntimeError, subprocess.SubprocessError) as err:
             errors.append(str(err))
 
-    used_hosts = {
-        inventory.server_host,
-        *inventory.client_hosts.values(),
-        *(shape.host for shape in inventory.shaping),
-    }
-    for name in sorted(used_hosts):
+    for name in setup_hosts(inventory):
         host = inventory.hosts[name]
         try:
             remote.ssh_command(
