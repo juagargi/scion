@@ -71,8 +71,13 @@ class Inventory:
     local_port_base: int
     routers: tuple[RouterMetrics, ...]
     shaping: tuple[ShapedFlow, ...]
-    # Host through which setup tunnels to the marketplace; None only without a marketplace.
-    marketplace_host: str | None = None
+    # SSH deployments always buy reservations from a marketplace reachable from one host.
+    marketplace: workload.MarketplaceConfig
+
+    @property
+    def marketplace_host(self) -> str:
+        assert self.marketplace.host is not None  # load_config requires it for SSH deployments.
+        return self.marketplace.host
 
 
 class SSHError(RuntimeError):
@@ -147,12 +152,12 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         if host not in hosts:
             raise workload.ConfigError(f"participant node references unknown host {host}")
     # Every client carries the same global marketplace configuration.
-    marketplace_host = next(
-        (client.marketplace.host for client in clients if client.marketplace is not None), None,
-    )
-    if marketplace_host is not None and marketplace_host not in hosts:
+    marketplace = clients[0].marketplace if clients else None
+    if marketplace is None or marketplace.host is None:
+        raise workload.ConfigError("SSH deployments require hummingbird.marketplace with a host")
+    if marketplace.host not in hosts:
         raise workload.ConfigError(
-            f"hummingbird.marketplace.host references unknown host {marketplace_host}",
+            f"hummingbird.marketplace.host references unknown host {marketplace.host}",
         )
 
     metrics = _object(deployment["metrics"], "deployment.metrics")
@@ -221,9 +226,11 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         seen_devices.add((shape.host, shape.device))
         seen_names.add((shape.host, shape.name))
         shaping.append(shape)
+    if base + len(clients) + len(routers) > 65535:
+        raise workload.ConfigError("SSH metrics tunnel ports exceed 65535")
     return Inventory(
         hosts, server_host, client_hosts, prometheus_host, base, tuple(routers), tuple(shaping),
-        marketplace_host,
+        marketplace,
     )
 
 
@@ -269,14 +276,26 @@ def preflight(host: SSHHost) -> None:
     ssh_command(host, command)
 
 
+def jwt_path(host: SSHHost) -> str:
+    return setup_dir(host) + "/marketplace.jwt"
+
+
+def hummingbird_hosts(inventory: Inventory, clients: list[workload.Client]) -> set[str]:
+    """The hosts that run a Hummingbird client and therefore need the marketplace JWT."""
+    return {inventory.client_hosts[client.client_id] for client in clients if client.hummingbird}
+
+
+def digest_matches(path: str, digest: str) -> str:
+    """A shell test that succeeds when path exists and has the given SHA-256 digest."""
+    return (f"test -f {shlex.quote(path)} && "
+            f"test \"$(sha256sum {shlex.quote(path)} | awk '{{print $1}}')\" = {shlex.quote(digest)}")
+
+
 def verify_setup(host: SSHHost, digest: str, need_jwt: bool) -> None:
     binary = setup_dir(host) + "/hummbwtester"
-    checks = [
-        f"test -x {shlex.quote(binary)}",
-        f"test \"$(sha256sum {shlex.quote(binary)} | awk '{{print $1}}')\" = {shlex.quote(digest)}",
-    ]
+    checks = [f"test -x {shlex.quote(binary)}", digest_matches(binary, digest)]
     if need_jwt:
-        checks.append(f"test -r {shlex.quote(setup_dir(host) + '/marketplace.jwt')}")
+        checks.append(f"test -r {shlex.quote(jwt_path(host))}")
     result = ssh_command(
         host, " && ".join(checks), check=False,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -327,24 +346,16 @@ def run_experiment(
     server, clients, _, _ = config if config is not None else workload.load_config(config_path)
     if inventory is None:
         inventory = load_inventory(config_path, server, clients)
-    if inventory.local_port_base + len(clients) + len(inventory.routers) > 65535:
-        raise workload.ConfigError("SSH metrics tunnel ports exceed 65535")
     run_id = "hummbwtester-" + uuid.uuid4().hex[:12]
     used_hosts = {inventory.server_host, *inventory.client_hosts.values()}
     digest = sha256(BIN)
     processes: list[tuple[SSHHost, str, subprocess.Popen[str]]] = []
     try:
-        hummingbird_clients = [client for client in clients if client.hummingbird]
-        marketplace_mode = bool(
-            hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace"
-        )
-        marketplace_hosts = {
-            inventory.client_hosts[client.client_id] for client in hummingbird_clients
-        } if marketplace_mode else set()
+        jwt_hosts = hummingbird_hosts(inventory, clients)
         for name in sorted(used_hosts):
             host = inventory.hosts[name]
             preflight(host)
-            verify_setup(host, digest, name in marketplace_hosts)
+            verify_setup(host, digest, name in jwt_hosts)
             ssh_command(host, f"install -d -m 700 {shlex.quote(remote_dir(host, run_id))}")
         server_host = inventory.hosts[inventory.server_host]
         processes.append((server_host, "server", launch(
@@ -353,10 +364,7 @@ def run_experiment(
         time.sleep(2)
         for client in clients:
             host = inventory.hosts[inventory.client_hosts[client.client_id]]
-            jwt_file = (
-                setup_dir(host) + "/marketplace.jwt"
-                if client.hummingbird and marketplace_mode else None
-            )
+            jwt_file = jwt_path(host) if client.hummingbird else None
             processes.append((host, client.client_id, launch(
                 host, run_id, client.client_id, workload.client_args(client, server, host.sciond),
                 ROOT / "logs" / "hummbwtester" / f"ssh-{client.client_id}.log", jwt_file)))

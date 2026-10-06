@@ -33,6 +33,7 @@ class SSHSetupTest(unittest.TestCase):
                 "monitor", "127.0.0.1:30442", {"br": "br-1"},
             ),),
             shaping=(),
+            marketplace=self.marketplace(),
         )
 
     def clients(self):
@@ -114,27 +115,19 @@ class SSHSetupTest(unittest.TestCase):
         self.assertEqual(len(second_calls), 2)
         self.assertTrue(all("check" in call.args[0] for call in second_calls))
 
-    def marketplace(self):
-        return orchestration.MarketplaceConfig(
-            "https://127.0.0.1:8888/", "alice", "MARKETPLACE_PASSWORD", None,
-        )
-
-    def test_marketplace_without_host_is_rejected(self):
-        with mock.patch.object(ssh_setup.workload, "obtain_marketplace_jwt") as obtain, \
-             mock.patch.object(ssh_setup.subprocess, "run") as run:
-            with self.assertRaisesRegex(orchestration.ConfigError, "host is required"):
-                ssh_setup.obtain_marketplace_jwt(self.inventory(), self.marketplace())
-        obtain.assert_not_called()
-        run.assert_not_called()
+    def marketplace(self, **changes):
+        return replace(orchestration.MarketplaceConfig(
+            "https://127.0.0.1:8888/", "alice", "MARKETPLACE_PASSWORD", None, "monitor",
+        ), **changes)
 
     def test_marketplace_on_host_is_reached_through_a_temporary_tunnel(self):
-        inventory = replace(self.inventory(), marketplace_host="monitor")
+        inventory = self.inventory()
         completed = subprocess.CompletedProcess([], 0, "", "")
         with mock.patch.object(ssh_setup, "_free_local_port", return_value=18888), \
              mock.patch.object(ssh_setup.workload, "obtain_marketplace_jwt",
                                return_value="jwt") as obtain, \
              mock.patch.object(ssh_setup.subprocess, "run", return_value=completed) as run:
-            jwt = ssh_setup.obtain_marketplace_jwt(inventory, self.marketplace())
+            jwt = ssh_setup.obtain_marketplace_jwt(inventory)
         self.assertEqual(jwt, "jwt")
         self.assertEqual(obtain.call_args.args[0].url, "https://127.0.0.1:18888/")
         start, stop = (call.args[0] for call in run.call_args_list)
@@ -143,14 +136,14 @@ class SSHSetupTest(unittest.TestCase):
         self.assertEqual(stop[stop.index("-O") + 1], "exit")
 
     def test_marketplace_tunnel_is_closed_when_login_fails(self):
-        inventory = replace(self.inventory(), marketplace_host="monitor")
+        inventory = self.inventory()
         completed = subprocess.CompletedProcess([], 0, "", "")
         with mock.patch.object(ssh_setup, "_free_local_port", return_value=18888), \
              mock.patch.object(ssh_setup.workload, "obtain_marketplace_jwt",
                                side_effect=orchestration.ConfigError("login failed")), \
              mock.patch.object(ssh_setup.subprocess, "run", return_value=completed) as run:
             with self.assertRaisesRegex(orchestration.ConfigError, "on monitor"):
-                ssh_setup.obtain_marketplace_jwt(inventory, self.marketplace())
+                ssh_setup.obtain_marketplace_jwt(inventory)
         self.assertIn("exit", run.call_args_list[-1].args[0])
 
     def test_marketplace_note_is_advertised_on_participant_and_marketplace_hosts(self):
@@ -160,14 +153,15 @@ class SSHSetupTest(unittest.TestCase):
                                      "/var/tmp/humm", None, "/etc/scion/staticInfoConfig.json",
                                      "scion-control@cs-1.service"),
         }
-        inventory = replace(self.inventory(), hosts=hosts, marketplace_host="market")
-        marketplace = replace(self.marketplace(), scion_address="[1-ff00:0:110,127.0.0.1]:31888")
+        inventory = replace(self.inventory(), hosts=hosts, marketplace=self.marketplace(
+            host="market", scion_address="[1-ff00:0:110,127.0.0.1]:31888",
+        ))
         changed = subprocess.CompletedProcess([], 0, '{"changed": true}\n', "")
         current = subprocess.CompletedProcess([], 0, '{"changed": false}\n', "")
         # Hosts are visited in sorted order: market changes, monitor and source are current.
         with mock.patch.object(ssh_setup.remote, "ssh_command",
                                side_effect=[changed, current, current]) as run:
-            manual = ssh_setup.ensure_marketplace_notes(inventory, marketplace)
+            manual = ssh_setup.ensure_marketplace_notes(inventory)
         helper = run.call_args_list[0]
         # Only the helper runs; no service is restarted on any host.
         self.assertEqual([call.args[0].name for call in run.call_args_list],
@@ -201,15 +195,17 @@ class SSHSetupTest(unittest.TestCase):
 
     def test_marketplace_note_is_skipped_without_scion_address(self):
         with mock.patch.object(ssh_setup.remote, "ssh_command") as run:
-            ssh_setup.ensure_marketplace_notes(self.inventory(), self.marketplace())
+            ssh_setup.ensure_marketplace_notes(self.inventory())
         run.assert_not_called()
 
     def test_static_info_helper_failure_is_reported(self):
         failed = subprocess.CompletedProcess([], 1, "", "error: the Note field is not JSON")
-        marketplace = replace(self.marketplace(), scion_address="[1-ff00:0:110,127.0.0.1]:31888")
+        inventory = replace(self.inventory(), marketplace=self.marketplace(
+            scion_address="[1-ff00:0:110,127.0.0.1]:31888",
+        ))
         with mock.patch.object(ssh_setup.remote, "ssh_command", return_value=failed):
             with self.assertRaisesRegex(remote.SSHError, "not JSON"):
-                ssh_setup.ensure_marketplace_notes(self.inventory(), marketplace)
+                ssh_setup.ensure_marketplace_notes(inventory)
 
     def test_tunneled_url_keeps_path_and_brackets_ipv6(self):
         self.assertEqual(

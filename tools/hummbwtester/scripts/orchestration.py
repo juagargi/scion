@@ -388,6 +388,9 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     reservation_source = hummingbird_config["reservation_source"]
     if reservation_source not in ("keys", "marketplace"):
         raise ConfigError("hummingbird.reservation_source must be \"keys\" or \"marketplace\"")
+    if deployment["kind"] == "ssh" and reservation_source != "marketplace":
+        # Key-derived reservations need every on-path AS master key, which only gen/ provides.
+        raise ConfigError("SSH deployments require hummingbird.reservation_source \"marketplace\"")
     marketplace_config: MarketplaceConfig | None = None
     if reservation_source == "marketplace":
         marketplace = hummingbird_config.get("marketplace")
