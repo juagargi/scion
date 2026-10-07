@@ -72,7 +72,9 @@ Each run uses one self-contained JSON file.
 - `deployment.metrics` (SSH): `prometheus` is the host that runs Prometheus, `local_port_base` the
   first controller and Prometheus-host loopback port of the metric relays, `routers` the extra
   border-router targets, and the optional `local_prometheus_port` (default `8090`, outside the
-  relay ports) the controller port through which the browser and Grafana reach Prometheus.
+  relay ports) the controller port through which the browser and Grafana reach Prometheus. The
+  dashboard tells routers apart by their `as` and `br` labels, so no two `routers` may share both
+  (BR names such as `br-2` repeat across ASes).
 
 Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
 send buffer and uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should
