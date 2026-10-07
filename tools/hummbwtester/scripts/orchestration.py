@@ -53,10 +53,12 @@ TC_STATS_RE = re.compile(
     r"backlog_bytes=(\d+)$",
 )
 PROMETHEUS_LABEL_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"])*)"')
-# [ISD-AS,host]:port with a decimal or colon-separated hexadecimal AS number.
+# ISD-AS with a decimal or colon-separated hexadecimal AS number.
+ISD_AS_PATTERN = r"[0-9]+-(?:[0-9]+|[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4})"
+ISD_AS_RE = re.compile(ISD_AS_PATTERN)
+# [ISD-AS,host]:port
 SCION_ADDRESS_RE = re.compile(
-    r"\[(?P<ia>[0-9]+-(?:[0-9]+|[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4})),"
-    r"(?P<host>[^\]]+)\]:(?P<port>[0-9]{1,5})",
+    rf"\[(?P<ia>{ISD_AS_PATTERN}),(?P<host>[^\]]+)\]:(?P<port>[0-9]{{1,5}})",
 )
 
 
@@ -106,6 +108,9 @@ class MarketplaceConfig:
     host: str | None = None
     # SCION API address that SSH setup advertises in the static info Note of the participant ASes.
     scion_address: str | None = None
+    # ISD-AS -> IDs of the interfaces that support Hummingbird, 0 standing for flyovers that start
+    # or end in the AS. SSH setup offers assets only for pairs of these; None offers every pair.
+    interfaces: dict[str, tuple[int, ...]] | None = None
 
 
 @dataclass(frozen=True)
@@ -378,6 +383,26 @@ def validate_scion_address(value: Any, context: str) -> None:
         raise ConfigError(f"{context} has an invalid port: {value}")
 
 
+def parse_marketplace_interfaces(value: Any) -> dict[str, tuple[int, ...]]:
+    """Check the Hummingbird-capable interface IDs per ISD-AS that the marketplace sells."""
+    context = "hummingbird.marketplace.interfaces"
+    if not isinstance(value, dict) or not value:
+        raise ConfigError(f"{context} must be a non-empty object mapping ISD-AS to interface IDs")
+    interfaces: dict[str, tuple[int, ...]] = {}
+    for ia, ids in value.items():
+        if not ISD_AS_RE.fullmatch(ia):
+            raise ConfigError(f"{context} has an invalid ISD-AS: {ia}")
+        if (not isinstance(ids, list) or not ids
+                or not all(isinstance(i, int) and not isinstance(i, bool) and 0 <= i <= 65535
+                           for i in ids)):
+            raise ConfigError(f"{context}.{ia} must be a non-empty array of interface IDs "
+                              "from 0 through 65535")
+        if len(set(ids)) != len(ids):
+            raise ConfigError(f"{context}.{ia} has duplicate interface IDs")
+        interfaces[ia] = tuple(sorted(ids))
+    return interfaces
+
+
 def is_loopback(host: str) -> bool:
     if host == "localhost":
         return True
@@ -448,7 +473,8 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         if not isinstance(marketplace, dict):
             raise ConfigError("hummingbird.marketplace is required in marketplace mode")
         require_fields(marketplace, {"url", "username", "password_env"},
-                       "hummingbird.marketplace", {"sub_account", "host", "scion_address"})
+                       "hummingbird.marketplace",
+                       {"sub_account", "host", "scion_address", "interfaces"})
         url, username, password_env = (
             marketplace["url"], marketplace["username"], marketplace["password_env"])
         if not isinstance(url, str) or not url.startswith(("https://", "http://")):
@@ -483,8 +509,16 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
             validate_scion_address(scion_address, "hummingbird.marketplace.scion_address")
         if deployment["kind"] == "ssh":
             validate_ssh_marketplace(url, scion_address)
+        interfaces = None
+        if "interfaces" in marketplace:
+            if deployment["kind"] == "docker":
+                # The topology generator fills the Docker marketplace database.
+                raise ConfigError(
+                    "hummingbird.marketplace.interfaces is only valid for SSH deployments",
+                )
+            interfaces = parse_marketplace_interfaces(marketplace["interfaces"])
         marketplace_config = MarketplaceConfig(
-            url, username, password_env, sub_account, host, scion_address,
+            url, username, password_env, sub_account, host, scion_address, interfaces,
         )
     elif "marketplace" in hummingbird_config:
         raise ConfigError("hummingbird.marketplace is only valid in marketplace mode")

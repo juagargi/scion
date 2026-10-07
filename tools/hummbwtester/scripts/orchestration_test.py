@@ -103,6 +103,18 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "only valid for SSH"):
             load_config(self.write_config(config))
 
+    def test_rejects_marketplace_interfaces_in_docker_mode(self):
+        config = self.base_config()
+        config["hummingbird"] = {
+            "reservation_source": "marketplace",
+            "marketplace": {
+                "url": "https://127.0.0.1:8888", "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD", "interfaces": {"1-ff00:0:110": [0, 1]},
+            },
+        }
+        with self.assertRaisesRegex(ConfigError, "interfaces is only valid for SSH"):
+            load_config(self.write_config(config))
+
     def test_ssh_marketplace_must_bind_loopback_addresses(self):
         orchestration.validate_ssh_marketplace("https://127.0.0.1:8888",
                                                "[71-2:0:5c,127.0.0.1]:31888")

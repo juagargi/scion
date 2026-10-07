@@ -431,7 +431,8 @@ class MarketplaceServiceTest(unittest.TestCase):
     def inventory(self):
         return SSHSetupTest.inventory(SSHSetupTest())
 
-    def ensure(self, *, changed=False, active=True, reachable=(True,), started=True):
+    def ensure(self, *, changed=False, active=True, reachable=(True,), started=True,
+               assets_changed=False):
         """Run ensure_marketplace with mocked host state; return the mocks of interest."""
         mocks = {}
         with mock.patch.object(ssh_setup, "MARKETPLACE_BIN", Path(__file__)), \
@@ -442,7 +443,8 @@ class MarketplaceServiceTest(unittest.TestCase):
              mock.patch.object(ssh_setup, "install_root_file",
                                side_effect=[changed, False]) as install, \
              mock.patch.object(ssh_setup, "_ensure_directory", return_value=False), \
-             mock.patch.object(ssh_setup, "copy_if_changed", return_value=False), \
+             mock.patch.object(ssh_setup, "copy_if_changed",
+                               side_effect=[False, assets_changed]) as copy, \
              mock.patch.object(ssh_setup, "_ensure_symlink", return_value=False), \
              mock.patch.object(ssh_setup, "_service_active", return_value=active), \
              mock.patch.object(ssh_setup, "_remote_test", side_effect=reachable), \
@@ -452,7 +454,7 @@ class MarketplaceServiceTest(unittest.TestCase):
              mock.patch.object(ssh_setup, "_systemctl") as systemctl, \
              mock.patch.object(ssh_setup, "_wait_for", return_value=started) as wait, \
              mock.patch("builtins.print"):
-            mocks.update(install=install, entries=entries, database=database,
+            mocks.update(install=install, copy=copy, entries=entries, database=database,
                          systemctl=systemctl, wait=wait)
             try:
                 ssh_setup.ensure_marketplace(self.inventory())
@@ -472,6 +474,26 @@ class MarketplaceServiceTest(unittest.TestCase):
                          ["stop", "start"])
         mocks["database"].assert_called_once()
         mocks["wait"].assert_called_once()
+
+    def test_changed_asset_settings_restart_with_a_rebuilt_database(self):
+        mocks = self.ensure(assets_changed=True)
+        self.assertEqual([call.args[1] for call in mocks["systemctl"].call_args_list],
+                         ["stop", "start"])
+        # Only checked here; the settings are recorded together with the rebuilt database.
+        assets_check = mocks["copy"].call_args_list[1]
+        self.assertEqual(assets_check.args[2], "/var/lib/scion/marketplace/assets.json")
+        self.assertIs(assets_check.kwargs["dry_run"], True)
+        self.assertEqual(json.loads(mocks["database"].call_args.args[2]), {"interfaces": None})
+
+    def test_rebuilt_database_is_installed_before_its_asset_settings(self):
+        with mock.patch.object(ssh_setup.remote, "ssh_command"), \
+             mock.patch.object(ssh_setup, "copy_if_changed") as copy:
+            ssh_setup._reconfigure_marketplace_db(
+                self.inventory().hosts["monitor"], {}, '{"interfaces": null}\n')
+        self.assertEqual([call.args[2] for call in copy.call_args_list], [
+            "/var/lib/scion/marketplace/marketplace.db",
+            "/var/lib/scion/marketplace/assets.json",
+        ])
 
     def test_stopped_marketplace_is_started_without_a_stop(self):
         mocks = self.ensure(active=False)
@@ -527,6 +549,32 @@ class MarketplaceServiceTest(unittest.TestCase):
         key_reads = [command for _, command in commands if "master0.key" in command]
         self.assertTrue(key_reads and all(command.startswith("sudo -n python3 -c")
                                           for command in key_reads))
+
+    def test_database_assets_cover_every_pair_without_configured_interfaces(self):
+        fake = SSHSetupTest.fake_hosts(SSHSetupTest(), [])
+        with mock.patch.object(ssh_setup.remote, "ssh_command", side_effect=fake):
+            entries = ssh_setup.marketplace_entries(self.inventory())
+        self.assertEqual({(asset["ingress"], asset["egress"]) for asset in entries["assets"]},
+                         {(1, 2), (2, 1), (0, 1), (0, 2), (1, 0), (2, 0)})
+
+    def test_database_assets_cover_only_configured_interface_pairs(self):
+        fake = SSHSetupTest.fake_hosts(SSHSetupTest(), [])
+
+        def entries(interfaces):
+            inventory = replace(self.inventory(), marketplace=SSHSetupTest.marketplace(
+                SSHSetupTest(), interfaces=interfaces))
+            with mock.patch.object(ssh_setup.remote, "ssh_command", side_effect=fake):
+                return ssh_setup.marketplace_entries(inventory)
+
+        # Both fake hosts report the same AS, so every asset appears once per host.
+        assets = entries({"1-ff00:0:110": (0, 2)})["assets"]
+        self.assertEqual({(asset["ingress"], asset["egress"]) for asset in assets},
+                         {(0, 2), (2, 0)})
+        self.assertEqual(entries({"1-ff00:0:110": (1,)})["assets"], [])
+        with self.assertRaisesRegex(ssh_setup.workload.ConfigError, r"no interfaces \[3\]"):
+            entries({"1-ff00:0:110": (0, 3)})
+        with self.assertRaisesRegex(ssh_setup.workload.ConfigError, "1-ff00:0:111.*not in"):
+            entries({"1-ff00:0:111": (0, 1)})
 
 
 class GrafanaTest(unittest.TestCase):

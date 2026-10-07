@@ -6,7 +6,12 @@
       "url": "https://127.0.0.1:8888",
       "scion_address": "[71-2:0:5c,127.0.0.1]:31888",
       "username": "alice",
-      "password_env": "HUMMBWTESTER_MARKETPLACE_PASSWORD"
+      "password_env": "HUMMBWTESTER_MARKETPLACE_PASSWORD",
+      "interfaces": {
+        "71-1916": [0,103,106],
+        "71-2:0:152": [0,101],
+        "71-2:0:5c": [0,104]
+      }
     }
   },
   "server": {
