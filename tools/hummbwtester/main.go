@@ -37,6 +37,7 @@ import (
 	"github.com/scionproto/scion/pkg/snet"
 	"github.com/scionproto/scion/pkg/snet/metrics"
 	"github.com/scionproto/scion/private/env"
+	"github.com/scionproto/scion/private/path/pathpol"
 )
 
 const (
@@ -70,6 +71,7 @@ var (
 	duration           time.Duration
 	payloadSize        int
 	pongRateHz         float64
+	sequenceFlag       string
 	hummingbirdFlag    string
 	hummKeysDir        string
 	metricsAddr        string
@@ -181,6 +183,11 @@ func realMain() int {
 				return 1
 			}
 		}
+		sequence, err := pathpol.NewSequence(sequenceFlag)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing -sequence:", err)
+			return 1
+		}
 		bandwidthBps, maxBurstBps, err := parsePacingBandwidths(bandwidthFlag, maxBurstFlag)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error configuring client pacing:", err)
@@ -190,6 +197,7 @@ func realMain() int {
 			local:              localFlag,
 			remote:             remoteFlag,
 			sdConn:             sdConn,
+			sequence:           sequence,
 			bandwidthBps:       bandwidthBps,
 			maxBurstBps:        maxBurstBps,
 			duration:           duration,
@@ -231,6 +239,9 @@ func addFlags() {
 		"(Client only) UDP payload size in bytes for Payload packets")
 	flag.Float64Var(&pongRateHz, "pong-rate", defaultPongRateHz,
 		"(Client only) rate, in Hz, at which to send latency probe (pong-request) packets")
+	flag.StringVar(&sequenceFlag, "sequence", "",
+		"(Client only) Space separated list of hop predicates that the path must match, as "+
+			"in `scion showpaths --sequence`, e.g. \"0-0#103 0*\" (empty: any path)")
 	flag.StringVar(&hummingbirdFlag, "hummingbird", "",
 		"(Client only, optional) Hummingbird reservation spec: BW,dur[,reverseBW]. "+
 			"With -hummKeysDir BW is a class without a unit; otherwise BW is a "+

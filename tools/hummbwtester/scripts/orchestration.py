@@ -7,17 +7,22 @@ the generated Docker topology so that a stopped topology can be brought back wit
 
 from __future__ import annotations
 
-import argparse
 from datetime import datetime
+import hashlib
+import copy
 import ipaddress
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shlex
+import signal
 import subprocess
 import sys
+import tempfile
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, replace
 from typing import Any
@@ -25,15 +30,19 @@ from typing import Any
 import yaml
 
 
-# This module lives in tools/hummbwtester/, so two parents up is the repository root.
-ROOT = Path(__file__).resolve().parents[2]
+# This module lives in tools/hummbwtester/scripts/, so three parents up is the repository root.
+ROOT = Path(__file__).resolve().parents[3]
 GEN = ROOT / "gen"
 COMPOSE = GEN / "scion-dc.yml"
 SCIOND_ADDRESSES = GEN / "sciond_addresses.json"
 CONFIG_DEFAULT = ROOT / "tools" / "hummbwtester" / "hummbwtester.json"
 BIN = ROOT / "bin" / "hummbwtester"
-TC_SCRIPT = ROOT / "tools" / "hummbwtester" / "tc_setup.sh"
+TC_SCRIPT = ROOT / "tools" / "hummbwtester" / "scripts" / "tc_setup.sh"
 TARGET_DIR = GEN / "hummbwtester-prometheus"
+# The controller's monitoring stack: the Docker-mode Prometheus and the Grafana of both modes.
+MONITORING_COMPOSE = ROOT / "tools" / "hummbwtester" / "monitoring" / "docker-compose.yml"
+MONITORING_PROJECT = "monitoring"
+DOCKER_QDISC_STATE = GEN / "hummbwtester-docker-qdiscs.json"
 # Metrics ports are intentionally derived rather than stored in the JSON file.
 METRICS_BASE_PORT = 9090
 CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -44,6 +53,18 @@ TC_STATS_RE = re.compile(
     r"backlog_bytes=(\d+)$",
 )
 PROMETHEUS_LABEL_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"])*)"')
+# ISD-AS with a decimal or colon-separated hexadecimal AS number.
+ISD_AS_PATTERN = r"[0-9]+-(?:[0-9]+|[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4})"
+ISD_AS_RE = re.compile(ISD_AS_PATTERN)
+# [ISD-AS,host]:port
+SCION_ADDRESS_RE = re.compile(
+    rf"\[(?P<ia>{ISD_AS_PATTERN}),(?P<host>[^\]]+)\]:(?P<port>[0-9]{{1,5}})",
+)
+
+
+# Printed last by every dry run, so that its "would" lines are not mistaken for pending work.
+DRY_RUN_NOTICE = ("dry-run: this was only a dry run; nothing was modified, and none of the steps "
+                  "above needs to be run manually")
 
 
 class ConfigError(ValueError):
@@ -59,6 +80,7 @@ class Endpoint:
     port: int
     # Only the server endpoint sets this; client endpoints keep the zero default.
     receive_buffer_size: int = 0
+    node: str | None = None
 
     def local(self) -> str:
         return f"{self.isd_as},{join_host_port(self.host, self.port)}"
@@ -75,6 +97,23 @@ class HummingbirdReservation:
 
 
 @dataclass(frozen=True)
+class MarketplaceConfig:
+    """The non-secret marketplace identity and location for one workload."""
+
+    url: str
+    username: str
+    password_env: str
+    sub_account: str | None
+    # SSH inventory host from which url is reachable; None means reachable from the controller.
+    host: str | None = None
+    # SCION API address that SSH setup advertises in the static info Note of the participant ASes.
+    scion_address: str | None = None
+    # ISD-AS -> IDs of the interfaces that support Hummingbird, 0 standing for flyovers that start
+    # or end in the AS. SSH setup offers assets only for pairs of these; None offers every pair.
+    interfaces: dict[str, tuple[int, ...]] | None = None
+
+
+@dataclass(frozen=True)
 class Client:
     # The runner adds the derived metric port and the client kind to the JSON configuration.
     client_id: str
@@ -88,8 +127,9 @@ class Client:
     payload_size: int | None
     pong_rate: float | int | None
     reservation_source: str
-    marketplace_username: str | None
-    marketplace_password: str | None
+    marketplace: MarketplaceConfig | None
+    # Hop predicates the client's path must match, as in `scion showpaths --sequence`.
+    sequence: str | None = None
 
 
 @dataclass(frozen=True)
@@ -186,7 +226,7 @@ def parse_endpoint(
     required = {"isd_as", "host", "port"}
     if require_receive_buffer:
         required.add("receive_buffer_size")
-    require_fields(value, required, context)
+    require_fields(value, required, context, {"node"})
     ia, host, port = value["isd_as"], value["host"], value["port"]
     if not isinstance(ia, str) or not ia:
         raise ConfigError(f"{context}.isd_as must be a non-empty string")
@@ -204,16 +244,20 @@ def parse_endpoint(
         raise ConfigError(f"{context}.receive_buffer_size must be a non-negative integer")
     if require_receive_buffer and receive_buffer_size == 0:
         raise ConfigError(f"{context}.receive_buffer_size must be a positive integer")
-    return Endpoint(ia, host, port, receive_buffer_size)
+    node = value.get("node")
+    if node is not None and (not isinstance(node, str) or not node
+                             or any(c.isspace() for c in node)):
+        raise ConfigError(f"{context}.node must be a non-empty name without whitespace")
+    return Endpoint(ia, host, port, receive_buffer_size, node)
 
 
 def parse_client(
     entry: dict[str, Any], hummingbird: bool, context: str, reservation_source: str,
-    marketplace_credentials: tuple[str, str] | None,
+    marketplace: MarketplaceConfig | None,
 ) -> Client:
     """Validate one client configuration and retain its workload and optional tuning settings."""
     required = {"client_id", "isd_as", "host", "port", "bandwidth", "maxburst", "duration"}
-    optional = {"payload_size", "pong_rate"}
+    optional = {"payload_size", "pong_rate", "node", "sequence"}
     if hummingbird:
         required.add("hummingbird_reservation")
     require_fields(entry, required, context, optional)
@@ -243,7 +287,8 @@ def parse_client(
             reservation_bandwidth, reservation_source,
             f"{context}.hummingbird_reservation.bandwidth")
         if not isinstance(duration, str) or not duration:
-            raise ConfigError(f"{context}.hummingbird_reservation.duration must be a non-empty string")
+            raise ConfigError(
+                f"{context}.hummingbird_reservation.duration must be a non-empty string")
         validate_reservation_bandwidth(
             reverse_bandwidth, reservation_source,
             f"{context}.hummingbird_reservation.reverse_bandwidth")
@@ -265,14 +310,21 @@ def parse_client(
         )
 
     payload_size = entry.get("payload_size")
-    if payload_size is not None and (not isinstance(payload_size, int) or isinstance(payload_size, bool)):
+    if payload_size is not None and (not isinstance(payload_size, int)
+                                     or isinstance(payload_size, bool)):
         raise ConfigError(f"{context}.payload_size must be an integer")
     pong_rate = entry.get("pong_rate")
-    if pong_rate is not None and (not isinstance(pong_rate, (int, float)) or isinstance(pong_rate, bool)):
+    if pong_rate is not None and (not isinstance(pong_rate, (int, float))
+                                  or isinstance(pong_rate, bool)):
         raise ConfigError(f"{context}.pong_rate must be a number")
+    # The client parses the sequence itself and exits on a malformed one.
+    sequence = entry.get("sequence")
+    if sequence is not None and (not isinstance(sequence, str) or not sequence.strip()):
+        raise ConfigError(f"{context}.sequence must be a non-empty string of hop predicates")
     return Client(
         client_id=client_id,
-        endpoint=parse_endpoint({key: entry[key] for key in ("isd_as", "host", "port")}, context),
+        endpoint=parse_endpoint({key: entry[key] for key in ("isd_as", "host", "port", "node")
+                                 if key in entry}, context),
         hummingbird=hummingbird,
         metrics_port=0,
         bandwidth=entry["bandwidth"],
@@ -282,8 +334,8 @@ def parse_client(
         payload_size=payload_size,
         pong_rate=pong_rate,
         reservation_source=reservation_source,
-        marketplace_username=(marketplace_credentials[0] if marketplace_credentials else None),
-        marketplace_password=(marketplace_credentials[1] if marketplace_credentials else None),
+        marketplace=marketplace,
+        sequence=sequence,
     )
 
 
@@ -299,7 +351,8 @@ def validate_reservation_bandwidth(value: Any, source: str, context: str) -> Non
     match = re.fullmatch(r"([0-9]+)\s*(kbps|mbps|gbps)", value.strip(), re.IGNORECASE)
     if not match:
         raise ConfigError(f"{context} must use kbps, mbps, or gbps in marketplace mode")
-    amount = int(match.group(1)) * {"kbps": 1, "mbps": 1000, "gbps": 1000_000}[match.group(2).lower()]
+    unit_kbps = {"kbps": 1, "mbps": 1000, "gbps": 1000_000}[match.group(2).lower()]
+    amount = int(match.group(1)) * unit_kbps
     if amount > 2**32 - 1:
         raise ConfigError(f"{context} is too large in marketplace mode")
 
@@ -323,14 +376,94 @@ def parse_bandwidth(value: str, context: str) -> float:
     return result
 
 
+def validate_scion_address(value: Any, context: str) -> None:
+    """Check a [ISD-AS,host]:port SCION address, as advertised for a marketplace API."""
+    match = isinstance(value, str) and SCION_ADDRESS_RE.fullmatch(value)
+    if not match:
+        raise ConfigError(
+            f"{context} must be a SCION address such as [1-ff00:0:110,127.0.0.1]:31888")
+    try:
+        ipaddress.ip_address(match.group("host"))
+    except ValueError as err:
+        raise ConfigError(f"{context} has an invalid host address: {value}") from err
+    if not 1 <= int(match.group("port")) <= 65535:
+        raise ConfigError(f"{context} has an invalid port: {value}")
+
+
+def parse_marketplace_interfaces(value: Any) -> dict[str, tuple[int, ...]]:
+    """Check the Hummingbird-capable interface IDs per ISD-AS that the marketplace sells."""
+    context = "hummingbird.marketplace.interfaces"
+    if not isinstance(value, dict) or not value:
+        raise ConfigError(f"{context} must be a non-empty object mapping ISD-AS to interface IDs")
+    interfaces: dict[str, tuple[int, ...]] = {}
+    for ia, ids in value.items():
+        if not ISD_AS_RE.fullmatch(ia):
+            raise ConfigError(f"{context} has an invalid ISD-AS: {ia}")
+        if (not isinstance(ids, list) or not ids
+                or not all(isinstance(i, int) and not isinstance(i, bool) and 0 <= i <= 65535
+                           for i in ids)):
+            raise ConfigError(f"{context}.{ia} must be a non-empty array of interface IDs "
+                              "from 0 through 65535")
+        if len(set(ids)) != len(ids):
+            raise ConfigError(f"{context}.{ia} has duplicate interface IDs")
+        interfaces[ia] = tuple(sorted(ids))
+    return interfaces
+
+
+def is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_ssh_marketplace(url: str, scion_address: Any) -> None:
+    """SSH setup deploys the marketplace bound to these addresses, which must stay on loopback.
+
+    The TLS web app and API are then reachable only on the marketplace host itself (setup uses an
+    SSH forward), and the SCION API only through the border routers of that host.
+    """
+    if scion_address is None:
+        raise ConfigError("hummingbird.marketplace.scion_address is required for SSH deployments")
+    parts = urllib.parse.urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError as err:
+        raise ConfigError(f"hummingbird.marketplace.url has an invalid port: {url}") from err
+    if parts.scheme != "https" or port is None or not is_loopback(parts.hostname or ""):
+        raise ConfigError(
+            "hummingbird.marketplace.url must be https://<loopback address>:<port> in SSH "
+            "deployments, e.g. https://127.0.0.1:8888",
+        )
+    match = SCION_ADDRESS_RE.fullmatch(scion_address)
+    assert match is not None  # validate_scion_address accepted it.
+    if not is_loopback(match.group("host")):
+        raise ConfigError(
+            "hummingbird.marketplace.scion_address must use a loopback host in SSH deployments",
+        )
+
+
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
+    if "deployment" not in root:
+        raise ConfigError(
+            "legacy configuration: add deployment.kind and merge SSH inventory into this file",
+        )
     require_fields(
         root,
-        {"server", "hummingbird", "hummingbird_clients", "best_effort_clients", "router", "tc"},
+        {"server", "hummingbird", "hummingbird_clients", "best_effort_clients", "deployment", "tc"},
         "configuration",
     )
+    deployment = root["deployment"]
+    if not isinstance(deployment, dict) or deployment.get("kind") not in ("docker", "ssh"):
+        raise ConfigError("deployment.kind must be docker or ssh")
+    if deployment["kind"] == "docker":
+        require_fields(deployment, {"kind", "router"}, "deployment")
+    else:
+        require_fields(deployment, {"kind", "hosts", "metrics", "shaping"}, "deployment")
     hummingbird_config = root["hummingbird"]
     if not isinstance(hummingbird_config, dict):
         raise ConfigError("hummingbird must be an object")
@@ -338,23 +471,69 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     reservation_source = hummingbird_config["reservation_source"]
     if reservation_source not in ("keys", "marketplace"):
         raise ConfigError("hummingbird.reservation_source must be \"keys\" or \"marketplace\"")
-    marketplace_credentials: tuple[str, str] | None = None
+    if deployment["kind"] == "ssh" and reservation_source != "marketplace":
+        # Key-derived reservations need every on-path AS master key, which only gen/ provides.
+        raise ConfigError("SSH deployments require hummingbird.reservation_source \"marketplace\"")
+    marketplace_config: MarketplaceConfig | None = None
     if reservation_source == "marketplace":
         marketplace = hummingbird_config.get("marketplace")
         if not isinstance(marketplace, dict):
             raise ConfigError("hummingbird.marketplace is required in marketplace mode")
-        require_fields(marketplace, {"username", "password"}, "hummingbird.marketplace")
-        username, password = marketplace["username"], marketplace["password"]
+        require_fields(marketplace, {"url", "username", "password_env"},
+                       "hummingbird.marketplace",
+                       {"sub_account", "host", "scion_address", "interfaces"})
+        url, username, password_env = (
+            marketplace["url"], marketplace["username"], marketplace["password_env"])
+        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+            raise ConfigError("hummingbird.marketplace.url must be an HTTP(S) URL")
         if not isinstance(username, str) or not username:
             raise ConfigError("hummingbird.marketplace.username must be a non-empty string")
-        if not isinstance(password, str) or not password:
-            raise ConfigError("hummingbird.marketplace.password must be a non-empty string")
-        marketplace_credentials = username, password
+        if (not isinstance(password_env, str)
+                or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", password_env)):
+            raise ConfigError(
+                "hummingbird.marketplace.password_env must name an environment variable")
+        sub_account = marketplace.get("sub_account")
+        if sub_account is not None and (not isinstance(sub_account, str) or not sub_account):
+            raise ConfigError("hummingbird.marketplace.sub_account must be a non-empty string")
+        host = marketplace.get("host")
+        if host is not None:
+            if not isinstance(host, str) or not host or any(char.isspace() for char in host):
+                raise ConfigError(
+                    "hummingbird.marketplace.host must be a non-empty string without whitespace",
+                )
+            if deployment["kind"] == "docker":
+                raise ConfigError("hummingbird.marketplace.host is only valid for SSH deployments")
+        elif deployment["kind"] == "ssh":
+            # SSH setup reaches the marketplace url only through a tunnel to the host it runs on.
+            raise ConfigError("hummingbird.marketplace.host is required for SSH deployments")
+        scion_address = marketplace.get("scion_address")
+        if scion_address is not None:
+            if deployment["kind"] == "docker":
+                # The generated Docker topology already advertises its marketplace.
+                raise ConfigError(
+                    "hummingbird.marketplace.scion_address is only valid for SSH deployments",
+                )
+            validate_scion_address(scion_address, "hummingbird.marketplace.scion_address")
+        if deployment["kind"] == "ssh":
+            validate_ssh_marketplace(url, scion_address)
+        interfaces = None
+        if "interfaces" in marketplace:
+            if deployment["kind"] == "docker":
+                # The topology generator fills the Docker marketplace database.
+                raise ConfigError(
+                    "hummingbird.marketplace.interfaces is only valid for SSH deployments",
+                )
+            interfaces = parse_marketplace_interfaces(marketplace["interfaces"])
+        marketplace_config = MarketplaceConfig(
+            url, username, password_env, sub_account, host, scion_address, interfaces,
+        )
     elif "marketplace" in hummingbird_config:
         raise ConfigError("hummingbird.marketplace is only valid in marketplace mode")
     if not isinstance(root["server"], dict):
         raise ConfigError("server must be an object")
     server = parse_endpoint(root["server"], "server", require_receive_buffer=True)
+    if (server.node is None) != (deployment["kind"] == "docker"):
+        raise ConfigError("server.node is required only for SSH deployments")
     if server.port == 0:
         raise ConfigError("server.port must not be zero")
 
@@ -374,7 +553,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     parsed: list[Client] = []
     for entry, hummingbird, context in raw_clients:
         parsed.append(parse_client(entry, hummingbird, context, reservation_source,
-                                   marketplace_credentials))
+                                   marketplace_config))
     # Sorting makes a client's metrics port stable when the JSON array order changes.
     parsed.sort(key=lambda item: item.client_id)
     if len({item.client_id for item in parsed}) != len(parsed):
@@ -383,10 +562,13 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         raise ConfigError("too many clients for the derived Prometheus port range")
     clients = [replace(client, metrics_port=METRICS_BASE_PORT + index)
                for index, client in enumerate(parsed)]
+    for client in clients:
+        if (client.endpoint.node is None) != (deployment["kind"] == "docker"):
+            raise ConfigError(f"{client.client_id}.node is required only for SSH deployments")
 
-    router = root["router"]
+    router = deployment.get("router", {})
     if not isinstance(router, dict):
-        raise ConfigError("router must be an object")
+        raise ConfigError("deployment.router must be an object")
     router_keys = {
         "send_buffer_size",
         "receive_buffer_size",
@@ -395,11 +577,13 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         "egress_batch_size",
         "egress_queue_size",
     }
-    require_fields(router, router_keys, "router")
-    for key in router_keys:
-        value = router[key]
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise ConfigError(f"router.{key} must be a positive integer")
+    if deployment["kind"] == "docker":
+        require_fields(router, router_keys, "deployment.router")
+    if deployment["kind"] == "docker":
+        for key in router_keys:
+            value = router[key]
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ConfigError(f"deployment.router.{key} must be a positive integer")
 
     tc = root["tc"]
     if not isinstance(tc, dict):
@@ -411,7 +595,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     return (
         server,
         clients,
-        {key: router[key] for key in sorted(router_keys)},
+        {key: router[key] for key in sorted(router_keys)} if deployment["kind"] == "docker" else {},
         {key: tc[key] for key in ("rate", "burst", "limit")},
     )
 
@@ -459,14 +643,18 @@ def validate_endpoints(compose: dict[str, Any], server: Endpoint, clients: list[
     """Ensure every configured endpoint belongs to the generated tester for its AS."""
     # A configured endpoint must be the tester address of its AS, not an arbitrary container IP.
     services = compose["services"]
-    for endpoint, context in [(server, "server")] + [(client.endpoint, client.client_id) for client in clients]:
+    endpoints = [(server, "server")] + [(client.endpoint, client.client_id) for client in clients]
+    for endpoint, context in endpoints:
         service = tester_service(endpoint.isd_as)
         entry = services.get(service)
         if not isinstance(entry, dict):
-            raise ConfigError(f"{context}: tester service {service} is absent from generated topology")
+            raise ConfigError(
+                f"{context}: tester service {service} is absent from generated topology")
         environment = entry.get("environment", {})
-        if not isinstance(environment, dict) or environment.get("SCION_LOCAL_ADDR") != endpoint.host:
-            raise ConfigError(f"{context}: host {endpoint.host} does not match {service} SCION_LOCAL_ADDR")
+        if (not isinstance(environment, dict)
+                or environment.get("SCION_LOCAL_ADDR") != endpoint.host):
+            raise ConfigError(
+                f"{context}: host {endpoint.host} does not match {service} SCION_LOCAL_ADDR")
 
 
 def br_ias() -> dict[str, str]:
@@ -494,18 +682,20 @@ def br_config_paths() -> dict[str, Path]:
     return result
 
 
-def patch_toml_section(
-    path: Path,
+def patched_toml_section(
+    text: str,
     section: str,
     values: dict[str, int],
     remove: set[str] | None = None,
-) -> None:
-    """Idempotently replace, insert, and remove integer keys in one TOML section."""
-    text = path.read_text()
+) -> str:
+    """Return text with integer keys of one TOML section replaced, inserted, and removed."""
     section_match = re.search(rf"(?m)^\[{re.escape(section)}\][ \t]*(?:#.*)?$", text)
     rendered = [f"{key} = {value}" for key, value in values.items()]
     if section_match is None:
-        separator = "" if not text or text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+        if not text or text.endswith("\n\n"):
+            separator = ""
+        else:
+            separator = "\n" if text.endswith("\n") else "\n\n"
         updated = text + separator + f"[{section}]\n" + "\n".join(rendered) + "\n"
     else:
         body_start = section_match.end()
@@ -524,6 +714,18 @@ def patch_toml_section(
         if missing:
             body = body.rstrip("\n") + "\n" + "\n".join(missing) + "\n"
         updated = text[:body_start] + body + text[body_end:]
+    return updated
+
+
+def patch_toml_section(
+    path: Path,
+    section: str,
+    values: dict[str, int],
+    remove: set[str] | None = None,
+) -> None:
+    """Idempotently replace, insert, and remove integer keys in one TOML section."""
+    text = path.read_text()
+    updated = patched_toml_section(text, section, values, remove)
     if updated != text:
         path.write_text(updated)
 
@@ -570,8 +772,9 @@ def inter_as_router_peers(compose: dict[str, Any]) -> dict[str, list[str]]:
                     continue
                 peer_network = compose["services"][peer]["networks"][network]
                 for family in ("ipv4", "ipv6"):
+                    peer_address = compose_network_address(peer_network, family)
                     if (compose_network_address(own_network, family) is not None
-                            and (peer_address := compose_network_address(peer_network, family)) is not None):
+                            and peer_address is not None):
                         result.setdefault(router, set()).add(peer_address)
                         break
                 else:
@@ -589,6 +792,15 @@ def tc_helper_name(router: str) -> str:
 
 def patch_compose(compose: dict[str, Any], peers: dict[str, list[str]], tc: dict[str, str]) -> None:
     """Add one profiled, network-namespace-sharing tc helper per border router."""
+    rendered = compose_with_tc_helpers(compose, peers, tc)
+    if not COMPOSE.exists() or COMPOSE.read_text() != rendered:
+        COMPOSE.write_text(rendered)
+
+
+def compose_with_tc_helpers(
+    compose: dict[str, Any], peers: dict[str, list[str]], tc: dict[str, str],
+) -> str:
+    """Replace the tc helper services in compose and return its rendered YAML."""
     services = compose["services"]
     for name in [name for name in services if name == "hummbwtester_tc_setup"
                  or name.startswith(TC_HELPER_PREFIX)]:
@@ -610,10 +822,12 @@ def patch_compose(compose: dict[str, Any], peers: dict[str, list[str]], tc: dict
             "entrypoint": ["/bin/bash", "/share/hummbwtester_tc_setup.sh"],
             "command": ["setup", tc["rate"], tc["burst"], tc["limit"], *peer_addresses],
         }
-    COMPOSE.write_text(yaml.safe_dump(compose, sort_keys=False))
+    return yaml.safe_dump(compose, sort_keys=False)
 
 
-def run(command: list[str], *, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+def run(
+    command: list[str], *, check: bool = True, **kwargs: Any,
+) -> subprocess.CompletedProcess[str]:
     """Print and run a command, forwarding subprocess keyword arguments to subprocess.run."""
     # Print shell-escaped commands so setup failures can be reproduced manually.
     print("+", shlex.join(command))
@@ -623,6 +837,36 @@ def run(command: list[str], *, check: bool = True, **kwargs: Any) -> subprocess.
 def dc_args(*args: str) -> list[str]:
     """Build a Docker Compose command targeting the generated SCION Compose file."""
     return ["docker", "compose", "-f", str(COMPOSE), *args]
+
+
+def ignore_sigint_during_cleanup() -> object:
+    """Handle a burst of terminal interrupts before cleanup can begin."""
+    while True:
+        try:
+            return signal.signal(signal.SIGINT, signal.SIG_IGN)
+        except KeyboardInterrupt:
+            continue
+
+
+def monitoring_compose(*args: str, quiet: bool = False) -> list[str]:
+    """A docker compose command for the controller's monitoring stack.
+
+    quiet hides image pull and container progress; errors are still printed.
+    """
+    return ["docker", "compose", *(["--progress", "quiet"] if quiet else []),
+            "--project-name", MONITORING_PROJECT, "-f", str(MONITORING_COMPOSE), *args]
+
+
+def local_container_owner(container: str) -> str | None:
+    """The compose project/service of a local container, or None if it does not exist."""
+    result = subprocess.run(
+        ["docker", "inspect", "--format",
+         '{{index .Config.Labels "com.docker.compose.project"}}/'
+         '{{index .Config.Labels "com.docker.compose.service"}}',
+         container],
+        check=False, capture_output=True, text=True,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
 
 
 def require_built_binary() -> None:
@@ -651,12 +895,18 @@ def wait_for_reachability(server: Endpoint, client: Client, timeout: float = 60)
 def write_targets(compose: dict[str, Any], clients: list[Client]) -> None:
     """Write Prometheus file-SD target files for client and border-router metrics."""
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
+    for path, text in target_files(clients).items():
+        if not path.exists() or path.read_text() != text:
+            path.write_text(text)
+
+
+def target_files(clients: list[Client]) -> dict[Path, str]:
+    """The Prometheus file-SD target files for client and border-router metrics."""
     # client_id is the only custom Prometheus label for client metrics.
     client_targets = [{
         "targets": [join_host_port(client.endpoint.host, client.metrics_port)],
         "labels": {"client_id": client.client_id},
     } for client in clients]
-    (TARGET_DIR / "clients.json").write_text(json.dumps(client_targets, indent=2) + "\n")
 
     ia_by_br = br_ias()
     targets = []
@@ -668,18 +918,25 @@ def write_targets(compose: dict[str, Any], clients: list[Client]) -> None:
             if service in data.get("border_routers", {}):
                 internal = data["border_routers"][service]["internal_addr"]
                 host = internal.rsplit(":", 1)[0].strip("[]")
-                targets.append({"targets": [join_host_port(host, 30442)],
-                                "labels": {"as": ia.split("-", 1)[1].replace(":", "_"), "br": service}})
+                labels = {"as": ia.split("-", 1)[1].replace(":", "_"), "br": service}
+                targets.append({"targets": [join_host_port(host, 30442)], "labels": labels})
                 break
-    (TARGET_DIR / "border_routers.json").write_text(json.dumps(targets, indent=2) + "\n")
+    return {
+        TARGET_DIR / "clients.json": json.dumps(client_targets, indent=2) + "\n",
+        TARGET_DIR / "border_routers.json": json.dumps(targets, indent=2) + "\n",
+    }
 
 
-def setup(config_path: Path) -> int:
+def setup(
+    config_path: Path,
+    config: tuple[Endpoint, list[Client], dict[str, int], dict[str, str]] | None = None,
+) -> int:
     """Build, start, shape, populate, and publish targets for one configured experiment."""
-    server, clients, router, tc = load_config(config_path)
+    server, clients, router, tc = config if config is not None else load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
-    _ = [endpoint_sciond(endpoint, sciond_map()) for endpoint in [server, *(c.endpoint for c in clients)]]
+    _ = [endpoint_sciond(endpoint, sciond_map())
+         for endpoint in [server, *(c.endpoint for c in clients)]]
     peers = inter_as_router_peers(compose)
     # `make build-dev` builds this Bazel target as a static binary and extracts it into bin/.
     # Reusing that artifact keeps this tool consistent with the other tester-container binaries.
@@ -689,15 +946,143 @@ def setup(config_path: Path) -> int:
     # This is safe after `scion.sh stop`: Compose recreates the removed bridges before tc runs.
     run([str(ROOT / "scion.sh"), "start"], cwd=ROOT)
     wait_for_reachability(server, clients[0])
+    previous_peers = recorded_qdisc_peers(tc)
+    applied_peers: dict[str, list[str]] = {}
     for router_service in peers:
-        run(dc_args("run", "--rm", "--no-deps", tc_helper_name(router_service)), cwd=ROOT)
+        if previous_peers.get(router_service) == peers[router_service]:
+            check = run(dc_args(
+                "run", "--rm", "--no-deps", tc_helper_name(router_service),
+                "stats", *peers[router_service],
+            ), cwd=ROOT, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if check.returncode:
+                run(dc_args("run", "--rm", "--no-deps", tc_helper_name(router_service)), cwd=ROOT)
+        else:
+            run(dc_args("run", "--rm", "--no-deps", tc_helper_name(router_service)), cwd=ROOT)
+        applied_peers[router_service] = peers[router_service]
+        DOCKER_QDISC_STATE.write_text(json.dumps(
+            {"tc": tc, "peers": applied_peers}, sort_keys=True, indent=2,
+        ) + "\n")
     for client in clients:
         print(f"client_id={client.client_id} metrics_port={client.metrics_port}")
-    for service in sorted({tester_service(server.isd_as), *(tester_service(c.endpoint.isd_as) for c in clients)}):
-        run(dc_args("cp", str(BIN), f"{service}:/share/bin/hummbwtester"), cwd=ROOT)
+    with BIN.open("rb") as binary:
+        digest = hashlib.file_digest(binary, "sha256").hexdigest()
+    services = {tester_service(server.isd_as),
+                *(tester_service(c.endpoint.isd_as) for c in clients)}
+    for service in sorted(services):
+        current = run(dc_args("exec", "-T", service, "sha256sum", "/share/bin/hummbwtester"),
+                      cwd=ROOT, check=False, capture_output=True)
+        if current.returncode or not current.stdout.split() or current.stdout.split()[0] != digest:
+            run(dc_args("cp", str(BIN), f"{service}:/share/bin/hummbwtester"), cwd=ROOT)
         run(dc_args("exec", "-T", service, "test", "-x", "/share/bin/hummbwtester"), cwd=ROOT)
     write_targets(compose, clients)
     return 0
+
+
+def recorded_qdisc_peers(tc: dict[str, str]) -> dict[str, Any]:
+    """The peers per router whose qdiscs an earlier setup applied with the same tc settings."""
+    try:
+        previous = json.loads(DOCKER_QDISC_STATE.read_text())
+    except (OSError, json.JSONDecodeError):
+        previous = {}
+    if not isinstance(previous, dict):
+        previous = {}
+    previous_peers = previous.get("peers", {}) if previous.get("tc") == tc else {}
+    return previous_peers if isinstance(previous_peers, dict) else {}
+
+
+def _relative(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def describe_setup(
+    config_path: Path,
+    config: tuple[Endpoint, list[Client], dict[str, int], dict[str, str]] | None = None,
+) -> list[str]:
+    """Describe the steps setup would perform, using only reads; nothing is changed.
+
+    It performs setup's validation, then compares each file setup would write with what it
+    would contain. Container state is only read with sha256sum in running tester containers.
+    """
+    server, clients, router, tc = config if config is not None else load_config(config_path)
+    compose = compose_data()
+    validate_endpoints(compose, server, clients)
+    _ = [endpoint_sciond(endpoint, sciond_map())
+         for endpoint in [server, *(c.endpoint for c in clients)]]
+    peers = inter_as_router_peers(compose)
+    require_built_binary()
+    steps: list[str] = []
+
+    values = ", ".join(f"{key} = {value}" for key, value in router.items())
+    stale = [path for path in sorted(br_config_paths().values())
+             if patched_toml_section(path.read_text(), "router", router, {"batch_size"})
+             != path.read_text()]
+    if stale:
+        steps.append(
+            f"would edit {len(stale)} border-router configs ({', '.join(map(_relative, stale))}): "
+            f"set their [router] section to {values} and drop the deprecated batch_size",
+        )
+    else:
+        steps.append(f"keep the border-router configs: their [router] section already has {values}")
+
+    helpers = ", ".join(tc_helper_name(router_service) for router_service in peers)
+    rendered = compose_with_tc_helpers(copy.deepcopy(compose), peers, tc)
+    if not COMPOSE.exists() or COMPOSE.read_text() != rendered:
+        steps.append(
+            f"would rewrite {_relative(COMPOSE)} to define one privileged, one-shot tc helper "
+            f"service per inter-AS border router ({helpers}) in the hummbwtester-setup profile, "
+            f"each applying a TBF with rate {tc['rate']}, burst {tc['burst']}, limit {tc['limit']}",
+        )
+    else:
+        steps.append(f"keep {_relative(COMPOSE)}: its tc helper services ({helpers}) are current")
+
+    steps.append("would run ./scion.sh start, which starts the generated topology")
+    steps.append(
+        f"would wait up to 60 s until the tester of {clients[0].client_id} can SCION-ping "
+        f"the server {server.isd_as},{server.host}",
+    )
+
+    recorded = recorded_qdisc_peers(tc)
+    for router_service, addresses in peers.items():
+        if recorded.get(router_service) == addresses:
+            steps.append(
+                f"would check the TBF qdiscs of {router_service} towards {', '.join(addresses)} "
+                f"with {tc_helper_name(router_service)} and reinstall them if missing",
+            )
+        else:
+            steps.append(
+                f"would install TBF qdiscs on {router_service} towards {', '.join(addresses)} "
+                f"with {tc_helper_name(router_service)}",
+            )
+    steps.append(f"would record the applied qdiscs in {_relative(DOCKER_QDISC_STATE)}")
+
+    with BIN.open("rb") as binary:
+        digest = hashlib.file_digest(binary, "sha256").hexdigest()
+    target = "/share/bin/hummbwtester"
+    for service in sorted({tester_service(server.isd_as),
+                           *(tester_service(c.endpoint.isd_as) for c in clients)}):
+        # The tester image has no shell; sha256sum's own error tells a missing binary apart
+        # from a container that cannot be reached.
+        current = run(dc_args("exec", "-T", service, "sha256sum", target),
+                      cwd=ROOT, check=False, capture_output=True)
+        if current.returncode == 0 and current.stdout.split()[:1] == [digest]:
+            steps.append(f"keep {target} in {service}: it matches bin/hummbwtester")
+        elif current.returncode == 0:
+            steps.append(f"would copy bin/hummbwtester to {target} in {service}: it differs")
+        elif "No such file or directory" in current.stderr:
+            steps.append(f"would copy bin/hummbwtester to {target} in {service}: it is missing")
+        else:
+            steps.append(f"would copy bin/hummbwtester to {target} in {service} unless it "
+                         "already matches; it cannot be read now (is the container running?)")
+
+    for path, text in target_files(clients).items():
+        if path.exists() and path.read_text() == text:
+            steps.append(f"keep {_relative(path)}: its Prometheus targets are current")
+        else:
+            steps.append(f"would write the Prometheus targets {_relative(path)}")
+    return steps
 
 
 def verify_binaries(server: Endpoint, clients: list[Client]) -> None:
@@ -710,17 +1095,21 @@ def verify_binaries(server: Endpoint, clients: list[Client]) -> None:
 
 
 def launch(
-    service: str, pidfile: str, args: list[str], logfile: Path, marketplace_jwt: str | None = None,
+    service: str, pidfile: str, args: list[str], logfile: Path,
+    marketplace_jwt_file: str | None = None,
 ) -> subprocess.Popen[str]:
     """Start one tester process through Compose and record its in-container PID and output."""
     logfile.parent.mkdir(parents=True, exist_ok=True)
     # The shell PID becomes the tester PID after exec. Saving it lets cleanup target exactly this
     # experiment process instead of broadly killing every hummbwtester in the shared container.
-    command = "echo $$ > " + shlex.quote(pidfile) + "; exec " + shlex.join(args)
+    command = "echo $$ > " + shlex.quote(pidfile) + "; "
+    if marketplace_jwt_file is not None:
+        # The token is read by the shell inside the container. The Compose invocation and this
+        # command contain only its fixed path, never the JWT itself.
+        command += "export SCION_MARKETPLACE_JWT=$(cat " + shlex.quote(marketplace_jwt_file) + "); "
+    command += "exec " + shlex.join(args)
     print(f"logging {service} to {logfile}")
     compose_args = dc_args("exec", "-T")
-    if marketplace_jwt is not None:
-        compose_args.extend(["-e", f"SCION_MARKETPLACE_JWT={marketplace_jwt}"])
     compose_args.extend([service, "/bin/bash", "-c", command])
     return subprocess.Popen(compose_args, cwd=ROOT,
                             stdout=logfile.open("w"), stderr=subprocess.STDOUT, text=True)
@@ -753,12 +1142,15 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
         args.extend(["-payload-size", str(client.payload_size)])
     if client.pong_rate is not None:
         args.extend(["-pong-rate", str(client.pong_rate)])
+    if client.sequence is not None:
+        args.extend(["-sequence", client.sequence])
     if client.hummingbird:
         assert client.hummingbird_reservation is not None
         reservation = client.hummingbird_reservation
-        args.extend(["-hummingbird",
-                     f"{reservation.bandwidth},{reservation.duration},{reservation.reverse_bandwidth}",
-                     ])
+        args.extend([
+            "-hummingbird",
+            f"{reservation.bandwidth},{reservation.duration},{reservation.reverse_bandwidth}",
+        ])
         if client.reservation_source == "keys":
             args.extend(["-hummKeysDir", "/share/gen"])
         for flag, value in (
@@ -771,18 +1163,13 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
 
 
 def marketplace_registration_website() -> str:
-    """Find the unique TCP registration website advertised by the generated topology."""
+    """Find the unique TCP registration website advertised by the generated Docker topology."""
     websites: set[str] = set()
     for path in sorted(GEN.glob("AS*/staticInfoConfig.json")):
         try:
             static_info = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError) as err:
-            raise ConfigError(f"reading marketplace advertisement {path}: {err}") from err
-        if not isinstance(static_info, dict) or not isinstance(static_info.get("note", "{}"), str):
-            raise ConfigError(f"marketplace advertisement {path} has an invalid note")
-        try:
             note = json.loads(static_info.get("note", "{}"))
-        except json.JSONDecodeError as err:
+        except (OSError, json.JSONDecodeError, AttributeError) as err:
             raise ConfigError(f"reading marketplace advertisement {path}: {err}") from err
         if not isinstance(note, dict):
             raise ConfigError(f"marketplace advertisement {path} is not an object")
@@ -796,25 +1183,70 @@ def marketplace_registration_website() -> str:
             if isinstance(website, str) and website:
                 websites.add(website)
     if not websites:
-        raise ConfigError("no marketplace registration website advertised in gen/AS*/staticInfoConfig.json")
+        raise ConfigError(
+            "no marketplace registration website advertised in gen/AS*/staticInfoConfig.json")
     if len(websites) != 1:
-        raise ConfigError("multiple marketplace registration websites advertised: " + ", ".join(sorted(websites)))
+        raise ConfigError("multiple marketplace registration websites advertised: " +
+                          ", ".join(sorted(websites)))
     return next(iter(websites))
 
 
-def obtain_marketplace_jwt(username: str, password: str) -> str:
-    """Log in through the generated marketplace web app and return a fresh JWT."""
-    website = marketplace_registration_website()
+def obtain_marketplace_jwt(marketplace: MarketplaceConfig) -> str:
+    """Request the configured user's JWT without exposing its password or token in argv."""
+    if not os.environ.get(marketplace.password_env):
+        raise ConfigError(
+            f"marketplace password environment variable {marketplace.password_env} is not set")
+    command = [sys.executable, str(ROOT / "marketplace" / "tools" / "get_jwt.py"),
+               marketplace.username, "--url", marketplace.url,
+               "--password-env", marketplace.password_env]
+    if marketplace.sub_account is not None:
+        command.extend(["--sub-account", marketplace.sub_account])
     result = subprocess.run(
-        [str(ROOT / "marketplace" / "tools" / "get-jwt.sh"), username, password, website],
+        command,
         cwd=ROOT, check=False, capture_output=True, text=True,
     )
     if result.returncode != 0:
-        raise ConfigError(f"marketplace login failed at {website}: {result.stderr.strip()}")
+        raise ConfigError(f"marketplace login failed at {marketplace.url}: {result.stderr.strip()}")
     token = result.stdout.strip()
     if not token:
         raise ConfigError("marketplace login returned an empty JWT")
     return token
+
+
+def write_private_jwt(token: str) -> Path:
+    """Write token to an owner-only temporary file and return its path."""
+    fd, name = tempfile.mkstemp(prefix="hummbwtester-jwt-", text=True)
+    path = Path(name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as file:
+            file.write(token)
+            file.write("\n")
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return path
+
+
+def install_docker_jwt(token: str, services: set[str]) -> tuple[Path, str]:
+    """Copy a private JWT file to selected containers and return local/remote paths."""
+    local = write_private_jwt(token)
+    remote = "/tmp/hummbwtester-marketplace.jwt"
+    try:
+        for service in sorted(services):
+            run(dc_args("cp", str(local), f"{service}:{remote}"), cwd=ROOT)
+            run(dc_args("exec", "-T", service, "chmod", "600", remote), cwd=ROOT)
+    except BaseException:
+        local.unlink(missing_ok=True)
+        raise
+    return local, remote
+
+
+def remove_docker_jwt(services: set[str], remote: str) -> None:
+    """Best-effort removal of an experiment's JWT from its containers."""
+    for service in sorted(services):
+        run(dc_args("exec", "-T", service, "rm", "-f", remote), cwd=ROOT,
+            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def metric_samples(body: str, metric: str) -> dict[str, float]:
@@ -870,12 +1302,13 @@ def router_metric_endpoints() -> list[tuple[str, str]]:
     for topology in GEN.glob("AS*/topology.json"):
         data = json.loads(topology.read_text())
         for router, entry in data.get("border_routers", {}).items():
-            result.append((router, f"http://{join_host_port(address_host(entry['internal_addr']), 30442)}/metrics"))
+            address = join_host_port(address_host(entry["internal_addr"]), 30442)
+            result.append((router, f"http://{address}/metrics"))
     return sorted(result)
 
 
 def router_metric_bodies() -> tuple[dict[str, str], list[str]]:
-    """Read router metrics without letting an unavailable observation endpoint stop the experiment."""
+    """Read router metrics without letting an unavailable endpoint stop the experiment."""
     bodies: dict[str, str] = {}
     errors: list[str] = []
     for router, url in router_metric_endpoints():
@@ -929,7 +1362,9 @@ def interface_counters(
     }
 
 
-def tc_stats(compose: dict[str, Any], interfaces: list[RouterInterface]) -> tuple[dict[tuple[str, str], TCStats], list[str]]:
+def tc_stats(
+    compose: dict[str, Any], interfaces: list[RouterInterface],
+) -> tuple[dict[tuple[str, str], TCStats], list[str]]:
     """Read TBF counters without draining queues or treating counter values as failures."""
     remote_interfaces = {interface.remote: interface.key for interface in interfaces}
     stats: dict[tuple[str, str], TCStats] = {}
@@ -950,7 +1385,8 @@ def tc_stats(compose: dict[str, Any], interfaces: list[RouterInterface]) -> tupl
             capture_output=True,
         )
         if result.returncode != 0:
-            errors.append(f"{helper} tc stats failed: {result.stderr.strip() or result.stdout.strip()}")
+            detail = result.stderr.strip() or result.stdout.strip()
+            errors.append(f"{helper} tc stats failed: {detail}")
             continue
         for line in result.stdout.splitlines():
             match = TC_STATS_RE.fullmatch(line)
@@ -965,10 +1401,11 @@ def tc_stats(compose: dict[str, Any], interfaces: list[RouterInterface]) -> tupl
 
 
 def report_snapshot(compose: dict[str, Any], interfaces: list[RouterInterface]) -> ReportSnapshot:
-    """Capture all observability data; failures are rendered in the report and never abort traffic."""
+    """Capture all observability data; failures are reported and never abort traffic."""
     bodies, metric_errors = router_metric_bodies()
     tc, tc_errors = tc_stats(compose, interfaces)
-    return ReportSnapshot(interface_counters(interfaces, bodies), tc, tuple(metric_errors + tc_errors))
+    errors = tuple(metric_errors + tc_errors)
+    return ReportSnapshot(interface_counters(interfaces, bodies), tc, errors)
 
 
 def counter_delta(previous: int | None, current: int | None) -> str:
@@ -996,19 +1433,25 @@ def render_table(headers: list[str], rows: list[tuple[str, list[str]]]) -> str:
         widths[0] = max(widths[0], len(name))
         for index, value in enumerate(values, start=1):
             widths[index] = max(widths[index], len(value))
+
     def line(values: list[str]) -> str:
         return " | ".join(value.rjust(widths[index]) for index, value in enumerate(values))
     divider = "-+-".join("-" * width for width in widths)
     return "\n".join([line(headers), divider, *(line([name, *values]) for name, values in rows)])
 
 
-def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: list[RouterInterface]) -> None:
+def print_report(
+    previous: ReportSnapshot, current: ReportSnapshot, interfaces: list[RouterInterface],
+) -> None:
     """Print one minute of router and TBF observations without enforcing a health policy."""
     peers = peer_interfaces(interfaces)
+
     def counters(snapshot: ReportSnapshot, interface: RouterInterface) -> InterfaceCounters | None:
         return snapshot.counters.get(interface.key)
+
     def tc(snapshot: ReportSnapshot, interface: RouterInterface) -> TCStats | None:
         return snapshot.tc.get(interface.key)
+
     def bfd_lost(interface: RouterInterface) -> str:
         local_previous, local_current = counters(previous, interface), counters(current, interface)
         peer = peers.get(interface.key)
@@ -1020,11 +1463,15 @@ def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: 
         sent = peer_current.bfd_sent - peer_previous.bfd_sent
         received = local_current.bfd_received - local_previous.bfd_received
         return str(max(0, sent - received))
+
     def counter_row(field: str) -> list[str]:
         return [counter_delta(
-            getattr(counters(previous, interface), field) if counters(previous, interface) else None,
-            getattr(counters(current, interface), field) if counters(current, interface) else None,
+            getattr(counters(previous, interface), field)
+            if counters(previous, interface) else None,
+            getattr(counters(current, interface), field)
+            if counters(current, interface) else None,
         ) for interface in interfaces]
+
     def tc_row(field: str, current_value: bool = False) -> list[str]:
         values: list[str] = []
         for interface in interfaces:
@@ -1048,21 +1495,25 @@ def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: 
         # ("TC backlog bytes", tc_row("backlog_bytes", current_value=True)),
     ]
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
-    print(f"{timestamp} HUMMBWTESTER_REPORT interval=60s (counters are deltas; TC backlog is current)")
+    print(f"{timestamp} HUMMBWTESTER_REPORT interval=60s "
+          "(counters are deltas; TC backlog is current)")
     print(render_table(["metric", *(interface.label for interface in interfaces)], rows))
     print()
     for error in current.errors:
         print(f"HUMMBWTESTER_REPORT observation_error={error}")
 
 
-def run_experiment(config_path: Path) -> int:
+def run_experiment(
+    config_path: Path,
+    config: tuple[Endpoint, list[Client], dict[str, int], dict[str, str]] | None = None,
+) -> int:
     """Launch the server and all clients, then return their aggregate experiment status."""
-    server, clients, _, _ = load_config(config_path)
+    server, clients, _, _ = config if config is not None else load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
     daemons = sciond_map()
     verify_binaries(server, clients)
-    # Regenerate targets here too, so editing client IDs does not require a separate monitoring step.
+    # Regenerate targets here too, so editing client IDs needs no separate monitoring step.
     write_targets(compose, clients)
     server_service = tester_service(server.isd_as)
     log_dir = ROOT / "logs" / "hummbwtester"
@@ -1070,25 +1521,33 @@ def run_experiment(config_path: Path) -> int:
     args = server_args(server, endpoint_sciond(server, daemons))
     processes: list[tuple[Client, str, subprocess.Popen[str]]] = []
     interfaces = router_interfaces()
-    marketplace_jwt = None
+    marketplace_jwt_file: Path | None = None
+    remote_jwt_file: str | None = None
+    marketplace_services: set[str] = set()
     hummingbird_clients = [client for client in clients if client.hummingbird]
-    if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
-        client = hummingbird_clients[0]
-        assert client.marketplace_username is not None
-        assert client.marketplace_password is not None
-        marketplace_jwt = obtain_marketplace_jwt(
-            client.marketplace_username, client.marketplace_password)
-    server_process = launch(server_service, server_pidfile, args, log_dir / "server.log")
+    server_process: subprocess.Popen[str] | None = None
     try:
+        if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
+            client = hummingbird_clients[0]
+            assert client.marketplace is not None
+            marketplace_services = {tester_service(client.endpoint.isd_as)
+                                    for client in hummingbird_clients}
+            # A Docker topology advertises the registration endpoint that is actually reachable
+            # from this controller. The workload URL is for the SSH backend, where gen/ is absent.
+            marketplace = replace(client.marketplace, url=marketplace_registration_website())
+            marketplace_jwt_file, remote_jwt_file = install_docker_jwt(
+                obtain_marketplace_jwt(marketplace), marketplace_services)
+        server_process = launch(server_service, server_pidfile, args, log_dir / "server.log")
         # Give the server a predictable head start before clients begin selecting paths and dialing.
         time.sleep(2)
         for client in clients:
             suffix = client.client_id
             args = client_args(client, server, endpoint_sciond(client.endpoint, daemons))
             pidfile = f"/tmp/hummbwtester-{suffix}.pid"
-            jwt = marketplace_jwt if client.hummingbird else None
-            processes.append((client, pidfile, launch(tester_service(client.endpoint.isd_as), pidfile, args,
-                                                       log_dir / f"{suffix}.log", jwt)))
+            jwt_file = remote_jwt_file if client.hummingbird else None
+            process = launch(tester_service(client.endpoint.isd_as), pidfile, args,
+                             log_dir / f"{suffix}.log", jwt_file)
+            processes.append((client, pidfile, process))
         failure = False
         previous_report = report_snapshot(compose, interfaces)
         next_report = time.monotonic() + 60
@@ -1108,38 +1567,24 @@ def run_experiment(config_path: Path) -> int:
     except KeyboardInterrupt:
         return 130
     finally:
-        # Always remove the server and any remaining clients on failure or Ctrl-C.
-        for client, pidfile, process in processes:
-            # Ctrl-C can terminate the local ``docker compose exec`` wrapper before it reaches
-            # the tester process in the container. The pidfile is the authoritative record of
-            # that process, so always target it even when the local wrapper has already exited.
-            stop_remote(tester_service(client.endpoint.isd_as), pidfile)
-            if process.poll() is None:
-                process.terminate()
-        stop_remote(server_service, server_pidfile)
-        if server_process.poll() is None:
-            server_process.terminate()
-        for _, _, process in processes:
-            process.wait(timeout=10)
-        server_process.wait(timeout=10)
-
-
-def main(default_mode: str | None = None) -> int:
-    """Parse CLI arguments and dispatch to setup or run, optionally forcing the mode."""
-    # The two small entrypoint scripts pass "setup" or "run" directly. Running this module
-    # itself leaves the mode as None, so argparse requires the user to choose one.
-    parser = argparse.ArgumentParser()
-    if default_mode is None:
-        parser.add_argument("mode", choices=("setup", "run"))
-    parser.add_argument("--config", type=Path, default=CONFIG_DEFAULT)
-    args = parser.parse_args()
-    try:
-        mode = default_mode if default_mode is not None else args.mode
-        return setup(args.config) if mode == "setup" else run_experiment(args.config)
-    except (ConfigError, RuntimeError, subprocess.SubprocessError) as err:
-        print(f"error: {err}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        # A second Ctrl-C while cleanup is running must not strand tester processes or a JWT.
+        previous_sigint = ignore_sigint_during_cleanup()
+        try:
+            for client, pidfile, process in processes:
+                # The pidfile is authoritative even if the Compose wrapper exited already.
+                stop_remote(tester_service(client.endpoint.isd_as), pidfile)
+                if process.poll() is None:
+                    process.terminate()
+            stop_remote(server_service, server_pidfile)
+            if server_process is not None and server_process.poll() is None:
+                server_process.terminate()
+            for _, _, process in processes:
+                process.wait(timeout=10)
+            if server_process is not None:
+                server_process.wait(timeout=10)
+            if remote_jwt_file is not None:
+                remove_docker_jwt(marketplace_services, remote_jwt_file)
+            if marketplace_jwt_file is not None:
+                marketplace_jwt_file.unlink(missing_ok=True)
+        finally:
+            signal.signal(signal.SIGINT, previous_sigint)

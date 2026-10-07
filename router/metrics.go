@@ -45,6 +45,7 @@ type Metrics struct {
 	UnderlayReceiveOverflowPackets *prometheus.CounterVec
 	HummProcessedPackets           *prometheus.CounterVec
 	HummFlyoverPackets             *prometheus.CounterVec
+	HummMACVerificationFailures    *prometheus.CounterVec
 	HummDemotedFreshnessPkts       *prometheus.CounterVec
 	HummDemotedExpiredPkts         *prometheus.CounterVec
 	HummDemotedTokenBucketPkts     *prometheus.CounterVec
@@ -324,6 +325,13 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
 		),
+		HummMACVerificationFailures: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "router_humm_mac_verification_failures_total",
+				Help: "Total number of Hummingbird packets whose MAC verification failed.",
+			},
+			[]string{"interface", "isd_as", "neighbor_isd_as", "sizeclass"},
+		),
 		HummDemotedFreshnessPkts: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "router_humm_demoted_freshness_total",
@@ -526,6 +534,7 @@ type trafficMetrics struct {
 	PriorityForwardedPackets            prometheus.Counter
 	HummProcessedPackets                prometheus.Counter
 	HummFlyoverPackets                  prometheus.Counter
+	HummMACVerificationFailures         prometheus.Counter
 	HummDemotedFreshnessPkts            prometheus.Counter
 	HummDemotedExpiredPkts              prometheus.Counter
 	HummDemotedTokenBucketPkts          prometheus.Counter
@@ -572,6 +581,8 @@ func newTrafficMetrics(
 			With(scLabels),
 		HummProcessedPackets: metrics.HummProcessedPackets.MustCurryWith(ifLabels).With(scLabels),
 		HummFlyoverPackets:   metrics.HummFlyoverPackets.MustCurryWith(ifLabels).With(scLabels),
+		HummMACVerificationFailures: metrics.HummMACVerificationFailures.MustCurryWith(ifLabels).
+			With(scLabels),
 		HummDemotedFreshnessPkts: metrics.HummDemotedFreshnessPkts.MustCurryWith(ifLabels).
 			With(scLabels),
 		HummDemotedExpiredPkts: metrics.HummDemotedExpiredPkts.MustCurryWith(ifLabels).With(scLabels),
@@ -617,6 +628,7 @@ func newTrafficMetrics(
 	c.PriorityForwardedPackets.Add(0)
 	c.HummProcessedPackets.Add(0)
 	c.HummFlyoverPackets.Add(0)
+	c.HummMACVerificationFailures.Add(0)
 	c.HummDemotedFreshnessPkts.Add(0)
 	c.HummDemotedExpiredPkts.Add(0)
 	c.HummDemotedTokenBucketPkts.Add(0)

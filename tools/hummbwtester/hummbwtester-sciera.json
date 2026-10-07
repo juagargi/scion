@@ -1,0 +1,150 @@
+{
+  "hummingbird": {
+    "reservation_source": "marketplace",
+    "marketplace": {
+      "host": "ufms",
+      "url": "https://127.0.0.1:8888",
+      "scion_address": "[71-2:0:5c,127.0.0.1]:31888",
+      "username": "alice",
+      "password_env": "HUMMBWTESTER_MARKETPLACE_PASSWORD",
+      "interfaces": {
+        "71-1916": [0,103,106],
+        "71-2:0:152": [0,101],
+        "71-2:0:5c": [0,104]
+      }
+    }
+  },
+  "server": {
+    "node": "ufms",
+    "isd_as": "71-2:0:5c",
+    "host": "127.0.0.1",
+    "port": 12345,
+    "receive_buffer_size": 4194304
+  },
+  "hummingbird_clients": [
+    {
+      "client_id": "hummingbird-1",
+      "node": "rnp",
+      "isd_as": "71-1916",
+      "host": "127.0.0.1",
+      "port": 0,
+      "bandwidth": "5Mbps",
+      "maxburst": "50Mbps",
+      "duration": "3h",
+      "sequence": "71-1916#103 71-2:0:5c#104",
+      "hummingbird_reservation": {
+        "bandwidth": "5mbps",
+        "duration": "5m",
+        "reverse_bandwidth": "5mbps",
+        "renewal_ahead": "30s",
+        "reservation_overlap": "20s",
+        "humm_start_offset": "-5s"
+      }
+    }
+  ],
+  "best_effort_clients": [
+    {
+      "client_id": "best-effort-1",
+      "node": "ufes",
+      "isd_as": "71-2:0:152",
+      "host": "127.0.0.1",
+      "port": 0,
+      "bandwidth": "10Mbps",
+      "maxburst": "20Mbps",
+      "duration": "3h",
+      "sequence": "71-2:0:152#101 71-1916#106,103 71-2:0:5c#104"
+    }
+  ],
+  "deployment": {
+    "kind": "ssh",
+    "hosts": {
+      "rnp": {
+        "ssh": "sciera-rnp",
+        "sciond": "127.0.0.1:30255",
+        "run_dir": "/var/tmp/hummbwtester",
+        "control_service": "scion-control-service-cs1.service"
+      },
+      "ufes": {
+        "ssh": "sciera-ufes",
+        "sciond": "127.0.0.1:30255",
+        "run_dir": "/var/tmp/hummbwtester",
+        "control_service": "scion-control-service-cs1.service"
+      },
+      "ufms": {
+        "ssh": "sciera-ufms",
+        "sciond": "127.0.0.1:30255",
+        "run_dir": "/var/tmp/hummbwtester",
+        "control_service": "scion-control@cs-1.service"
+      }
+    },
+    "metrics": {
+      "prometheus": "ufms",
+      "local_port_base": 19090,
+      "routers": [
+        {
+          "host": "rnp",
+          "address": "127.0.0.1:38401",
+          "labels": {
+            "as": "71_1916",
+            "br": "br-2"
+          }
+        },
+        {
+          "host": "ufes",
+          "address": "127.0.0.1:38401",
+          "labels": {
+            "as": "71_2_0_152",
+            "br": "br-2"
+          }
+        },
+        {
+          "host": "ufms",
+          "address": "127.0.0.1:38401",
+          "labels": {
+            "as": "71_2_0_5c",
+            "br": "br-2"
+          }
+        }
+      ]
+    },
+    "shaping": [
+      {
+        "host": "rnp",
+        "name": "rnp-ufms",
+        "device": "eno4.140",
+        "local": "[fe80::77c:140%eno4.140]:50031",
+        "remote": "[fe80::2:0:5c:140]:50031",
+        "expected_root": "noqueue"
+      },
+      {
+        "host": "ufms",
+        "name": "ufms-rnp",
+        "device": "ens2f1.140",
+        "local": "[fe80::2:0:5c:140%ens2f1.140]:50031",
+        "remote": "[fe80::77c:140]:50031",
+        "expected_root": "noqueue"
+      },
+      {
+        "host": "rnp",
+        "name": "rnp-ufes",
+        "device": "eno4.137",
+        "local": "10.6.7.2:50001",
+        "remote": "10.6.7.1:50001",
+        "expected_root": "noqueue"
+      },
+      {
+        "host": "ufes",
+        "name": "ufes-rnp",
+        "device": "ens192",
+        "local": "10.6.7.1:50001",
+        "remote": "10.6.7.2:50001",
+        "expected_root": "mq"
+      }
+    ]
+  },
+  "tc": {
+    "rate": "10mbit",
+    "burst": "50kb",
+    "limit": "256kb"
+  }
+}

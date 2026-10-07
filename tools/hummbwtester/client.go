@@ -39,6 +39,7 @@ import (
 	"github.com/scionproto/scion/pkg/snet"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
 	"github.com/scionproto/scion/private/keyconf"
+	"github.com/scionproto/scion/private/path/pathpol"
 )
 
 // cryptoRandRead is replaceable by tests. Reservation IDs are local client state, rather than a
@@ -83,6 +84,8 @@ type clientConfig struct {
 	local  snet.UDPAddr
 	remote snet.UDPAddr
 	sdConn daemon.Connector
+	// sequence restricts the paths the client may use; an empty sequence allows all.
+	sequence *pathpol.Sequence
 
 	bandwidthBps       float64
 	maxBurstBps        float64
@@ -137,7 +140,7 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	}
 	c.metrics.remoteStatsAge.Set(-1)
 
-	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA)
+	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA, cfg.sequence)
 	if err != nil {
 		log.Error("Selecting path", "err", err)
 		return 1
@@ -229,9 +232,10 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	return 0
 }
 
-// selectPath queries the daemon for paths to dst and returns the first candidate.
+// selectPath queries the daemon for paths to dst and returns the first one that matches the
+// sequence. The reservations, if any, are then bought for the hops of that path only.
 func selectPath(
-	ctx context.Context, sdConn daemon.Connector, src, dst addr.IA,
+	ctx context.Context, sdConn daemon.Connector, src, dst addr.IA, sequence *pathpol.Sequence,
 ) (snet.Path, error) {
 	paths, err := sdConn.Paths(ctx, dst, src, daemontypes.PathReqFlags{})
 	if err != nil {
@@ -240,7 +244,17 @@ func selectPath(
 	if len(paths) == 0 {
 		return nil, serrors.New("no path found", "src", src, "dst", dst)
 	}
-	return paths[0], nil
+	matching := sequence.Eval(paths)
+	if len(matching) == 0 {
+		return nil, serrors.New("no path matches the sequence",
+			"src", src, "dst", dst, "sequence", sequence.String(), "paths", len(paths))
+	}
+	path := matching[0]
+	if desc, err := pathpol.GetSequence(path); err == nil {
+		log.Info("Selected path", "sequence", desc, "matching", len(matching),
+			"paths", len(paths))
+	}
+	return path, nil
 }
 
 // buildReservation obtains a fresh forward (and, if configured, reverse) Hummingbird
