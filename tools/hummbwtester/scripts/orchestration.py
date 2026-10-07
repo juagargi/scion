@@ -128,6 +128,8 @@ class Client:
     pong_rate: float | int | None
     reservation_source: str
     marketplace: MarketplaceConfig | None
+    # Hop predicates the client's path must match, as in `scion showpaths --sequence`.
+    sequence: str | None = None
 
 
 @dataclass(frozen=True)
@@ -255,7 +257,7 @@ def parse_client(
 ) -> Client:
     """Validate one client configuration and retain its workload and optional tuning settings."""
     required = {"client_id", "isd_as", "host", "port", "bandwidth", "maxburst", "duration"}
-    optional = {"payload_size", "pong_rate", "node"}
+    optional = {"payload_size", "pong_rate", "node", "sequence"}
     if hummingbird:
         required.add("hummingbird_reservation")
     require_fields(entry, required, context, optional)
@@ -315,6 +317,10 @@ def parse_client(
     if pong_rate is not None and (not isinstance(pong_rate, (int, float))
                                   or isinstance(pong_rate, bool)):
         raise ConfigError(f"{context}.pong_rate must be a number")
+    # The client parses the sequence itself and exits on a malformed one.
+    sequence = entry.get("sequence")
+    if sequence is not None and (not isinstance(sequence, str) or not sequence.strip()):
+        raise ConfigError(f"{context}.sequence must be a non-empty string of hop predicates")
     return Client(
         client_id=client_id,
         endpoint=parse_endpoint({key: entry[key] for key in ("isd_as", "host", "port", "node")
@@ -329,6 +335,7 @@ def parse_client(
         pong_rate=pong_rate,
         reservation_source=reservation_source,
         marketplace=marketplace,
+        sequence=sequence,
     )
 
 
@@ -1135,6 +1142,8 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
         args.extend(["-payload-size", str(client.payload_size)])
     if client.pong_rate is not None:
         args.extend(["-pong-rate", str(client.pong_rate)])
+    if client.sequence is not None:
+        args.extend(["-sequence", client.sequence])
     if client.hummingbird:
         assert client.hummingbird_reservation is not None
         reservation = client.hummingbird_reservation

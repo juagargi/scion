@@ -31,6 +31,7 @@
       "bandwidth": "5Mbps",
       "maxburst": "50Mbps",
       "duration": "3h",
+      "sequence": "71-1916#103 71-2:0:5c#104",
       "hummingbird_reservation": {
         "bandwidth": "5mbps",
         "duration": "5m",
@@ -50,7 +51,8 @@
       "port": 0,
       "bandwidth": "10Mbps",
       "maxburst": "20Mbps",
-      "duration": "3h"
+      "duration": "3h",
+      "sequence": "71-2:0:152#101 71-1916#106,103 71-2:0:5c#104"
     }
   ],
   "deployment": {
