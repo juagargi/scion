@@ -260,7 +260,8 @@ def ssh_command(host: SSHHost, command: str, *, check: bool = True, **kwargs: An
 
 
 def scp_to(host: SSHHost, local: Path, remote: str) -> None:
-    subprocess.run(["scp", *SSH_OPTIONS, str(local), f"{host.alias}:{remote}"],
+    # -q: no progress meter; errors are still printed.
+    subprocess.run(["scp", "-q", *SSH_OPTIONS, str(local), f"{host.alias}:{remote}"],
                    check=True, text=True)
 
 

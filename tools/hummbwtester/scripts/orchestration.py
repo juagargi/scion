@@ -789,10 +789,13 @@ def ignore_sigint_during_cleanup() -> object:
             continue
 
 
-def monitoring_compose(*args: str) -> list[str]:
-    """A docker compose command for the controller's monitoring stack."""
-    return ["docker", "compose", "--project-name", MONITORING_PROJECT,
-            "-f", str(MONITORING_COMPOSE), *args]
+def monitoring_compose(*args: str, quiet: bool = False) -> list[str]:
+    """A docker compose command for the controller's monitoring stack.
+
+    quiet hides image pull and container progress; errors are still printed.
+    """
+    return ["docker", "compose", *(["--progress", "quiet"] if quiet else []),
+            "--project-name", MONITORING_PROJECT, "-f", str(MONITORING_COMPOSE), *args]
 
 
 def local_container_owner(container: str) -> str | None:
