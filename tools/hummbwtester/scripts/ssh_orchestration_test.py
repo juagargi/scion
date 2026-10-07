@@ -199,6 +199,39 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(shlex.split(command[-1])[:2], ["sh", "-c"])
         self.assertIn("; exec ", shlex.split(command[-1])[2])
 
+    def test_interrupted_run_reports_each_cleanup_step(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "experiment.json", self.workload())
+            config = orchestration.load_config(path)
+            inventory = ssh.load_inventory(path, config[0], config[1])
+        process = mock.Mock()
+        process.poll.return_value = None
+        with mock.patch.object(ssh.workload, "require_built_binary"), \
+             mock.patch.object(ssh, "sha256", return_value="digest"), \
+             mock.patch.object(ssh, "preflight"), \
+             mock.patch.object(ssh, "verify_setup"), \
+             mock.patch.object(ssh, "ssh_command"), \
+             mock.patch.object(ssh, "launch", return_value=process), \
+             mock.patch.object(ssh.time, "sleep", side_effect=[None, KeyboardInterrupt]), \
+             mock.patch.object(ssh, "stop") as stop, \
+             mock.patch.object(ssh, "cleanup_host") as cleanup, \
+             mock.patch("builtins.print") as output:
+            self.assertEqual(ssh.run_experiment(path, config, inventory), 130)
+        self.assertEqual([call.args[0] for call in output.call_args_list], [
+            "interrupted, stopping the experiment",
+            "stopping server on a",
+            "stopping best-effort-1 on a",
+            "stopping hummingbird-1 on b",
+            "waiting for server on a to exit",
+            "waiting for best-effort-1 on a to exit",
+            "waiting for hummingbird-1 on b to exit",
+            "removing run directory on a",
+            "removing run directory on b",
+            "experiment stopped",
+        ])
+        self.assertEqual(stop.call_count, 3)
+        self.assertEqual(cleanup.call_count, 2)
+
     def test_rejects_duplicate_shaping_device(self):
         with tempfile.TemporaryDirectory() as directory:
             config = self.workload()
