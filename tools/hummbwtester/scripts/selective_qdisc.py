@@ -347,10 +347,18 @@ def destroy(config: Config) -> None:
 
 
 def tc_json(arguments: list[str]) -> object:
+    """Parsed `tc -j` output, or its plain text where tc ignores -j.
+
+    iproute2 5.15 (Ubuntu 22.04), for example, prints `tc -j class show` as plain text. The status
+    report must still work there, because setup uses it to recognize an active qdisc.
+    """
     result = run(arguments, check=False, capture=True)
     if result.returncode:
         return {"error": result.stderr.strip()}
-    return json.loads(result.stdout or "[]")
+    try:
+        return json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return {"text": result.stdout.strip()}
 
 
 def status(config: Config) -> int:

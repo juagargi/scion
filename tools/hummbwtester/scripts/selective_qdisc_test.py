@@ -1,4 +1,5 @@
 import argparse
+import json
 import unittest
 from unittest import mock
 
@@ -71,6 +72,28 @@ class SelectiveQdiscTest(unittest.TestCase):
     def test_rejects_unsafe_tc_value(self):
         with self.assertRaises(argparse.ArgumentTypeError):
             selective_qdisc.validate_tc("10mbit;reboot")
+
+    def test_status_keeps_plain_text_where_tc_ignores_json(self):
+        # iproute2 5.15 prints `tc -j class show` as text; parsing it used to abort `up`.
+        text = "class prio 1:1 parent 1: leaf 10: \n Sent 1962408 bytes 6467 pkt\n"
+        outputs = {"class": text, "qdisc": '[{"kind":"prio","handle":"1:","root":true}]',
+                   "filter": "[]"}
+
+        def run(arguments, *, check=True, capture=False):
+            return mock.Mock(returncode=0, stdout=outputs[arguments[3]], stderr="")
+
+        config = selective_qdisc.Config(
+            "rnp-ufms", "eno4.140", selective_qdisc.Endpoint("fe80::77c:140", 50031, "eno4.140"),
+            selective_qdisc.Endpoint("fe80::2:0:5c:140", 50031), "10mbit", "50kb", "256kb",
+            "noqueue",
+        )
+        with mock.patch.object(selective_qdisc, "run", side_effect=run), \
+             mock.patch("builtins.print") as output:
+            self.assertEqual(selective_qdisc.status(config), 0)
+        report = json.loads(output.call_args.args[0])
+        self.assertTrue(report["managed_root_present"])
+        self.assertEqual(report["classes"], {"text": text.strip()})
+        self.assertEqual(report["filters"], [])
 
     def test_restore_mq_has_explicit_fallback(self):
         args = self.args()
