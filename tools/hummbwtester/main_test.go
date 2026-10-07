@@ -22,12 +22,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/scionproto/scion/pkg/addr"
+	"github.com/scionproto/scion/pkg/daemon/mock_daemon"
+	"github.com/scionproto/scion/pkg/segment/iface"
 	dppath "github.com/scionproto/scion/pkg/slayers/path"
 	dpscion "github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/pkg/snet"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
+	"github.com/scionproto/scion/private/path/pathpol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -709,4 +713,47 @@ func TestAdvanceProbeDeadline(t *testing.T) {
 	next, rebased := advanceProbeDeadline(start, 10*time.Millisecond, start.Add(35*time.Millisecond))
 	assert.True(t, rebased)
 	assert.Equal(t, start.Add(45*time.Millisecond), next)
+}
+
+func TestSelectPath(t *testing.T) {
+	src := addr.MustParseIA("71-1916")
+	dst := addr.MustParseIA("71-2:0:5c")
+	twoHopPath := func(egress, ingress uint16) snet.Path {
+		return snetpath.Path{Src: src, Dst: dst, Meta: snet.PathMetadata{
+			Interfaces: []snet.PathInterface{
+				{IA: src, ID: iface.ID(egress)},
+				{IA: dst, ID: iface.ID(ingress)},
+			},
+		}}
+	}
+	viaBR1, viaBR2 := twoHopPath(3, 4), twoHopPath(103, 104)
+
+	testCases := map[string]struct {
+		sequence string
+		want     snet.Path
+		err      string
+	}{
+		"empty sequence takes the first path": {sequence: "", want: viaBR1},
+		"egress interface":                    {sequence: "0-0#103 0*", want: viaBR2},
+		"full sequence":                       {sequence: "71-1916#103 71-2:0:5c#104", want: viaBR2},
+		"no match":                            {sequence: "0-0#7 0*", err: "no path matches"},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			sdConn := mock_daemon.NewMockConnector(ctrl)
+			sdConn.EXPECT().Paths(gomock.Any(), dst, src, gomock.Any()).
+				Return([]snet.Path{viaBR1, viaBR2}, nil)
+			sequence, err := pathpol.NewSequence(tc.sequence)
+			require.NoError(t, err)
+
+			got, err := selectPath(context.Background(), sdConn, src, dst, sequence)
+			if tc.err != "" {
+				assert.ErrorContains(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }

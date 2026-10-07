@@ -287,6 +287,14 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(ConfigError):
                     load_config(self.write_config(config))
 
+    def test_rejects_empty_or_non_string_sequence(self):
+        for sequence in ("", " ", 103, ["0-0#103"]):
+            config = self.base_config()
+            config["hummingbird_clients"][0]["sequence"] = sequence
+            with self.subTest(sequence=sequence), \
+                    self.assertRaisesRegex(ConfigError, "sequence must be a non-empty string"):
+                load_config(self.write_config(config))
+
     def test_rejects_latency_instead_of_explicit_limit(self):
         config = self.base_config()
         config["tc"] = {"rate": "10mbit", "burst": "50kb", "latency": "1ms"}
@@ -302,10 +310,11 @@ class ConfigTest(unittest.TestCase):
         self.assertNotIn("-pong-rate", args)
         self.assertNotIn("-renewal-ahead", args)
         self.assertNotIn("-hummingbird", args)
+        self.assertNotIn("-sequence", args)
 
         config = self.base_config()
         config["best_effort_clients"][0].update({
-            "payload_size": 1200, "pong_rate": 2.0,
+            "payload_size": 1200, "pong_rate": 2.0, "sequence": "0-0#103 0*",
         })
         config["hummingbird_clients"][0]["hummingbird_reservation"].update({
             "renewal_ahead": "6s",
@@ -321,6 +330,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(args[args.index("-duration") + 1], "30s")
         self.assertEqual(args[args.index("-payload-size") + 1], "1200")
         self.assertEqual(args[args.index("-pong-rate") + 1], "2.0")
+        self.assertEqual(args[args.index("-sequence") + 1], "0-0#103 0*")
 
         args = client_args(hummingbird, server, "172.20.0.21:30255")
         self.assertEqual(args[args.index("-hummingbird") + 1], "1000,1m,1000")

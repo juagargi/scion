@@ -123,6 +123,14 @@ window begins before handover and overlaps the old window by the overlap plus th
 offset. After handover, the old reservation remains valid for the configured overlap while its
 packets drain.
 
+Both client types may also set `sequence`, passed as `-sequence`: space-separated hop predicates
+that the client's path must match, with the syntax of `scion showpaths --sequence`. The client
+uses the first matching path of the daemon for its traffic and, with Hummingbird, buys the
+reservations for that path's hops only; it exits if no path matches. For example,
+`"71-1916#103 71-2:0:5c#104"` selects the path that leaves 71-1916 through interface 103 and
+enters 71-2:0:5c through 104. Check a sequence with
+`scion showpaths <server ISD-AS> --sequence "<sequence>"` on the client's host.
+
 ### Bounded catch-up after a missed deadline
 
 Payload packets and pong requests have independent schedules. The client wakes every millisecond
