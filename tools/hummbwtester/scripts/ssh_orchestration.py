@@ -428,17 +428,23 @@ def run_experiment(
             time.sleep(0.25)
         return 1 if failure or any(process.wait() != 0 for _, _, process in processes) else 0
     except KeyboardInterrupt:
+        print("interrupted, stopping the experiment", flush=True)
         return 130
     finally:
         previous_sigint = workload.ignore_sigint_during_cleanup()
         try:
+            # Always signal the remote tester: an interrupted local ssh client leaves it running.
             for host, name, process in processes:
+                print(f"stopping {name} on {host.name}", flush=True)
                 stop(host, run_id, name)
                 if process.poll() is None:
                     process.terminate()
-            for _, _, process in processes:
+            for host, name, process in processes:
+                print(f"waiting for {name} on {host.name} to exit", flush=True)
                 process.wait(timeout=10)
-            for name in used_hosts:
+            for name in sorted(used_hosts):
+                print(f"removing run directory on {name}", flush=True)
                 cleanup_host(inventory.hosts[name], run_id)
+            print("experiment stopped", flush=True)
         finally:
             signal.signal(signal.SIGINT, previous_sigint)
