@@ -87,8 +87,9 @@ class SSHSetupTest(unittest.TestCase):
                  ssh_setup, "_remote_prometheus_files_current", return_value=True,
              ), mock.patch.object(
                  ssh_setup, "_prometheus_container_current", return_value=True,
-             ), mock.patch.object(ssh_setup.remote, "scp_to") as scp, \
-             mock.patch.object(ssh_setup, "stop_prometheus") as stop:
+             ), mock.patch.object(ssh_setup.remote, "scp_to") as scp, mock.patch.object(
+                 ssh_setup, "stop_prometheus",
+             ) as stop:
             ssh_setup.ensure_prometheus(inventory, targets)
         scp.assert_not_called()
         stop.assert_not_called()
@@ -102,8 +103,9 @@ class SSHSetupTest(unittest.TestCase):
                  ssh_setup, "_remote_prometheus_files_current", return_value=False,
              ), mock.patch.object(
                  ssh_setup, "_prometheus_container_current", return_value=True,
-             ), mock.patch.object(ssh_setup.remote, "scp_to") as scp, \
-             mock.patch.object(ssh_setup, "stop_prometheus") as stop:
+             ), mock.patch.object(ssh_setup.remote, "scp_to") as scp, mock.patch.object(
+                 ssh_setup, "stop_prometheus",
+             ) as stop:
             ssh_setup.ensure_prometheus(inventory, targets)
         stop.assert_called_once_with(inventory.hosts["monitor"])
         self.assertEqual(scp.call_count, 4)
@@ -299,7 +301,8 @@ class SSHSetupTest(unittest.TestCase):
              mock.patch.object(ssh_setup.workload, "local_container_owner", return_value=None), \
              mock.patch.object(ssh_setup.subprocess, "run") as local_run, \
              mock.patch("builtins.print") as output:
-            self.assertEqual(ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 0)
+            self.assertEqual(
+                ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 0)
         scp.assert_not_called()
         write_targets.assert_not_called()
         local_run.assert_not_called()  # no ssh-control-master is started or stopped
@@ -345,7 +348,8 @@ class SSHSetupTest(unittest.TestCase):
              mock.patch.object(ssh_setup, "obtain_marketplace_jwt",
                                side_effect=orchestration.ConfigError("cannot reach marketplace")), \
              mock.patch("builtins.print") as output:
-            self.assertEqual(ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 1)
+            self.assertEqual(
+                ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 1)
         # The qdisc and Prometheus checks still ran after the marketplace login failed.
         self.assertTrue(any(" diagnose " in command for _, command in commands))
         self.assertTrue(any("docker info" in command for _, command in commands))
@@ -423,7 +427,6 @@ class SSHSetupTest(unittest.TestCase):
         self.assertIs(run.call_args_list[1].kwargs["stdout"], subprocess.DEVNULL)
 
 
-
 class MarketplaceServiceTest(unittest.TestCase):
     def inventory(self):
         return SSHSetupTest.inventory(SSHSetupTest())
@@ -433,8 +436,9 @@ class MarketplaceServiceTest(unittest.TestCase):
         mocks = {}
         with mock.patch.object(ssh_setup, "MARKETPLACE_BIN", Path(__file__)), \
              mock.patch.object(ssh_setup, "_check_marketplace_host"), \
-             mock.patch.object(ssh_setup.remote, "ssh_command", return_value=subprocess.CompletedProcess(
-                 [], 0, "sciera:sciera", "")), \
+             mock.patch.object(ssh_setup.remote, "ssh_command",
+                               return_value=subprocess.CompletedProcess(
+                                   [], 0, "sciera:sciera", "")), \
              mock.patch.object(ssh_setup, "install_root_file",
                                side_effect=[changed, False]) as install, \
              mock.patch.object(ssh_setup, "_ensure_directory", return_value=False), \
@@ -558,6 +562,7 @@ class GrafanaTest(unittest.TestCase):
                                return_value="other/grafana"):
             with self.assertRaisesRegex(remote.SSHError, "refusing to replace"):
                 ssh_setup.ensure_grafana(self.forward)
+
 
 if __name__ == "__main__":
     unittest.main()

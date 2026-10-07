@@ -75,7 +75,8 @@ class ExperimentTest(unittest.TestCase):
         execute.assert_not_called()
 
     def test_local_prometheus_refuses_foreign_container(self):
-        with mock.patch.object(experiment, "_local_prometheus_owner", return_value="other/prometheus"):
+        with mock.patch.object(experiment, "_local_prometheus_owner",
+                               return_value="other/prometheus"):
             with self.assertRaisesRegex(RuntimeError, "belongs to other/prometheus"):
                 experiment._check_local_prometheus_owner()
 
@@ -85,7 +86,8 @@ class ExperimentTest(unittest.TestCase):
             state.write_text(json.dumps({"tc": {}, "peers": {"br-1": ["192.0.2.2"]}}))
             running = mock.Mock(returncode=0, stdout="container-id\n")
             with mock.patch.object(experiment.planner, "DOCKER_QDISC_STATE", state), \
-                 mock.patch.object(experiment, "_check_local_prometheus_owner", return_value=True), \
+                 mock.patch.object(experiment, "_check_local_prometheus_owner",
+                                   return_value=True), \
                  mock.patch.object(experiment.subprocess, "run", return_value=running) as run:
                 self.assertEqual(experiment.teardown_local(), 0)
             self.assertFalse(state.exists())

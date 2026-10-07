@@ -29,15 +29,17 @@ class InventoryTest(unittest.TestCase):
             "server": {"node": "a", "isd_as": "1-ff00:0:112", "host": "fd00::1", "port": 12345,
                        "receive_buffer_size": 4096},
             "hummingbird_clients": [{
-                "client_id": "hummingbird-1", "node": "b", "isd_as": "1-ff00:0:111", "host": "fd00::2",
-                "port": 0, "bandwidth": "1Mbps", "maxburst": "2Mbps", "duration": "1m",
+                "client_id": "hummingbird-1", "node": "b", "isd_as": "1-ff00:0:111",
+                "host": "fd00::2", "port": 0, "bandwidth": "1Mbps", "maxburst": "2Mbps",
+                "duration": "1m",
                 "hummingbird_reservation": {
                     "bandwidth": "1mbps", "duration": "1m", "reverse_bandwidth": "0kbps",
                 },
             }],
             "best_effort_clients": [{
-                "client_id": "best-effort-1", "node": "a", "isd_as": "1-ff00:0:110", "host": "fd00::3",
-                "port": 0, "bandwidth": "1Mbps", "maxburst": "2Mbps", "duration": "1m",
+                "client_id": "best-effort-1", "node": "a", "isd_as": "1-ff00:0:110",
+                "host": "fd00::3", "port": 0, "bandwidth": "1Mbps", "maxburst": "2Mbps",
+                "duration": "1m",
             }],
             "deployment": {"kind": "ssh", **self.inventory()},
             "tc": {"rate": "10mbit", "burst": "50kb", "limit": "256kb"},

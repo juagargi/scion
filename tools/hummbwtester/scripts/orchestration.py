@@ -238,7 +238,8 @@ def parse_endpoint(
     if require_receive_buffer and receive_buffer_size == 0:
         raise ConfigError(f"{context}.receive_buffer_size must be a positive integer")
     node = value.get("node")
-    if node is not None and (not isinstance(node, str) or not node or any(c.isspace() for c in node)):
+    if node is not None and (not isinstance(node, str) or not node
+                             or any(c.isspace() for c in node)):
         raise ConfigError(f"{context}.node must be a non-empty name without whitespace")
     return Endpoint(ia, host, port, receive_buffer_size, node)
 
@@ -279,7 +280,8 @@ def parse_client(
             reservation_bandwidth, reservation_source,
             f"{context}.hummingbird_reservation.bandwidth")
         if not isinstance(duration, str) or not duration:
-            raise ConfigError(f"{context}.hummingbird_reservation.duration must be a non-empty string")
+            raise ConfigError(
+                f"{context}.hummingbird_reservation.duration must be a non-empty string")
         validate_reservation_bandwidth(
             reverse_bandwidth, reservation_source,
             f"{context}.hummingbird_reservation.reverse_bandwidth")
@@ -301,10 +303,12 @@ def parse_client(
         )
 
     payload_size = entry.get("payload_size")
-    if payload_size is not None and (not isinstance(payload_size, int) or isinstance(payload_size, bool)):
+    if payload_size is not None and (not isinstance(payload_size, int)
+                                     or isinstance(payload_size, bool)):
         raise ConfigError(f"{context}.payload_size must be an integer")
     pong_rate = entry.get("pong_rate")
-    if pong_rate is not None and (not isinstance(pong_rate, (int, float)) or isinstance(pong_rate, bool)):
+    if pong_rate is not None and (not isinstance(pong_rate, (int, float))
+                                  or isinstance(pong_rate, bool)):
         raise ConfigError(f"{context}.pong_rate must be a number")
     return Client(
         client_id=client_id,
@@ -335,7 +339,8 @@ def validate_reservation_bandwidth(value: Any, source: str, context: str) -> Non
     match = re.fullmatch(r"([0-9]+)\s*(kbps|mbps|gbps)", value.strip(), re.IGNORECASE)
     if not match:
         raise ConfigError(f"{context} must use kbps, mbps, or gbps in marketplace mode")
-    amount = int(match.group(1)) * {"kbps": 1, "mbps": 1000, "gbps": 1000_000}[match.group(2).lower()]
+    unit_kbps = {"kbps": 1, "mbps": 1000, "gbps": 1000_000}[match.group(2).lower()]
+    amount = int(match.group(1)) * unit_kbps
     if amount > 2**32 - 1:
         raise ConfigError(f"{context} is too large in marketplace mode")
 
@@ -363,7 +368,8 @@ def validate_scion_address(value: Any, context: str) -> None:
     """Check a [ISD-AS,host]:port SCION address, as advertised for a marketplace API."""
     match = isinstance(value, str) and SCION_ADDRESS_RE.fullmatch(value)
     if not match:
-        raise ConfigError(f"{context} must be a SCION address such as [1-ff00:0:110,127.0.0.1]:31888")
+        raise ConfigError(
+            f"{context} must be a SCION address such as [1-ff00:0:110,127.0.0.1]:31888")
     try:
         ipaddress.ip_address(match.group("host"))
     except ValueError as err:
@@ -449,8 +455,10 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
             raise ConfigError("hummingbird.marketplace.url must be an HTTP(S) URL")
         if not isinstance(username, str) or not username:
             raise ConfigError("hummingbird.marketplace.username must be a non-empty string")
-        if (not isinstance(password_env, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", password_env)):
-            raise ConfigError("hummingbird.marketplace.password_env must name an environment variable")
+        if (not isinstance(password_env, str)
+                or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", password_env)):
+            raise ConfigError(
+                "hummingbird.marketplace.password_env must name an environment variable")
         sub_account = marketplace.get("sub_account")
         if sub_account is not None and (not isinstance(sub_account, str) or not sub_account):
             raise ConfigError("hummingbird.marketplace.sub_account must be a non-empty string")
@@ -594,14 +602,18 @@ def validate_endpoints(compose: dict[str, Any], server: Endpoint, clients: list[
     """Ensure every configured endpoint belongs to the generated tester for its AS."""
     # A configured endpoint must be the tester address of its AS, not an arbitrary container IP.
     services = compose["services"]
-    for endpoint, context in [(server, "server")] + [(client.endpoint, client.client_id) for client in clients]:
+    endpoints = [(server, "server")] + [(client.endpoint, client.client_id) for client in clients]
+    for endpoint, context in endpoints:
         service = tester_service(endpoint.isd_as)
         entry = services.get(service)
         if not isinstance(entry, dict):
-            raise ConfigError(f"{context}: tester service {service} is absent from generated topology")
+            raise ConfigError(
+                f"{context}: tester service {service} is absent from generated topology")
         environment = entry.get("environment", {})
-        if not isinstance(environment, dict) or environment.get("SCION_LOCAL_ADDR") != endpoint.host:
-            raise ConfigError(f"{context}: host {endpoint.host} does not match {service} SCION_LOCAL_ADDR")
+        if (not isinstance(environment, dict)
+                or environment.get("SCION_LOCAL_ADDR") != endpoint.host):
+            raise ConfigError(
+                f"{context}: host {endpoint.host} does not match {service} SCION_LOCAL_ADDR")
 
 
 def br_ias() -> dict[str, str]:
@@ -639,7 +651,10 @@ def patched_toml_section(
     section_match = re.search(rf"(?m)^\[{re.escape(section)}\][ \t]*(?:#.*)?$", text)
     rendered = [f"{key} = {value}" for key, value in values.items()]
     if section_match is None:
-        separator = "" if not text or text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+        if not text or text.endswith("\n\n"):
+            separator = ""
+        else:
+            separator = "\n" if text.endswith("\n") else "\n\n"
         updated = text + separator + f"[{section}]\n" + "\n".join(rendered) + "\n"
     else:
         body_start = section_match.end()
@@ -716,8 +731,9 @@ def inter_as_router_peers(compose: dict[str, Any]) -> dict[str, list[str]]:
                     continue
                 peer_network = compose["services"][peer]["networks"][network]
                 for family in ("ipv4", "ipv6"):
+                    peer_address = compose_network_address(peer_network, family)
                     if (compose_network_address(own_network, family) is not None
-                            and (peer_address := compose_network_address(peer_network, family)) is not None):
+                            and peer_address is not None):
                         result.setdefault(router, set()).add(peer_address)
                         break
                 else:
@@ -768,7 +784,9 @@ def compose_with_tc_helpers(
     return yaml.safe_dump(compose, sort_keys=False)
 
 
-def run(command: list[str], *, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+def run(
+    command: list[str], *, check: bool = True, **kwargs: Any,
+) -> subprocess.CompletedProcess[str]:
     """Print and run a command, forwarding subprocess keyword arguments to subprocess.run."""
     # Print shell-escaped commands so setup failures can be reproduced manually.
     print("+", shlex.join(command))
@@ -859,8 +877,8 @@ def target_files(clients: list[Client]) -> dict[Path, str]:
             if service in data.get("border_routers", {}):
                 internal = data["border_routers"][service]["internal_addr"]
                 host = internal.rsplit(":", 1)[0].strip("[]")
-                targets.append({"targets": [join_host_port(host, 30442)],
-                                "labels": {"as": ia.split("-", 1)[1].replace(":", "_"), "br": service}})
+                labels = {"as": ia.split("-", 1)[1].replace(":", "_"), "br": service}
+                targets.append({"targets": [join_host_port(host, 30442)], "labels": labels})
                 break
     return {
         TARGET_DIR / "clients.json": json.dumps(client_targets, indent=2) + "\n",
@@ -876,7 +894,8 @@ def setup(
     server, clients, router, tc = config if config is not None else load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
-    _ = [endpoint_sciond(endpoint, sciond_map()) for endpoint in [server, *(c.endpoint for c in clients)]]
+    _ = [endpoint_sciond(endpoint, sciond_map())
+         for endpoint in [server, *(c.endpoint for c in clients)]]
     peers = inter_as_router_peers(compose)
     # `make build-dev` builds this Bazel target as a static binary and extracts it into bin/.
     # Reusing that artifact keeps this tool consistent with the other tester-container binaries.
@@ -906,7 +925,9 @@ def setup(
         print(f"client_id={client.client_id} metrics_port={client.metrics_port}")
     with BIN.open("rb") as binary:
         digest = hashlib.file_digest(binary, "sha256").hexdigest()
-    for service in sorted({tester_service(server.isd_as), *(tester_service(c.endpoint.isd_as) for c in clients)}):
+    services = {tester_service(server.isd_as),
+                *(tester_service(c.endpoint.isd_as) for c in clients)}
+    for service in sorted(services):
         current = run(dc_args("exec", "-T", service, "sha256sum", "/share/bin/hummbwtester"),
                       cwd=ROOT, check=False, capture_output=True)
         if current.returncode or not current.stdout.split() or current.stdout.split()[0] != digest:
@@ -947,7 +968,8 @@ def describe_setup(
     server, clients, router, tc = config if config is not None else load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
-    _ = [endpoint_sciond(endpoint, sciond_map()) for endpoint in [server, *(c.endpoint for c in clients)]]
+    _ = [endpoint_sciond(endpoint, sciond_map())
+         for endpoint in [server, *(c.endpoint for c in clients)]]
     peers = inter_as_router_peers(compose)
     require_built_binary()
     steps: list[str] = []
@@ -1032,7 +1054,8 @@ def verify_binaries(server: Endpoint, clients: list[Client]) -> None:
 
 
 def launch(
-    service: str, pidfile: str, args: list[str], logfile: Path, marketplace_jwt_file: str | None = None,
+    service: str, pidfile: str, args: list[str], logfile: Path,
+    marketplace_jwt_file: str | None = None,
 ) -> subprocess.Popen[str]:
     """Start one tester process through Compose and record its in-container PID and output."""
     logfile.parent.mkdir(parents=True, exist_ok=True)
@@ -1081,9 +1104,10 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
     if client.hummingbird:
         assert client.hummingbird_reservation is not None
         reservation = client.hummingbird_reservation
-        args.extend(["-hummingbird",
-                     f"{reservation.bandwidth},{reservation.duration},{reservation.reverse_bandwidth}",
-                     ])
+        args.extend([
+            "-hummingbird",
+            f"{reservation.bandwidth},{reservation.duration},{reservation.reverse_bandwidth}",
+        ])
         if client.reservation_source == "keys":
             args.extend(["-hummKeysDir", "/share/gen"])
         for flag, value in (
@@ -1116,7 +1140,8 @@ def marketplace_registration_website() -> str:
             if isinstance(website, str) and website:
                 websites.add(website)
     if not websites:
-        raise ConfigError("no marketplace registration website advertised in gen/AS*/staticInfoConfig.json")
+        raise ConfigError(
+            "no marketplace registration website advertised in gen/AS*/staticInfoConfig.json")
     if len(websites) != 1:
         raise ConfigError("multiple marketplace registration websites advertised: " +
                           ", ".join(sorted(websites)))
@@ -1234,12 +1259,13 @@ def router_metric_endpoints() -> list[tuple[str, str]]:
     for topology in GEN.glob("AS*/topology.json"):
         data = json.loads(topology.read_text())
         for router, entry in data.get("border_routers", {}).items():
-            result.append((router, f"http://{join_host_port(address_host(entry['internal_addr']), 30442)}/metrics"))
+            address = join_host_port(address_host(entry["internal_addr"]), 30442)
+            result.append((router, f"http://{address}/metrics"))
     return sorted(result)
 
 
 def router_metric_bodies() -> tuple[dict[str, str], list[str]]:
-    """Read router metrics without letting an unavailable observation endpoint stop the experiment."""
+    """Read router metrics without letting an unavailable endpoint stop the experiment."""
     bodies: dict[str, str] = {}
     errors: list[str] = []
     for router, url in router_metric_endpoints():
@@ -1293,7 +1319,9 @@ def interface_counters(
     }
 
 
-def tc_stats(compose: dict[str, Any], interfaces: list[RouterInterface]) -> tuple[dict[tuple[str, str], TCStats], list[str]]:
+def tc_stats(
+    compose: dict[str, Any], interfaces: list[RouterInterface],
+) -> tuple[dict[tuple[str, str], TCStats], list[str]]:
     """Read TBF counters without draining queues or treating counter values as failures."""
     remote_interfaces = {interface.remote: interface.key for interface in interfaces}
     stats: dict[tuple[str, str], TCStats] = {}
@@ -1314,7 +1342,8 @@ def tc_stats(compose: dict[str, Any], interfaces: list[RouterInterface]) -> tupl
             capture_output=True,
         )
         if result.returncode != 0:
-            errors.append(f"{helper} tc stats failed: {result.stderr.strip() or result.stdout.strip()}")
+            detail = result.stderr.strip() or result.stdout.strip()
+            errors.append(f"{helper} tc stats failed: {detail}")
             continue
         for line in result.stdout.splitlines():
             match = TC_STATS_RE.fullmatch(line)
@@ -1329,10 +1358,11 @@ def tc_stats(compose: dict[str, Any], interfaces: list[RouterInterface]) -> tupl
 
 
 def report_snapshot(compose: dict[str, Any], interfaces: list[RouterInterface]) -> ReportSnapshot:
-    """Capture all observability data; failures are rendered in the report and never abort traffic."""
+    """Capture all observability data; failures are reported and never abort traffic."""
     bodies, metric_errors = router_metric_bodies()
     tc, tc_errors = tc_stats(compose, interfaces)
-    return ReportSnapshot(interface_counters(interfaces, bodies), tc, tuple(metric_errors + tc_errors))
+    errors = tuple(metric_errors + tc_errors)
+    return ReportSnapshot(interface_counters(interfaces, bodies), tc, errors)
 
 
 def counter_delta(previous: int | None, current: int | None) -> str:
@@ -1360,19 +1390,25 @@ def render_table(headers: list[str], rows: list[tuple[str, list[str]]]) -> str:
         widths[0] = max(widths[0], len(name))
         for index, value in enumerate(values, start=1):
             widths[index] = max(widths[index], len(value))
+
     def line(values: list[str]) -> str:
         return " | ".join(value.rjust(widths[index]) for index, value in enumerate(values))
     divider = "-+-".join("-" * width for width in widths)
     return "\n".join([line(headers), divider, *(line([name, *values]) for name, values in rows)])
 
 
-def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: list[RouterInterface]) -> None:
+def print_report(
+    previous: ReportSnapshot, current: ReportSnapshot, interfaces: list[RouterInterface],
+) -> None:
     """Print one minute of router and TBF observations without enforcing a health policy."""
     peers = peer_interfaces(interfaces)
+
     def counters(snapshot: ReportSnapshot, interface: RouterInterface) -> InterfaceCounters | None:
         return snapshot.counters.get(interface.key)
+
     def tc(snapshot: ReportSnapshot, interface: RouterInterface) -> TCStats | None:
         return snapshot.tc.get(interface.key)
+
     def bfd_lost(interface: RouterInterface) -> str:
         local_previous, local_current = counters(previous, interface), counters(current, interface)
         peer = peers.get(interface.key)
@@ -1384,11 +1420,15 @@ def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: 
         sent = peer_current.bfd_sent - peer_previous.bfd_sent
         received = local_current.bfd_received - local_previous.bfd_received
         return str(max(0, sent - received))
+
     def counter_row(field: str) -> list[str]:
         return [counter_delta(
-            getattr(counters(previous, interface), field) if counters(previous, interface) else None,
-            getattr(counters(current, interface), field) if counters(current, interface) else None,
+            getattr(counters(previous, interface), field)
+            if counters(previous, interface) else None,
+            getattr(counters(current, interface), field)
+            if counters(current, interface) else None,
         ) for interface in interfaces]
+
     def tc_row(field: str, current_value: bool = False) -> list[str]:
         values: list[str] = []
         for interface in interfaces:
@@ -1412,7 +1452,8 @@ def print_report(previous: ReportSnapshot, current: ReportSnapshot, interfaces: 
         # ("TC backlog bytes", tc_row("backlog_bytes", current_value=True)),
     ]
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
-    print(f"{timestamp} HUMMBWTESTER_REPORT interval=60s (counters are deltas; TC backlog is current)")
+    print(f"{timestamp} HUMMBWTESTER_REPORT interval=60s "
+          "(counters are deltas; TC backlog is current)")
     print(render_table(["metric", *(interface.label for interface in interfaces)], rows))
     print()
     for error in current.errors:
@@ -1429,7 +1470,7 @@ def run_experiment(
     validate_endpoints(compose, server, clients)
     daemons = sciond_map()
     verify_binaries(server, clients)
-    # Regenerate targets here too, so editing client IDs does not require a separate monitoring step.
+    # Regenerate targets here too, so editing client IDs needs no separate monitoring step.
     write_targets(compose, clients)
     server_service = tester_service(server.isd_as)
     log_dir = ROOT / "logs" / "hummbwtester"
@@ -1446,7 +1487,8 @@ def run_experiment(
         if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
             client = hummingbird_clients[0]
             assert client.marketplace is not None
-            marketplace_services = {tester_service(client.endpoint.isd_as) for client in hummingbird_clients}
+            marketplace_services = {tester_service(client.endpoint.isd_as)
+                                    for client in hummingbird_clients}
             # A Docker topology advertises the registration endpoint that is actually reachable
             # from this controller. The workload URL is for the SSH backend, where gen/ is absent.
             marketplace = replace(client.marketplace, url=marketplace_registration_website())
@@ -1460,8 +1502,9 @@ def run_experiment(
             args = client_args(client, server, endpoint_sciond(client.endpoint, daemons))
             pidfile = f"/tmp/hummbwtester-{suffix}.pid"
             jwt_file = remote_jwt_file if client.hummingbird else None
-            processes.append((client, pidfile, launch(tester_service(client.endpoint.isd_as), pidfile, args,
-                                                       log_dir / f"{suffix}.log", jwt_file)))
+            process = launch(tester_service(client.endpoint.isd_as), pidfile, args,
+                             log_dir / f"{suffix}.log", jwt_file)
+            processes.append((client, pidfile, process))
         failure = False
         previous_report = report_snapshot(compose, interfaces)
         next_report = time.monotonic() + 60
