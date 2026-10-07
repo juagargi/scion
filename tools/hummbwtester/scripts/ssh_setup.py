@@ -913,7 +913,8 @@ def _owned_prometheus_exists(host: remote.SSHHost) -> bool:
     owner = remote.ssh_command(
         host,
         "docker inspect --format "
-        + shlex.quote('{{index .Config.Labels "com.docker.compose.project"}}/{{index .Config.Labels "com.docker.compose.service"}}')
+        + shlex.quote('{{index .Config.Labels "com.docker.compose.project"}}/'
+                      '{{index .Config.Labels "com.docker.compose.service"}}')
         + " " + shlex.quote(PROMETHEUS_CONTAINER),
         check=False, capture_output=True,
     )
@@ -1256,7 +1257,8 @@ def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
             return
         subprocess.run(workload.monitoring_compose("up", "-d", "--no-deps", "grafana", quiet=True),
                        env={**os.environ, "PROMETHEUS_PORT": port}, check=True, text=True)
-        print(f"{ {'start': 'started', 're-point': 're-pointed'}[verb]} Grafana {change}")
+        done = {"start": "started", "re-point": "re-pointed"}[verb]
+        print(f"{done} Grafana {change}")
     if dry_run:
         return
     if not _wait_http(f"{grafana_url}/api/health", GRAFANA_WAIT_SECONDS):
@@ -1269,7 +1271,9 @@ def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
 
 def setup(
     config_path: Path,
-    config: tuple[workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str]] | None = None,
+    config: tuple[
+        workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str],
+    ] | None = None,
     inventory: remote.Inventory | None = None,
     dry_run: bool = False,
 ) -> int:
@@ -1350,7 +1354,9 @@ def setup(
 
 def teardown(
     config_path: Path,
-    config: tuple[workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str]] | None = None,
+    config: tuple[
+        workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str],
+    ] | None = None,
     inventory: remote.Inventory | None = None,
 ) -> int:
     """Remove what setup installed, except the static info Note; continue past failures.

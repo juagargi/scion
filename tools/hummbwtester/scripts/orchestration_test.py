@@ -495,8 +495,10 @@ class ReportTest(unittest.TestCase):
                 'router_humm_demoted_freshness_total{interface="1",sizeclass="0_63"} 2',
                 'router_humm_demoted_expired_total{interface="1",sizeclass="0_63"} 3',
                 'router_humm_demoted_tokenbucket_total{interface="1",sizeclass="0_63"} 4',
-                'router_dropped_pkts_total{interface="1",reason="busy_forwarder",sizeclass="0_63"} 5',
-                'router_dropped_pkts_total{interface="1",reason="busy_forwarder",sizeclass="64_127"} 6',
+                ('router_dropped_pkts_total{interface="1",reason="busy_forwarder",'
+                 'sizeclass="0_63"} 5'),
+                ('router_dropped_pkts_total{interface="1",reason="busy_forwarder",'
+                 'sizeclass="64_127"} 6'),
             ]),
         })
         self.assertEqual(counters[("br-a", "1")], InterfaceCounters(10, 9, 9, 11))

@@ -96,7 +96,9 @@ def _object(value: Any, context: str) -> dict[str, Any]:
     return value
 
 
-def _fields(value: dict[str, Any], required: set[str], context: str, optional: set[str] = set()) -> None:
+def _fields(
+    value: dict[str, Any], required: set[str], context: str, optional: set[str] = set(),
+) -> None:
     workload.require_fields(value, required, context, optional)
 
 
@@ -114,7 +116,9 @@ def _host_port(value: str, context: str) -> tuple[str, str]:
     return host.strip("[]"), port
 
 
-def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload.Client]) -> Inventory:
+def load_inventory(
+    path: Path, server: workload.Endpoint, clients: list[workload.Client],
+) -> Inventory:
     """Read SSH deployment details and inline participant placements from one experiment file."""
     root = workload.read_json(path)
     deployment = root.get("deployment")
@@ -135,7 +139,8 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
             raise workload.ConfigError(f"ssh inventory.hosts.{name}.run_dir must be absolute")
         readiness = entry.get("readiness_command")
         if readiness is not None and (not isinstance(readiness, str) or not readiness):
-            raise workload.ConfigError(f"ssh inventory.hosts.{name}.readiness_command must be a string")
+            raise workload.ConfigError(
+                f"ssh inventory.hosts.{name}.readiness_command must be a string")
         sciond = _name(entry["sciond"], f"ssh inventory.hosts.{name}.sciond")
         _host_port(sciond, f"ssh inventory.hosts.{name}.sciond")
         static_info = _name(entry.get("static_info", DEFAULT_STATIC_INFO),
@@ -176,7 +181,8 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         )
     base = metrics["local_port_base"]
     if not isinstance(base, int) or isinstance(base, bool) or not 1024 <= base <= 65000:
-        raise workload.ConfigError("ssh inventory.metrics.local_port_base must be an integer from 1024 through 65000")
+        raise workload.ConfigError(
+            "ssh inventory.metrics.local_port_base must be an integer from 1024 through 65000")
     raw_routers = metrics["routers"]
     if not isinstance(raw_routers, list):
         raise workload.ConfigError("ssh inventory.metrics.routers must be an array")
@@ -188,11 +194,14 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         host, address = (_name(entry["host"], f"ssh inventory.metrics.routers[{index}].host"),
                          _name(entry["address"], f"ssh inventory.metrics.routers[{index}].address"))
         if host not in hosts:
-            raise workload.ConfigError(f"ssh inventory.metrics.routers[{index}] has an unknown host or invalid address")
+            raise workload.ConfigError(
+                f"ssh inventory.metrics.routers[{index}] has an unknown host or invalid address")
         _host_port(address, f"ssh inventory.metrics.routers[{index}].address")
         labels = _object(entry["labels"], f"ssh inventory.metrics.routers[{index}].labels")
-        if not all(isinstance(key, str) and isinstance(value, str) for key, value in labels.items()):
-            raise workload.ConfigError(f"ssh inventory.metrics.routers[{index}].labels must be string pairs")
+        if not all(isinstance(key, str) and isinstance(value, str)
+                   for key, value in labels.items()):
+            raise workload.ConfigError(
+                f"ssh inventory.metrics.routers[{index}].labels must be string pairs")
         # The dashboard groups router series by (as, br); BR names are unique only within an AS.
         router_key = labels.get("as"), labels.get("br")
         if router_key in seen_routers:
@@ -263,7 +272,9 @@ def _ssh_argv(host: SSHHost, command: str) -> list[str]:
     return ["ssh", *SSH_OPTIONS, "--", host.alias, shlex.join(["sh", "-c", command])]
 
 
-def ssh_command(host: SSHHost, command: str, *, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+def ssh_command(
+    host: SSHHost, command: str, *, check: bool = True, **kwargs: Any,
+) -> subprocess.CompletedProcess[str]:
     """Run an already quoted, non-secret command through the configured SSH alias."""
     return subprocess.run(_ssh_argv(host, command), check=check, text=True, **kwargs)
 
@@ -325,7 +336,8 @@ def hummingbird_hosts(inventory: Inventory, clients: list[workload.Client]) -> s
 def digest_matches(path: str, digest: str) -> str:
     """A shell test that succeeds when path exists and has the given SHA-256 digest."""
     return (f"test -f {shlex.quote(path)} && "
-            f"test \"$(sha256sum {shlex.quote(path)} | awk '{{print $1}}')\" = {shlex.quote(digest)}")
+            f"test \"$(sha256sum {shlex.quote(path)} | awk '{{print $1}}')\" = "
+            f"{shlex.quote(digest)}")
 
 
 def verify_setup(host: SSHHost, digest: str, need_jwt: bool) -> None:
@@ -365,7 +377,8 @@ def launch(host: SSHHost, run_id: str, name: str, args: list[str], logfile: Path
 
 def stop(host: SSHHost, run_id: str, name: str) -> None:
     pidfile = remote_dir(host, run_id) + "/" + name + ".pid"
-    ssh_command(host, f"test ! -f {shlex.quote(pidfile)} || kill -TERM $(cat {shlex.quote(pidfile)})",
+    quoted = shlex.quote(pidfile)
+    ssh_command(host, f"test ! -f {quoted} || kill -TERM $(cat {quoted})",
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -376,7 +389,9 @@ def cleanup_host(host: SSHHost, run_id: str) -> None:
 
 def run_experiment(
     config_path: Path,
-    config: tuple[workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str]] | None = None,
+    config: tuple[
+        workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str],
+    ] | None = None,
     inventory: Inventory | None = None,
 ) -> int:
     workload.require_built_binary()
