@@ -259,6 +259,8 @@ class SSHSetupTest(unittest.TestCase):
             commands.append((host.name, command))
             if command.startswith("command -v"):
                 return subprocess.CompletedProcess([], 0, "", "")
+            if command.startswith("pgrep"):
+                return subprocess.CompletedProcess([], 1, "", "")  # no tester processes
             if command.startswith("cat /etc/scion/topology.json"):
                 return subprocess.CompletedProcess([], 0, topology, "")
             if command.startswith("printf"):
@@ -308,9 +310,11 @@ class SSHSetupTest(unittest.TestCase):
         local_run.assert_not_called()  # no ssh-control-master is started or stopped
         mutating = ("install", "mv -f", "chmod", "rm -", "--force-recreate", "docker rm",
                     "systemctl start", "systemctl stop", "daemon-reload", "ln -s", "mktemp",
-                    " up ", " down ")
+                    " up ", " down ", "pkill")
         for host, command in commands:
             self.assertFalse(any(word in command for word in mutating), (host, command))
+        self.assertEqual({host for host, command in commands
+                          if command == "pgrep -a -x hummbwtester"}, {"source", "monitor"})
         self.assertTrue(any(" diagnose " in command for _, command in commands))
         notes = [command for _, command in commands if " ensure " in command]
         self.assertTrue(notes and all(command.endswith("--dry-run") for command in notes))
@@ -361,6 +365,7 @@ class SSHSetupTest(unittest.TestCase):
         clients = [SimpleNamespace(client_id="client-1", metrics_port=9090, hummingbird=True)]
         config = (None, clients, {}, {"rate": "10mbit", "burst": "50kb", "limit": "1mb"})
         with mock.patch.object(ssh_setup.workload, "require_built_binary"), \
+             mock.patch.object(ssh_setup.remote, "stop_stray_testers"), \
              mock.patch.object(ssh_setup.remote, "preflight"), \
              mock.patch.object(ssh_setup, "deploy_binary"), \
              mock.patch.object(ssh_setup, "ensure_marketplace"), \

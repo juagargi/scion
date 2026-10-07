@@ -276,6 +276,9 @@ def ssh_command(
     host: SSHHost, command: str, *, check: bool = True, **kwargs: Any,
 ) -> subprocess.CompletedProcess[str]:
     """Run an already quoted, non-secret command through the configured SSH alias."""
+    if "input" not in kwargs:
+        # An ssh that reads the controller's terminal competes for its input, see launch.
+        kwargs.setdefault("stdin", subprocess.DEVNULL)
     return subprocess.run(_ssh_argv(host, command), check=check, text=True, **kwargs)
 
 
@@ -368,11 +371,49 @@ def launch(host: SSHHost, run_id: str, name: str, args: list[str], logfile: Path
     print(f"logging {name} on {host.name} to {logfile}")
     output = logfile.open("w")
     try:
+        # With the terminal as stdin, ssh blocks in read() once another process takes the input,
+        # and then neither SIGINT nor SIGTERM makes it exit.
         process = subprocess.Popen(_ssh_argv(host, command), text=True,
-                                   stdout=output, stderr=subprocess.STDOUT)
+                                   stdin=subprocess.DEVNULL, stdout=output,
+                                   stderr=subprocess.STDOUT)
     finally:
         output.close()
     return process
+
+
+TESTER_PROCESS = "hummbwtester"
+STRAY_TERM_SECONDS = 5
+# Stop every tester process: SIGTERM, then SIGKILL for those still running after the grace time.
+# Fails if one survives, e.g. because it belongs to another user.
+_KILL_TESTERS = f"""pkill -TERM -x {TESTER_PROCESS}
+for i in $(seq {STRAY_TERM_SECONDS * 4}); do
+    pgrep -x {TESTER_PROCESS} >/dev/null || exit 0
+    sleep 0.25
+done
+pkill -KILL -x {TESTER_PROCESS}
+sleep 0.5
+! pgrep -x {TESTER_PROCESS} >/dev/null"""
+
+
+def stop_stray_testers(host: SSHHost, dry_run: bool = False) -> None:
+    """Complain about and kill every tester process running on host, e.g. one left over by an
+    earlier run whose cleanup failed."""
+    found = ssh_command(host, f"pgrep -a -x {TESTER_PROCESS}", check=False, capture_output=True)
+    if found.returncode == 1:
+        return
+    if found.returncode != 0:
+        raise SSHError(f"cannot list {TESTER_PROCESS} processes on {host.name}: "
+                       f"{found.stderr.strip()}")
+    lines = found.stdout.strip().splitlines()
+    print(f"warning: {len(lines)} {TESTER_PROCESS} process(es) already running on {host.name}:")
+    for line in lines:
+        print(f"  {line}")
+    if dry_run:
+        print(f"dry-run: would kill them on {host.name}")
+        return
+    if ssh_command(host, _KILL_TESTERS, check=False, capture_output=True).returncode != 0:
+        raise SSHError(f"cannot kill the {TESTER_PROCESS} processes on {host.name}")
+    print(f"killed them on {host.name}")
 
 
 def stop(host: SSHHost, run_id: str, name: str) -> None:
@@ -380,6 +421,31 @@ def stop(host: SSHHost, run_id: str, name: str) -> None:
     quoted = shlex.quote(pidfile)
     ssh_command(host, f"test ! -f {quoted} || kill -TERM $(cat {quoted})",
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def log_path(name: str) -> Path:
+    return ROOT / "logs" / "hummbwtester" / f"ssh-{name}.log"
+
+
+def report_exits(
+    processes: list[tuple[SSHHost, str, subprocess.Popen[str]]], exited: set[str],
+) -> None:
+    """Print one line for every tester that exited since the last call."""
+    for host, name, process in processes:
+        status = process.poll()
+        if status is None or name in exited:
+            continue
+        exited.add(name)
+        if status == 0:
+            outcome = "finished"
+        elif status == 255:
+            outcome = "stopped: ssh failed (status 255)"
+        elif status < 0:
+            outcome = f"stopped: its ssh client was killed by signal {-status}"
+        else:
+            outcome = f"stopped with exit status {status}"
+        print(f"{name} on {host.name} {outcome}; see {log_path(name).relative_to(ROOT)}",
+              flush=True)
 
 
 def cleanup_host(host: SSHHost, run_id: str) -> None:
@@ -407,26 +473,31 @@ def run_experiment(
         for name in sorted(used_hosts):
             host = inventory.hosts[name]
             preflight(host)
+            stop_stray_testers(host)
             verify_setup(host, digest, name in jwt_hosts)
             ssh_command(host, f"install -d -m 700 {shlex.quote(remote_dir(host, run_id))}")
         server_host = inventory.hosts[inventory.server_host]
         processes.append((server_host, "server", launch(
             server_host, run_id, "server", workload.server_args(server, server_host.sciond),
-            ROOT / "logs" / "hummbwtester" / "ssh-server.log")))
+            log_path("server"))))
         time.sleep(2)
         for client in clients:
             host = inventory.hosts[inventory.client_hosts[client.client_id]]
             jwt_file = jwt_path(host) if client.hummingbird else None
             processes.append((host, client.client_id, launch(
                 host, run_id, client.client_id, workload.client_args(client, server, host.sciond),
-                ROOT / "logs" / "hummbwtester" / f"ssh-{client.client_id}.log", jwt_file)))
-        failure = False
+                log_path(client.client_id), jwt_file)))
+        exited: set[str] = set()
         while any(process.poll() is None for _, _, process in processes[1:]):
+            report_exits(processes, exited)
             if processes[0][2].poll() is not None:
-                failure = True
-                break
+                print("the server stopped, stopping the experiment", flush=True)
+                return 1
             time.sleep(0.25)
-        return 1 if failure or any(process.wait() != 0 for _, _, process in processes) else 0
+        report_exits(processes, exited)
+        print("all clients exited, stopping the experiment", flush=True)
+        # The server runs until it is signalled; the cleanup below stops it.
+        return 1 if any(process.wait() != 0 for _, _, process in processes[1:]) else 0
     except KeyboardInterrupt:
         print("interrupted, stopping the experiment", flush=True)
         return 130
@@ -441,7 +512,13 @@ def run_experiment(
                     process.terminate()
             for host, name, process in processes:
                 print(f"waiting for {name} on {host.name} to exit", flush=True)
-                process.wait(timeout=10)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    print(f"warning: the ssh session of {name} on {host.name} did not exit; "
+                          "killing it", flush=True)
+                    process.kill()
+                    process.wait()
             for name in sorted(used_hosts):
                 print(f"removing run directory on {name}", flush=True)
                 cleanup_host(inventory.hosts[name], run_id)

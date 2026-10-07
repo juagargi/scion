@@ -8,9 +8,11 @@ with the desired one first, so a repeated setup only changes what differs.
 
 setup performs, in this order:
 
-1. Binary: on the server, client and shaping hosts, preflight checks (tools, run_dir, SCION
-   daemon, readiness_command), then copy bin/hummbwtester to <run_dir>/setup/ unless its SHA-256
-   already matches. Copies are atomic: scp to a .tmp file, verify its digest, chmod, mv.
+1. Binary: on every host, report and kill running hummbwtester processes (SIGTERM, then
+   SIGKILL after 5 s). Then, on the server, client and shaping hosts, preflight checks (tools,
+   run_dir, SCION daemon, readiness_command), and copy bin/hummbwtester to <run_dir>/setup/
+   unless its SHA-256 already matches. Copies are atomic: scp to a .tmp file, verify its digest,
+   chmod, mv.
 2. Marketplace service: on hummingbird.marketplace.host, install bin/marketplace as
    /usr/local/bin/hummingbird-marketplace and the hummingbird-marketplace.service unit with sudo,
    and its config (/etc/scion/marketplace/) and database directory (/var/lib/scion/marketplace/)
@@ -1320,6 +1322,9 @@ def setup(
     manual: list[str] = []
 
     def binary() -> None:
+        # No tester may run while setup changes the hosts, not even on hosts without one.
+        for name in sorted(inventory.hosts):
+            remote.stop_stray_testers(inventory.hosts[name], dry_run)
         for name in setup_hosts(inventory):
             host = inventory.hosts[name]
             remote.preflight(host, dry_run)
