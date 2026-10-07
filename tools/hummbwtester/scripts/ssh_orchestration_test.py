@@ -152,6 +152,36 @@ class InventoryTest(unittest.TestCase):
             with self.assertRaisesRegex(orchestration.ConfigError, "metrics.prometheus"):
                 ssh.load_inventory(path, server, clients)
 
+    def test_marketplace_interfaces_are_optional_and_validated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def interfaces(config):
+                _, clients, _, _ = orchestration.load_config(
+                    self.write_json(directory, "experiment.json", config))
+                return next(client for client in clients if client.hummingbird) \
+                    .marketplace.interfaces
+
+            config = self.workload()
+            self.assertIsNone(interfaces(config))
+            marketplace = config["hummingbird"]["marketplace"]
+            marketplace["interfaces"] = {"1-ff00:0:110": [104, 0], "71-1916": [0, 103, 106]}
+            self.assertEqual(interfaces(config),
+                             {"1-ff00:0:110": (0, 104), "71-1916": (0, 103, 106)})
+            for interfaces, message in (
+                ({}, "non-empty object"),
+                ({"71_1916": [0]}, "invalid ISD-AS"),
+                ({"71-1916": []}, "non-empty array"),
+                ({"71-1916": [-1]}, "0 through 65535"),
+                ({"71-1916": [65536]}, "0 through 65535"),
+                ({"71-1916": [True]}, "0 through 65535"),
+                ({"71-1916": ["103"]}, "0 through 65535"),
+                ({"71-1916": [103, 103]}, "duplicate"),
+            ):
+                marketplace["interfaces"] = interfaces
+                path = self.write_json(directory, "experiment.json", config)
+                with self.subTest(interfaces=interfaces), \
+                        self.assertRaisesRegex(orchestration.ConfigError, message):
+                    orchestration.load_config(path)
+
     def test_router_labels_must_differ_in_as_or_br(self):
         with tempfile.TemporaryDirectory() as directory:
             config = self.workload()

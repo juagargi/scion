@@ -68,6 +68,12 @@ Each run uses one self-contained JSON file.
   then reachable only on the marketplace host, and the SCION API only over SCION through that
   host's border routers. Docker deployments reject `scion_address`, because their generated
   topology already advertises its marketplace.
+  In SSH deployments, `interfaces` optionally lists the interfaces that support Hummingbird per
+  ISD-AS, e.g. `"interfaces": {"71-1916": [0, 103, 106], "71-2:0:5c": [0, 104]}`, where `0` stands
+  for flyovers that start or end in the AS. The marketplace database then offers assets only for
+  ordered pairs of distinct listed interfaces (`0→103`, `103→106`, `106→0`, ...), and none for an
+  AS that is not listed. Without `interfaces`, every interface of every AS supports Hummingbird,
+  as in a Docker topology. Docker deployments reject `interfaces`.
   The Docker runner discovers the reachable registration URL from `gen/`; `url` is used by SSH runs.
 - `deployment.metrics` (SSH): `prometheus` is the host that runs Prometheus, `local_port_base` the
   first controller and Prometheus-host loopback port of the metric relays, `routers` the extra
@@ -289,9 +295,12 @@ what differs. Setup performs these steps in order:
    or unreachable) setup stops it if it runs, rebuilds the database, starts it, and waits up to
    30 s until both APIs answer. The database gets the Docker topology's default entries for the
    server, client, and marketplace ASes: users `alice` and `bob` with password `1234`, assets for
-   every interface pair, and redemption delegations. Each delegation holds the AS's Hummingbird
+   every interface pair (or only for pairs of `hummingbird.marketplace.interfaces`), and
+   redemption delegations. Each delegation holds the AS's Hummingbird
    secret value, which is derived on its host from `/etc/scion/keys/master0.key` with `sudo`;
-   the master key itself never leaves the host. The database is rebuilt only for such a
+   the master key itself never leaves the host. Setup records the asset settings
+   (`interfaces`) the database was built from in `/var/lib/scion/marketplace/assets.json`; when
+   they change, it counts as something replaced. The database is rebuilt only for such a
    (re)start, so earlier purchases are lost then.
 3. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
    loopback port to `hummingbird.marketplace.url` as seen from `hummingbird.marketplace.host`,
