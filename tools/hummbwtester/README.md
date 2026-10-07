@@ -272,7 +272,9 @@ It reaches the hosts only through their configured SSH aliases: commands run as
 Every step first compares the current state with the desired one, so repeating setup only changes
 what differs. Setup performs these steps in order:
 
-1. **Binary.** On the server, client, and shaping hosts it checks for `sha256sum` and `nc`,
+1. **Binary.** On every host it reports running `hummbwtester` processes, e.g. left over by an
+   interrupted run, and kills them (`SIGTERM`, then `SIGKILL` after 5 s; a dry run only reports
+   them). On the server, client, and shaping hosts it then checks for `sha256sum` and `nc`,
    creates `run_dir`, checks that the SCION daemon port is open, and runs the optional
    `readiness_command`. It then copies `bin/hummbwtester` to `<run_dir>/setup/hummbwtester` unless
    the remote SHA-256 already matches. Copies are atomic: `scp` to a `.tmp` file, verify its digest,
@@ -377,7 +379,12 @@ until teardown.
 
 The SSH runner only launches the already-deployed server and clients.
 It fails with an instruction to rerun setup if the deployed binary is missing or differs
-from the local build.
+from the local build. Before launching, it reports and kills `hummbwtester` processes still
+running on the server and client hosts, as setup does.
+
+While running, it prints a line when the server or a client exits. It stops when the server
+exits, when all clients have exited, or on Ctrl-C, and then stops the remote processes and
+deletes their run directory, printing each step.
 
 When finished, remove the persistent setup with:
 

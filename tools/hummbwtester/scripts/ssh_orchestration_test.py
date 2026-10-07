@@ -229,38 +229,144 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(shlex.split(command[-1])[:2], ["sh", "-c"])
         self.assertIn("; exec ", shlex.split(command[-1])[2])
 
-    def test_interrupted_run_reports_each_cleanup_step(self):
+    CLEANUP_MESSAGES = [
+        "stopping server on a",
+        "stopping best-effort-1 on a",
+        "stopping hummingbird-1 on b",
+        "waiting for server on a to exit",
+        "waiting for best-effort-1 on a to exit",
+        "waiting for hummingbird-1 on b to exit",
+        "removing run directory on a",
+        "removing run directory on b",
+        "experiment stopped",
+    ]
+
+    def run_with(self, processes, sleep):
+        """Run the experiment with the given server and client processes; return the status and
+        the printed messages."""
         with tempfile.TemporaryDirectory() as directory:
             path = self.write_json(directory, "experiment.json", self.workload())
             config = orchestration.load_config(path)
             inventory = ssh.load_inventory(path, config[0], config[1])
-        process = mock.Mock()
-        process.poll.return_value = None
         with mock.patch.object(ssh.workload, "require_built_binary"), \
              mock.patch.object(ssh, "sha256", return_value="digest"), \
              mock.patch.object(ssh, "preflight"), \
              mock.patch.object(ssh, "verify_setup"), \
              mock.patch.object(ssh, "ssh_command"), \
-             mock.patch.object(ssh, "launch", return_value=process), \
-             mock.patch.object(ssh.time, "sleep", side_effect=[None, KeyboardInterrupt]), \
+             mock.patch.object(ssh, "stop_stray_testers") as strays, \
+             mock.patch.object(ssh, "launch", side_effect=processes), \
+             mock.patch.object(ssh.time, "sleep", side_effect=sleep), \
              mock.patch.object(ssh, "stop") as stop, \
              mock.patch.object(ssh, "cleanup_host") as cleanup, \
              mock.patch("builtins.print") as output:
-            self.assertEqual(ssh.run_experiment(path, config, inventory), 130)
-        self.assertEqual([call.args[0] for call in output.call_args_list], [
-            "interrupted, stopping the experiment",
-            "stopping server on a",
-            "stopping best-effort-1 on a",
-            "stopping hummingbird-1 on b",
-            "waiting for server on a to exit",
-            "waiting for best-effort-1 on a to exit",
-            "waiting for hummingbird-1 on b to exit",
-            "removing run directory on a",
-            "removing run directory on b",
-            "experiment stopped",
-        ])
+            status = ssh.run_experiment(path, config, inventory)
+        self.assertEqual([call.args[0].name for call in strays.call_args_list], ["a", "b"])
         self.assertEqual(stop.call_count, 3)
         self.assertEqual(cleanup.call_count, 2)
+        return status, [call.args[0] for call in output.call_args_list]
+
+    @staticmethod
+    def processes(*exits):
+        """Server and client processes, each exiting with (status, after this many sleeps), or
+        never for None; and the sleep stand-in that advances their clock."""
+        clock = [0]
+
+        def process(exit):
+            fake = mock.Mock()
+            fake.poll.side_effect = lambda: (
+                exit[0] if exit is not None and clock[0] >= exit[1] else None)
+            fake.wait.side_effect = lambda timeout=None: fake.poll()
+            return fake
+
+        def sleep(_):
+            clock[0] += 1
+        return [process(exit) for exit in exits], sleep
+
+    def test_interrupted_run_reports_each_cleanup_step(self):
+        processes, _ = self.processes(None, None, None)
+        status, messages = self.run_with(processes, [None, KeyboardInterrupt])
+        self.assertEqual(status, 130)
+        self.assertEqual(messages, ["interrupted, stopping the experiment",
+                                    *self.CLEANUP_MESSAGES])
+
+    def test_run_reports_each_client_exit_and_stops_the_server(self):
+        # The server never exits by itself; hummingbird-1 fails before best-effort-1 finishes.
+        processes, sleep = self.processes(None, (0, 4), (1, 2))
+        status, messages = self.run_with(processes, sleep)
+        self.assertEqual(status, 1)
+        self.assertEqual(messages, [
+            "hummingbird-1 on b stopped with exit status 1; "
+            "see logs/hummbwtester/ssh-hummingbird-1.log",
+            "best-effort-1 on a finished; see logs/hummbwtester/ssh-best-effort-1.log",
+            "all clients exited, stopping the experiment",
+            *self.CLEANUP_MESSAGES,
+        ])
+
+    def test_run_reports_a_server_exit_and_stops(self):
+        processes, sleep = self.processes((-15, 3), None, (255, 2))
+        status, messages = self.run_with(processes, sleep)
+        self.assertEqual(status, 1)
+        self.assertEqual(messages, [
+            "hummingbird-1 on b stopped: ssh failed (status 255); "
+            "see logs/hummbwtester/ssh-hummingbird-1.log",
+            "server on a stopped: its ssh client was killed by signal 15; "
+            "see logs/hummbwtester/ssh-server.log",
+            "the server stopped, stopping the experiment",
+            *self.CLEANUP_MESSAGES,
+        ])
+
+    def test_cleanup_kills_an_ssh_session_that_does_not_exit(self):
+        processes, sleep = self.processes(None, (0, 2), (0, 2))
+        stuck = processes[0]
+        stuck.wait.side_effect = [subprocess.TimeoutExpired("ssh", 10), None]
+        status, messages = self.run_with(processes, sleep)
+        self.assertEqual(status, 0)
+        stuck.kill.assert_called_once()
+        self.assertIn("warning: the ssh session of server on a did not exit; killing it",
+                      messages)
+        self.assertEqual(messages[-3:], ["removing run directory on a",
+                                         "removing run directory on b", "experiment stopped"])
+
+    def test_stray_testers_are_reported_and_killed(self):
+        host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
+
+        def strays(*results, dry_run=False):
+            with mock.patch.object(ssh, "ssh_command", side_effect=[
+                    subprocess.CompletedProcess([], code, out, err) for code, out, err in results
+                    ]) as run, mock.patch("builtins.print") as output:
+                ssh.stop_stray_testers(host, dry_run)
+            return ([call.args[1] for call in run.call_args_list],
+                    [call.args[0] for call in output.call_args_list])
+
+        self.assertEqual(strays((1, "", "")), (["pgrep -a -x hummbwtester"], []))
+        listing = (0, "42 /var/tmp/humm/setup/hummbwtester -mode server\n", "")
+        commands, messages = strays(listing, (0, "", ""))
+        self.assertTrue(commands[1].startswith("pkill -TERM -x hummbwtester\n"))
+        self.assertIn("pkill -KILL -x hummbwtester", commands[1])
+        self.assertEqual(messages, [
+            "warning: 1 hummbwtester process(es) already running on a:",
+            "  42 /var/tmp/humm/setup/hummbwtester -mode server",
+            "killed them on a",
+        ])
+        commands, messages = strays(listing, dry_run=True)
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(messages[-1], "dry-run: would kill them on a")
+        with self.assertRaisesRegex(ssh.SSHError, "cannot kill"):
+            strays(listing, (1, "", ""))
+        with self.assertRaisesRegex(ssh.SSHError, "cannot list .* on a: denied"):
+            strays((3, "", "denied"))
+
+    def test_ssh_never_reads_the_controller_terminal(self):
+        host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
+        with mock.patch.object(ssh.subprocess, "run") as run:
+            ssh.ssh_command(host, "true")
+            ssh.ssh_command(host, "cat", input="data")
+        self.assertIs(run.call_args_list[0].kwargs["stdin"], subprocess.DEVNULL)
+        self.assertNotIn("stdin", run.call_args_list[1].kwargs)
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(ssh.subprocess, "Popen") as popen:
+            ssh.launch(host, "run-1", "server", ["ignored"], Path(directory) / "server.log")
+        self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
 
     def test_rejects_duplicate_shaping_device(self):
         with tempfile.TemporaryDirectory() as directory:
