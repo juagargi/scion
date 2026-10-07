@@ -39,6 +39,9 @@ CONFIG_DEFAULT = ROOT / "tools" / "hummbwtester" / "hummbwtester.json"
 BIN = ROOT / "bin" / "hummbwtester"
 TC_SCRIPT = ROOT / "tools" / "hummbwtester" / "scripts" / "tc_setup.sh"
 TARGET_DIR = GEN / "hummbwtester-prometheus"
+# The controller's monitoring stack: the Docker-mode Prometheus and the Grafana of both modes.
+MONITORING_COMPOSE = ROOT / "tools" / "hummbwtester" / "monitoring" / "docker-compose.yml"
+MONITORING_PROJECT = "monitoring"
 DOCKER_QDISC_STATE = GEN / "hummbwtester-docker-qdiscs.json"
 # Metrics ports are intentionally derived rather than stored in the JSON file.
 METRICS_BASE_PORT = 9090
@@ -784,6 +787,24 @@ def ignore_sigint_during_cleanup() -> object:
             return signal.signal(signal.SIGINT, signal.SIG_IGN)
         except KeyboardInterrupt:
             continue
+
+
+def monitoring_compose(*args: str) -> list[str]:
+    """A docker compose command for the controller's monitoring stack."""
+    return ["docker", "compose", "--project-name", MONITORING_PROJECT,
+            "-f", str(MONITORING_COMPOSE), *args]
+
+
+def local_container_owner(container: str) -> str | None:
+    """The compose project/service of a local container, or None if it does not exist."""
+    result = subprocess.run(
+        ["docker", "inspect", "--format",
+         '{{index .Config.Labels "com.docker.compose.project"}}/'
+         '{{index .Config.Labels "com.docker.compose.service"}}',
+         container],
+        check=False, capture_output=True, text=True,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
 
 
 def require_built_binary() -> None:

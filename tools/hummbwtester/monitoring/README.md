@@ -72,6 +72,20 @@ docker compose down -v
 `./run-humm-bwtester.sh` stops independently from the monitoring stack, so you can interrupt it
 without shutting down Prometheus or Grafana.
 
+## SSH deployments
+
+For SSH deployments, `experiment.py setup` runs Prometheus on `deployment.metrics.prometheus` in
+the same `prom/prometheus` container with a `prometheus-data` volume, listening on
+`127.0.0.1:8090` of that host, and forwards it to controller port
+`deployment.metrics.local_prometheus_port` (default `8090`, the port the Docker mode's
+Prometheus uses, which therefore must not run at the same time). It then starts the
+`hummbwtester-grafana` service of this Compose file with `PROMETHEUS_PORT` set to that port, so the
+same provisioning and dashboards show the remote experiment. Open the Prometheus UI at
+`http://127.0.0.1:8090` and Grafana at `http://localhost:3000`. The data source follows
+`PROMETHEUS_PORT`, so the same Grafana shows either the local or the remote Prometheus: SSH setup
+recreates it when it was started for another port, and for a Docker run restart it with
+`docker compose up -d grafana` from this directory.
+
 ## Use
 
 Prometheus is exposed on [http://localhost:8090](http://localhost:8090). The Prometheus UI is
