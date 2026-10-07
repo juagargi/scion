@@ -150,6 +150,22 @@ class InventoryTest(unittest.TestCase):
             with self.assertRaisesRegex(orchestration.ConfigError, "metrics.prometheus"):
                 ssh.load_inventory(path, server, clients)
 
+    def test_router_labels_must_differ_in_as_or_br(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            routers = config["deployment"]["metrics"]["routers"]
+            routers[0]["labels"] = {"as": "71_1916", "br": "br-2"}
+            routers.append({"host": "b", "address": "127.0.0.1:30442",
+                            "labels": {"as": "71_2_0_152", "br": "br-2"}})
+            path = self.write_json(directory, "experiment.json", config)
+            server, clients, _, _ = orchestration.load_config(path)
+            self.assertEqual(len(ssh.load_inventory(path, server, clients).routers), 2)
+
+            routers[1]["labels"]["as"] = "71_1916"
+            path = self.write_json(directory, "experiment.json", config)
+            with self.assertRaisesRegex(orchestration.ConfigError, r"routers\[1\].*as and br"):
+                ssh.load_inventory(path, server, clients)
+
     def test_ssh_command_quotes_script_for_remote_shell(self):
         host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
         script = "test -f /etc/hosts && printf '%s' 'quoted value'"

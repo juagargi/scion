@@ -181,6 +181,7 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
     if not isinstance(raw_routers, list):
         raise workload.ConfigError("ssh inventory.metrics.routers must be an array")
     routers: list[RouterMetrics] = []
+    seen_routers: set[tuple[str | None, str | None]] = set()
     for index, raw in enumerate(raw_routers):
         entry = _object(raw, f"ssh inventory.metrics.routers[{index}]")
         _fields(entry, {"host", "address", "labels"}, f"ssh inventory.metrics.routers[{index}]")
@@ -192,6 +193,14 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         labels = _object(entry["labels"], f"ssh inventory.metrics.routers[{index}].labels")
         if not all(isinstance(key, str) and isinstance(value, str) for key, value in labels.items()):
             raise workload.ConfigError(f"ssh inventory.metrics.routers[{index}].labels must be string pairs")
+        # The dashboard groups router series by (as, br); BR names are unique only within an AS.
+        router_key = labels.get("as"), labels.get("br")
+        if router_key in seen_routers:
+            raise workload.ConfigError(
+                f"ssh inventory.metrics.routers[{index}].labels duplicates "
+                "another router's as and br labels",
+            )
+        seen_routers.add(router_key)
         routers.append(RouterMetrics(host, address, labels))
 
     raw_shaping = deployment["shaping"]
