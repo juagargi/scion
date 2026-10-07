@@ -163,6 +163,12 @@ class InventoryTest(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.stdout, "quoted value")
 
+    def test_scp_hides_its_progress_meter(self):
+        host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
+        with mock.patch.object(ssh.subprocess, "run") as run:
+            ssh.scp_to(host, Path("local"), "/remote")
+        self.assertEqual(run.call_args.args[0][:2], ["scp", "-q"])
+
     def test_launch_never_places_jwt_in_ssh_arguments(self):
         host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
         with tempfile.TemporaryDirectory() as directory, \

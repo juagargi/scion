@@ -107,7 +107,8 @@ class SSHSetupTest(unittest.TestCase):
             ssh_setup.ensure_prometheus(inventory, targets)
         stop.assert_called_once_with(inventory.hosts["monitor"])
         self.assertEqual(scp.call_count, 4)
-        self.assertTrue(any("up -d --force-recreate" in call.args[1]
+        self.assertTrue(any("docker compose --progress quiet" in call.args[1]
+                            and "up -d --force-recreate" in call.args[1]
                             for call in run.call_args_list))
 
     def test_stop_prometheus_refuses_foreign_container(self):
@@ -419,6 +420,7 @@ class SSHSetupTest(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertIn(" down ", run.call_args_list[0].args[1])
         self.assertIn(" up ", run.call_args_list[1].args[1])
+        self.assertIs(run.call_args_list[1].kwargs["stdout"], subprocess.DEVNULL)
 
 
 
@@ -548,6 +550,7 @@ class GrafanaTest(unittest.TestCase):
             with self.subTest(owner=owner, state=state):
                 run, _ = self.ensure(owner, state)
                 self.assertEqual(run.call_args.args[0][-4:], ["up", "-d", "--no-deps", "grafana"])
+                self.assertEqual(run.call_args.args[0][1:4], ["compose", "--progress", "quiet"])
                 self.assertEqual(run.call_args.kwargs["env"]["PROMETHEUS_PORT"], "18090")
 
     def test_foreign_grafana_container_is_refused(self):

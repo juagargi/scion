@@ -793,7 +793,10 @@ def ensure_selective_qdiscs(
             continue
         if current is not None:
             remote.ssh_command(host, _selective_command(helper, "down", config))
-        remote.ssh_command(host, _selective_command(helper, "up", config))
+        # up prints a full status report for manual use; setup prints its own line instead,
+        # and errors still reach the terminal on stderr.
+        remote.ssh_command(host, _selective_command(helper, "up", config),
+                           stdout=subprocess.DEVNULL)
         print(f"installed selective qdisc {config.name} on {host.name}")
 
 
@@ -970,7 +973,9 @@ def ensure_prometheus(
     compose = f"{REMOTE_PROMETHEUS_DIR}/docker-compose.yml"
     remote.ssh_command(
         host,
-        f"docker compose --project-name {PROMETHEUS_PROJECT} -f {shlex.quote(compose)} "
+        # --progress quiet hides the image pull and container progress; errors are still printed.
+        f"docker compose --progress quiet --project-name {PROMETHEUS_PROJECT} "
+        f"-f {shlex.quote(compose)} "
         "up -d --force-recreate",
     )
     if not _prometheus_container_current(host, config_hash):
@@ -1249,7 +1254,7 @@ def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
         if dry_run:
             print(f"dry-run: would {verb} Grafana {change}")
             return
-        subprocess.run(workload.monitoring_compose("up", "-d", "--no-deps", "grafana"),
+        subprocess.run(workload.monitoring_compose("up", "-d", "--no-deps", "grafana", quiet=True),
                        env={**os.environ, "PROMETHEUS_PORT": port}, check=True, text=True)
         print(f"{ {'start': 'started', 're-point': 're-pointed'}[verb]} Grafana {change}")
     if dry_run:
