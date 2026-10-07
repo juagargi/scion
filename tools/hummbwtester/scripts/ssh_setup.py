@@ -28,15 +28,24 @@ setup performs, in this order:
    `sudo -n python3 -` to insert or update the hummbwtester entry of the Note's hummingbird list.
    Control services are never restarted; a changed file becomes a manual step.
 6. Prometheus: write the file-SD targets locally and to /tmp/hummbwtester/prometheus/ on the
-   Prometheus host, and (re)create the hummbwtester-prometheus container when files or its
+   Prometheus host, and (re)create the hummbwtester-prometheus container (host networking,
+   listening on 127.0.0.1:8090 only, data in the prometheus-data volume) when files or its
    configuration hash differ.
-7. Metric relays: two ssh-control-masters per metric source, an -L to the source host and an -R
-   to the Prometheus host, so that Prometheus scrapes its own loopback. Their sockets and a
-   manifest live in /tmp/hummbwtester/ssh-tunnels/ on the controller.
-8. Print the manual steps, e.g. restarting a control service whose static info file changed.
+7. Metric relays: Prometheus scrapes sources on its own host directly. Every other source gets
+   two ssh-control-masters, an -L to the source host and an -R to the Prometheus host, so that
+   Prometheus scrapes its own loopback. One more ssh-control-master forwards controller port
+   deployment.metrics.local_prometheus_port (default 8090), on 127.0.0.1 and on the Docker
+   bridge gateway, to the remote Prometheus. Their sockets and a manifest live in
+   /tmp/hummbwtester/ssh-tunnels/ on the controller.
+8. Grafana: run the monitoring stack's hummbwtester-grafana container on the controller, with the
+   Docker mode's provisioning, dashboards, and volume, and PROMETHEUS_PORT set to that forward;
+   its data source host.docker.internal resolves to the bridge gateway. A running Grafana with
+   that setting is kept. Then check that Grafana and its data source answer.
+9. Print the manual steps, e.g. restarting a control service whose static info file changed.
 
 teardown stops the marketplace service and waits until it is unreachable, removes the qdiscs,
-closes the ssh-control-masters of the manifest, removes the Prometheus container and files, and
+closes the ssh-control-masters of the manifest (relays and Prometheus forward; Grafana keeps
+running, as in the Docker mode), removes the Prometheus container and files, and
 deletes <run_dir>/setup/ (binary, JWT, helpers). It keeps the static info Note and the
 marketplace's binary, unit, config, and database.
 
@@ -67,8 +76,11 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
+import urllib.error
 import urllib.parse
+import urllib.request
 
 try:  # Support both ``python -m``/tests and the small direct entrypoint scripts.
     from . import orchestration as workload
@@ -106,8 +118,29 @@ PROMETHEUS_PROJECT = "hummbwtester-ssh"
 PROMETHEUS_IMAGE = "prom/prometheus:latest"
 PROMETHEUS_PORT = 8090
 CONFIG_HASH_LABEL = "org.scion.hummbwtester.config-sha256"
+# Grafana runs on the controller: the monitoring stack's service, shared with the Docker mode.
+GRAFANA_CONTAINER = "hummbwtester-grafana"
+GRAFANA_WAIT_SECONDS = 30
 TUNNEL_STATE_DIR = Path("/tmp/hummbwtester/ssh-tunnels")
 TUNNEL_MANIFEST = TUNNEL_STATE_DIR / "manifest.json"
+
+
+@dataclass(frozen=True)
+class MetricSource:
+    """A metrics endpoint: address on its host, and the relay port reserved for it."""
+    host: str
+    address: str
+    port: int
+    labels: dict[str, str]
+    router: bool
+
+
+@dataclass(frozen=True)
+class PrometheusForward:
+    """Controller port, bound on each address of binds, forwarded to the remote Prometheus."""
+    alias: str
+    port: int
+    binds: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -776,23 +809,37 @@ def remove_selective_qdiscs(inventory: remote.Inventory, tc: dict[str, str]) -> 
         print(f"removed selective qdisc {config.name} from {host.name}")
 
 
+def metric_sources(
+    inventory: remote.Inventory, clients: list[workload.Client],
+) -> list[MetricSource]:
+    """Every client metrics port, then every router target, each with relay port base + i."""
+    sources = [
+        MetricSource(inventory.client_hosts[client.client_id], f"127.0.0.1:{client.metrics_port}",
+                     inventory.local_port_base + index, {"client_id": client.client_id}, False)
+        for index, client in enumerate(clients)
+    ]
+    sources.extend(
+        MetricSource(router.host, router.address, inventory.local_port_base + index,
+                     router.labels, True)
+        for index, router in enumerate(inventory.routers, start=len(clients))
+    )
+    return sources
+
+
 def target_documents(
     inventory: remote.Inventory, clients: list[workload.Client],
 ) -> dict[str, str]:
-    client_targets = []
-    for index, client in enumerate(clients):
-        port = inventory.local_port_base + index
-        client_targets.append({
-            "targets": [f"127.0.0.1:{port}"],
-            "labels": {"client_id": client.client_id},
+    """Prometheus file-SD targets: a source on the Prometheus host directly, others via relays."""
+    targets: dict[bool, list[dict[str, object]]] = {False: [], True: []}
+    for source in metric_sources(inventory, clients):
+        local = source.host == inventory.prometheus_host
+        targets[source.router].append({
+            "targets": [source.address if local else f"127.0.0.1:{source.port}"],
+            "labels": source.labels,
         })
-    router_targets = []
-    for index, router in enumerate(inventory.routers, start=len(clients)):
-        port = inventory.local_port_base + index
-        router_targets.append({"targets": [f"127.0.0.1:{port}"], "labels": router.labels})
     return {
-        "targets/clients.json": json.dumps(client_targets, indent=2) + "\n",
-        "targets/border_routers.json": json.dumps(router_targets, indent=2) + "\n",
+        "targets/clients.json": json.dumps(targets[False], indent=2) + "\n",
+        "targets/border_routers.json": json.dumps(targets[True], indent=2) + "\n",
     }
 
 
@@ -817,7 +864,7 @@ def _compose_document(config_hash: str) -> str:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=7d
-      - --web.listen-address=:{PROMETHEUS_PORT}
+      - --web.listen-address=127.0.0.1:{PROMETHEUS_PORT}
     labels:
       {CONFIG_HASH_LABEL}: "{config_hash}"
     volumes:
@@ -934,29 +981,44 @@ def ensure_prometheus(
 def tunnel_specs(
     inventory: remote.Inventory, clients: list[workload.Client],
 ) -> list[TunnelSpec]:
-    """One relay per metric source: every client's metrics port, then every router target.
+    """One relay per metric source that is not on the Prometheus host.
 
-    Relay i uses controller and Prometheus-host loopback port local_port_base + i, which is also
-    the target that target_documents gives Prometheus for that source.
+    Prometheus uses host networking, so it scrapes sources on its own host directly.
     """
     prometheus_alias = inventory.hosts[inventory.prometheus_host].alias
-    specs = []
-    for index, client in enumerate(clients):
-        source = inventory.hosts[inventory.client_hosts[client.client_id]]
-        specs.append(TunnelSpec(
-            source.alias, prometheus_alias, inventory.local_port_base + index,
-            f"127.0.0.1:{client.metrics_port}",
-        ))
-    for index, router in enumerate(inventory.routers, start=len(clients)):
-        source = inventory.hosts[router.host]
-        specs.append(TunnelSpec(
-            source.alias, prometheus_alias, inventory.local_port_base + index, router.address,
-        ))
-    return specs
+    return [
+        TunnelSpec(inventory.hosts[source.host].alias, prometheus_alias, source.port,
+                   source.address)
+        for source in metric_sources(inventory, clients)
+        if source.host != inventory.prometheus_host
+    ]
 
 
-def _tunnel_hash(specs: list[TunnelSpec]) -> str:
-    content = json.dumps([asdict(spec) for spec in specs], sort_keys=True, separators=(",", ":"))
+def docker_bridge_gateway() -> str | None:
+    """The address that host.docker.internal (host-gateway) resolves to in local containers."""
+    result = subprocess.run(
+        ["docker", "network", "inspect", "bridge", "--format",
+         "{{(index .IPAM.Config 0).Gateway}}"],
+        check=False, capture_output=True, text=True,
+    )
+    if result.returncode:
+        return None
+    return result.stdout.strip() or None
+
+
+def prometheus_forward(inventory: remote.Inventory) -> PrometheusForward:
+    """Forward for the browser (127.0.0.1) and for local Grafana containers (bridge gateway)."""
+    gateway = docker_bridge_gateway()
+    return PrometheusForward(
+        inventory.hosts[inventory.prometheus_host].alias, inventory.local_prometheus_port,
+        ("127.0.0.1", *((gateway,) if gateway else ())),
+    )
+
+
+def _tunnel_hash(specs: list[TunnelSpec], forward: PrometheusForward | None) -> str:
+    content = json.dumps({"relays": [asdict(spec) for spec in specs],
+                          "prometheus": asdict(forward) if forward else None},
+                         sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(content.encode()).hexdigest()
 
 
@@ -1043,17 +1105,33 @@ def stop_tunnels() -> None:
         pass
 
 
-def ensure_tunnels(specs: list[TunnelSpec], dry_run: bool = False) -> None:
+def _check_local_port_free(forward: PrometheusForward) -> None:
+    for bind in forward.binds:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((bind, forward.port))
+            except OSError as err:
+                raise remote.SSHError(
+                    f"controller port {bind}:{forward.port} for the Prometheus forward is in use "
+                    f"({err.strerror}); set deployment.metrics.local_prometheus_port",
+                ) from err
+
+
+def ensure_tunnels(
+    specs: list[TunnelSpec], forward: PrometheusForward | None = None, dry_run: bool = False,
+) -> None:
     """Relay every metric source to the Prometheus host through two ssh-control-masters.
 
     For relay port P, one ssh-control-master to the source host forwards controller 127.0.0.1:P
     to the source address (-L), and one to the Prometheus host forwards its 127.0.0.1:P back to
-    controller 127.0.0.1:P (-R). Prometheus therefore scrapes its own loopback. The manifest
-    records a hash of the specs and every ssh-control-master; if the hash matches and all of
+    controller 127.0.0.1:P (-R). Prometheus therefore scrapes its own loopback. A further
+    ssh-control-master forwards the controller port of forward, on each of its bind addresses,
+    to the remote Prometheus, for the browser and for Grafana. The manifest records a hash of
+    the specs and the forward, and every ssh-control-master; if the hash matches and all of
     them answer -O check, nothing changes, otherwise all are replaced.
     """
     manifest = _load_tunnel_manifest()
-    if not specs:
+    if not specs and forward is None:
         if dry_run:
             if manifest is not None:
                 print("dry-run: would stop the existing Prometheus metric relays")
@@ -1061,18 +1139,26 @@ def ensure_tunnels(specs: list[TunnelSpec], dry_run: bool = False) -> None:
         stop_tunnels()
         print("no Prometheus metric relays are configured")
         return
-    digest = _tunnel_hash(specs)
+    digest = _tunnel_hash(specs, forward)
     if manifest is not None and manifest.get("spec_sha256") == digest:
         control_masters, complete = _manifest_ssh_control_masters(manifest)
         if control_masters and complete and all(map(_ssh_control_master_running, control_masters)):
             print("Prometheus SSH tunnels are current")
             return
+    forwarding = (f" and forward controller port {forward.port} to Prometheus"
+                  if forward is not None else "")
     if dry_run:
+        if forward is not None and manifest is None:
+            # Only without our own relays could the port be taken by something else.
+            _check_local_port_free(forward)
         print(f"dry-run: would {'replace the relays and ' if manifest is not None else ''}"
-              f"start {len(specs)} Prometheus metric relays ({2 * len(specs)} ssh-control-masters)")
+              f"start {len(specs)} Prometheus metric relays ({2 * len(specs)} ssh-control-masters)"
+              f"{forwarding}")
         return
 
     stop_tunnels()
+    if forward is not None:
+        _check_local_port_free(forward)
     TUNNEL_STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     control_masters: list[ControlMaster] = []
     try:
@@ -1085,6 +1171,12 @@ def ensure_tunnels(specs: list[TunnelSpec], dry_run: bool = False) -> None:
                 ["-R", f"127.0.0.1:{spec.port}:127.0.0.1:{spec.port}"],
                 TUNNEL_STATE_DIR / f"prometheus-{index}.sock", spec.prometheus_alias,
             ))
+        if forward is not None:
+            control_masters.append(_start_ssh_control_master(
+                [argument for bind in forward.binds
+                 for argument in ("-L", f"{bind}:{forward.port}:127.0.0.1:{PROMETHEUS_PORT}")],
+                TUNNEL_STATE_DIR / "prometheus-ui.sock", forward.alias,
+            ))
     except BaseException:
         # Record what did start, so that stop_tunnels can close it.
         TUNNEL_MANIFEST.write_text(json.dumps({"ssh_control_masters": control_masters}))
@@ -1095,7 +1187,79 @@ def ensure_tunnels(specs: list[TunnelSpec], dry_run: bool = False) -> None:
         "ssh_control_masters": control_masters,
     }, indent=2) + "\n")
     TUNNEL_MANIFEST.chmod(0o600)
-    print(f"started {len(specs)} Prometheus metric relays")
+    print(f"started {len(specs)} Prometheus metric relays"
+          + (f" and forwarded controller port {forward.port} to Prometheus" if forward else ""))
+
+
+def _http_answers(url: str) -> bool:
+    try:
+        urllib.request.urlopen(url, timeout=3)
+    except urllib.error.HTTPError:
+        return True
+    except (urllib.error.URLError, OSError):
+        return False
+    return True
+
+
+def _wait_http(url: str, seconds: int) -> bool:
+    for _ in range(seconds):
+        if _http_answers(url):
+            return True
+        time.sleep(1)
+    return _http_answers(url)
+
+
+def _grafana_state() -> tuple[bool, str | None]:
+    """Whether the local Grafana container runs, and the Prometheus port it is configured for."""
+    result = subprocess.run(
+        ["docker", "inspect", "--format",
+         "{{.State.Running}}{{range .Config.Env}}\n{{.}}{{end}}", GRAFANA_CONTAINER],
+        check=False, capture_output=True, text=True,
+    )
+    if result.returncode:
+        return False, None
+    running, *environment = result.stdout.splitlines()
+    port = next((line.split("=", 1)[1] for line in environment
+                 if line.startswith("PROMETHEUS_PORT=")), None)
+    return running == "true", port
+
+
+def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
+    """Run the monitoring stack's Grafana on the controller, pointed at the Prometheus forward.
+
+    It is the same container, provisioning, dashboards, and volume as in the Docker mode. Its
+    data source is http://host.docker.internal:$PROMETHEUS_PORT, which the forward serves on the
+    Docker bridge gateway. A running Grafana configured for that port is left alone; otherwise it
+    is (re)created with PROMETHEUS_PORT set to it. Prometheus itself is not started (--no-deps).
+    """
+    owner = workload.local_container_owner(GRAFANA_CONTAINER)
+    expected = f"{workload.MONITORING_PROJECT}/grafana"
+    if owner is not None and owner != expected:
+        raise remote.SSHError(
+            f"refusing to replace {GRAFANA_CONTAINER}: it belongs to {owner!r}, not {expected}",
+        )
+    running, configured = _grafana_state() if owner is not None else (False, None)
+    port = str(forward.port)
+    grafana_url = f"http://127.0.0.1:{os.environ.get('GRAFANA_PORT', '3000')}"
+    if running and configured == port:
+        print(f"Grafana {grafana_url} is running with Prometheus at controller port {port}")
+    else:
+        verb, change = (("re-point", f"from Prometheus port {configured} to {port}") if running
+                        else ("start", f"{grafana_url} with Prometheus at controller port {port}"))
+        if dry_run:
+            print(f"dry-run: would {verb} Grafana {change}")
+            return
+        subprocess.run(workload.monitoring_compose("up", "-d", "--no-deps", "grafana"),
+                       env={**os.environ, "PROMETHEUS_PORT": port}, check=True, text=True)
+        print(f"{ {'start': 'started', 're-point': 're-pointed'}[verb]} Grafana {change}")
+    if dry_run:
+        return
+    if not _wait_http(f"{grafana_url}/api/health", GRAFANA_WAIT_SECONDS):
+        raise remote.SSHError(f"Grafana does not answer at {grafana_url}")
+    # Grafana's data source host.docker.internal is the last bind address of the forward.
+    data_source = f"http://{forward.binds[-1]}:{port}/-/ready"
+    if not _wait_http(data_source, GRAFANA_WAIT_SECONDS):
+        raise remote.SSHError(f"Grafana's data source {data_source} does not answer")
 
 
 def setup(
@@ -1146,7 +1310,9 @@ def setup(
         ("5. static info Note",
          lambda: manual.extend(ensure_marketplace_notes(inventory, dry_run))),
         ("6. Prometheus", prometheus),
-        ("7. metric relays", lambda: ensure_tunnels(tunnel_specs(inventory, clients), dry_run)),
+        ("7. metric relays", lambda: ensure_tunnels(
+            tunnel_specs(inventory, clients), prometheus_forward(inventory), dry_run)),
+        ("8. Grafana", lambda: ensure_grafana(prometheus_forward(inventory), dry_run)),
     ]
     failures: list[str] = []
     completed = False
@@ -1166,7 +1332,7 @@ def setup(
             local_jwt.unlink(missing_ok=True)
         # A later failure must not hide the steps that files already changed on the hosts need.
         if completed or manual:
-            # 8. Manual steps.
+            # 9. Manual steps.
             print_manual_steps("setup", manual, dry_run)
     if failures:
         print(f"dry-run: setup would fail; {len(failures)} step(s) failed:")

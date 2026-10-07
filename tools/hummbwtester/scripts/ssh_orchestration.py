@@ -32,6 +32,9 @@ DEFAULT_STATIC_INFO = "/etc/scion/staticInfoConfig.json"
 # Hide login banners and other informational client messages; errors are still printed.
 SSH_OPTIONS = ["-o", "LogLevel=ERROR"]
 UNIT_RE = re.compile(r"[A-Za-z0-9@._:-]+\.service")
+# Controller port through which Grafana reaches the remote Prometheus: the Docker mode's
+# Prometheus port, which the monitoring stack's Grafana uses by default.
+DEFAULT_LOCAL_PROMETHEUS_PORT = 8090
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,7 @@ class Inventory:
     shaping: tuple[ShapedFlow, ...]
     # SSH deployments always buy reservations from a marketplace reachable from one host.
     marketplace: workload.MarketplaceConfig
+    local_prometheus_port: int = DEFAULT_LOCAL_PROMETHEUS_PORT
 
     @property
     def marketplace_host(self) -> str:
@@ -163,7 +167,8 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         )
 
     metrics = _object(deployment["metrics"], "deployment.metrics")
-    _fields(metrics, {"prometheus", "local_port_base", "routers"}, "ssh inventory.metrics")
+    _fields(metrics, {"prometheus", "local_port_base", "routers"}, "ssh inventory.metrics",
+            {"local_prometheus_port"})
     prometheus_host = _name(metrics["prometheus"], "ssh inventory.metrics.prometheus")
     if prometheus_host not in hosts:
         raise workload.ConfigError(
@@ -230,9 +235,17 @@ def load_inventory(path: Path, server: workload.Endpoint, clients: list[workload
         shaping.append(shape)
     if base + len(clients) + len(routers) > 65535:
         raise workload.ConfigError("SSH metrics tunnel ports exceed 65535")
+    local_prometheus_port = metrics.get("local_prometheus_port", DEFAULT_LOCAL_PROMETHEUS_PORT)
+    if (not isinstance(local_prometheus_port, int) or isinstance(local_prometheus_port, bool)
+            or not 1024 <= local_prometheus_port <= 65535
+            or base <= local_prometheus_port < base + len(clients) + len(routers)):
+        raise workload.ConfigError(
+            "ssh inventory.metrics.local_prometheus_port must be a port from 1024 through 65535 "
+            "outside the relay ports starting at local_port_base",
+        )
     return Inventory(
         hosts, server_host, client_hosts, prometheus_host, base, tuple(routers), tuple(shaping),
-        marketplace,
+        marketplace, local_prometheus_port,
     )
 
 

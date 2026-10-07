@@ -120,6 +120,20 @@ class InventoryTest(unittest.TestCase):
                 with self.subTest(key=key), self.assertRaisesRegex(orchestration.ConfigError, key):
                     ssh.load_inventory(path, server, clients)
 
+    def test_local_prometheus_port_defaults_and_must_not_overlap_relays(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "experiment.json", self.workload())
+            server, clients, _, _ = orchestration.load_config(path)
+            self.assertEqual(ssh.load_inventory(path, server, clients).local_prometheus_port, 8090)
+            for port in (19091, 80, "18090"):
+                config = self.workload()
+                config["deployment"]["metrics"]["local_prometheus_port"] = port
+                path = self.write_json(directory, "invalid.json", config)
+                server, clients, _, _ = orchestration.load_config(path)
+                with self.subTest(port=port), \
+                        self.assertRaisesRegex(orchestration.ConfigError, "local_prometheus_port"):
+                    ssh.load_inventory(path, server, clients)
+
     def test_rejects_missing_client_placement(self):
         with tempfile.TemporaryDirectory() as directory:
             config = self.workload()

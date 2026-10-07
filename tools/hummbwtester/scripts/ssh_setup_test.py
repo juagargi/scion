@@ -2,6 +2,7 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import shlex
+import socket
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -39,19 +40,44 @@ class SSHSetupTest(unittest.TestCase):
     def clients(self):
         return [SimpleNamespace(client_id="client-1", metrics_port=9090)]
 
-    def test_targets_and_tunnels_use_prometheus_loopback_ports(self):
-        inventory = self.inventory()
+    def test_remote_sources_are_relayed_and_prometheus_host_sources_scraped_directly(self):
+        inventory = self.inventory()  # Prometheus and the router run on monitor.
         documents = ssh_setup.target_documents(inventory, self.clients())
         self.assertIn('"127.0.0.1:19090"', documents["targets/clients.json"])
-        self.assertIn('"127.0.0.1:19091"', documents["targets/border_routers.json"])
-
-        specs = ssh_setup.tunnel_specs(inventory, self.clients())
-        self.assertEqual(specs[0], ssh_setup.TunnelSpec(
+        self.assertIn('"127.0.0.1:30442"', documents["targets/border_routers.json"])
+        self.assertEqual(ssh_setup.tunnel_specs(inventory, self.clients()), [ssh_setup.TunnelSpec(
             "source-alias", "monitor-alias", 19090, "127.0.0.1:9090",
-        ))
-        self.assertEqual(specs[1], ssh_setup.TunnelSpec(
-            "monitor-alias", "monitor-alias", 19091, "127.0.0.1:30442",
-        ))
+        )])
+
+    def test_remote_prometheus_listens_on_loopback_only(self):
+        documents, _ = ssh_setup.prometheus_documents({})
+        self.assertIn("--web.listen-address=127.0.0.1:8090", documents["docker-compose.yml"])
+
+    def test_prometheus_forward_is_a_further_ssh_control_master(self):
+        specs = [ssh_setup.TunnelSpec("source-alias", "monitor-alias", 19090, "127.0.0.1:9090")]
+        forward = ssh_setup.PrometheusForward("monitor-alias", 18090, ("127.0.0.1", "10.200.0.1"))
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(ssh_setup, "TUNNEL_STATE_DIR", Path(directory)), \
+             mock.patch.object(ssh_setup, "TUNNEL_MANIFEST", Path(directory) / "manifest.json"), \
+             mock.patch.object(ssh_setup, "_check_local_port_free"), \
+             mock.patch.object(ssh_setup.subprocess, "run", return_value=completed) as run, \
+             mock.patch("builtins.print"):
+            ssh_setup.ensure_tunnels(specs, forward)
+            manifest = json.loads((Path(directory) / "manifest.json").read_text())
+        last = run.call_args_list[-1].args[0]
+        self.assertEqual(len(manifest["ssh_control_masters"]), 3)
+        self.assertEqual(last[last.index("--") + 1], "monitor-alias")
+        self.assertEqual([last[i + 1] for i, value in enumerate(last) if value == "-L"],
+                         ["127.0.0.1:18090:127.0.0.1:8090", "10.200.0.1:18090:127.0.0.1:8090"])
+
+    def test_prometheus_forward_reports_a_busy_controller_port(self):
+        with socket.socket() as busy:
+            busy.bind(("127.0.0.1", 0))
+            busy.listen()
+            forward = ssh_setup.PrometheusForward("a", busy.getsockname()[1], ("127.0.0.1",))
+            with self.assertRaisesRegex(remote.SSHError, "local_prometheus_port"):
+                ssh_setup._check_local_port_free(forward)
 
     def test_prometheus_is_unchanged_when_files_and_container_are_current(self):
         inventory = self.inventory()
@@ -267,6 +293,9 @@ class SSHSetupTest(unittest.TestCase):
              mock.patch.object(ssh_setup, "obtain_marketplace_jwt", return_value="jwt"), \
              mock.patch.object(ssh_setup.remote, "scp_to") as scp, \
              mock.patch.object(ssh_setup, "write_local_targets") as write_targets, \
+             mock.patch.object(ssh_setup, "docker_bridge_gateway", return_value="10.200.0.1"), \
+             mock.patch.object(ssh_setup, "_check_local_port_free"), \
+             mock.patch.object(ssh_setup.workload, "local_container_owner", return_value=None), \
              mock.patch.object(ssh_setup.subprocess, "run") as local_run, \
              mock.patch("builtins.print") as output:
             self.assertEqual(ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 0)
@@ -288,7 +317,10 @@ class SSHSetupTest(unittest.TestCase):
                          "would install selective qdisc source-peer on source",
                          "would advertise marketplace",
                          "would create hummbwtester-prometheus",
-                         "would start 2 Prometheus metric relays",
+                         "would start 1 Prometheus metric relays (2 ssh-control-masters) and "
+                         "forward controller port 8090 to Prometheus",
+                         "would start Grafana http://127.0.0.1:3000 with Prometheus at "
+                         "controller port 8090",
                          "would install marketplace binary /usr/local/bin/hummingbird-marketplace",
                          "would start hummingbird-marketplace.service on monitor with a rebuilt",
                          "dry-run: setup would require these manual steps:"):
@@ -489,6 +521,40 @@ class MarketplaceServiceTest(unittest.TestCase):
         key_reads = [command for _, command in commands if "master0.key" in command]
         self.assertTrue(key_reads and all(command.startswith("sudo -n python3 -c")
                                           for command in key_reads))
+
+
+class GrafanaTest(unittest.TestCase):
+    forward = ssh_setup.PrometheusForward("monitor-alias", 18090, ("127.0.0.1", "10.200.0.1"))
+
+    def ensure(self, owner, state):
+        with mock.patch.object(ssh_setup.workload, "local_container_owner", return_value=owner), \
+             mock.patch.object(ssh_setup, "_grafana_state", return_value=state), \
+             mock.patch.object(ssh_setup.subprocess, "run") as run, \
+             mock.patch.object(ssh_setup, "_wait_http", return_value=True) as wait, \
+             mock.patch.dict(ssh_setup.os.environ, {}, clear=True), \
+             mock.patch("builtins.print"):
+            ssh_setup.ensure_grafana(self.forward)
+        return run, wait
+
+    def test_running_grafana_for_this_prometheus_is_left_alone(self):
+        run, wait = self.ensure("monitoring/grafana", (True, "18090"))
+        run.assert_not_called()
+        self.assertEqual([call.args[0] for call in wait.call_args_list], [
+            "http://127.0.0.1:3000/api/health", "http://10.200.0.1:18090/-/ready",
+        ])
+
+    def test_missing_or_differently_configured_grafana_is_started_without_prometheus(self):
+        for owner, state in ((None, (False, None)), ("monitoring/grafana", (True, "8090"))):
+            with self.subTest(owner=owner, state=state):
+                run, _ = self.ensure(owner, state)
+                self.assertEqual(run.call_args.args[0][-4:], ["up", "-d", "--no-deps", "grafana"])
+                self.assertEqual(run.call_args.kwargs["env"]["PROMETHEUS_PORT"], "18090")
+
+    def test_foreign_grafana_container_is_refused(self):
+        with mock.patch.object(ssh_setup.workload, "local_container_owner",
+                               return_value="other/grafana"):
+            with self.assertRaisesRegex(remote.SSHError, "refusing to replace"):
+                ssh_setup.ensure_grafana(self.forward)
 
 if __name__ == "__main__":
     unittest.main()

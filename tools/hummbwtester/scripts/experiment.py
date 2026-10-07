@@ -21,8 +21,7 @@ except ImportError:
     import ssh_setup
 
 
-MONITORING_COMPOSE = planner.ROOT / "tools" / "hummbwtester" / "monitoring" / "docker-compose.yml"
-LOCAL_PROMETHEUS_PROJECT = "monitoring"
+LOCAL_PROMETHEUS_PROJECT = planner.MONITORING_PROJECT
 LOCAL_PROMETHEUS_CONTAINER = "hummbwtester-prometheus"
 
 
@@ -46,19 +45,11 @@ def load_plan(path: Path, action: str) -> ExperimentPlan:
     return ExperimentPlan(path, config, kind, inventory)
 
 
-def _compose(*args: str) -> list[str]:
-    return ["docker", "compose", "--project-name", LOCAL_PROMETHEUS_PROJECT,
-            "-f", str(MONITORING_COMPOSE), *args]
+_compose = planner.monitoring_compose
 
 
 def _local_prometheus_owner() -> str | None:
-    result = subprocess.run(
-        ["docker", "inspect", "--format",
-         '{{index .Config.Labels "com.docker.compose.project"}}/{{index .Config.Labels "com.docker.compose.service"}}',
-         LOCAL_PROMETHEUS_CONTAINER],
-        check=False, capture_output=True, text=True,
-    )
-    return result.stdout.strip() if result.returncode == 0 else None
+    return planner.local_container_owner(LOCAL_PROMETHEUS_CONTAINER)
 
 
 def _check_local_prometheus_owner() -> bool:
