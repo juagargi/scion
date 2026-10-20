@@ -26,6 +26,7 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/daemon/mock_daemon"
+	daemontypes "github.com/scionproto/scion/pkg/daemon/types"
 	"github.com/scionproto/scion/pkg/segment/iface"
 	dppath "github.com/scionproto/scion/pkg/slayers/path"
 	dpscion "github.com/scionproto/scion/pkg/slayers/path/scion"
@@ -727,23 +728,57 @@ func TestSelectPath(t *testing.T) {
 		}}
 	}
 	viaBR1, viaBR2 := twoHopPath(3, 4), twoHopPath(103, 104)
+	both := []snet.Path{viaBR1, viaBR2}
+	original := pathLookupRetryDelay
+	pathLookupRetryDelay = 0
+	t.Cleanup(func() { pathLookupRetryDelay = original })
 
+	type answer struct {
+		paths []snet.Path
+		err   error
+	}
+	allAttempts := make([]answer, pathLookupRetries+1)
+	for i := range allAttempts {
+		allAttempts[i] = answer{paths: both}
+	}
 	testCases := map[string]struct {
 		sequence string
+		answers  []answer
 		want     snet.Path
 		err      string
 	}{
-		"empty sequence takes the first path": {sequence: "", want: viaBR1},
-		"egress interface":                    {sequence: "0-0#103 0*", want: viaBR2},
-		"full sequence":                       {sequence: "71-1916#103 71-2:0:5c#104", want: viaBR2},
-		"no match":                            {sequence: "0-0#7 0*", err: "no path matches"},
+		"empty sequence takes the first path": {
+			answers: []answer{{paths: both}}, want: viaBR1,
+		},
+		"egress interface": {
+			sequence: "0-0#103 0*", answers: []answer{{paths: both}}, want: viaBR2,
+		},
+		"full sequence": {
+			sequence: "71-1916#103 71-2:0:5c#104", answers: []answer{{paths: both}},
+			want: viaBR2,
+		},
+		"no path at first, then found on a refresh": {
+			sequence: "0-0#103 0*", answers: []answer{{}, {}, {paths: both}}, want: viaBR2,
+		},
+		"no match after all retries": {
+			sequence: "0-0#7 0*", answers: allAttempts, err: "no path matches",
+		},
+		"daemon errors are not retried": {
+			answers: []answer{{err: errors.New("daemon down")}}, err: "daemon down",
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			sdConn := mock_daemon.NewMockConnector(ctrl)
-			sdConn.EXPECT().Paths(gomock.Any(), dst, src, gomock.Any()).
-				Return([]snet.Path{viaBR1, viaBR2}, nil)
+			var calls []*gomock.Call
+			for i, a := range tc.answers {
+				// Only the first lookup may be served from the daemon's cache.
+				flags := daemontypes.PathReqFlags{Refresh: i > 0}
+				calls = append(calls, sdConn.EXPECT().Paths(gomock.Any(), dst, src, flags).
+					Return(a.paths, a.err))
+			}
+			gomock.InOrder(calls...)
 			sequence, err := pathpol.NewSequence(tc.sequence)
 			require.NoError(t, err)
 
