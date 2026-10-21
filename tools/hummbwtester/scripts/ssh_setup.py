@@ -1265,7 +1265,7 @@ def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
     It is the same container, provisioning, dashboards, and volume as in the Docker mode. Its
     data source is http://host.docker.internal:$PROMETHEUS_PORT, which the forward serves on the
     Docker bridge gateway. A running Grafana configured for that port is left alone; otherwise it
-    is (re)created with PROMETHEUS_PORT set to it. Prometheus itself is not started (--no-deps).
+    is recreated with PROMETHEUS_PORT set to it. Prometheus itself is not started (--no-deps).
     """
     owner = workload.local_container_owner(GRAFANA_CONTAINER)
     expected = f"{workload.MONITORING_PROJECT}/grafana"
@@ -1284,8 +1284,12 @@ def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
         if dry_run:
             print(f"dry-run: would {verb} Grafana {change}")
             return
-        subprocess.run(workload.monitoring_compose("up", "-d", "--no-deps", "grafana", quiet=True),
-                       env={**os.environ, "PROMETHEUS_PORT": port}, check=True, text=True)
+        # Recreate rather than restart a stopped container: it may refer to a network that no
+        # longer exists, e.g. after `docker network prune`. Its data is in a named volume.
+        subprocess.run(
+            workload.monitoring_compose(
+                "up", "-d", "--no-deps", "--force-recreate", "grafana", quiet=True),
+            env={**os.environ, "PROMETHEUS_PORT": port}, check=True, text=True)
         done = {"start": "started", "re-point": "re-pointed"}[verb]
         print(f"{done} Grafana {change}")
     if dry_run:

@@ -602,11 +602,14 @@ class GrafanaTest(unittest.TestCase):
             "http://127.0.0.1:3000/api/health", "http://10.200.0.1:18090/-/ready",
         ])
 
-    def test_missing_or_differently_configured_grafana_is_started_without_prometheus(self):
-        for owner, state in ((None, (False, None)), ("monitoring/grafana", (True, "8090"))):
+    def test_missing_stopped_or_differently_configured_grafana_is_recreated(self):
+        for owner, state in ((None, (False, None)), ("monitoring/grafana", (False, "18090")),
+                             ("monitoring/grafana", (True, "8090"))):
             with self.subTest(owner=owner, state=state):
                 run, _ = self.ensure(owner, state)
-                self.assertEqual(run.call_args.args[0][-4:], ["up", "-d", "--no-deps", "grafana"])
+                # Without Prometheus; a stopped container may refer to a removed network.
+                self.assertEqual(run.call_args.args[0][-5:],
+                                 ["up", "-d", "--no-deps", "--force-recreate", "grafana"])
                 self.assertEqual(run.call_args.args[0][1:4], ["compose", "--progress", "quiet"])
                 self.assertEqual(run.call_args.kwargs["env"]["PROMETHEUS_PORT"], "18090")
 
