@@ -1,12 +1,13 @@
 import json
 import io
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
 
-from tools.hummbwtester import orchestration
-from tools.hummbwtester.orchestration import (
+from tools.hummbwtester.scripts import orchestration
+from tools.hummbwtester.scripts.orchestration import (
     ConfigError,
     client_args,
     interface_counters,
@@ -56,14 +57,14 @@ class ConfigTest(unittest.TestCase):
                 "client_id": "alpha", "isd_as": "1-ff00:0:110", "host": "172.20.0.22", "port": 0,
                 "bandwidth": "1Mbps", "maxburst": "2Mbps", "duration": "30s",
             }],
-            "router": {
+            "deployment": {"kind": "docker", "router": {
                 "send_buffer_size": 16384,
                 "receive_buffer_size": 4194304,
                 "ingress_batch_size": 64,
                 "processor_queue_size": 640,
                 "egress_batch_size": 1,
                 "egress_queue_size": 64,
-            },
+            }},
             "tc": {"rate": "10mbit", "burst": "50kb", "limit": "256kb"},
         }
 
@@ -71,7 +72,10 @@ class ConfigTest(unittest.TestCase):
         config = self.base_config()
         config["hummingbird"] = {
             "reservation_source": "marketplace",
-            "marketplace": {"username": "alice", "password": "1234"},
+            "marketplace": {
+                "url": "https://marketplace.invalid", "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD",
+            },
         }
         config["hummingbird_clients"][0]["hummingbird_reservation"].update({
             "bandwidth": "100kbps", "reverse_bandwidth": "1mbps",
@@ -81,7 +85,56 @@ class ConfigTest(unittest.TestCase):
         args = client_args(hummingbird, server, "172.20.0.21:30255")
         self.assertEqual(args[args.index("-hummingbird") + 1], "100kbps,1m,1mbps")
         self.assertNotIn("-hummKeysDir", args)
-        self.assertEqual(hummingbird.marketplace_username, "alice")
+        assert hummingbird.marketplace is not None
+        self.assertEqual(hummingbird.marketplace.username, "alice")
+        self.assertEqual(hummingbird.marketplace.url, "https://marketplace.invalid")
+        self.assertIsNone(hummingbird.marketplace.sub_account)
+        self.assertIsNone(hummingbird.marketplace.host)
+
+    def test_rejects_marketplace_host_in_docker_mode(self):
+        config = self.base_config()
+        config["hummingbird"] = {
+            "reservation_source": "marketplace",
+            "marketplace": {
+                "host": "ufms", "url": "https://127.0.0.1:8888", "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD",
+            },
+        }
+        with self.assertRaisesRegex(ConfigError, "only valid for SSH"):
+            load_config(self.write_config(config))
+
+    def test_rejects_marketplace_interfaces_in_docker_mode(self):
+        config = self.base_config()
+        config["hummingbird"] = {
+            "reservation_source": "marketplace",
+            "marketplace": {
+                "url": "https://127.0.0.1:8888", "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD", "interfaces": {"1-ff00:0:110": [0, 1]},
+            },
+        }
+        with self.assertRaisesRegex(ConfigError, "interfaces is only valid for SSH"):
+            load_config(self.write_config(config))
+
+    def test_ssh_marketplace_must_bind_loopback_addresses(self):
+        orchestration.validate_ssh_marketplace("https://127.0.0.1:8888",
+                                               "[71-2:0:5c,127.0.0.1]:31888")
+        orchestration.validate_ssh_marketplace("https://[::1]:8888", "[71-2:0:5c,::1]:31888")
+        for url, scion_address in (
+                ("https://200.129.206.243:8888", "[71-2:0:5c,127.0.0.1]:31888"),
+                ("http://127.0.0.1:8888", "[71-2:0:5c,127.0.0.1]:31888"),
+                ("https://127.0.0.1", "[71-2:0:5c,127.0.0.1]:31888"),
+                ("https://127.0.0.1:8888", "[71-2:0:5c,10.6.7.1]:31888"),
+                ("https://127.0.0.1:8888", None)):
+            with self.subTest(url=url, scion_address=scion_address), self.assertRaises(ConfigError):
+                orchestration.validate_ssh_marketplace(url, scion_address)
+
+    def test_validates_marketplace_scion_address(self):
+        orchestration.validate_scion_address("[71-2:0:5c,127.0.0.1]:31888", "address")
+        orchestration.validate_scion_address("[1-64512,fd00::1]:31888", "address")
+        for value in ("71-2:0:5c,127.0.0.1:31888", "[71-2:0:5c,host]:31888",
+                      "[71-2:0:5c,127.0.0.1]:70000", "https://127.0.0.1:31888", 31888):
+            with self.subTest(value=value), self.assertRaises(ConfigError):
+                orchestration.validate_scion_address(value, "address")
 
     def test_requires_global_hummingbird_source(self):
         config = self.base_config()
@@ -89,9 +142,26 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
 
-    def test_rejects_marketplace_credentials_in_keys_mode(self):
+    def test_rejects_legacy_two_file_configuration(self):
         config = self.base_config()
-        config["hummingbird"]["marketplace"] = {"username": "alice", "password": "1234"}
+        del config["deployment"]
+        with self.assertRaisesRegex(ConfigError, "merge SSH inventory"):
+            load_config(self.write_config(config))
+
+    def test_cleanup_ignores_an_interrupt_burst(self):
+        with mock.patch.object(orchestration.signal, "signal", side_effect=[
+            KeyboardInterrupt(), mock.sentinel.previous_handler,
+        ]) as set_handler:
+            self.assertIs(orchestration.ignore_sigint_during_cleanup(),
+                          mock.sentinel.previous_handler)
+        self.assertEqual(set_handler.call_count, 2)
+
+    def test_rejects_marketplace_configuration_in_keys_mode(self):
+        config = self.base_config()
+        config["hummingbird"]["marketplace"] = {
+            "url": "https://marketplace.invalid", "username": "alice",
+            "password_env": "MARKETPLACE_PASSWORD",
+        }
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
 
@@ -101,25 +171,35 @@ class ConfigTest(unittest.TestCase):
             (generated / "ASff00_0_111").mkdir()
             (generated / "ASff00_0_111" / "staticInfoConfig.json").write_text(json.dumps({
                 "note": json.dumps({"hummingbird": [{
-                    "api_protocol": "connectrpc/TLS/QUIC/SCION",
-                    "api_address": "[1-ff00:0:111,172.20.0.27]:31888",
-                }, {
                     "api_protocol": "connectrpc/TLS/TCP",
                     "client_registration_website": "https://172.20.0.27:31888",
                 }]})
             }))
             with mock.patch.object(orchestration, "GEN", generated):
-                self.assertEqual(
-                    marketplace_registration_website(), "https://172.20.0.27:31888")
+                self.assertEqual(marketplace_registration_website(), "https://172.20.0.27:31888")
 
     def test_obtains_marketplace_jwt_without_logging_credentials(self):
         completed = mock.Mock(returncode=0, stdout="jwt-value\n", stderr="")
-        with mock.patch.object(orchestration, "marketplace_registration_website",
-                               return_value="https://market.invalid"), \
+        marketplace = orchestration.MarketplaceConfig(
+            "https://market.invalid", "alice", "MARKETPLACE_PASSWORD", "hummbwtester")
+        with mock.patch.dict(orchestration.os.environ, {"MARKETPLACE_PASSWORD": "secret"}), \
              mock.patch.object(orchestration.subprocess, "run", return_value=completed) as run:
-            self.assertEqual(obtain_marketplace_jwt("alice", "1234"), "jwt-value")
+            self.assertEqual(obtain_marketplace_jwt(marketplace), "jwt-value")
         self.assertEqual(run.call_args.kwargs["capture_output"], True)
-        self.assertEqual(run.call_args.args[0][1:4], ["alice", "1234", "https://market.invalid"])
+        command = run.call_args.args[0]
+        self.assertIn("alice", command)
+        self.assertIn("https://market.invalid", command)
+        self.assertIn("MARKETPLACE_PASSWORD", command)
+        self.assertNotIn("secret", command)
+
+    def test_marketplace_url_and_password_env_are_required(self):
+        config = self.base_config()
+        config["hummingbird"] = {
+            "reservation_source": "marketplace",
+            "marketplace": {"username": "alice", "password_env": "MARKETPLACE_PASSWORD"},
+        }
+        with self.assertRaisesRegex(ConfigError, "url"):
+            load_config(self.write_config(config))
 
     def test_clients_are_sorted_for_metrics_ports(self):
         _, clients, _, _ = load_config(self.write_config(self.base_config()))
@@ -186,26 +266,34 @@ class ConfigTest(unittest.TestCase):
             load_config(self.write_config(config))
 
     def test_requires_positive_router_tuning(self):
-        for key in self.base_config()["router"]:
+        for key in self.base_config()["deployment"]["router"]:
             with self.subTest(key=key):
                 config = self.base_config()
-                config["router"][key] = 0
+                config["deployment"]["router"][key] = 0
                 with self.assertRaises(ConfigError):
                     load_config(self.write_config(config))
 
     def test_rejects_legacy_router_batch_size(self):
         config = self.base_config()
-        config["router"]["batch_size"] = 1
+        config["deployment"]["router"]["batch_size"] = 1
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
 
     def test_requires_all_router_tuning_values(self):
-        for key in self.base_config()["router"]:
+        for key in self.base_config()["deployment"]["router"]:
             with self.subTest(key=key):
                 config = self.base_config()
-                del config["router"][key]
+                del config["deployment"]["router"][key]
                 with self.assertRaises(ConfigError):
                     load_config(self.write_config(config))
+
+    def test_rejects_empty_or_non_string_sequence(self):
+        for sequence in ("", " ", 103, ["0-0#103"]):
+            config = self.base_config()
+            config["hummingbird_clients"][0]["sequence"] = sequence
+            with self.subTest(sequence=sequence), \
+                    self.assertRaisesRegex(ConfigError, "sequence must be a non-empty string"):
+                load_config(self.write_config(config))
 
     def test_rejects_latency_instead_of_explicit_limit(self):
         config = self.base_config()
@@ -222,10 +310,11 @@ class ConfigTest(unittest.TestCase):
         self.assertNotIn("-pong-rate", args)
         self.assertNotIn("-renewal-ahead", args)
         self.assertNotIn("-hummingbird", args)
+        self.assertNotIn("-sequence", args)
 
         config = self.base_config()
         config["best_effort_clients"][0].update({
-            "payload_size": 1200, "pong_rate": 2.0,
+            "payload_size": 1200, "pong_rate": 2.0, "sequence": "0-0#103 0*",
         })
         config["hummingbird_clients"][0]["hummingbird_reservation"].update({
             "renewal_ahead": "6s",
@@ -241,6 +330,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(args[args.index("-duration") + 1], "30s")
         self.assertEqual(args[args.index("-payload-size") + 1], "1200")
         self.assertEqual(args[args.index("-pong-rate") + 1], "2.0")
+        self.assertEqual(args[args.index("-sequence") + 1], "0-0#103 0*")
 
         args = client_args(hummingbird, server, "172.20.0.21:30255")
         self.assertEqual(args[args.index("-hummingbird") + 1], "1000,1m,1000")
@@ -358,6 +448,60 @@ class SetupPatchTest(unittest.TestCase):
             ])
 
 
+class DescribeSetupTest(unittest.TestCase):
+    def test_describes_every_step_without_changing_files(self):
+        router = {"send_buffer_size": 16384, "receive_buffer_size": 4194304,
+                  "ingress_batch_size": 64, "processor_queue_size": 640,
+                  "egress_batch_size": 1, "egress_queue_size": 64}
+        tc = {"rate": "10mbit", "burst": "50kb", "limit": "256kb"}
+        server = orchestration.Endpoint("1-ff00:0:112", "172.20.0.30", 12345, 4096)
+        client = mock.Mock(client_id="hummingbird-1", metrics_port=9090,
+                           endpoint=orchestration.Endpoint("1-ff00:0:111", "172.20.0.20", 0))
+        peers = {"br1-ff00_0_111-1": ["172.20.0.3"]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            toml = root / "br1.toml"
+            toml.write_text("[general]\nid = \"br1\"\nbatch_size = 1\n")
+            compose_file = root / "scion-dc.yml"
+            compose_file.write_text("services: {}\n")
+            binary = root / "hummbwtester"
+            binary.write_bytes(b"binary")
+            before = {path: path.read_bytes() for path in (toml, compose_file, binary)}
+            stale = subprocess.CompletedProcess([], 0, "other  /share/bin/hummbwtester\n", "")
+            with mock.patch.object(orchestration, "compose_data",
+                                   return_value={"services": {}}), \
+                 mock.patch.object(orchestration, "validate_endpoints"), \
+                 mock.patch.object(orchestration, "sciond_map", return_value={}), \
+                 mock.patch.object(orchestration, "endpoint_sciond"), \
+                 mock.patch.object(orchestration, "inter_as_router_peers", return_value=peers), \
+                 mock.patch.object(orchestration, "require_built_binary"), \
+                 mock.patch.object(orchestration, "br_config_paths", return_value={"br1": toml}), \
+                 mock.patch.object(orchestration, "COMPOSE", compose_file), \
+                 mock.patch.object(orchestration, "DOCKER_QDISC_STATE", root / "qdiscs.json"), \
+                 mock.patch.object(orchestration, "BIN", binary), \
+                 mock.patch.object(orchestration, "GEN", root / "gen"), \
+                 mock.patch.object(orchestration, "TARGET_DIR", root / "targets"), \
+                 mock.patch.object(orchestration, "run", return_value=stale) as run:
+                steps = orchestration.describe_setup(Path("config.json"),
+                                                     (server, [client], router, tc))
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+            self.assertFalse((root / "qdiscs.json").exists())
+            self.assertFalse((root / "targets").exists())
+        # The only commands run read the binary digest inside the tester containers.
+        self.assertTrue(run.call_args_list)
+        for call in run.call_args_list:
+            self.assertEqual(call.args[0][-5:], ["exec", "-T", call.args[0][-3], "sha256sum",
+                                                 "/share/bin/hummbwtester"])
+        text = "\n".join(steps)
+        for expected in ("would edit 1 border-router configs", "drop the deprecated batch_size",
+                         "would rewrite", "tc helper service per inter-AS border router",
+                         "would run ./scion.sh start", "SCION-ping the server",
+                         "would install TBF qdiscs on br1-ff00_0_111-1 towards 172.20.0.3",
+                         "would copy bin/hummbwtester to /share/bin/hummbwtester in "
+                         "tester_1-ff00_0_111: it differs", "would write the Prometheus targets"):
+            self.assertIn(expected, text)
+
+
 class ReportTest(unittest.TestCase):
     def interfaces(self):
         return [
@@ -373,8 +517,10 @@ class ReportTest(unittest.TestCase):
                 'router_humm_demoted_freshness_total{interface="1",sizeclass="0_63"} 2',
                 'router_humm_demoted_expired_total{interface="1",sizeclass="0_63"} 3',
                 'router_humm_demoted_tokenbucket_total{interface="1",sizeclass="0_63"} 4',
-                'router_dropped_pkts_total{interface="1",reason="busy_forwarder",sizeclass="0_63"} 5',
-                'router_dropped_pkts_total{interface="1",reason="busy_forwarder",sizeclass="64_127"} 6',
+                ('router_dropped_pkts_total{interface="1",reason="busy_forwarder",'
+                 'sizeclass="0_63"} 5'),
+                ('router_dropped_pkts_total{interface="1",reason="busy_forwarder",'
+                 'sizeclass="64_127"} 6'),
             ]),
         })
         self.assertEqual(counters[("br-a", "1")], InterfaceCounters(10, 9, 9, 11))

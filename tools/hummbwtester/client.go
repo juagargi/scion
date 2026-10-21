@@ -39,11 +39,15 @@ import (
 	"github.com/scionproto/scion/pkg/snet"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
 	"github.com/scionproto/scion/private/keyconf"
+	"github.com/scionproto/scion/private/path/pathpol"
 )
 
 // cryptoRandRead is replaceable by tests. Reservation IDs are local client state, rather than a
 // command-line setting, so independently launched clients do not share a token bucket.
 var cryptoRandRead = cryptorand.Read
+
+// pathLookupRetryDelay is the pause before each retry; replaceable by tests.
+var pathLookupRetryDelay = time.Second
 
 func randomHummReservationID() (uint32, error) {
 	var buf [4]byte
@@ -76,6 +80,10 @@ const (
 	// E2E extension option and must stay small.
 	// The variable is used only to precompute the size of the first packet.
 	bidirectionalFirstPacketLen = HeaderLen + bidirectionalFirstPacketPayload
+
+	// pathLookupRetries is how many more times selectPath asks the daemon when no path matches the
+	// sequence: a daemon may answer with no path at all until it has fetched the segments anew.
+	pathLookupRetries = 2
 )
 
 // clientConfig collects every value runClient needs, populated from CLI flags in main.go.
@@ -83,6 +91,8 @@ type clientConfig struct {
 	local  snet.UDPAddr
 	remote snet.UDPAddr
 	sdConn daemon.Connector
+	// sequence restricts the paths the client may use; an empty sequence allows all.
+	sequence *pathpol.Sequence
 
 	bandwidthBps       float64
 	maxBurstBps        float64
@@ -137,7 +147,7 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	}
 	c.metrics.remoteStatsAge.Set(-1)
 
-	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA)
+	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA, cfg.sequence)
 	if err != nil {
 		log.Error("Selecting path", "err", err)
 		return 1
@@ -229,18 +239,43 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	return 0
 }
 
-// selectPath queries the daemon for paths to dst and returns the first candidate.
+// selectPath queries the daemon for paths to dst and returns the first one that matches the
+// sequence. The reservations, if any, are then bought for the hops of that path only.
+// Without a matching path it retries up to pathLookupRetries times, forcing a refresh.
 func selectPath(
-	ctx context.Context, sdConn daemon.Connector, src, dst addr.IA,
+	ctx context.Context, sdConn daemon.Connector, src, dst addr.IA, sequence *pathpol.Sequence,
 ) (snet.Path, error) {
-	paths, err := sdConn.Paths(ctx, dst, src, daemontypes.PathReqFlags{})
-	if err != nil {
-		return nil, serrors.Wrap("requesting paths", err)
+	for attempt := 0; ; attempt++ {
+		paths, err := sdConn.Paths(ctx, dst, src, daemontypes.PathReqFlags{Refresh: attempt > 0})
+		if err != nil {
+			return nil, serrors.Wrap("requesting paths", err)
+		}
+		matching := sequence.Eval(paths)
+		if len(matching) > 0 {
+			path := matching[0]
+			if desc, err := pathpol.GetSequence(path); err == nil {
+				log.Info("Selected path", "sequence", desc, "matching", len(matching),
+					"paths", len(paths), "attempt", attempt+1)
+			}
+			return path, nil
+		}
+		if len(paths) == 0 {
+			err = serrors.New("no path found", "src", src, "dst", dst)
+		} else {
+			err = serrors.New("no path matches the sequence",
+				"src", src, "dst", dst, "sequence", sequence.String(), "paths", len(paths))
+		}
+		if attempt == pathLookupRetries {
+			return nil, serrors.Wrap("no usable path after retries", err, "attempts", attempt+1)
+		}
+		log.Info("No usable path, retrying", "err", err, "retry", attempt+1,
+			"retries", pathLookupRetries)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(pathLookupRetryDelay):
+		}
 	}
-	if len(paths) == 0 {
-		return nil, serrors.New("no path found", "src", src, "dst", dst)
-	}
-	return paths[0], nil
 }
 
 // buildReservation obtains a fresh forward (and, if configured, reverse) Hummingbird

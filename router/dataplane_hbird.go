@@ -162,9 +162,6 @@ func (p *scionPacketProcessor) validateReservationExpiry(sc sizeClass) dispositi
 	if startTime.Before(now) && now.Before(endTime) {
 		return pForward
 	}
-	log.Debug("Hummingbird reservation is not valid at current time, forwarding best-effort",
-		"reservation start", startTime,
-		"reservation end", endTime, "now", now)
 	p.pkt.PriorityLabel = pr.WithBestEffort
 	p.pkt.Link.Metrics()[sc].HummDemotedExpiredPkts.Inc()
 	return pForward
@@ -185,7 +182,11 @@ func (p *scionPacketProcessor) currentHbirdHopPointer() uint16 {
 		hummingbird.LineLen*int(p.hbirdPath.PathMeta.CurrHF))
 }
 
-// Returns the ingress and egress through which the current packet enters and leves the AS
+// Returns the ingress and egress through which the current packet enters and leaves the AS.
+// 0 stands for the AS itself: a packet sent from it has ingress 0, one delivered to it egress 0.
+// This holds even when the hop field names an interface there: a path that starts or ends inside
+// a segment (e.g. from an AS in the middle of a down segment) keeps that AS's hop field intact,
+// including the interface towards the part of the segment that the path does not traverse.
 func (p *scionPacketProcessor) getFlyoverInterfaces() (uint16, uint16, disposition) {
 	ingress := p.hopField.ConsIngress
 	egress := p.hopField.ConsEgress
@@ -208,6 +209,15 @@ func (p *scionPacketProcessor) getFlyoverInterfaces() (uint16, uint16, dispositi
 			return 0, 0, errorDiscard("error", err)
 		}
 	}
+	// Check if the packet originated inside this AS. If so, the flyover must have been obtained
+	// using ingress=0, so ignore the hop field ingress ID and use 0. (also see validateIngressID)
+	if p.ingressFromLink == 0 && p.hbirdPath.IsFirstHop() {
+		ingress = 0
+	}
+	// Same as above, but for packets delivered in this AS.
+	if p.hbirdPath.IsLastHop() && p.scionLayer.DstIA == p.d.localIA {
+		egress = 0
+	}
 	return ingress, egress, pForward
 }
 
@@ -218,6 +228,8 @@ func (p *scionPacketProcessor) verifyHbirdScionMac() disposition {
 	scionMac := path.FullMAC(p.mac, p.infoField, p.hopField, p.macInputBuffer[:path.MACBufferSize])
 	verified := subtle.ConstantTimeCompare(p.hopField.Mac[:path.MacLen], scionMac[:path.MacLen])
 	if verified == 0 {
+		sc := ClassOfSize(len(p.pkt.RawPacket))
+		p.pkt.Link.Metrics()[sc].HummMACVerificationFailures.Inc()
 		log.Debug("SCMP: MAC verification failed", "expected", fmt.Sprintf(
 			"%x", scionMac[:path.MacLen]),
 			"actual", fmt.Sprintf("%x", p.hopField.Mac[:path.MacLen]),
@@ -257,26 +269,6 @@ func (p *scionPacketProcessor) verifyHbirdFlyoverMac() disposition {
 		p.flyoverField.Duration,
 		p.macInputBuffer[path.MACBufferSize+hummingbird.FlyoverMacBufferSize:],
 	)
-	log.Debug("Hummingbird packet AK derived",
-		"ak", fmt.Sprintf("%x", ak),
-		"cons_dir", p.infoField.ConsDir,
-		"if_id", p.ingressFromLink,
-		"curr_inf", p.hbirdPath.PathMeta.CurrINF,
-		"curr_hf", p.hbirdPath.PathMeta.CurrHF,
-		"seg_id", p.infoField.SegID,
-		"dest", p.scionLayer.DstIA,
-		"packet_length", p.scionLayer.PacketLen(),
-		"res_id", p.flyoverField.ResID,
-		"bw", p.flyoverField.Bw,
-		"ingress", ingress,
-		"egress", egress,
-		"cons_ingress", p.hopField.ConsIngress,
-		"cons_egress", p.hopField.ConsEgress,
-		"start_time", p.hbirdPath.PathMeta.BaseTS-uint32(p.flyoverField.ResStartTime),
-		"res_start_time", p.flyoverField.ResStartTime,
-		"duration", p.flyoverField.Duration,
-		"high_res_ts", p.hbirdPath.PathMeta.HighResTS,
-	)
 	flyoverMac = hummingbird.FullFlyoverMac(ak, p.scionLayer.DstIA, p.scionLayer.PacketLen(),
 		p.flyoverField.ResStartTime, p.hbirdPath.PathMeta.HighResTS,
 		p.macInputBuffer[path.MACBufferSize:], p.hbirdXkbuffer)
@@ -292,6 +284,8 @@ func (p *scionPacketProcessor) verifyHbirdFlyoverMac() disposition {
 	macXor(flyoverMac[:], scionMac[:], flyoverMac[:])
 	verified = subtle.ConstantTimeCompare(p.hopField.Mac[:path.MacLen], flyoverMac[:path.MacLen])
 	if verified == 0 {
+		sc := ClassOfSize(len(p.pkt.RawPacket))
+		p.pkt.Link.Metrics()[sc].HummMACVerificationFailures.Inc()
 		log.Debug("SCMP: Aggregate MAC verification failed",
 			"expected", fmt.Sprintf("%x", flyoverMac[:path.MacLen]),
 			"actual", fmt.Sprintf("%x", p.hopField.Mac[:path.MacLen]),
@@ -413,9 +407,6 @@ func (p *scionPacketProcessor) validatePathMetaTimestamp(sc sizeClass) {
 
 	if time.Until(timestamp).Abs() > MaxFreshnessTolerance {
 		// Forward with best-effort if timestamp is too old.
-		log.Debug("packet is not fresh, demoting",
-			"timestamp", timestamp.Format(time.StampMilli),
-			"now", time.Now().Format(time.StampMilli))
 		p.pkt.PriorityLabel = pr.WithBestEffort
 		p.pkt.Link.Metrics()[sc].HummDemotedFreshnessPkts.Inc()
 	}
@@ -429,7 +420,6 @@ func (p *scionPacketProcessor) checkReservationBandwidth(sc sizeClass) dispositi
 	// Only check bandwidth if packet is given priority.
 	// Bandwidth check is NOT performed for late packets that have flyover but no priority.
 	if p.pkt.PriorityLabel != pr.WithPriority {
-		log.Debug("hummingbird packet is best-effort. Not checking BW")
 		return pForward
 	}
 	// resID only has to be unique per interface pair
@@ -443,9 +433,6 @@ func (p *scionPacketProcessor) checkReservationBandwidth(sc sizeClass) dispositi
 	resKey := uint64(p.flyoverField.ResID) + uint64(ingress)<<22 + uint64(egress)<<38
 	resBw := tokenbucket.ConvertBW(p.flyoverField.Bw)
 	now := time.Now()
-	log.Debug("hummingbird checking BW via token bucket",
-		"bw", p.flyoverField.Bw,
-		"real_bw", resBw)
 	v, _ := p.d.tokenBuckets.LoadOrStore(
 		resKey,
 		tokenbucket.NewTokenBucket(now, resBw, resBw))
@@ -461,12 +448,8 @@ func (p *scionPacketProcessor) checkReservationBandwidth(sc sizeClass) dispositi
 	// they do not overlap in time. Reconfiguration and application must be one
 	// atomic operation because packets are processed concurrently.
 	if !tb.ReconfigureAndApply(int(p.scionLayer.PayloadLen), time.Now(), resBw, resBw) {
-		log.Debug("hummingbird packet exceeding allowed bandwidth token bucket, demoting",
-			"resID", p.flyoverField.ResID)
 		p.pkt.PriorityLabel = pr.WithBestEffort
 		p.pkt.Link.Metrics()[sc].HummDemotedTokenBucketPkts.Inc()
-	} else {
-		log.Debug("hummingbird checking BW: packet fits into bucket")
 	}
 	return pForward
 }

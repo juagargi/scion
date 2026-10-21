@@ -430,14 +430,46 @@ def interfacePairs(ifids):
     return pairs
 
 
-def defaultEntries(gen_dir, now=None):
-    """Builds the default users, ASes, assets and delegations for a topology."""
+def hummingbirdPairs(ases, interfaces):
+    """The (ingress, egress) pairs of every AS, restricted to its Hummingbird interfaces.
+
+    interfaces maps an IA to the IDs of its interfaces that support Hummingbird, where 0
+    stands for flyovers that start or end in the AS. The pairs are then every ordered pair
+    of distinct listed IDs, and an AS that is not listed gets none. Without interfaces,
+    every interface supports Hummingbird (see interfacePairs).
+    """
+    if interfaces is None:
+        return {ia: interfacePairs(ifids) for ia, ifids, _ in ases}
+    known = {ia: ifids for ia, ifids, _ in ases}
+    for ia, ids in interfaces.items():
+        if ia not in known:
+            raise MarketplaceError("Hummingbird interfaces of %s, which is not in the topology"
+                                   % ia)
+        missing = sorted(set(ids) - set(known[ia]) - {0})
+        if missing:
+            raise MarketplaceError("%s has no interfaces %s" % (ia, missing))
+    return {
+        ia: [(i, e) for i in interfaces.get(ia, ()) for e in interfaces.get(ia, ()) if i != e]
+        for ia in known
+    }
+
+
+def defaultEntries(gen_dir, now=None, secret_values=None, interfaces=None):
+    """Builds the default users, ASes, assets and delegations for a topology.
+
+    secret_values optionally maps an IA to its Hummingbird secret value; an AS without one
+    gets the value derived from the master key in its gen directory. This lets the SSH
+    experiment setup derive the values on the hosts, so that master keys are never copied.
+    interfaces optionally restricts the assets to the Hummingbird interfaces of each AS
+    (see hummingbirdPairs).
+    """
     if now is None:
         now = datetime.now(timezone.utc)
     startsAt = now.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
     stopsAt = (now + DEFAULT_ASSET_DURATION).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     ases = loadTopology(gen_dir)
+    pairs = hummingbirdPairs(ases, interfaces)
     assets = [
         {
             "ia": ia,
@@ -453,8 +485,8 @@ def defaultEntries(gen_dir, now=None):
             "ingress": ingress,
             "egress": egress,
         }
-        for ia, ifids, _ in ases
-        for ingress, egress in interfacePairs(ifids)
+        for ia, _, _ in ases
+        for ingress, egress in pairs[ia]
     ]
     return {
         "users": [
@@ -480,7 +512,8 @@ def defaultEntries(gen_dir, now=None):
                 "res_id_limit_high": DEFAULT_DELEGATION_RES_ID_LIMIT_HIGH,
                 "expiration": stopsAt,
                 "paid_until": stopsAt,
-                "key": secretValue(as_dir).hex(),
+                "key": (secret_values[ia] if secret_values and ia in secret_values
+                        else secretValue(as_dir)).hex(),
                 "encodings": encodingPoints(),
             }
             for ia, _, as_dir in ases

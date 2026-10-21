@@ -129,6 +129,55 @@ func TestWithScionDataplane(t *testing.T) {
 	checkHop(t, r.Hops[3], "", 1, 0, true)
 }
 
+// TestWithScionDataplaneCutSegment checks a reservation for a path that starts inside a
+// segment, as SCIERA 71-1916 -> 71-2:0:5c: the flyovers are bought for the hops of the path
+// metadata, 71-1916 0->103, while the first hop field still reads 2->103.
+func TestWithScionDataplaneCutSegment(t *testing.T) {
+	const referenceEpochTime uint32 = 123456
+	referenceTime := util.SecsToTime(referenceEpochTime)
+	src, dst := addr.MustParseIA("71-1916"), addr.MustParseIA("71-2:0:5c")
+
+	scionDec := &scion.Decoded{
+		Base: scion.Base{
+			PathMeta: scion.MetaHdr{SegLen: [3]uint8{2, 0, 0}},
+			NumINF:   1,
+			NumHops:  2,
+		},
+		InfoFields: []dppath.InfoField{
+			{ConsDir: true, Timestamp: util.TimeToSecs(referenceTime)},
+		},
+		HopFields: []dppath.HopField{
+			{ConsIngress: 2, ConsEgress: 103, ExpTime: 8},
+			{ConsIngress: 104, ConsEgress: 0, ExpTime: 8},
+		},
+	}
+	snetScion := path.SCION{Raw: make([]byte, scionDec.Len())}
+	require.NoError(t, scionDec.SerializeTo(snetScion.Raw))
+
+	sequence := func(srcEgress uint16) path.FlyoverSequence {
+		return path.FlyoverSequence{
+			&path.Hop{
+				BaseHop: path.BaseHop{IA: src, Ingress: 0, Egress: srcEgress},
+				Flyover: createFlyover(t, referenceEpochTime),
+			},
+			&path.Hop{
+				BaseHop: path.BaseHop{IA: dst, Ingress: 104, Egress: 0},
+				Flyover: createFlyover(t, referenceEpochTime),
+			},
+		}
+	}
+
+	r, err := path.NewReservation(path.WithDataplanePath(snetScion, dst, sequence(103)))
+	require.NoError(t, err)
+	require.Len(t, r.Hops, 2)
+	checkHop(t, r.Hops[0], "71-1916", 0, 103, true)
+	checkHop(t, r.Hops[1], "71-2:0:5c", 104, 0, true)
+
+	// A flyover for an interface the path does not use is still rejected.
+	_, err = path.NewReservation(path.WithDataplanePath(snetScion, dst, sequence(3)))
+	require.ErrorContains(t, err, "mismatch hop parameter and data-plane")
+}
+
 func TestWithHummDataplane(t *testing.T) {
 	const referenceEpochTime uint32 = 123456
 	referenceTime := util.SecsToTime(referenceEpochTime)
@@ -572,6 +621,29 @@ func TestDataplaneToBaseHops(t *testing.T) {
 				{Ingress: 0, Egress: 41}, {Ingress: 71, Egress: 72}, {Ingress: 1, Egress: 0},
 			},
 			wantIndices: []uint8{0, 1, 3},
+		},
+		// SCIERA 71-1916 -> 71-2:0:5c: a down segment from a core AS enters 71-1916 through
+		// interface 2 and leaves through 103 towards its child. A path from 71-1916 uses the
+		// segment from there on, keeping the hop field 2->103, but the packet is sent from
+		// 71-1916 itself: its ingress is 0, as the border router uses for the flyover.
+		"one segment, cut at its start": {
+			infos: []dppath.InfoField{{ConsDir: true}},
+			hops: [][]dphumm.FlyoverHopField{
+				{flyover(2, 103), flyover(104, 0)},
+			},
+			wantHops:    []path.BaseHop{{Ingress: 0, Egress: 103}, {Ingress: 104, Egress: 0}},
+			wantIndices: []uint8{0, 1},
+		},
+		// The reverse path, 71-2:0:5c -> 71-1916, uses the up segment of 71-2:0:5c cut at
+		// 71-1916: against construction direction its hop field reads 103->2, but the packet is
+		// delivered in 71-1916, so its egress is 0.
+		"one segment, cut at its end": {
+			infos: []dppath.InfoField{{ConsDir: false}},
+			hops: [][]dphumm.FlyoverHopField{
+				{plain(104, 0), plain(2, 103)},
+			},
+			wantHops:    []path.BaseHop{{Ingress: 0, Egress: 104}, {Ingress: 103, Egress: 0}},
+			wantIndices: []uint8{0, 1},
 		},
 		"three segments, two crossovers": {
 			infos: []dppath.InfoField{{ConsDir: false}, {ConsDir: true}, {ConsDir: true}},

@@ -906,6 +906,60 @@ func TestProcessHbirdPacket(t *testing.T) {
 			},
 			assertFunc: notDiscarded,
 		},
+		// A path that starts in the middle of a down segment: the flyover is for ingress 0.
+		"outbound_cut_segment_flyover": {
+			prepareDP: func() *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{
+						2: topology.Parent,
+						1: topology.Child,
+					},
+					nil, // No special connOpener.
+					mockInternalNextHops,
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
+				return cutSegmentOutboundPkt(t, now, key, hbirdKey, 0, 0, 1, afterProcessing)
+			},
+			assertFunc: notDiscarded,
+		},
+		// The same hop field, but the path entered this AS through interface 2: not cut.
+		"brtransit_first_hop_from_link_flyover": {
+			prepareDP: func() *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{
+						2: topology.Parent,
+						1: topology.Child,
+					},
+					nil, // No special connOpener.
+					mockInternalNextHops,
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
+				return cutSegmentOutboundPkt(t, now, key, hbirdKey, 2, 2, 1, afterProcessing)
+			},
+			assertFunc: notDiscarded,
+		},
+		// A path that ends in the middle of an up segment: the flyover is for egress 0.
+		"inbound_cut_segment_flyover": {
+			prepareDP: func() *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{
+						2: topology.Parent,
+						1: topology.Child,
+					},
+					nil, // No special connOpener.
+					mockInternalNextHops,
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
+				return cutSegmentInboundPkt(t, now, key, hbirdKey, 1, 0, afterProcessing)
+			},
+			assertFunc: notDiscarded,
+		},
 		"reservation_expired_flyover": {
 			prepareDP: func() *router.DataPlane {
 				return router.NewDPWithHummingbirdKey(
@@ -1696,6 +1750,49 @@ func TestProcessHbirdPacket(t *testing.T) {
 	}
 }
 
+// TestProcessHbirdCutSegmentFlyoverInterfaces checks that, where a path starts or ends inside a
+// segment, the router authenticates the flyover for interface 0, which the packet really used,
+// and not for the hop field's interface towards the part of the segment that the path skips.
+// The accepted counterparts are the *_cut_segment_flyover cases of TestProcessHbirdPacket.
+func TestProcessHbirdCutSegmentFlyoverInterfaces(t *testing.T) {
+	key := []byte("testkey_xxxxxxxx")
+	hbirdKey := []byte("test_secretvalue")
+	now := time.Now()
+
+	testCases := map[string]func(*testing.T) *router.Packet{
+		"sent from the AS, flyover for the hop field's ingress": func(t *testing.T) *router.Packet {
+			return cutSegmentOutboundPkt(t, now, key, hbirdKey, 0, 2, 1, false)
+		},
+		"entered through the hop field's ingress, flyover for ingress 0": func(
+			t *testing.T,
+		) *router.Packet {
+			return cutSegmentOutboundPkt(t, now, key, hbirdKey, 2, 0, 1, false)
+		},
+		"delivered to the AS, flyover for the hop field's egress": func(t *testing.T) *router.Packet {
+			return cutSegmentInboundPkt(t, now, key, hbirdKey, 1, 2, false)
+		},
+	}
+	for name, mockPkt := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dp := router.NewDPWithHummingbirdKey(
+				[]uint16{1, 2},
+				map[uint16]topology.LinkType{
+					2: topology.Parent,
+					1: topology.Child,
+				},
+				nil,
+				map[uint16]netip.AddrPort{},
+				addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			pkt := mockPkt(t)
+			assert.Equal(t, router.PSlowPath, dp.ProcessPkt(pkt))
+			request := router.ExtractSlowPathRequest(pkt)
+			assert.Equal(t, int8(slayers.SCMPTypeParameterProblem), request.SPType)
+			assert.Equal(t, slayers.SCMPCodeInvalidHopFieldMAC, request.Code)
+		})
+	}
+}
+
 // TestHbirdTokenBucketReservationIdentityAndConcurrency checks that the per-reservation token
 // bucket used by checkReservationBandwidth is keyed by reservation ID and ingress/egress
 // interfaces (not bandwidth), and that concurrent packets for the same reservation are
@@ -2368,6 +2465,94 @@ func directASTransitPkt(
 	// on which this AS received the packet before internal forwarding.
 	pkt.Link = router.ExtractInterfaces(dp)[1]
 	return pkt
+}
+
+// cutSegmentOutboundPkt builds a packet whose path starts at the local AS 1-ff00:0:110 in the
+// middle of a down segment, like a path from a non-core AS to its child:
+// the PCB used ingress=2, egress=1.
+// `fromLink` is the interface the router receives the packet on; 0 for inside the AS.
+// The flyover is authenticated for flyoverIngress and flyoverEgress.
+func cutSegmentOutboundPkt(
+	t *testing.T,
+	now time.Time,
+	key []byte,
+	hbirdKey []byte,
+	fromLink uint16,
+	flyoverIngress uint16,
+	flyoverEgress uint16,
+	afterProcessing bool,
+) *router.Packet {
+	t.Helper()
+	spkt, dpath := prepHbirdMsg(now)
+	if fromLink == 0 {
+		spkt.SrcIA = addr.MustParseIA("1-ff00:0:110")
+	}
+	dpath.HopFields = []hummingbird.FlyoverHopField{
+		{HopField: path.HopField{ConsIngress: 2, ConsEgress: 1},
+			Flyover: true, ResID: 42, ResStartTime: 5, Duration: 301, Bw: 129},
+		{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
+	}
+	dpath.PathMeta.CurrHF = 0
+	dpath.PathMeta.SegLen[0] = 5 + 3 // 1 flyover + 1 hop
+	dpath.NumLines = 5 + 3
+	dpath.HopFields[0].HopField.Mac = computeAggregateMacForInterfaces(
+		t, key, hbirdKey, spkt, dpath, flyoverIngress, flyoverEgress,
+		dpath.InfoFields[0], dpath.HopFields[0], dpath.PathMeta)
+	egress := uint16(0)
+	if afterProcessing {
+		dpath.HopFields[0].HopField.Mac = computeMAC(t, key, dpath.InfoFields[0],
+			dpath.HopFields[0].HopField)
+		require.NoError(t, dpath.IncPath(hummingbird.FlyoverLines))
+		dpath.InfoFields[0].UpdateSegID(dpath.HopFields[0].HopField.Mac)
+		egress = 1
+	}
+	return router.NewPacket(toBytes(t, spkt, dpath), nil, nil, fromLink, egress,
+		pr.WithPriority)
+}
+
+// cutSegmentInboundPkt builds a packet of the reverse path, from a child to the parent AS
+// 1-ff00:0:110, which uses the child's up segment cut at that 1-ff00:0:110 AS:
+// the hop field for 1-ff00:0:110 has the PCB values consIngress=2, consEgress=1,
+// but they are traversed against construction direction.
+// The packet is delivered to 1-ff00:0:110, so the effective flyover egress is usually 0
+// (but this function allows any value specified in flyoverEgress).
+func cutSegmentInboundPkt(
+	t *testing.T,
+	now time.Time,
+	key []byte,
+	hbirdKey []byte,
+	flyoverIngress uint16,
+	flyoverEgress uint16,
+	afterProcessing bool,
+) *router.Packet {
+	t.Helper()
+	spkt, dpath := prepHbirdMsg(now)
+	spkt.DstIA = addr.MustParseIA("1-ff00:0:110")
+	dst := addr.MustParseHost("10.0.100.100")
+	require.NoError(t, spkt.SetDstAddr(dst))
+	dpath.InfoFields[0].ConsDir = false
+	dpath.HopFields = []hummingbird.FlyoverHopField{
+		{HopField: path.HopField{ConsIngress: 41, ConsEgress: 0}},
+		{HopField: path.HopField{ConsIngress: 2, ConsEgress: 1},
+			Flyover: true, ResID: 42, ResStartTime: 5, Duration: 301, Bw: 129},
+	}
+	dpath.PathMeta.CurrHF = 3
+	dpath.PathMeta.SegLen[0] = 3 + 5 // 1 hop + 1 flyover
+	dpath.NumLines = 3 + 5
+	dpath.HopFields[1].HopField.Mac = computeAggregateMacForInterfaces(
+		t, key, hbirdKey, spkt, dpath, flyoverIngress, flyoverEgress,
+		dpath.InfoFields[0], dpath.HopFields[1], dpath.PathMeta)
+	var dstAddr *net.UDPAddr
+	if afterProcessing {
+		dpath.HopFields[1].HopField.Mac = computeMAC(t, key, dpath.InfoFields[0],
+			dpath.HopFields[1].HopField)
+		dstAddr = &net.UDPAddr{IP: dst.IP().AsSlice(), Port: dstUDPPort}
+	} else {
+		// Against construction direction.
+		dpath.InfoFields[0].UpdateSegID(
+			computeMAC(t, key, dpath.InfoFields[0], dpath.HopFields[1].HopField))
+	}
+	return router.NewPacket(toBytes(t, spkt, dpath), nil, dstAddr, 1, 0, pr.WithPriority)
 }
 
 // invalidHbirdPosition selects where in the path invalidHbirdPkt places the packet's current

@@ -485,6 +485,14 @@ func (r *Reservation) SetHopAndFlyover(
 		}
 	default:
 	}
+	// Sent from, or delivered to, this AS: ingress/egress must be 0.
+	// E.g. down segment A->B->C, SRC=B, DST=C. The HF at B contains ingress different than 0,
+	// but the flyover at B will be ingress=0.
+	if hfIdx == 0 {
+		in = 0
+	} else if int(hfIdx) == len(r.Dec.HopFields)-1 {
+		eg = 0
+	}
 	if in != hop.Ingress || eg != hop.Egress {
 		return serrors.New("inconsistent flyover ingress/egress for dataplane",
 			"flyover", fmt.Sprintf("in:%d, eg:%d", hop.Ingress, hop.Egress),
@@ -549,8 +557,9 @@ func hummDataplaneToBaseHops(dec *hummingbird.Decoded) ([]BaseHop, []uint8, erro
 // hfCountPerSegment: number of hop fields, per segment. Not lines, but actual hop field count.
 // getHF: function to return hop field i.
 // Returns:
-// - BaseHop sequence, ingress/egress in the right order, and crossover hops merged.
-// - Index sequence (crossover hops not present in this sequence).
+//   - BaseHop sequence, ingress/egress in the right order, and crossover hops merged.
+//     The first ingress and the last egress are always 0.
+//   - Index sequence (crossover hops not present in this sequence).
 func dataplaneToBaseHops(
 	numINF int,
 	getINF func(i int) dppath.InfoField,
@@ -604,6 +613,13 @@ func dataplaneToBaseHops(
 			}
 			hfIdx++
 		}
+	}
+	// A path that starts or ends inside a segment keeps the whole hop field of that AS,
+	// including its interface towards the part of the segment that the path skips. The packet
+	// is sent from, or delivered to, that AS itself: like the border router, use 0 there.
+	if len(baseHops) > 0 {
+		baseHops[0].Ingress = 0
+		baseHops[len(baseHops)-1].Egress = 0
 	}
 
 	return baseHops, indices, nil

@@ -90,6 +90,10 @@ func newConnUDPIPv4(listen, remote netip.AddrPort, cfg *Config) (*connUDPIPv4, e
 // It returns the number of packets read, and an error if any.
 func (c *connUDPIPv4) ReadBatch(msgs Messages) (int, error) {
 	n, err := c.pconn.ReadBatch(msgs, syscallMSG_WAITFORONE)
+	// On error, x/net propagates the raw recvmmsg return value, which is -1.
+	if n < 0 {
+		n = 0
+	}
 	c.recordReceiveOverflow(msgs[:n])
 	return n, err
 }
@@ -129,6 +133,10 @@ func newConnUDPIPv6(listen, remote netip.AddrPort, cfg *Config) (*connUDPIPv6, e
 // It returns the number of packets read, and an error if any.
 func (c *connUDPIPv6) ReadBatch(msgs Messages) (int, error) {
 	n, err := c.pconn.ReadBatch(msgs, syscallMSG_WAITFORONE)
+	// On error, x/net propagates the raw recvmmsg return value, which is -1.
+	if n < 0 {
+		n = 0
+	}
 	c.recordReceiveOverflow(msgs[:n])
 	return n, err
 }

@@ -74,8 +74,14 @@ import (
 //	Invalid outbound destination IA/SCMP  x            x
 //	Ingress router alert                  x            x
 //	Egress router alert                   x            x
+//	Path starting inside a segment                     x
+//	Path ending inside a segment                       x
+//	First hop entering from a link                     x
 //
 // Notes on other not present test cases from router/dataplane_hbird_test.go:
+// TestProcessHbirdCutSegmentFlyoverInterfaces (a cut-segment flyover bound to the hop field's
+// interfaces is rejected) remains unit-only: the SCMP cases here cannot quote such a failure on
+// the outbound side, and the accepted cases below already show the interfaces the router uses.
 // Reversed-path conversion is a test-fixture operation, not behavior visible on the wire.
 // Key lifecycle, token-bucket identity and concurrency, priority labels, and token accounting
 // remain unit-only as they are internal state rather than distinct wire behavior.
@@ -123,7 +129,8 @@ func HummingbirdFlyoverInbound(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdInbound(artifactsDir, mac, sv, true, "HummingbirdFlyoverInbound")
+	return hummingbirdInbound(
+		artifactsDir, mac, sv, hbirdModeDeliver, true, "HummingbirdFlyoverInbound")
 }
 
 // HummingbirdFlyoverOutbound checks outbound forwarding, flyover.
@@ -133,8 +140,47 @@ func HummingbirdFlyoverOutbound(
 	mac hash.Hash,
 	sv []byte,
 ) runner.Case {
-	return hummingbirdOutbound(
-		artifactsDir, mac, sv, true, "HummingbirdFlyoverOutbound")
+	return hummingbirdFirstHop(
+		artifactsDir, mac, sv, hbirdModeOriginate, true, "HummingbirdFlyoverOutbound")
+}
+
+// HummingbirdFlyoverOutboundCutSegment checks outbound forwarding on a path that starts in this
+// AS in the middle of a down segment: the first hop field keeps parent interface 131, through
+// which the segment's beacon entered, and the flyover is for ingress 0.
+// It matches TestProcessHbirdPacket/outbound_cut_segment_flyover.
+func HummingbirdFlyoverOutboundCutSegment(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+) runner.Case {
+	return hummingbirdFirstHop(artifactsDir, mac, sv, hbirdModeOriginateCut, true,
+		"HummingbirdFlyoverOutboundCutSegment")
+}
+
+// HummingbirdFlyoverFirstHopFromLink checks a first hop field like the one of
+// HummingbirdFlyoverOutboundCutSegment, but on a packet that entered through its ingress 131:
+// that path is not cut, and the flyover is for ingress 131.
+// It matches TestProcessHbirdPacket/brtransit_first_hop_from_link_flyover.
+func HummingbirdFlyoverFirstHopFromLink(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+) runner.Case {
+	return hummingbirdFirstHop(artifactsDir, mac, sv, hbirdModeBRTransit, true,
+		"HummingbirdFlyoverFirstHopFromLink")
+}
+
+// HummingbirdFlyoverInboundCutSegment checks inbound delivery on a path that ends in this AS in
+// the middle of an up segment: the last hop field, against construction direction,
+// keeps parent interface 131 as egress, and the flyover is for egress 0.
+// It matches TestProcessHbirdPacket/inbound_cut_segment_flyover.
+func HummingbirdFlyoverInboundCutSegment(
+	artifactsDir string,
+	mac hash.Hash,
+	sv []byte,
+) runner.Case {
+	return hummingbirdInbound(artifactsDir, mac, sv, hbirdModeDeliverCut, true,
+		"HummingbirdFlyoverInboundCutSegment")
 }
 
 // HummingbirdBestEffortChildToChildXover checks same-BR cross-over, best-effort.
@@ -148,14 +194,15 @@ func HummingbirdBestEffortChildToChildXover(artifactsDir string, mac hash.Hash, 
 // HummingbirdBestEffortInbound checks inbound delivery, best-effort.
 // It matches TestProcessHbirdPacket/inbound_best-effort.
 func HummingbirdBestEffortInbound(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdInbound(artifactsDir, mac, sv, false, "HummingbirdBestEffortInbound")
+	return hummingbirdInbound(
+		artifactsDir, mac, sv, hbirdModeDeliver, false, "HummingbirdBestEffortInbound")
 }
 
 // HummingbirdBestEffortOutbound checks outbound forwarding, best-effort.
 // It matches TestProcessHbirdPacket/outbound_best-effort.
 func HummingbirdBestEffortOutbound(artifactsDir string, mac hash.Hash, sv []byte) runner.Case {
-	return hummingbirdOutbound(
-		artifactsDir, mac, sv, false, "HummingbirdBestEffortOutbound")
+	return hummingbirdFirstHop(
+		artifactsDir, mac, sv, hbirdModeOriginate, false, "HummingbirdBestEffortOutbound")
 }
 
 // HummingbirdBestEffortChildToInternalParent checks direct AS transit, ingress BR, best-effort.
@@ -546,6 +593,7 @@ func hummingbirdInbound(
 	artifactsDir string,
 	mac hash.Hash,
 	sv []byte,
+	mode hbirdMode,
 	flyover bool,
 	name string,
 ) runner.Case {
@@ -558,9 +606,14 @@ func hummingbirdInbound(
 	// Canonical path with the destination-leaf hop (AS1) current: construction
 	// direction, entering this AS on child 141 (ConsIngress), delivered locally.
 	now := time.Now()
-	result := hbirdPath(mac, sv, hbirdDeliver, hbirdModeDeliver, flyover,
+	result := hbirdPath(mac, sv, hbirdDeliver, mode, flyover,
 		uint16(hbirdScionUDPPayloadLen), now)
 	scionL := result.SCION
+	info := &result.Decoded.InfoFields[result.CurrentINF]
+	if !info.ConsDir {
+		// Against construction direction: the ingress SegID is derived from the SCION MAC.
+		info.UpdateSegID(result.ScionMAC[result.Current])
+	}
 
 	scionudp := &slayers.UDP{}
 	scionudp.SrcPort = 2345
@@ -579,8 +632,12 @@ func hummingbirdInbound(
 
 	// Expected: delivered to the local host 192.168.0.51 on the internal
 	// interface; the path is not advanced. Flyover de-aggregates the current hop
-	// MAC; best-effort already carries the plain MAC.
+	// MAC; best-effort already carries the plain MAC. Against construction
+	// direction the router has restored the SegID (a second, self-canceling XOR).
 	result.DeAggregateCurrent()
+	if !info.ConsDir {
+		info.UpdateSegID(result.ScionMAC[result.Current])
+	}
 	outputLink := result.OutLink
 	want := gopacket.NewSerializeBuffer()
 	if err := gopacket.SerializeLayers(want, options,
@@ -594,22 +651,22 @@ func hummingbirdInbound(
 		artifactsDir, name, inputLink.device, outputLink.device, input.Bytes(), want.Bytes())
 }
 
-// hummingbirdOutbound builds outbound forwarding cases originating in this AS
-// (first hop), sent out to a child. Analogue of InternalHostToChild. For a
-// flyover, the router verifies and de-aggregates the aggregate MAC and advances
-// by a flyover hop. Best-effort forwards with the plain SCION MAC and advances
-// by a regular hop.
-func hummingbirdOutbound(
+// hummingbirdFirstHop builds forwarding cases whose current hop is the first hop
+// of the path, sent out to child 141 in construction direction:
+// by default (hbirdModeOriginate) originating in this AS, the analogue of InternalHostToChild.
+// For a flyover, the router verifies and de-aggregates the aggregate MAC and advances by
+// a flyover hop. Best-effort forwards with the plain SCION MAC and advances by a regular hop.
+func hummingbirdFirstHop(
 	artifactsDir string,
 	mac hash.Hash,
 	sv []byte,
+	mode hbirdMode,
 	flyover bool,
 	name string,
 ) runner.Case {
-	// The local AS occupies the source-leaf position: this is the first hop of a
-	// locally originated packet, egressing to child 141 in construction direction.
+	// The local AS occupies the source-leaf position.
 	now := time.Now()
-	result := hbirdPath(mac, sv, hbirdOriginate, hbirdModeOriginate, flyover,
+	result := hbirdPath(mac, sv, hbirdOriginate, mode, flyover,
 		uint16(hbirdScionUDPPayloadLen), now)
 	dpath, scionL := result.Decoded, result.SCION
 	inf := result.CurrentINF
@@ -1365,6 +1422,8 @@ const (
 	hbirdModeXoverSameBR                        // same-BR crossover
 	hbirdModeXoverSplitIngress                  // split-BR crossover, ingress BR
 	hbirdModeXoverSplitEgress                   // split-BR crossover, egress BR
+	hbirdModeOriginateCut                       // internal in, external out, ingress cut
+	hbirdModeDeliverCut                         // external in, local delivery, egress cut
 )
 
 // hbirdConf holds the constant-derived parameters for one (position, mode)
@@ -1381,6 +1440,11 @@ type hbirdConf struct {
 	srcIA, dstIA     string
 	srcHost, dstHost string
 	inLink, outLink  hbirdUnderlay
+	// cut marks a path that starts or ends inside a segment: the current hop field keeps the
+	// interface towards the part of the segment that the path skips, while the reservation
+	// is for 0 there. resIn/resEg are then the reservation's packet-direction interfaces.
+	cut          bool
+	resIn, resEg uint16
 }
 
 // hbirdConfigFor is the single constant table mapping a (position, mode)
@@ -1393,6 +1457,23 @@ func hbirdConfigFor(pos hbirdPosition, mode hbirdMode) hbirdConf {
 			srcIA: "1-ff00:0:1", dstIA: "1-ff00:0:4",
 			srcHost: "192.168.0.51", dstHost: "174.16.4.1",
 			inLink:  hbirdInternalInput(51, 30041),
+			outLink: hbirdExternalOutput(141),
+		}
+	case pos == hbirdOriginate && mode == hbirdModeOriginateCut:
+		return hbirdConf{
+			consIn: 131, consEg: 141, consDirUp: true,
+			srcIA: "1-ff00:0:1", dstIA: "1-ff00:0:4",
+			srcHost: "192.168.0.51", dstHost: "174.16.4.1",
+			inLink:  hbirdInternalInput(51, 30041),
+			outLink: hbirdExternalOutput(141),
+			cut:     true, resIn: 0, resEg: 141,
+		}
+	case pos == hbirdOriginate && mode == hbirdModeBRTransit:
+		return hbirdConf{
+			consIn: 131, consEg: 141, consDirUp: true,
+			srcIA: "1-ff00:0:3", dstIA: "1-ff00:0:4",
+			srcHost: "172.16.3.1", dstHost: "174.16.4.1",
+			inLink:  hbirdExternalInput(131),
 			outLink: hbirdExternalOutput(141),
 		}
 	case pos == hbirdUpTransit && mode == hbirdModeBRTransit:
@@ -1434,6 +1515,15 @@ func hbirdConfigFor(pos hbirdPosition, mode hbirdMode) hbirdConf {
 			srcHost: "172.16.4.1", dstHost: "192.168.0.51",
 			inLink:  hbirdExternalInput(141),
 			outLink: hbirdInternalOutput(51, 21000),
+		}
+	case pos == hbirdDeliver && mode == hbirdModeDeliverCut:
+		return hbirdConf{
+			consIn: 131, consEg: 141, consDirDown: false,
+			srcIA: "1-ff00:0:4", dstIA: "1-ff00:0:1",
+			srcHost: "172.16.4.1", dstHost: "192.168.0.51",
+			inLink:  hbirdExternalInput(141),
+			outLink: hbirdInternalOutput(51, 21000),
+			cut:     true, resIn: 141, resEg: 0,
 		}
 	case pos == hbirdXoverUp && mode == hbirdModeXoverSameBR:
 		return hbirdConf{
@@ -1485,6 +1575,8 @@ type hbirdPathResult struct {
 	sv             []byte
 	flyover        bool
 	spanIn, spanEg uint16 // crossover reservation span (packet direction)
+	cut            bool
+	resIn, resEg   uint16 // reservation interfaces of a cut current hop (packet direction)
 }
 
 // DeAggregateCurrent sets the current hop's MAC to its plain SCION MAC, as the
@@ -1501,7 +1593,11 @@ func (r *hbirdPathResult) RecomputeCurrentAggregate() {
 	info := r.Decoded.InfoFields[r.CurrentINF]
 	plain := path.MAC(r.macHasher, info, hf.HopField, nil)
 	r.ScionMAC[r.Current] = plain
-	if r.flyover {
+	if r.flyover && r.cut {
+		hf.HopField.Mac = hbirdAggregateMACForInterfaces(
+			r.macHasher, r.sv, r.SCION, r.Decoded, r.resIn, r.resEg, info, *hf,
+			r.Decoded.PathMeta)
+	} else if r.flyover {
 		hf.HopField.Mac = hbirdAggregateMAC(
 			r.macHasher, r.sv, r.SCION, r.Decoded, info, *hf, r.Decoded.PathMeta)
 	} else {
@@ -1635,6 +1731,9 @@ func hbirdPath(
 		if isXover {
 			hf.HopField.Mac = hbirdAggregateMACForInterfaces(
 				mac, sv, scionL, dpath, c.spanIn, c.spanEg, info, *hf, dpath.PathMeta)
+		} else if c.cut && i == current {
+			hf.HopField.Mac = hbirdAggregateMACForInterfaces(
+				mac, sv, scionL, dpath, c.resIn, c.resEg, info, *hf, dpath.PathMeta)
 		} else {
 			hf.HopField.Mac = hbirdAggregateMAC(mac, sv, scionL, dpath, info, *hf, dpath.PathMeta)
 		}
@@ -1665,6 +1764,9 @@ func hbirdPath(
 		flyover:    flyover,
 		spanIn:     c.spanIn,
 		spanEg:     c.spanEg,
+		cut:        c.cut,
+		resIn:      c.resIn,
+		resEg:      c.resEg,
 	}
 }
 

@@ -558,15 +558,15 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (max_over_time(router_queue_depth_high_watermark{queue=\"priority\"}[1m]))",
-          "legendFormat": "{{br}} if {{interface}} priority",
+          "expr": "sum by (as, br, interface) (max_over_time(router_queue_depth_high_watermark{queue=\"priority\"}[1m]))",
+          "legendFormat": "{{as}} {{br}} if {{interface}} priority",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (max_over_time(router_queue_depth_high_watermark{queue=\"best_effort\"}[1m]))",
-          "legendFormat": "{{br}} if {{interface}} best-effort",
+          "expr": "sum by (as, br, interface) (max_over_time(router_queue_depth_high_watermark{queue=\"best_effort\"}[1m]))",
+          "legendFormat": "{{as}} {{br}} if {{interface}} best-effort",
           "range": true,
           "refId": "B"
         }
@@ -926,22 +926,22 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (rate(router_humm_demoted_freshness_total[$__rate_interval]))",
-          "legendFormat": "freshness {{br}} if {{interface}}",
+          "expr": "sum by (as, br, interface) (rate(router_humm_demoted_freshness_total[$__rate_interval]))",
+          "legendFormat": "freshness {{as}} {{br}} if {{interface}}",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (rate(router_humm_demoted_expired_total[$__rate_interval]))",
-          "legendFormat": "expired {{br}} if {{interface}}",
+          "expr": "sum by (as, br, interface) (rate(router_humm_demoted_expired_total[$__rate_interval]))",
+          "legendFormat": "expired {{as}} {{br}} if {{interface}}",
           "range": true,
           "refId": "B"
         },
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (rate(router_humm_demoted_tokenbucket_total[$__rate_interval]))",
-          "legendFormat": "token bucket {{br}} if {{interface}}",
+          "expr": "sum by (as, br, interface) (rate(router_humm_demoted_tokenbucket_total[$__rate_interval]))",
+          "legendFormat": "token bucket {{as}} {{br}} if {{interface}}",
           "range": true,
           "refId": "C"
         }
@@ -1067,8 +1067,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (br, interface) (increase(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[1m]))",
-          "legendFormat": "{{br}} if {{interface}}",
+          "expr": "sum by (as, br, interface) (increase(router_dropped_priority_pkts_total{reason=\"busy_forwarder\"}[1m]))",
+          "legendFormat": "{{as}} {{br}} if {{interface}}",
           "range": true,
           "refId": "A"
         }
@@ -1356,15 +1356,15 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (br) (rate(process_running_seconds_total[$__rate_interval]))",
-          "legendFormat": "{{br}} running",
+          "expr": "sum by (as, br) (rate(process_running_seconds_total[$__rate_interval]))",
+          "legendFormat": "{{as}} {{br}} running",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum by (br) (rate(process_runnable_seconds_total[$__rate_interval]))",
-          "legendFormat": "{{br}} runnable",
+          "expr": "sum by (as, br) (rate(process_runnable_seconds_total[$__rate_interval]))",
+          "legendFormat": "{{as}} {{br}} runnable",
           "range": true,
           "refId": "B"
         }
@@ -1486,8 +1486,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (br, local, remote) (increase(router_underlay_receive_overflow_pkts_total[1m]))",
-          "legendFormat": "{{br}} {{local}} <- {{remote}}",
+          "expr": "sum by (as, br, local, remote) (increase(router_underlay_receive_overflow_pkts_total[1m]))",
+          "legendFormat": "{{as}} {{br}} {{local}} <- {{remote}}",
           "range": true,
           "refId": "A"
         }
