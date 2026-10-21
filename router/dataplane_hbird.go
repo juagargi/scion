@@ -304,7 +304,7 @@ func (p *scionPacketProcessor) verifyHbirdFlyoverMac() disposition {
 
 	// Add the full MAC to the SCION packet processor,
 	// such that hummingbird mac de-aggregation do not need to recalculate it.
-	// Do not overwrite cachedmac after doing xover, as it may contain a  flyovermac
+	// Do not overwrite cachedMac after doing xover, as it may contain a  flyovermac
 	// This function is currently not called after a xover, so no need to check
 	// Keep in mind for future changes
 	p.cachedMac = scionMac
@@ -507,11 +507,11 @@ func (p *scionPacketProcessor) handleHbirdEgressRouterAlert() disposition {
 	return pSlowPath
 }
 
+// updateHbirdNonConsDirIngressSegIDFlyover updates the segment ID of the current info field if
+// against construction direction, not a peering link, and not received from inside the AS.
+// Because a flyover is present, we need to first de-aggregate the first two bytes of the MAC
+// before updating SegID.
 func (p *scionPacketProcessor) updateHbirdNonConsDirIngressSegIDFlyover(flyoverMac []byte) disposition {
-	// against construction dir the ingress router updates the SegID, ifID == 0
-	// means this comes from this AS itself, so nothing has to be done.
-	// If a flyover is present, need to first de-aggregate the first two bytes of the mac
-	// before updating SegID
 	if !p.infoField.ConsDir && p.ingressFromLink != 0 && !p.peering {
 		// de-aggregate first two bytes of mac
 		p.hopField.Mac[0] ^= flyoverMac[0]

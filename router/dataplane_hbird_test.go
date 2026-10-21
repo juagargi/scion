@@ -1870,9 +1870,11 @@ func TestHbirdTokenBucketReservationIdentityAndConcurrency(t *testing.T) {
 }
 
 // TestProcessHbirdSCMP checks that invalid Hummingbird packets (bad MAC, invalid source or
-// destination IA, both inbound and outbound, both best-effort and flyover) are diverted to the
-// slow path with the expected SCMP type/code/pointer, and produce a correctly addressed
-// ParameterProblem reply quoting the offending packet.
+// destination IA, unknown egress interface; inbound, outbound and BR transit against
+// construction direction; both best-effort and flyover) are diverted to the slow path with the
+// expected SCMP type/code/pointer, and produce a correctly addressed ParameterProblem reply
+// quoting the offending packet. For transit packets, it also checks that the reply restores the
+// SegID the packet arrived with, so that the previous AS can verify its hop field.
 func TestProcessHbirdSCMP(t *testing.T) {
 
 	key := []byte("testkey_xxxxxxxx")
@@ -2107,6 +2109,92 @@ func TestProcessHbirdSCMP(t *testing.T) {
 				Pointer: uint16(slayers.CmnHdrLen),
 			},
 			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
+		},
+		"invalid_mac_transit_non-consdir_best-effort": {
+			prepareDP: func() *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{1: topology.Child, 2: topology.Parent},
+					nil, map[uint16]netip.AddrPort{},
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockPkt: func(t *testing.T, dp *router.DataPlane) (*router.Packet, []byte) {
+				return invalidHbirdPkt(
+					t, dp, now, key, hbirdKey, false, invalidHbirdTransitNonConsDir,
+					invalidHbirdMAC)
+			},
+			expectedSlowPath: router.SlowPathRequestView{
+				SPType:  int8(slayers.SCMPTypeParameterProblem),
+				Code:    slayers.SCMPCodeInvalidHopFieldMAC,
+				Pointer: 68,
+			},
+			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
+			assertReply:       assertHbirdReplySegIDRestored(key),
+		},
+		"invalid_mac_transit_non-consdir_flyover": {
+			prepareDP: func() *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{1: topology.Child, 2: topology.Parent},
+					nil, map[uint16]netip.AddrPort{},
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockPkt: func(t *testing.T, dp *router.DataPlane) (*router.Packet, []byte) {
+				return invalidHbirdPkt(
+					t, dp, now, key, hbirdKey, true, invalidHbirdTransitNonConsDir,
+					invalidHbirdMAC)
+			},
+			expectedSlowPath: router.SlowPathRequestView{
+				SPType:  int8(slayers.SCMPTypeParameterProblem),
+				Code:    slayers.SCMPCodeInvalidHopFieldMAC,
+				Pointer: 68,
+			},
+			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
+			assertReply:       assertHbirdReplySegIDRestored(key),
+		},
+		"unknown_egress_transit_non-consdir_best-effort": {
+			prepareDP: func() *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{1: topology.Child, 2: topology.Parent},
+					nil, map[uint16]netip.AddrPort{},
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockPkt: func(t *testing.T, dp *router.DataPlane) (*router.Packet, []byte) {
+				return invalidHbirdPkt(
+					t, dp, now, key, hbirdKey, false, invalidHbirdTransitNonConsDir,
+					invalidHbirdEgress)
+			},
+			expectedSlowPath: router.SlowPathRequestView{
+				SPType: int8(slayers.SCMPTypeParameterProblem),
+				// Against construction direction, the egress is the hop's ConsIngress.
+				Code:    slayers.SCMPCodeUnknownHopFieldIngress,
+				Pointer: 68,
+			},
+			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
+			assertReply:       assertHbirdReplySegIDRestored(key),
+		},
+		"unknown_egress_transit_non-consdir_flyover": {
+			prepareDP: func() *router.DataPlane {
+				return router.NewDPWithHummingbirdKey(
+					[]uint16{1, 2},
+					map[uint16]topology.LinkType{1: topology.Child, 2: topology.Parent},
+					nil, map[uint16]netip.AddrPort{},
+					addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			},
+			mockPkt: func(t *testing.T, dp *router.DataPlane) (*router.Packet, []byte) {
+				return invalidHbirdPkt(
+					t, dp, now, key, hbirdKey, true, invalidHbirdTransitNonConsDir,
+					invalidHbirdEgress)
+			},
+			expectedSlowPath: router.SlowPathRequestView{
+				SPType: int8(slayers.SCMPTypeParameterProblem),
+				// Against construction direction, the egress is the hop's ConsIngress.
+				Code:    slayers.SCMPCodeUnknownHopFieldIngress,
+				Pointer: 68,
+			},
+			expectedLayerType: slayers.LayerTypeSCMPParameterProblem,
+			assertReply:       assertHbirdReplySegIDRestored(key),
 		},
 	}
 
@@ -2562,6 +2650,7 @@ type invalidHbirdPosition uint8
 const (
 	invalidHbirdInbound invalidHbirdPosition = iota
 	invalidHbirdOutbound
+	invalidHbirdTransitNonConsDir
 )
 
 // invalidHbirdField selects which field invalidHbirdPkt corrupts.
@@ -2571,11 +2660,14 @@ const (
 	invalidHbirdMAC invalidHbirdField = iota
 	invalidHbirdSourceIA
 	invalidHbirdDestinationIA
+	invalidHbirdEgress
 )
 
 // invalidHbirdPkt derives an invalid packet from the valid inbound or outbound
-// cases in TestProcessHbirdPacket. It authenticates every field except the one
-// selected by invalidField, making that field the packet's only failure cause.
+// cases in TestProcessHbirdPacket, or builds a BR-transit packet traversing the
+// segment against construction direction. It authenticates every field except
+// the one selected by invalidField, making that field the packet's only failure
+// cause.
 func invalidHbirdPkt(
 	t *testing.T,
 	dp *router.DataPlane,
@@ -2619,14 +2711,41 @@ func invalidHbirdPkt(
 		}
 		current = 0
 		dpath.PathMeta.CurrHF = 0
+	case invalidHbirdTransitNonConsDir:
+		// BR transit against construction direction: the packet enters through
+		// external interface 1 (the hop's ConsEgress) and leaves through 2 (its
+		// ConsIngress). The first hop belongs to the previous AS, which must be
+		// able to verify any SCMP reply.
+		dpath.InfoFields[0].ConsDir = false
+		dpath.HopFields = []hummingbird.FlyoverHopField{
+			{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
+			{HopField: path.HopField{ConsIngress: 2, ConsEgress: 1}},
+			{HopField: path.HopField{ConsIngress: 41, ConsEgress: 40}},
+		}
+		current = 1
+		dpath.PathMeta.CurrHF = 3
+		ingress = 1
 	default:
 		require.FailNow(t, "unknown Hummingbird packet position", "position: %d", position)
+	}
+
+	if position == invalidHbirdTransitNonConsDir &&
+		(invalidField == invalidHbirdSourceIA || invalidField == invalidHbirdDestinationIA) {
+		require.FailNow(t, "IA corruption not supported for transit packets")
 	}
 
 	// Invalidate the selected IA before computing the MAC because both IAs are
 	// covered by a flyover aggregate MAC.
 	switch invalidField {
 	case invalidHbirdMAC:
+	case invalidHbirdEgress:
+		// Point the egress side of the current hop at an unknown interface. The
+		// egress is the ConsIngress when traversing against construction direction.
+		if dpath.InfoFields[0].ConsDir {
+			dpath.HopFields[current].HopField.ConsEgress = 5
+		} else {
+			dpath.HopFields[current].HopField.ConsIngress = 5
+		}
 	case invalidHbirdSourceIA:
 		if position == invalidHbirdInbound {
 			spkt.SrcIA = addr.MustParseIA("1-ff00:0:110")
@@ -2665,6 +2784,17 @@ func invalidHbirdPkt(
 		dpath.HopFields[current].HopField.Mac[0] ^= 0xff
 	}
 
+	if position == invalidHbirdTransitNonConsDir {
+		// Against construction direction, the current hop MAC was computed over the
+		// SegID that results from the ingress update, so the packet arrives with that
+		// SegID XORed with the plain SCION MAC. The previous AS hop was authenticated
+		// with the arrival SegID.
+		dpath.InfoFields[0].UpdateSegID(computeMAC(
+			t, key, dpath.InfoFields[0], dpath.HopFields[current].HopField))
+		dpath.HopFields[0].HopField.Mac =
+			computeMAC(t, key, dpath.InfoFields[0], dpath.HopFields[0].HopField)
+	}
+
 	// Preserve the exact offending packet before handing the mutable copy to the
 	// dataplane; ProcessSlowPath must quote these original bytes in its response.
 	raw := toBytes(t, spkt, dpath)
@@ -2674,6 +2804,43 @@ func invalidHbirdPkt(
 		pkt.Link = router.ExtractInterfaces(dp)[ingress]
 	}
 	return pkt, original
+}
+
+// assertHbirdReplySegIDRestored returns an assertReply function for SCMP replies to packets
+// built by invalidHbirdPkt with invalidHbirdTransitNonConsDir. The ingress router XORs the
+// current hop's MAC into the SegID before verification; the reply must undo exactly that update
+// and leave with the SegID the original packet arrived with, so that the previous AS (the
+// reply's current hop) can verify its hop field.
+func assertHbirdReplySegIDRestored(
+	key []byte,
+) func(*testing.T, gopacket.Packet, []byte) {
+	return func(t *testing.T, packet gopacket.Packet, original []byte) {
+		t.Helper()
+
+		currentInfoAndHop := func(p gopacket.Packet) (path.InfoField, path.HopField) {
+			scionLayer := p.Layer(slayers.LayerTypeSCION)
+			require.NotNil(t, scionLayer)
+			raw, ok := scionLayer.(*slayers.SCION).Path.(*hummingbird.Raw)
+			require.True(t, ok)
+			info, err := raw.GetCurrentInfoField()
+			require.NoError(t, err)
+			hop, err := raw.GetCurrentHopField()
+			require.NoError(t, err)
+			return info, hop.HopField
+		}
+		arrivalInfo, _ := currentInfoAndHop(
+			gopacket.NewPacket(original, slayers.LayerTypeSCION, gopacket.Default))
+		replyInfo, replyHop := currentInfoAndHop(packet)
+
+		assert.True(t, replyInfo.ConsDir)
+		// The previous AS hop field (see invalidHbirdPkt).
+		assert.Equal(t, uint16(31), replyHop.ConsIngress)
+		assert.Equal(t, uint16(30), replyHop.ConsEgress)
+		assert.Equal(t, arrivalInfo.SegID, replyInfo.SegID,
+			"SCMP reply SegID differs from the SegID the packet arrived with")
+		assert.Equal(t, computeMAC(t, key, replyInfo, replyHop), replyHop.Mac,
+			"previous AS cannot verify its hop field in the SCMP reply")
+	}
 }
 
 // routerAlertPkt builds a valid BR-transit Hummingbird packet with exactly one
