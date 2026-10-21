@@ -182,7 +182,11 @@ func (p *scionPacketProcessor) currentHbirdHopPointer() uint16 {
 		hummingbird.LineLen*int(p.hbirdPath.PathMeta.CurrHF))
 }
 
-// Returns the ingress and egress through which the current packet enters and leves the AS
+// Returns the ingress and egress through which the current packet enters and leaves the AS.
+// 0 stands for the AS itself: a packet sent from it has ingress 0, one delivered to it egress 0.
+// This holds even when the hop field names an interface there: a path that starts or ends inside
+// a segment (e.g. from an AS in the middle of a down segment) keeps that AS's hop field intact,
+// including the interface towards the part of the segment that the path does not traverse.
 func (p *scionPacketProcessor) getFlyoverInterfaces() (uint16, uint16, disposition) {
 	ingress := p.hopField.ConsIngress
 	egress := p.hopField.ConsEgress
@@ -204,6 +208,15 @@ func (p *scionPacketProcessor) getFlyoverInterfaces() (uint16, uint16, dispositi
 		if err != nil {
 			return 0, 0, errorDiscard("error", err)
 		}
+	}
+	// Check if the packet originated inside this AS. If so, the flyover must have been obtained
+	// using ingress=0, so ignore the hop field ingress ID and use 0. (also see validateIngressID)
+	if p.ingressFromLink == 0 && p.hbirdPath.IsFirstHop() {
+		ingress = 0
+	}
+	// Same as above, but for packets delivered in this AS.
+	if p.hbirdPath.IsLastHop() && p.scionLayer.DstIA == p.d.localIA {
+		egress = 0
 	}
 	return ingress, egress, pForward
 }
