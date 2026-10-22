@@ -18,8 +18,6 @@ option go_package = "github.com/scionproto/scion/pkg/proto/hummingbird";
 
 package proto.hummingbird.v1;
 
-import "google/protobuf/timestamp.proto";
-
 service MarketplaceService {
     rpc Info(MarketplaceInfoRequest) returns (MarketplaceInfoResponse) {}
     rpc PublishAsset(PublishAssetRequest) returns (PublishAssetResponse) {}
@@ -39,26 +37,33 @@ message UpdateAssetsRequest {
 message AssetUpdate {
     bytes asset_id = 1;
     oneof operation {
-        PublisherAsset update = 2;
+        UpdateAsset update = 2;
         Remove remove = 3;
     }
+}
+message UpdateAsset {
+    optional uint32 bandwidth = 1;
+    optional uint32 bandwidth_min = 2;
+    optional uint32 bandwidth_max = 3;
+    optional int64 starts_at = 4;
+    optional int64 stops_at = 5;
+    optional uint32 time_min_duration = 6;
+    optional uint32 time_max_duration = 7;
+    optional uint32 price = 8;
 }
 message Remove {}
 message UpdateAssetsResponse {
     repeated UpdateAssetResult result = 1;
 }
 message UpdateAssetResult {
-    oneof result_type {
-        bytes new_id = 1;
-        string error = 2;
-    }
+    optional string error = 1;
 }
 
 message StatisticsRequest {
     optional uint32 if_id_ingress = 1;
     optional uint32 if_id_egress = 2;
-    google.protobuf.Timestamp start = 3;
-    google.protobuf.Timestamp end = 4;
+    int64 start = 3;
+    int64 end = 4;
     uint32 step = 5;
 }
 
@@ -83,7 +88,7 @@ message SplitBwOption {
     repeated uint32 splits = 1;
 }
 message SplitTimeOption {
-    repeated google.protobuf.Timestamp splits = 1;
+    repeated int64 splits = 1;
 }
 // Returns the asset IDs created from the split.
 message SplitAssetResponse {
@@ -138,26 +143,45 @@ message PublisherAsset {
     uint32 bandwidth = 3;
     uint32 bandwidth_min = 4;
     uint32 bandwidth_max = 5;
-    google.protobuf.Timestamp starts_at = 6;
-    google.protobuf.Timestamp stops_at = 7;
+    int64 starts_at = 6;
+    int64 stops_at = 7;
     uint32 time_granularity = 8;
     uint32 time_min_duration = 9;
     uint32 time_max_duration = 10;
     uint32 price = 11;
 }
 
+enum ValidityMode {
+    full_overlap = 0;
+    partial_overlap = 1;
+}
+
 message SearchAssetsRequest {
-    bool owned = 1;
-    optional uint64 ia = 2;
+    oneof request {
+        SearchOwnedAssetsRequest owned = 1;
+        SearchListedAssetsRequest listed = 2;
+    }
+    ValidityMode validity_mode = 3;
+}
+
+message SearchOwnedAssetsRequest {
+    optional uint64 ia = 1;
+    optional uint32 if_id_ingress = 2;
+    optional uint32 if_id_egress = 3;
+    optional uint32 min_required_bw = 4;
+    optional int64 starts_at_latest = 5;
+    optional int64 stops_at_earliest = 6;
+    optional uint32 price = 7;
+}
+
+message SearchListedAssetsRequest {
+    uint64 ia = 2;
     optional uint32 if_id_ingress = 3;
     optional uint32 if_id_egress = 4;
-    optional uint32 min_required_bw = 5;
-    optional google.protobuf.Timestamp starts_at_latest = 6;
-    optional google.protobuf.Timestamp stops_at_earliest = 7;
+    uint32 min_required_bw = 5;
+    int64 starts_at_latest = 6;
+    int64 stops_at_earliest = 7;
     optional uint32 price = 8;
-    uint32 page = 9;
-    // The marketplace may return less assets per page than requested.
-    optional uint32 max_returned_assets = 10;
 }
 
 message SearchAssetsResponse {
@@ -168,15 +192,18 @@ message SearchAsset {
     uint64 ia = 2;
     optional uint32 if_id_ingress = 3;
     optional uint32 if_id_egress = 4;
-    uint32 bandwidth = 5;
-    uint32 bandwidth_min = 6;
-    uint32 bandwidth_max = 7;
-    google.protobuf.Timestamp starts_at = 8;
-    google.protobuf.Timestamp stops_at = 9;
-    uint32 time_granularity = 10;
-    uint32 time_min_duration = 11;
-    uint32 time_max_duration = 12;
-    uint32 price = 13;
+    uint32 bandwidth_min = 5;
+    uint32 bandwidth_max = 6;
+    uint32 time_granularity = 7;
+    uint32 time_min_duration = 8;
+    uint32 time_max_duration = 9;
+    uint32 price = 10;
+    repeated SearchAssetInterval intervals = 11;
+}
+message SearchAssetInterval {
+    uint32 bandwidth = 1;
+    int64 starts_at = 2;
+    int64 stops_at = 3;
 }
 
 message BuyAssetsRequest {
@@ -186,8 +213,8 @@ message BuyAssetsRequest {
 
 message BuyAsset {
     bytes asset_id = 1;
-    google.protobuf.Timestamp starts_at_exactly = 2;
-    google.protobuf.Timestamp stops_at_exactly = 3;
+    int64 starts_at_exactly = 2;
+    int64 stops_at_exactly = 3;
     uint32 bandwidth_exact = 4;
 }
 
@@ -203,7 +230,7 @@ message BoughtAsset {
 message RedeemAssetRequest {
     oneof interfaces {
         IngressEgressPair pair = 1;
-        bytes if_pair_asset_id = 3;
+        bytes if_pair_asset_id = 2;
     }
 }
 message IngressEgressPair {
@@ -223,8 +250,8 @@ message FetchReservationsRequest {
     optional uint32 ingress_id = 2;
     optional uint32 egress_id = 3;
     optional uint32 bandwidth = 4;
-    optional google.protobuf.Timestamp starts_at = 5;
-    optional google.protobuf.Timestamp stops_at = 6;
+    optional int64 starts_at = 5;
+    optional int64 stops_at = 6;
 }
 
 message FetchReservationsResponse {
@@ -238,7 +265,7 @@ message Reservation {
     uint32 egress_id = 4;
     uint32 bandwidth = 5;
     uint32 dataplane_encoding = 6;
-    google.protobuf.Timestamp starts_at = 7;
-    google.protobuf.Timestamp stops_at = 8;
+    int64 starts_at = 7;
+    int64 stops_at = 8;
     bytes authentication_key = 9;
 }

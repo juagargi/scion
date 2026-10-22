@@ -287,3 +287,236 @@ select:focus {
 select option {
     padding: 8px;
 }
+
+
+/* viz section */
+.util {
+    --util-low: #5fa58f;
+    --util-mid: #d4a73c;
+    --util-high: #de7f3f;
+    --util-full: #cf4a3f;
+    --util-plot-h: 240px;
+
+    --util-line: color-mix(in srgb, currentColor 18%, transparent);
+    --util-hatch: color-mix(in srgb, currentColor 25%, transparent);
+    --util-muted: color-mix(in srgb, currentColor 60%, transparent);
+}
+
+.util *,
+.util *::before,
+.util *::after {
+    box-sizing: border-box;
+}
+
+/* bar level colours (shared by bars and legend swatches) */
+.util-low {
+    --c: var(--util-low);
+}
+
+.util-mid {
+    --c: var(--util-mid);
+}
+
+.util-high {
+    --c: var(--util-high);
+}
+
+.util-full {
+    --c: var(--util-full);
+}
+
+/* header, controls, stats */
+.util-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1em;
+    margin-bottom: 1em;
+}
+
+.util-head h2 {
+    margin: 0;
+}
+
+.util-error {
+    margin: 0 0 .75em;
+    color: var(--util-full);
+}
+
+.util-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: .75em 1em;
+    margin-bottom: .5em;
+}
+
+.util-controls label {
+    display: grid;
+    gap: .2em;
+    font-size: .8em;
+    color: var(--util-muted);
+}
+
+.util-buttons {
+    display: flex;
+    gap: .35em;
+}
+
+.util-hint {
+    margin: 0 0 1em;
+    font-size: .8em;
+    color: var(--util-muted);
+}
+
+.util-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25em 1.5em;
+    margin-bottom: .75em;
+    font-size: .85em;
+    color: var(--util-muted);
+}
+
+.util-stats b {
+    color: inherit;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* chart: y-axis gutter + plot, x-axis underneath */
+.util-chart {
+    display: grid;
+    grid-template-columns: 4em 1fr;
+    margin-top: 30px;
+}
+
+.util-y {
+    position: relative;
+    height: var(--util-plot-h);
+}
+
+.util-y span {
+    position: absolute;
+    right: .5em;
+    transform: translateY(50%);
+    font-size: .72em;
+    color: var(--util-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.util-y span.util-top {
+    transform: none;
+}
+
+.util-plot {
+    position: relative;
+    height: var(--util-plot-h);
+    cursor: crosshair;
+    user-select: none;
+    touch-action: none;
+    border-left: 1px solid var(--util-line);
+    border-bottom: 1px solid var(--util-line);
+}
+
+.util-gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(135deg, transparent 0 5px, var(--util-hatch) 5px 6px);
+}
+
+/* one slot = full-height hover column with the bar drawn inside it */
+.util-seg {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 1px;
+}
+
+.util-seg::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--used) * 1%);
+    background: var(--c);
+    border-top: 2px solid color-mix(in srgb, var(--c) 70%, #000);
+}
+
+.util-seg:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.util-hline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-top: 1px dashed var(--util-line);
+    pointer-events: none;
+}
+
+.util-vline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px dashed var(--util-line);
+    pointer-events: none;
+    opacity: .7;
+}
+
+.util-brush {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    border-left: 1px solid color-mix(in srgb, currentColor 50%, transparent);
+    border-right: 1px solid color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.util-x {
+    position: relative;
+    height: 1.8em;
+    grid-column: 2;
+}
+
+.util-x span {
+    position: absolute;
+    top: .35em;
+    transform: translateX(-50%);
+    font-size: .72em;
+    color: var(--util-muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.util-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+    margin-top: .5em;
+    font-size: .78em;
+    color: var(--util-muted);
+}
+
+.util-legend i {
+    display: inline-block;
+    width: .8em;
+    height: .8em;
+    margin-right: .35em;
+    border-radius: 2px;
+    vertical-align: -.1em;
+    background: var(--c);
+}
+
+.util-legend i.util-nodata {
+    background: repeating-linear-gradient(135deg, transparent 0 3px, var(--util-hatch) 3px 4px);
+    border: 1px solid var(--util-hatch);
+}
+
+/* optional: highlight for the asset row whose chart is open (class set by the JS) */
+tr.util-active {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+}

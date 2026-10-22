@@ -47,9 +47,21 @@ func testAsset() *DBAsset {
 		Price:           5,
 		TimeGranularity: 60,
 		TimeMinDuration: 60,
-		StartAt:         start,
-		StopsAt:         start.Add(time.Hour),
+		StartsAt:        start.Unix(),
+		StopsAt:         start.Add(time.Hour).Unix(),
 	}
+}
+
+func insertAsset(ctx context.Context, repo Repository, asset *DBAsset) (int64, error) {
+	assetId, err := repo.InsertAsset(ctx, asset)
+	if err != nil {
+		return 0, err
+	}
+	if !asset.AccountId.Valid {
+		_, err = repo.InsertAssetSegment(ctx, assetId,
+			asset.StartsAt, asset.StopsAt, asset.Bandwidth)
+	}
+	return assetId, err
 }
 
 // TestAssetIDInt64 rejects identifiers that cannot be represented by SQLite.
@@ -70,18 +82,23 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 
 	// A successful callback commits its insert.
 	err := backend.WithTx(ctx, func(repository Repository) error {
-		_, err := repository.InsertAsset(ctx, testAsset())
+		_, err := insertAsset(ctx, repository, testAsset())
 		return err
 	})
 	require.NoError(t, err)
-	assets, err := backend.Search(ctx, &AssetQuery{PageSize: 64})
+	assets, err := backend.SearchListedAssets(ctx, &ListedAssetQuery{
+		IA:           addr.MustParseIA("1-ff00:0:110"),
+		StartsAt:     0,
+		StopsAt:      math.MaxInt64,
+		ValidityMode: PartialOverlap,
+	})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 
 	// Rolls back the insert and preserves the error.
 	rollbackErr := errors.New("rollback")
 	err = backend.WithTx(ctx, func(repository Repository) error {
-		_, err := repository.InsertAsset(ctx, testAsset())
+		_, err := insertAsset(ctx, repository, testAsset())
 		if err != nil {
 			return err
 		}
@@ -90,7 +107,12 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 	require.ErrorIs(t, err, rollbackErr)
 
 	// Only the asset written by the committed transaction is visible.
-	assets, err = backend.Search(ctx, &AssetQuery{PageSize: 64})
+	assets, err = backend.SearchListedAssets(ctx, &ListedAssetQuery{
+		IA:           addr.MustParseIA("1-ff00:0:110"),
+		StartsAt:     0,
+		StopsAt:      math.MaxInt64,
+		ValidityMode: PartialOverlap,
+	})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 }
@@ -102,7 +124,7 @@ func TestAssetTransitionAndRowScanners(t *testing.T) {
 	backend := newTestBackend(t)
 
 	asset := testAsset()
-	assetID, err := backend.InsertAsset(ctx, asset)
+	assetID, err := insertAsset(ctx, backend, testAsset())
 	require.NoError(t, err)
 	// Listing an asset without an owner lets the marketplace check it out.
 	transitioned, err := backend.TransitionAsset(ctx, assetID, nil,
@@ -113,7 +135,12 @@ func TestAssetTransitionAndRowScanners(t *testing.T) {
 	require.False(t, transitioned.AccountId.Valid)
 
 	// Checked-out assets are no longer returned by the available-asset search.
-	assets, err := backend.Search(ctx, &AssetQuery{PageSize: 64})
+	assets, err := backend.SearchListedAssets(ctx, &ListedAssetQuery{
+		IA:           addr.MustParseIA("1-ff00:0:110"),
+		StartsAt:     0,
+		StopsAt:      math.MaxInt64,
+		ValidityMode: PartialOverlap,
+	})
 	require.NoError(t, err)
 	require.Empty(t, assets)
 
@@ -130,7 +157,7 @@ func TestAssetTransitionAndRowScanners(t *testing.T) {
 		Egress:           2,
 		Bandwidth:        100,
 		EncodedBandwidth: 5,
-		StartsAt:         asset.StartAt,
+		StartsAt:         asset.StartsAt,
 		StopsAt:          asset.StopsAt,
 		Key:              []byte("key"),
 	}
@@ -193,11 +220,11 @@ func TestSearchOwnedAssets(t *testing.T) {
 
 	owned := testAsset()
 	owned.AccountId = sql.NullInt64{Int64: alicesAccountID, Valid: true}
-	ownedID, err := backend.InsertAsset(ctx, owned)
+	ownedID, err := insertAsset(ctx, backend, owned)
 	require.NoError(t, err)
 
 	// An asset nobody owns, and one owned by somebody else.
-	notOwnedAssetID, err := backend.InsertAsset(ctx, testAsset())
+	notOwnedAssetID, err := insertAsset(ctx, backend, testAsset())
 	require.NoError(t, err)
 	bobUserID, err := backend.CreateUser(ctx, &DBUser{Name: "bob", PasswordHash: "hash"})
 	require.NoError(t, err)
@@ -205,38 +232,43 @@ func TestSearchOwnedAssets(t *testing.T) {
 	require.NoError(t, err)
 	otherAsset := testAsset()
 	otherAsset.AccountId = sql.NullInt64{Int64: bobsAccountID, Valid: true}
-	_, err = backend.InsertAsset(ctx, otherAsset)
+	_, err = insertAsset(ctx, backend, otherAsset)
 	require.NoError(t, err)
 
-	assets, err := backend.Search(ctx, &AssetQuery{AccountId: &alicesAccountID, PageSize: 64})
+	assets, err := backend.SearchOwnedAssets(ctx, &OwnedAssetQuery{
+		AccountId: &alicesAccountID,
+	})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 	require.Equal(t, ownedID, assets[0].ID)
 
 	// The validity filters still apply to the assets of the account.
-	startsAt := owned.StartAt.UTC().Format(time.RFC3339)
-	stopsAt := owned.StopsAt.UTC().Format(time.RFC3339)
-	assets, err = backend.Search(ctx, &AssetQuery{
+	startsAt := owned.StartsAt
+	stopsAt := owned.StopsAt
+	assets, err = backend.SearchOwnedAssets(ctx, &OwnedAssetQuery{
 		AccountId: &alicesAccountID,
 		StartsAt:  &startsAt,
 		StopsAt:   &stopsAt,
-		PageSize:  64,
 	})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 
-	tooLate := owned.StopsAt.Add(time.Hour).UTC().Format(time.RFC3339)
-	assets, err = backend.Search(ctx, &AssetQuery{
+	tooLate := owned.StopsAt + 60*60
+	assets, err = backend.SearchOwnedAssets(ctx, &OwnedAssetQuery{
 		AccountId: &alicesAccountID,
 		StartsAt:  &startsAt,
 		StopsAt:   &tooLate,
-		PageSize:  64,
 	})
 	require.NoError(t, err)
 	require.Empty(t, assets, "an asset that stops too early must not be returned")
 
 	// Without an account, only the assets nobody owns are listed.
-	assets, err = backend.Search(ctx, &AssetQuery{PageSize: 64})
+	assets, err = backend.SearchListedAssets(ctx, &ListedAssetQuery{
+		IA:           addr.MustParseIA("1-ff00:0:110"),
+		StartsAt:     0,
+		StopsAt:      math.MaxInt64,
+		ValidityMode: PartialOverlap,
+	})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 	require.Equal(t, notOwnedAssetID, assets[0].ID)
@@ -247,11 +279,12 @@ func TestCreateOrUpdateRedemptionDelegations(t *testing.T) {
 	ctx := context.Background()
 	backend := newTestBackend(t)
 	ia := addr.MustParseIA("1-ff00:0:110")
+	currentYear := time.Now().Year()
 	// first try creating a redemption delegation
 	delegationToInsert := &RedemptionDelegation{
 		IA:         ia,
-		Expiration: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
-		PaidUntil:  time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		Expiration: time.Date(currentYear+1, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		PaidUntil:  time.Date(currentYear+1, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		ResIdLow:   0,
 		ResIdHigh:  1024,
 		Key:        []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
@@ -271,8 +304,8 @@ func TestCreateOrUpdateRedemptionDelegations(t *testing.T) {
 	// now try to update a redemption delegation
 	delegationToUpdate := &RedemptionDelegation{
 		IA:         ia,
-		Expiration: time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC),
-		PaidUntil:  time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC),
+		Expiration: time.Date(currentYear+2, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		PaidUntil:  time.Date(currentYear+2, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		ResIdLow:   1024,
 		ResIdHigh:  2048,
 		Key:        []byte{16, 15, 14, 16, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1},
@@ -296,8 +329,8 @@ func TestRegisterAssetEvent(t *testing.T) {
 		Bandwidth:       1000,
 		BandwidthMin:    10,
 		BandwidthMax:    1000,
-		StartAt:         time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
-		StopsAt:         time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC),
+		StartsAt:        time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		StopsAt:         time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		TimeGranularity: 10,
 		TimeMinDuration: 10,
 		TimeMaxDuration: 3600,
@@ -315,8 +348,8 @@ func TestRegisterAssetEvent(t *testing.T) {
 		Bandwidth:       1000,
 		BandwidthMin:    10,
 		BandwidthMax:    1000,
-		StartAt:         time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
-		StopsAt:         time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC),
+		StartsAt:        time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		StopsAt:         time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC).Unix(),
 		TimeGranularity: 10,
 		TimeMinDuration: 10,
 		TimeMaxDuration: 3600,
@@ -330,19 +363,19 @@ func TestRegisterAssetEvent(t *testing.T) {
 	// now verify whether both registered events return the correct values.
 	publishStats, buyStats, err := backend.SearchAssetsForStatistics(ctx, &StatisticsQuery{
 		IA:          ia,
-		WindowStart: "2027-01-01T00:00:00Z",
-		WindowEnd:   "2028-01-01T00:00:00Z",
+		WindowStart: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		WindowEnd:   time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 	})
 	require.NoError(t, err)
 	require.Len(t, publishStats, 1)
 	require.Len(t, buyStats, 1)
 	require.Equal(t, publishAsset.Bandwidth, uint32(publishStats[0].Bandwidth))
 	require.Equal(t, publishAsset.Price, uint32(publishStats[0].Price))
-	require.Equal(t, publishAsset.StartAt, publishStats[0].StartsAt)
+	require.Equal(t, publishAsset.StartsAt, publishStats[0].StartsAt)
 	require.Equal(t, publishAsset.StopsAt, publishStats[0].StopsAt)
 
 	require.Equal(t, buyAsset.Bandwidth, uint32(buyStats[0].Bandwidth))
 	require.Equal(t, buyAsset.Price, uint32(buyStats[0].Price))
-	require.Equal(t, buyAsset.StartAt, buyStats[0].StartsAt)
+	require.Equal(t, buyAsset.StartsAt, buyStats[0].StartsAt)
 	require.Equal(t, buyAsset.StopsAt, buyStats[0].StopsAt)
 }

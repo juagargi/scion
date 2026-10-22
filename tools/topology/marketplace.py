@@ -628,48 +628,105 @@ def insertASes(db, ases):
     )
 
 
+def rfc3339_to_unix(timestamp):
+    return int(datetime.fromisoformat(
+        timestamp.replace("Z", "+00:00")
+    ).timestamp())
+
 def insertAssets(db, assets):
     if assets is None:
         return
-    rows = []
+
     events = []
+    segments = []
+
     for a in assets:
         isd_id, as_id = iaNumbers(a.get("ia"))
-        rows.append((
-            isd_id, as_id, a.get("bandwidth"), a.get("bandwidth_min"), a.get("bandwidth_max"),
-            a.get("price"), a.get("time_granularity"), a.get("time_min_duration"),
-            a.get("time_max_duration"), a.get("starts_at"), a.get("stops_at"),
-            a.get("ingress"), a.get("egress"), a.get("owner"),
+        cursor = db.execute(
+            """
+            INSERT INTO Assets (
+                isd_id, as_id, bandwidth, bandwidth_min, bandwidth_max, price,
+                time_granularity, time_min_duration, time_max_duration, starts_at,
+                stops_at, ingress, egress, account_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (
+                SELECT a.id
+                FROM Accounts a
+                JOIN Users u ON u.ID = a.user_id
+                WHERE u.name = ? AND a.scope = ''
+                LIMIT 1
+            ))
+            RETURNING id
+            """,
+            (
+                isd_id,
+                as_id,
+                a.get("bandwidth"),
+                a.get("bandwidth_min"),
+                a.get("bandwidth_max"),
+                a.get("price"),
+                a.get("time_granularity"),
+                a.get("time_min_duration"),
+                a.get("time_max_duration"),
+                rfc3339_to_unix(a.get("starts_at")),
+                rfc3339_to_unix(a.get("stops_at")),
+                a.get("ingress"),
+                a.get("egress"),
+                a.get("owner"),
+            ),
+        )
+
+        asset_id = cursor.fetchone()[0]
+
+        # The segment covers the whole lifetime of the asset.
+        segments.append((
+            asset_id,
+            rfc3339_to_unix(a.get("starts_at")),
+            rfc3339_to_unix(a.get("stops_at")),
+            a.get("bandwidth"),
         ))
-        # The statistics of an AS are computed from the events,
-        # not from the assets still on sale, so publishing one has to be recorded as well.
-        # An asset that already has an owner means it was bought, which is a second event.
-        events.append((AssetEvent.PUBLISHED, isd_id, as_id, a.get("ingress"),
-                       a.get("egress"), a.get("bandwidth"), a.get("starts_at"),
-                       a.get("stops_at"), a.get("price")))
+
+        events.append((
+            AssetEvent.PUBLISHED,
+            isd_id,
+            as_id,
+            a.get("ingress"),
+            a.get("egress"),
+            a.get("bandwidth"),
+            rfc3339_to_unix(a.get("starts_at")),
+            rfc3339_to_unix(a.get("stops_at")),
+            a.get("price"),
+        ))
+
         if a.get("owner") is not None:
-            events.append((AssetEvent.BOUGHT, isd_id, as_id, a.get("ingress"),
-                           a.get("egress"), a.get("bandwidth"), a.get("starts_at"),
-                           a.get("stops_at"), a.get("price")))
+            events.append((
+                AssetEvent.BOUGHT,
+                isd_id,
+                as_id,
+                a.get("ingress"),
+                a.get("egress"),
+                a.get("bandwidth"),
+                rfc3339_to_unix(a.get("starts_at")),
+                rfc3339_to_unix(a.get("stops_at")),
+                a.get("price"),
+            ))
+
     db.executemany(
         """
-        INSERT INTO Assets (isd_id, as_id, bandwidth, bandwidth_min, bandwidth_max, price,
-                            time_granularity, time_min_duration, time_max_duration, starts_at,
-                            stops_at, ingress, egress, account_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (
-            SELECT a.id
-            FROM Accounts a
-            JOIN Users u ON u.ID = a.user_id
-            WHERE u.name = ? AND a.scope = ''
-            LIMIT 1
-        ))
+        INSERT INTO Asset_Segment (
+            asset_id, starts_at, stops_at, available
+        )
+        VALUES (?, ?, ?, ?)
         """,
-        rows,
+        segments,
     )
+
     db.executemany(
         """
-        INSERT INTO Asset_Events (event_type, isd_id, as_id, ingress, egress, bandwidth,
-                                  starts_at, stops_at, price)
+        INSERT INTO Asset_Events (
+            event_type, isd_id, as_id, ingress, egress, bandwidth,
+            starts_at, stops_at, price
+        )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         events,
@@ -684,7 +741,7 @@ def insertReservations(db, reservations):
         isd_id, as_id = iaNumbers(r.get("ia"))
         rows.append((
             r.get("id"), isd_id, as_id, r.get("ingress"), r.get("egress"), r.get("bandwidth"),
-            r.get("bw_encoded"), r.get("starts_at"), r.get("stops_at"),
+            r.get("bw_encoded"), rfc3339_to_unix(r.get("starts_at")), rfc3339_to_unix(r.get("stops_at")),
             bytes.fromhex(r.get("key")), r.get("owner"),
         ))
     db.executemany(
@@ -714,7 +771,8 @@ def insertDelegations(db, delegations):
         )
         rows.append((
             isd_id, as_id, d.get("res_id_limit_low"), d.get("res_id_limit_high"),
-            d.get("expiration"), d.get("paid_until"), bytes.fromhex(d.get("key")), encodings,
+            rfc3339_to_unix(d.get("expiration")), rfc3339_to_unix(d.get("paid_until")),
+            bytes.fromhex(d.get("key")), encodings,
         ))
     db.executemany(
         """

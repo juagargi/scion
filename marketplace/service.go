@@ -30,7 +30,6 @@ import (
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Service struct {
@@ -163,11 +162,7 @@ func (s *Service) SplitAsset(ctx context.Context, req *connect.Request[hummingbi
 		ids, err = s.store.SplitAsset(ctx, userId, assetId, bwSplit.Splits, nil)
 	case *hummingbird.SplitAssetRequest_TimeSplit:
 		splits := req.Msg.GetTimeSplit().Splits
-		times := make([]time.Time, 0, len(splits))
-		for _, split := range splits {
-			times = append(times, split.AsTime())
-		}
-		ids, err = s.store.SplitAsset(ctx, userId, assetId, nil, times)
+		ids, err = s.store.SplitAsset(ctx, userId, assetId, nil, splits)
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("invalid split request"))
 	}
@@ -213,16 +208,6 @@ func (s *Service) FetchReservations(ctx context.Context, req *connect.Request[hu
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("user_id not provided"))
 	}
-	var startsAt *string
-	var stopsAt *string
-	if req.Msg.StartsAt != nil {
-		start := req.Msg.StartsAt.AsTime().UTC().Format(time.RFC3339)
-		startsAt = &start
-	}
-	if req.Msg.StopsAt != nil {
-		stop := req.Msg.StopsAt.AsTime().UTC().Format(time.RFC3339)
-		stopsAt = &stop
-	}
 	var ia *addr.IA
 	if req.Msg.Ia != nil {
 		tmp := addr.IA(*req.Msg.Ia)
@@ -232,8 +217,8 @@ func (s *Service) FetchReservations(ctx context.Context, req *connect.Request[hu
 		IA:        ia,
 		Ingress:   req.Msg.IngressId,
 		Egress:    req.Msg.EgressId,
-		StartsAt:  startsAt,
-		StopsAt:   stopsAt,
+		StartsAt:  req.Msg.StartsAt,
+		StopsAt:   req.Msg.StopsAt,
 		Bandwidth: req.Msg.Bandwidth,
 		AccountId: user,
 	})
@@ -249,8 +234,8 @@ func (s *Service) FetchReservations(ctx context.Context, req *connect.Request[hu
 			EgressId:          reservation.Egress,
 			Bandwidth:         reservation.Bandwidth,
 			DataplaneEncoding: uint32(reservation.EncodedBandwidth),
-			StartsAt:          timestamppb.New(reservation.StartsAt),
-			StopsAt:           timestamppb.New(reservation.StopsAt),
+			StartsAt:          reservation.StartsAt,
+			StopsAt:           reservation.StopsAt,
 			AuthenticationKey: reservation.Key,
 		})
 	}
@@ -301,35 +286,10 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 			}
 			return 0, nil
 		case *hummingbird.AssetUpdate_Update:
-			dbAsset := &db.DBAsset{
-				ID:              assetId,
-				IA:              ia,
-				Bandwidth:       t.Update.Bandwidth,
-				BandwidthMin:    t.Update.BandwidthMin,
-				BandwidthMax:    t.Update.BandwidthMax,
-				StartAt:         t.Update.StartsAt.AsTime(),
-				StopsAt:         t.Update.StopsAt.AsTime(),
-				Price:           t.Update.Price,
-				TimeGranularity: t.Update.TimeGranularity,
-				TimeMinDuration: t.Update.TimeMinDuration,
-				TimeMaxDuration: t.Update.TimeMaxDuration,
-			}
-			if dbAsset.StopsAt.After(time.Now().Add(time.Duration(s.info.AssetValidityMax) * time.Second)) {
+			if t.Update.StopsAt != nil && time.Unix(*t.Update.StopsAt, 0).UTC().After(time.Now().Add(time.Duration(s.info.AssetValidityMax)*time.Second).UTC()) {
 				return 0, serrors.New("validity outside allowed range")
 			}
-			if t.Update.IfIdIngress != nil {
-				dbAsset.IfIdIngress = sql.NullInt32{
-					Valid: true,
-					Int32: int32(*t.Update.IfIdIngress),
-				}
-			}
-			if t.Update.IfIdEgress != nil {
-				dbAsset.IfIdEgress = sql.NullInt32{
-					Valid: true,
-					Int32: int32(*t.Update.IfIdEgress),
-				}
-			}
-			newId, err := s.store.UpdateListedAsset(ctx, dbAsset)
+			newId, err := s.store.UpdateListedAsset(ctx, assetId, ia, t.Update)
 			if err != nil {
 				return 0, err
 			}
@@ -340,18 +300,15 @@ func (s *Service) UpdateAssets(ctx context.Context, req *connect.Request[humming
 	}
 	res := make([]*hummingbird.UpdateAssetResult, 0, len(req.Msg.Assets))
 	for _, update := range req.Msg.Assets {
-		newId, err := handleAsset(update)
+		_, err := handleAsset(update)
 		if err != nil {
+			errString := err.Error()
 			res = append(res, &hummingbird.UpdateAssetResult{
-				ResultType: &hummingbird.UpdateAssetResult_Error{
-					Error: err.Error(),
-				},
+				Error: &errString,
 			})
 		} else {
 			res = append(res, &hummingbird.UpdateAssetResult{
-				ResultType: &hummingbird.UpdateAssetResult_NewId{
-					NewId: protoAssetID(newId),
-				},
+				Error: nil,
 			})
 		}
 	}
@@ -372,8 +329,8 @@ func (s *Service) PublishAsset(ctx context.Context, req *connect.Request[humming
 		Bandwidth:       req.Msg.Asset.Bandwidth,
 		BandwidthMin:    req.Msg.Asset.BandwidthMin,
 		BandwidthMax:    req.Msg.Asset.BandwidthMax,
-		StartAt:         req.Msg.Asset.StartsAt.AsTime().Truncate(time.Second),
-		StopsAt:         req.Msg.Asset.StopsAt.AsTime().Truncate(time.Second),
+		StartsAt:        req.Msg.Asset.StartsAt,
+		StopsAt:         req.Msg.Asset.StopsAt,
 		Price:           req.Msg.Asset.Price,
 		TimeGranularity: req.Msg.Asset.TimeGranularity,
 		TimeMinDuration: req.Msg.Asset.TimeMinDuration,
@@ -381,10 +338,10 @@ func (s *Service) PublishAsset(ctx context.Context, req *connect.Request[humming
 		IfIdIngress:     sql.NullInt32{},
 		IfIdEgress:      sql.NullInt32{},
 	}
-	if dbAsset.StopsAt.After(time.Now().Add(time.Duration(s.info.AssetValidityMax) * time.Second)) {
+	if time.Unix(dbAsset.StopsAt, 0).UTC().After(time.Now().Add(time.Duration(s.info.AssetValidityMax) * time.Second).UTC()) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("validity outside allowed range"))
 	}
-	if !dbAsset.StopsAt.After(dbAsset.StartAt) {
+	if dbAsset.StopsAt <= dbAsset.StartsAt {
 		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("stopsAt must come after startsAt"))
 	}
 	if req.Msg.Asset.IfIdIngress != nil {
@@ -446,8 +403,8 @@ func (s *Service) RedeemAsset(
 	var bw uint32
 	var ingressID uint32
 	var egressID uint32
-	var startsAt time.Time
-	var stopsAt time.Time
+	var startsAt int64
+	var stopsAt int64
 	var ia addr.IA
 	if len(assets) == 1 {
 		// interface pair
@@ -455,29 +412,32 @@ func (s *Service) RedeemAsset(
 		bw = pairAsset.Bandwidth
 		ingressID = uint32(pairAsset.IfIdIngress.Int32)
 		egressID = uint32(pairAsset.IfIdEgress.Int32)
-		startsAt = pairAsset.StartAt
+		startsAt = pairAsset.StartsAt
 		stopsAt = pairAsset.StopsAt
 		ia = pairAsset.IA
 	} else if len(assets) == 2 {
 		// ingress and egress assets
 		ingressAsset := assets[0]
 		egressAsset := assets[1]
-		bw = min(ingressAsset.Bandwidth, egressAsset.Bandwidth)
+		if ingressAsset.IA != egressAsset.IA ||
+			ingressAsset.Bandwidth != egressAsset.Bandwidth ||
+			ingressAsset.StartsAt != egressAsset.StartsAt ||
+			ingressAsset.StopsAt != egressAsset.StopsAt ||
+			!ingressAsset.IfIdIngress.Valid ||
+			!egressAsset.IfIdEgress.Valid {
+			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("invalid assets"))
+		}
+		bw = ingressAsset.Bandwidth
 		ingressID = uint32(ingressAsset.IfIdIngress.Int32)
 		egressID = uint32(egressAsset.IfIdEgress.Int32)
 		ia = ingressAsset.IA
-		if ingressAsset.StartAt.Before(egressAsset.StartAt) {
-			startsAt = egressAsset.StartAt
-		} else {
-			startsAt = ingressAsset.StartAt
-		}
-		if ingressAsset.StopsAt.Before(egressAsset.StopsAt) {
-			stopsAt = ingressAsset.StopsAt
-		} else {
-			stopsAt = egressAsset.StopsAt
-		}
+		startsAt = ingressAsset.StartsAt
+		stopsAt = ingressAsset.StopsAt
 	} else {
 		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("invalid assets"))
+	}
+	if stopsAt <= startsAt {
+		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("invalid validity range"))
 	}
 	undoRedemption := func() error {
 		// we use context.Background here because if the client disconnected in the meantime,
@@ -496,10 +456,6 @@ func (s *Service) RedeemAsset(
 		}
 		return err
 	}
-	if stopsAt.Before(startsAt) {
-		return nil, connect.NewError(connect.CodeInvalidArgument,
-			serrors.Join(serrors.New("stops at before starts at"), undoRedemption()))
-	}
 	peer := s.FindRedemptionServerHandler(ia)
 	// The deadline is derived from the request context: a client who disconnects releases
 	// the asset instead of holding it until the timeout.
@@ -509,8 +465,8 @@ func (s *Service) RedeemAsset(
 		Bandwidth: bw,
 		IngressId: ingressID,
 		EgressId:  egressID,
-		StartsAt:  timestamppb.New(startsAt),
-		StopsAt:   timestamppb.New(stopsAt),
+		StartsAt:  startsAt,
+		StopsAt:   stopsAt,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable,
@@ -562,19 +518,19 @@ func (s *Service) RedeemAsset(
 // is preserved. Without that, windowEnd.Sub(windowStart) is negative and the interval
 // count with it, which makes the slices of the caller panic.
 func statisticsWindow(
-	start, end time.Time,
-	step, granularity time.Duration,
-) (windowStart, windowEnd time.Time, numIntervals int) {
-	if end.Before(start) {
+	start, end int64,
+	step, granularity int64,
+) (windowStart, windowEnd int64, numIntervals int64) {
+	if end < start {
 		start, end = end, start
 	}
-	windowStart = start.UTC().Truncate(granularity)
-	windowEnd = hbird.RoundUpTime(end.UTC(), granularity)
+	windowStart = start - (start % granularity)
+	windowEnd = hbird.RoundUpTime(time.Unix(end, 0).UTC(), time.Duration(granularity)*time.Second).Unix()
 	if step <= 0 {
 		// Only reachable with a granularity of 0, which the config does not allow.
 		return windowStart, windowEnd, 0
 	}
-	return windowStart, windowEnd, int(windowEnd.Sub(windowStart) / step)
+	return windowStart, windowEnd, (windowEnd - windowStart) / step
 }
 
 // bandwidthUtilization is the share of the published bandwidth that was bought.
@@ -594,41 +550,41 @@ func bandwidthUtilization(bought, published uint64) float64 {
 // window it overlaps, in kbps seconds, along with the revenue that bandwidth stands for.
 func bandwidthPerInterval(
 	assets []*db.DBStat,
-	windowStart, windowEnd time.Time,
-	step time.Duration,
-	numIntervals int,
+	windowStart, windowEnd int64,
+	step int64,
+	numIntervals int64,
 ) (bandwidth, income []uint64) {
 	bandwidth = make([]uint64, numIntervals)
 	income = make([]uint64, numIntervals)
 	for _, asset := range assets {
 		start := asset.StartsAt
 		stop := asset.StopsAt
-		if asset.StartsAt.Before(windowStart) {
+		if asset.StartsAt < windowStart {
 			start = windowStart
 		}
-		if asset.StopsAt.After(windowEnd) {
+		if asset.StopsAt > windowEnd {
 			stop = windowEnd
 		}
-		first := int(start.Sub(windowStart) / step)
-		last := int(stop.Sub(windowStart) / step)
+		first := int64((start - windowStart) / step)
+		last := int64((stop - windowStart) / step)
 		if first < 0 || last > numIntervals {
 			continue
 		}
-		if stop.Equal(windowStart.Add(time.Duration(last) * step)) {
+		if stop == (windowStart + (last * step)) {
 			last--
 		}
 		for i := first; i <= last && i < numIntervals; i++ {
-			intervalStart := windowStart.Add(time.Duration(i) * step)
-			intervalEnd := intervalStart.Add(step)
+			intervalStart := windowStart + (i * step)
+			intervalEnd := intervalStart + step
 			overlapStart := start
 			overlapEnd := stop
-			if asset.StartsAt.Before(intervalStart) {
+			if asset.StartsAt < intervalStart {
 				overlapStart = intervalStart
 			}
-			if asset.StopsAt.After(intervalEnd) {
+			if asset.StopsAt > intervalEnd {
 				overlapEnd = intervalEnd
 			}
-			duration := uint64(overlapEnd.Sub(overlapStart).Seconds())
+			duration := uint64(overlapEnd - overlapStart)
 			bwTimesDuration := uint64(asset.Bandwidth) * duration
 			bandwidth[i] += bwTimesDuration
 			income[i] += bwTimesDuration * uint64(asset.Price)
@@ -648,15 +604,15 @@ func (s *Service) Statistics(
 	granularity := time.Duration(s.info.StatisticsTimeGranularity) * time.Second
 	step := hbird.RoundUpDuration(time.Duration(req.Msg.Step)*time.Second, granularity)
 	windowStart, windowEnd, numIntervals := statisticsWindow(
-		req.Msg.Start.AsTime(), req.Msg.End.AsTime(), step, granularity)
+		req.Msg.Start, req.Msg.End, int64(step), int64(granularity))
 	if numIntervals > 1024 {
 		return nil, connect.NewError(connect.CodeResourceExhausted,
 			serrors.New("too many intervals"))
 	}
 	publishedAssets, boughtAssets, err := s.store.Statistics(ctx, &db.StatisticsQuery{
 		IA:          ia,
-		WindowStart: windowStart.Format(time.RFC3339),
-		WindowEnd:   windowEnd.Format(time.RFC3339),
+		WindowStart: windowStart,
+		WindowEnd:   windowEnd,
 		Ingress:     req.Msg.IfIdIngress,
 		Egress:      req.Msg.IfIdEgress,
 	})
@@ -664,9 +620,9 @@ func (s *Service) Statistics(
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	bwPublished, _ := bandwidthPerInterval(
-		publishedAssets, windowStart, windowEnd, step, numIntervals)
+		publishedAssets, windowStart, windowEnd, int64(step/time.Second), numIntervals)
 	bwBought, income := bandwidthPerInterval(
-		boughtAssets, windowStart, windowEnd, step, numIntervals)
+		boughtAssets, windowStart, windowEnd, int64(step/time.Second), numIntervals)
 
 	respEntries := make([]*hummingbird.StatisticsResponseEntry, numIntervals)
 	for i := range numIntervals {
@@ -686,75 +642,82 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 	var owner_id *int64
 	switch user := ctx.Value("user").(type) {
 	case int64:
-		if req.Msg.Owned {
-			owner_id = &user
-		}
+		owner_id = &user
 	case addr.IA:
 	default:
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("user_id not provided"))
 	}
-	var startsAt *string
-	var stopsAt *string
-	if req.Msg.StartsAtLatest != nil {
-		start := req.Msg.StartsAtLatest.AsTime().UTC().Format(time.RFC3339)
-		startsAt = &start
+	var assets []*db.DBAsset
+	var err error
+	switch t := req.Msg.Request.(type) {
+	case *hummingbird.SearchAssetsRequest_Listed:
+		assets, err = s.store.SearchListedAssets(ctx, &db.ListedAssetQuery{
+			IA:                   addr.IA(t.Listed.Ia),
+			Ingress:              t.Listed.IfIdIngress,
+			Egress:               t.Listed.IfIdEgress,
+			MinRequiredBandwidth: t.Listed.MinRequiredBw,
+			Price:                t.Listed.Price,
+			StartsAt:             t.Listed.StartsAtLatest,
+			StopsAt:              t.Listed.StopsAtEarliest,
+			ValidityMode:         db.ValidityMode(req.Msg.ValidityMode),
+		})
+	case *hummingbird.SearchAssetsRequest_Owned:
+		assets, err = s.store.SearchOwnedAssets(ctx, &db.OwnedAssetQuery{
+			AccountId:            owner_id,
+			IA:                   (*addr.IA)(t.Owned.Ia),
+			Ingress:              t.Owned.IfIdIngress,
+			Egress:               t.Owned.IfIdEgress,
+			MinRequiredBandwidth: t.Owned.MinRequiredBw,
+			Price:                t.Owned.Price,
+			StartsAt:             t.Owned.StartsAtLatest,
+			StopsAt:              t.Owned.StopsAtEarliest,
+			ValidityMode:         db.ValidityMode(req.Msg.ValidityMode),
+		})
+	default:
+		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("invalid request"))
 	}
-	if req.Msg.StopsAtEarliest != nil {
-		stop := req.Msg.StopsAtEarliest.AsTime().UTC().Format(time.RFC3339)
-		stopsAt = &stop
-	}
-	var ia *addr.IA
-	if req.Msg.Ia != nil {
-		tmp := addr.IA(*req.Msg.Ia)
-		ia = &tmp
-	}
-	pageSize := s.info.MaxReturnedAssets
-	if pageSize == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("page size cannot be 0"))
-	}
-	if req.Msg.MaxReturnedAssets != nil {
-		pageSize = min(pageSize, *req.Msg.MaxReturnedAssets)
-	}
-
-	assets, err := s.store.Search(ctx, &db.AssetQuery{
-		AccountId:            owner_id,
-		IA:                   ia,
-		Ingress:              req.Msg.IfIdIngress,
-		Egress:               req.Msg.IfIdEgress,
-		MinRequiredBandwidth: req.Msg.MinRequiredBw,
-		Price:                req.Msg.Price,
-		StartsAt:             startsAt,
-		StopsAt:              stopsAt,
-		Page:                 req.Msg.Page,
-		PageSize:             pageSize,
-	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	repAssets := make([]*hummingbird.SearchAsset, 0, len(assets))
+	assetMap := make(map[int64]*hummingbird.SearchAsset)
 	for _, asset := range assets {
-		a := &hummingbird.SearchAsset{
-			AssetId:         protoAssetID(asset.ID),
-			Ia:              uint64(asset.IA),
-			Bandwidth:       asset.Bandwidth,
-			BandwidthMin:    asset.BandwidthMin,
-			BandwidthMax:    asset.BandwidthMax,
-			TimeMinDuration: asset.TimeMinDuration,
-			TimeMaxDuration: asset.TimeMaxDuration,
-			StartsAt:        timestamppb.New(asset.StartAt),
-			StopsAt:         timestamppb.New(asset.StopsAt),
-			TimeGranularity: asset.TimeGranularity,
-			Price:           asset.Price,
+		mapAsset, found := assetMap[asset.ID]
+		if found {
+			mapAsset.Intervals = append(mapAsset.Intervals, &hummingbird.SearchAssetInterval{
+				Bandwidth: asset.Bandwidth,
+				StartsAt:  asset.StartsAt,
+				StopsAt:   asset.StopsAt,
+			})
+		} else {
+			a := &hummingbird.SearchAsset{
+				AssetId:         protoAssetID(asset.ID),
+				Ia:              uint64(asset.IA),
+				BandwidthMin:    asset.BandwidthMin,
+				BandwidthMax:    asset.BandwidthMax,
+				TimeMinDuration: asset.TimeMinDuration,
+				TimeMaxDuration: asset.TimeMaxDuration,
+				TimeGranularity: asset.TimeGranularity,
+				Price:           asset.Price,
+				Intervals: []*hummingbird.SearchAssetInterval{
+					&hummingbird.SearchAssetInterval{
+						Bandwidth: asset.Bandwidth,
+						StartsAt:  asset.StartsAt,
+						StopsAt:   asset.StopsAt,
+					},
+				},
+			}
+			if asset.IfIdIngress.Valid {
+				ingress := uint32(asset.IfIdIngress.Int32)
+				a.IfIdIngress = &ingress
+			}
+			if asset.IfIdEgress.Valid {
+				egress := uint32(asset.IfIdEgress.Int32)
+				a.IfIdEgress = &egress
+			}
+			repAssets = append(repAssets, a)
+			assetMap[asset.ID] = a
 		}
-		if asset.IfIdIngress.Valid {
-			ingress := uint32(asset.IfIdIngress.Int32)
-			a.IfIdIngress = &ingress
-		}
-		if asset.IfIdEgress.Valid {
-			egress := uint32(asset.IfIdEgress.Int32)
-			a.IfIdEgress = &egress
-		}
-		repAssets = append(repAssets, a)
 	}
 	return &connect.Response[hummingbird.SearchAssetsResponse]{
 		Msg: &hummingbird.SearchAssetsResponse{

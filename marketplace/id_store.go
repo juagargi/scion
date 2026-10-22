@@ -71,7 +71,7 @@ func (s *UsedIDStore) Init(limit_low uint32, limit_high uint32, r []*db.UsedRese
 		s.usedIds[res.Id] = struct{}{}
 		s.expirations = append(s.expirations, &entry{
 			id:         res.Id,
-			expiration: res.StopsAt.Unix(),
+			expiration: res.StopsAt,
 		})
 	}
 	heap.Init(&s.expirations)

@@ -317,7 +317,7 @@ func TestApplyDelegationRejectsBadParams(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newHandler()
 			err := h.ApplyDelegation(context.Background(), &marketplace.RedemptionDelegationUpdate{
-				ExpirationTime: time.Now().Add(time.Hour),
+				ExpirationTime: time.Now().Add(time.Hour).Unix(),
 				IdLimitHigh:    1000,
 				Key:            tc.key,
 				EncodingPoints: tc.points,
@@ -335,7 +335,7 @@ func TestApplyDelegationAcceptsEveryAESKeySize(t *testing.T) {
 	for _, size := range []int{16, 24, 32} {
 		t.Run(fmt.Sprintf("%d bytes", size), func(t *testing.T) {
 			_, err := marketplace.NewRedemptionService(&marketplace.RedemptionDelegationUpdate{
-				ExpirationTime: time.Now().Add(time.Hour),
+				ExpirationTime: time.Now().Add(time.Hour).Unix(),
 				IdLimitHigh:    1000,
 				Key:            make([]byte, size),
 				EncodingPoints: completeEncodingPoints(),
@@ -349,7 +349,7 @@ func TestApplyDelegationAcceptsEveryAESKeySize(t *testing.T) {
 // belongs to the type, not only to the callers that happen to validate.
 func TestNewRedemptionServiceRejectsIncompleteEncodingPoints(t *testing.T) {
 	_, err := marketplace.NewRedemptionService(&marketplace.RedemptionDelegationUpdate{
-		ExpirationTime: time.Now().Add(time.Hour),
+		ExpirationTime: time.Now().Add(time.Hour).Unix(),
 		IdLimitHigh:    1000,
 		Key:            make([]byte, 16),
 		EncodingPoints: []uint32{100, 200},
@@ -362,7 +362,7 @@ func TestNewRedemptionServiceRejectsIncompleteEncodingPoints(t *testing.T) {
 // so the checks above cannot pass merely by rejecting everything.
 func TestNewRedemptionServiceAcceptsACompleteTable(t *testing.T) {
 	s, err := marketplace.NewRedemptionService(&marketplace.RedemptionDelegationUpdate{
-		ExpirationTime: time.Now().Add(time.Hour),
+		ExpirationTime: time.Now().Add(time.Hour).Unix(),
 		IdLimitHigh:    1000,
 		Key:            make([]byte, 16),
 		EncodingPoints: completeEncodingPoints(),

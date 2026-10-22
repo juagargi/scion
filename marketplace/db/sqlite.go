@@ -33,7 +33,11 @@ import (
 type Repository interface {
 	InsertAsset(ctx context.Context, a *DBAsset) (int64, error)
 	InsertReservation(ctx context.Context, r *DBReservation) (int64, error)
-	Search(ctx context.Context, params *AssetQuery) ([]*DBAsset, error)
+	SearchOwnedAssets(ctx context.Context, params *OwnedAssetQuery) ([]*DBAsset, error)
+	SearchListedAssets(ctx context.Context, params *ListedAssetQuery) ([]*DBAsset, error)
+	LookupAsset(ctx context.Context, id int64, ia addr.IA) (*DBAsset, error)
+	LookupAssets(ctx context.Context, ia addr.IA) ([]*DBAsset, error)
+	LookupAllAssetSegments(ctx context.Context, id int64) ([]*DBAssetSegment, error)
 	FetchReservations(ctx context.Context, params *ReservationQuery) ([]*DBReservation, error)
 	GetUser(ctx context.Context, id int64) (*DBUser, error)
 	GetUserByName(ctx context.Context, name string) (*DBUser, error)
@@ -64,6 +68,13 @@ type Repository interface {
 	RemoveAsset(ctx context.Context, assetID int64) error
 	RegisterAssetEvent(ctx context.Context, a *DBAsset, eventType AssetEventType) (int64, error)
 	TransitionAsset(ctx context.Context, assetID int64, accountID *int64, from AssetState, to AssetState) (*DBAsset, error)
+	InsertAssetSegment(ctx context.Context, asset_id int64, from int64, to int64, bw uint32) (int64, error)
+	CheckAssetAvailability(ctx context.Context, assetId int64, startsAt int64, stopsAt int64, bw uint32) (*DBAsset, error)
+	SplitAssetAt(ctx context.Context, assetId int64, point int64) error
+	MergeAssetAt(ctx context.Context, assetId int64, point int64) error
+	IncreaseAssetSegmentsBandwidth(ctx context.Context, assetId int64, delta int64) error
+	UpdateAsset(ctx context.Context, a *DBAsset) (int64, error)
+	BuyAsset(ctx context.Context, startsAt int64, stopsAt int64, bw uint32, accountId int64, dbAsset *DBAsset) (*DBAsset, error)
 }
 
 type MarketplaceDB interface {
@@ -152,10 +163,82 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+func scanAssetWithAvailableBandwidthAndUsability(row rowScanner) (*DBAsset, error) {
+	asset := &DBAsset{}
+	var isd uint16
+	var as uint64
+	var usableFrom int64
+	var usableTo int64
+	var availableBW uint32
+	if err := row.Scan(
+		&asset.ID,
+		&asset.AccountId,
+		&isd,
+		&as,
+		&asset.Bandwidth,
+		&asset.BandwidthMin,
+		&asset.BandwidthMax,
+		&asset.Price,
+		&asset.TimeGranularity,
+		&asset.TimeMinDuration,
+		&asset.TimeMaxDuration,
+		&asset.StartsAt,
+		&asset.StopsAt,
+		&asset.IfIdIngress,
+		&asset.IfIdEgress,
+		&usableFrom,
+		&usableTo,
+		&availableBW,
+	); err != nil {
+		return nil, serrors.Wrap("Error reading DB response", err)
+	}
+	var err error
+	asset.IA, err = addr.IAFrom(addr.ISD(isd), addr.AS(as))
+	if err != nil {
+		return nil, err
+	}
+	asset.Bandwidth = availableBW
+	asset.StartsAt = usableFrom
+	asset.StopsAt = usableTo
+	return asset, nil
+}
+
+func scanAssetWithAvailableBandwidth(row rowScanner) (*DBAsset, error) {
+	asset := &DBAsset{}
+	var isd uint16
+	var as uint64
+	var availableBW uint32
+	if err := row.Scan(
+		&asset.ID,
+		&asset.AccountId,
+		&isd,
+		&as,
+		&asset.Bandwidth,
+		&asset.BandwidthMin,
+		&asset.BandwidthMax,
+		&asset.Price,
+		&asset.TimeGranularity,
+		&asset.TimeMinDuration,
+		&asset.TimeMaxDuration,
+		&asset.StartsAt,
+		&asset.StopsAt,
+		&asset.IfIdIngress,
+		&asset.IfIdEgress,
+		&availableBW,
+	); err != nil {
+		return nil, serrors.Wrap("Error reading DB response", err)
+	}
+	var err error
+	asset.IA, err = addr.IAFrom(addr.ISD(isd), addr.AS(as))
+	if err != nil {
+		return nil, err
+	}
+	asset.Bandwidth = availableBW
+	return asset, nil
+}
+
 func scanAsset(row rowScanner) (*DBAsset, error) {
 	asset := &DBAsset{}
-	var startsAt string
-	var stopsAt string
 	var isd uint16
 	var as uint64
 	if err := row.Scan(
@@ -170,8 +253,8 @@ func scanAsset(row rowScanner) (*DBAsset, error) {
 		&asset.TimeGranularity,
 		&asset.TimeMinDuration,
 		&asset.TimeMaxDuration,
-		&startsAt,
-		&stopsAt,
+		&asset.StartsAt,
+		&asset.StopsAt,
 		&asset.IfIdIngress,
 		&asset.IfIdEgress,
 	); err != nil {
@@ -182,21 +265,11 @@ func scanAsset(row rowScanner) (*DBAsset, error) {
 	if err != nil {
 		return nil, err
 	}
-	asset.StartAt, err = time.Parse(time.RFC3339, startsAt)
-	if err != nil {
-		return nil, err
-	}
-	asset.StopsAt, err = time.Parse(time.RFC3339, stopsAt)
-	if err != nil {
-		return nil, err
-	}
 	return asset, nil
 }
 
 func scanReservation(row rowScanner) (*DBReservation, error) {
 	reservation := &DBReservation{}
-	var startsAt string
-	var stopsAt string
 	var isd uint16
 	var as uint64
 	if err := row.Scan(
@@ -209,22 +282,14 @@ func scanReservation(row rowScanner) (*DBReservation, error) {
 		&reservation.Egress,
 		&reservation.Bandwidth,
 		&reservation.EncodedBandwidth,
-		&startsAt,
-		&stopsAt,
+		&reservation.StartsAt,
+		&reservation.StopsAt,
 		&reservation.Key,
 	); err != nil {
 		return nil, serrors.Wrap("Error reading DB response", err)
 	}
 	var err error
 	reservation.IA, err = addr.IAFrom(addr.ISD(isd), addr.AS(as))
-	if err != nil {
-		return nil, err
-	}
-	reservation.StartsAt, err = time.Parse(time.RFC3339, startsAt)
-	if err != nil {
-		return nil, err
-	}
-	reservation.StopsAt, err = time.Parse(time.RFC3339, stopsAt)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +368,7 @@ func (e *executor) FindRedemptionDelegations(
 	}
 	stmt := `SELECT isd_id, as_id, res_id_limit_low, res_id_limit_high, expiration, paid_until, key, encodings
 			 FROM Redemption_Delegations WHERE expiration >= ?`
-	args := []any{time.Now().UTC().Format(time.RFC3339)}
+	args := []any{time.Now().Unix()}
 	rows, err := e.read.QueryContext(ctx, stmt, args...)
 	if err != nil {
 		return nil, serrors.New("Error looking up assets", "err", err, "q", stmt)
@@ -312,8 +377,6 @@ func (e *executor) FindRedemptionDelegations(
 	var res []*RedemptionDelegation
 	for rows.Next() {
 		a := &RedemptionDelegation{}
-		var expirationString string
-		var paidUntilString string
 		var isd uint16
 		var as uint64
 		err = rows.Scan(
@@ -321,20 +384,12 @@ func (e *executor) FindRedemptionDelegations(
 			&as,
 			&a.ResIdLow,
 			&a.ResIdHigh,
-			&expirationString,
-			&paidUntilString,
+			&a.Expiration,
+			&a.PaidUntil,
 			&a.Key,
 			&a.Encodings)
 		if err != nil {
 			return nil, serrors.Wrap("Error reading DB response", err)
-		}
-		a.Expiration, err = time.Parse(time.RFC3339, expirationString)
-		if err != nil {
-			return nil, err
-		}
-		a.PaidUntil, err = time.Parse(time.RFC3339, paidUntilString)
-		if err != nil {
-			return nil, err
 		}
 		a.IA, err = addr.IAFrom(addr.ISD(isd), addr.AS(as))
 		res = append(res, a)
@@ -352,7 +407,7 @@ func (e *executor) FindRedemptionDelegation(
 	stmt := `SELECT isd_id, as_id, res_id_limit_low, res_id_limit_high, expiration, paid_until, key, encodings
 			 FROM Redemption_Delegations
 			 WHERE expiration >= ? AND isd_id = ? AND as_id = ?`
-	rows, err := e.read.QueryContext(ctx, stmt, time.Now().Format(time.RFC3339), ia.ISD(), ia.AS())
+	rows, err := e.read.QueryContext(ctx, stmt, time.Now().Unix(), ia.ISD(), ia.AS())
 	if err != nil {
 		return nil, serrors.New("Error looking up assets", "err", err, "q", stmt)
 	}
@@ -361,8 +416,6 @@ func (e *executor) FindRedemptionDelegation(
 		return nil, nil
 	}
 	a := &RedemptionDelegation{}
-	var expirationString string
-	var paidUntilString string
 	var isd uint16
 	var as uint64
 	err = rows.Scan(
@@ -370,20 +423,12 @@ func (e *executor) FindRedemptionDelegation(
 		&as,
 		&a.ResIdLow,
 		&a.ResIdHigh,
-		&expirationString,
-		&paidUntilString,
+		&a.Expiration,
+		&a.PaidUntil,
 		&a.Key,
 		&a.Encodings)
 	if err != nil {
 		return nil, serrors.Wrap("Error reading DB response", err)
-	}
-	a.Expiration, err = time.Parse(time.RFC3339, expirationString)
-	if err != nil {
-		return nil, err
-	}
-	a.PaidUntil, err = time.Parse(time.RFC3339, paidUntilString)
-	if err != nil {
-		return nil, err
 	}
 	a.IA, err = addr.IAFrom(addr.ISD(isd), addr.AS(as))
 	return a, nil
@@ -490,8 +535,8 @@ func (e *executor) CreateOrUpdateRedemptionDelegations(
 		r.IA.AS(),
 		r.ResIdLow,
 		r.ResIdHigh,
-		r.Expiration.UTC().Format(time.RFC3339),
-		r.PaidUntil.UTC().Format(time.RFC3339),
+		r.Expiration,
+		r.PaidUntil,
 		r.Key,
 		r.Encodings)
 	if err != nil {
@@ -516,19 +561,9 @@ func (e *executor) FindUsedReservations(
 	var res []*UsedReservation
 	for rows.Next() {
 		a := &UsedReservation{}
-		var startsAtString string
-		var stopsAtString string
-		err = rows.Scan(&a.Id, &startsAtString, &stopsAtString)
+		err = rows.Scan(&a.Id, &a.StartsAt, &a.StopsAt)
 		if err != nil {
 			return nil, serrors.Wrap("Error reading DB response", err)
-		}
-		a.StartsAt, err = time.Parse(time.RFC3339, startsAtString)
-		if err != nil {
-			return nil, err
-		}
-		a.StopsAt, err = time.Parse(time.RFC3339, stopsAtString)
-		if err != nil {
-			return nil, err
 		}
 		res = append(res, a)
 	}
@@ -544,7 +579,7 @@ func (e *executor) buildUsedReservationsQuery(params *UsedReservationsQuery) (st
 		params.IA.AS(),
 		params.Limit_low,
 		params.Limit_high,
-		time.Now().UTC().Format(time.RFC3339),
+		time.Now().Unix(),
 	}
 	return query, args
 }
@@ -562,19 +597,9 @@ func (e *executor) SearchAssetsForStatistics(ctx context.Context, params *Statis
 	var publishedAssets []*DBStat
 	for publishRows.Next() {
 		a := &DBStat{}
-		var startsAtString string
-		var stopsAtString string
-		err = publishRows.Scan(&a.Bandwidth, &a.Price, &startsAtString, &stopsAtString)
+		err = publishRows.Scan(&a.Bandwidth, &a.Price, &a.StartsAt, &a.StopsAt)
 		if err != nil {
 			return nil, nil, serrors.Wrap("Error reading DB response", err)
-		}
-		a.StartsAt, err = time.Parse(time.RFC3339, startsAtString)
-		if err != nil {
-			return nil, nil, err
-		}
-		a.StopsAt, err = time.Parse(time.RFC3339, stopsAtString)
-		if err != nil {
-			return nil, nil, err
 		}
 		publishedAssets = append(publishedAssets, a)
 	}
@@ -587,19 +612,9 @@ func (e *executor) SearchAssetsForStatistics(ctx context.Context, params *Statis
 	var boughtAssets []*DBStat
 	for boughtRows.Next() {
 		a := &DBStat{}
-		var startsAtString string
-		var stopsAtString string
-		err = boughtRows.Scan(&a.Bandwidth, &a.Price, &startsAtString, &stopsAtString)
+		err = boughtRows.Scan(&a.Bandwidth, &a.Price, &a.StartsAt, &a.StopsAt)
 		if err != nil {
 			return nil, nil, serrors.Wrap("Error reading DB response", err)
-		}
-		a.StartsAt, err = time.Parse(time.RFC3339, startsAtString)
-		if err != nil {
-			return nil, nil, err
-		}
-		a.StopsAt, err = time.Parse(time.RFC3339, stopsAtString)
-		if err != nil {
-			return nil, nil, err
 		}
 		boughtAssets = append(boughtAssets, a)
 	}
@@ -634,18 +649,26 @@ func (e *executor) RegisterAssetEvent(ctx context.Context, a *DBAsset, eventType
 	inst := `INSERT INTO Asset_Events (event_type, isd_id, as_id, ingress, egress, bandwidth, starts_at, stops_at, price)
 	VALUES(?,?,?,?,?,?,?,?,?)`
 	res, err := e.write.ExecContext(ctx, inst, eventType, a.IA.ISD(), a.IA.AS(), a.IfIdIngress, a.IfIdEgress, a.Bandwidth,
-		a.StartAt.UTC().Format(time.RFC3339), a.StopsAt.UTC().Format(time.RFC3339), a.Price)
+		a.StartsAt, a.StopsAt, a.Price)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-func (e *executor) Search(ctx context.Context, params *AssetQuery) ([]*DBAsset, error) {
+func (e *executor) SearchOwnedAssets(ctx context.Context, params *OwnedAssetQuery) ([]*DBAsset, error) {
 	if e.read == nil {
 		return nil, serrors.New("No database open")
 	}
-	stmt, args := e.buildSearchQuery(params)
+	var stmt string
+	var args []any
+	if params.ValidityMode == FullOverlap {
+		stmt, args = e.buildSearchOwnedAssetsFullOverlapQuery(params)
+	} else if params.ValidityMode == PartialOverlap {
+		stmt, args = e.buildSearchOwnedAssetsPartialOverlapQuery(params)
+	} else {
+		return nil, serrors.New("invalid validity mode")
+	}
 	rows, err := e.read.QueryContext(ctx, stmt, args...)
 	if err != nil {
 		return nil, serrors.New("Error looking up assets", "err", err, "q", stmt)
@@ -662,23 +685,268 @@ func (e *executor) Search(ctx context.Context, params *AssetQuery) ([]*DBAsset, 
 	return res, nil
 }
 
-func (e *executor) buildSearchQuery(params *AssetQuery) (string, []any) {
+func (e *executor) LookupAsset(ctx context.Context, id int64, ia addr.IA) (*DBAsset, error) {
+	if e.read == nil {
+		return nil, serrors.New("No database open")
+	}
+	q := `SELECT ` + assetColumnsWithAlias + ` FROM Assets a WHERE a.ID = ? AND a.isd_id = ? AND a.as_id = ?`
+	rows, err := e.read.QueryContext(ctx, q, id, ia.ISD(), ia.AS())
+	if err != nil {
+		return nil, err
+	}
+	if !rows.Next() {
+		return nil, serrors.New("asset not found")
+	}
+	return scanAsset(rows)
+}
+
+func (e *executor) LookupAssets(ctx context.Context, ia addr.IA) ([]*DBAsset, error) {
+	if e.read == nil {
+		return nil, serrors.New("No database open")
+	}
+	q := `SELECT ` + assetColumnsWithAlias + ` FROM Assets a WHERE a.isd_id = ? AND a.as_id = ? AND a.account_id IS NULL`
+	rows, err := e.read.QueryContext(ctx, q, ia.ISD(), ia.AS())
+	if err != nil {
+		return nil, err
+	}
+	res := []*DBAsset{}
+	for rows.Next() {
+		asset, err := scanAsset(rows)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, asset)
+	}
+	return res, nil
+}
+
+func (e *executor) LookupAllAssetSegments(ctx context.Context, id int64) ([]*DBAssetSegment, error) {
+	if e.read == nil {
+		return nil, serrors.New("No database open")
+	}
+	q := `SELECT starts_at, stops_at, available FROM Asset_Segment WHERE asset_id = ?`
+	rows, err := e.read.QueryContext(ctx, q, id)
+	if err != nil {
+		return nil, err
+	}
+	res := []*DBAssetSegment{}
+	for rows.Next() {
+		seg := &DBAssetSegment{}
+		err = rows.Scan(&seg.StartsAt, &seg.StopsAt, &seg.Available)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, seg)
+	}
+	return res, nil
+}
+
+func (e *executor) SearchListedAssets(ctx context.Context, params *ListedAssetQuery) ([]*DBAsset, error) {
+	if e.read == nil {
+		return nil, serrors.New("No database open")
+	}
+	var stmt string
+	var args []any
+	var res []*DBAsset
+	if params.ValidityMode == FullOverlap {
+		stmt, args = e.buildSearchListedAssetsFullOverlapQuery(params)
+		rows, err := e.read.QueryContext(ctx, stmt, args...)
+		if err != nil {
+			return nil, serrors.New("Error looking up assets", "err", err, "q", stmt)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			a, err := scanAssetWithAvailableBandwidth(rows)
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, a)
+		}
+	} else if params.ValidityMode == PartialOverlap {
+		stmt, args = e.buildSearchListedAssetsPartialOverlapQuery(params)
+		rows, err := e.read.QueryContext(ctx, stmt, args...)
+		if err != nil {
+			return nil, serrors.New("Error looking up assets", "err", err, "q", stmt)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			a, err := scanAssetWithAvailableBandwidthAndUsability(rows)
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, a)
+		}
+	} else {
+		return nil, serrors.New("invalid validity mode")
+	}
+
+	return res, nil
+}
+
+func (e *executor) buildSearchListedAssetsPartialOverlapQuery(params *ListedAssetQuery) (string, []any) {
+	var args []any
+	where := []string{}
+	queryStart := []string{`
+	WITH candidates AS (
+		SELECT ` + assetColumnsWithAlias + `
+		FROM Assets a
+		WHERE a.isd_id = ? AND a.as_id = ?
+		AND a.stops_at > ? AND a.starts_at < ?
+		AND a.account_id IS NULL
+		AND a.bandwidth >= ?
+	`}
+	queryEnd := `
+	),
+	hits AS (
+		SELECT c.id AS asset_id,
+			MAX(g.starts_at, ?) AS f,
+			MIN(g.stops_at,  ?) AS t,
+			g.available
+		FROM candidates c
+		JOIN Asset_Segment g
+		ON g.asset_id = c.id AND g.starts_at < ? AND g.stops_at > ?
+		WHERE g.available >= ?
+	),
+	marked AS (
+		SELECT *,
+			CASE WHEN f = LAG(t) OVER (PARTITION BY asset_id ORDER BY f)
+					THEN 0 ELSE 1 END AS new_island
+		FROM hits
+	),
+	islands AS (
+		SELECT *,
+			SUM(new_island) OVER (PARTITION BY asset_id ORDER BY f) AS island
+		FROM marked
+	)
+	SELECT c.id, c.account_id, c.isd_id, c.as_id, c.bandwidth, c.bandwidth_min, c.bandwidth_max,
+		c.price, c.time_granularity, c.time_min_duration, c.time_max_duration, c.starts_at, c.stops_at, 
+		c.ingress, c.egress,
+		MIN(i.f)         AS usable_from,
+		MAX(i.t)         AS usable_to,
+		MIN(i.available) AS max_buyable_bandwidth
+	FROM islands i
+	JOIN candidates c ON c.id = i.asset_id
+	GROUP BY i.asset_id, i.island
+	ORDER BY c.isd_id, c.as_id, c.ingress, c.egress, c.id, usable_from`
+	args = append(args, params.IA.ISD(), params.IA.AS(), params.StartsAt, params.StopsAt, params.MinRequiredBandwidth)
+	where = append(where, "(a.state = ?)")
+	args = append(args, AssetStateAvailable)
+	if params.Price != nil {
+		where = append(where, "(a.price<=?)")
+		args = append(args, *params.Price)
+	}
+	if params.Ingress != nil {
+		where = append(where, "(a.ingress=?)")
+		args = append(args, *params.Ingress)
+	}
+	if params.Egress != nil {
+		where = append(where, "(a.egress=?)")
+		args = append(args, *params.Egress)
+	}
+	args = append(args, params.StartsAt, params.StopsAt, params.StopsAt, params.StartsAt, params.MinRequiredBandwidth)
+	query := append(queryStart, fmt.Sprintf("AND %s", strings.Join(where, "AND\n")), queryEnd)
+	return strings.Join(query, "\n"), args
+}
+
+func (e *executor) buildSearchListedAssetsFullOverlapQuery(params *ListedAssetQuery) (string, []any) {
+	var args []any
+	where := []string{}
+	queryStart := []string{`
+	
+	SELECT ` + assetColumnsWithAlias + `, MIN(g.available) AS max_buyable_bandwidth
+	FROM Assets a
+	JOIN Asset_Segment g
+	ON g.asset_id = a.id AND g.starts_at < ? AND g.stops_at > ?
+	WHERE a.isd_id = ? AND a.as_id = ?
+	AND a.starts_at <= ? AND a.stops_at >= ?
+	AND a.account_id IS NULL
+	AND a.bandwidth >= ?
+	`,
+	}
+	queryEnd := `
+	GROUP BY a.id
+	HAVING MIN(g.available) >= ?
+	ORDER BY a.id
+	`
+	args = append(args, params.StopsAt, params.StartsAt, params.IA.ISD(), params.IA.AS(), params.StartsAt,
+		params.StopsAt, params.MinRequiredBandwidth)
+
+	where = append(where, "(a.state = ?)")
+	args = append(args, AssetStateAvailable)
+	if params.Price != nil {
+		where = append(where, "(a.price<=?)")
+		args = append(args, *params.Price)
+	}
+	if params.Ingress != nil {
+		where = append(where, "(a.ingress=?)")
+		args = append(args, *params.Ingress)
+	}
+	if params.Egress != nil {
+		where = append(where, "(a.egress=?)")
+		args = append(args, *params.Egress)
+	}
+	args = append(args, params.MinRequiredBandwidth)
+	query := append(queryStart, fmt.Sprintf("AND %s", strings.Join(where, "AND\n")), queryEnd)
+	return strings.Join(query, "\n"), args
+}
+
+func (e *executor) buildSearchOwnedAssetsPartialOverlapQuery(params *OwnedAssetQuery) (string, []any) {
 	var args []any
 	where := []string{}
 	query := []string{
 		"SELECT " + assetColumnsWithAlias + " FROM Assets a",
 	}
-	if params.AccountId == nil {
-		where = append(where, "(a.account_id IS NULL)")
-	} else {
-		// The JOIN clause will be the first parametrized entry. Fill up the arguments for it.
-		query = append(query, "JOIN Accounts owner ON a.account_id = owner.id JOIN "+
-			"Accounts current ON current.id = ?")
-		args = append(args, *params.AccountId)
-		// Parenthesized as a whole: AND to all where[i] binds tighter than OR.
-		where = append(where, "( (current.scope = '' AND owner.user_id = current.user_id) OR "+
-			"(current.scope != '' AND owner.id = current.id) )")
+	query = append(query, "JOIN Accounts owner ON a.account_id = owner.id JOIN "+
+		"Accounts current ON current.id = ?")
+	args = append(args, *params.AccountId)
+	where = append(where, "((current.scope = '' AND owner.user_id = current.user_id) OR "+
+		"(current.scope != '' AND owner.id = current.id))")
+	where = append(where, "(a.state = ?)")
+	args = append(args, AssetStateAvailable)
+	if params.IA != nil {
+		where = append(where, "(a.isd_id=?) AND (a.as_id=?)")
+		args = append(args, int64(params.IA.ISD()), int64(params.IA.AS()))
 	}
+	if params.StartsAt != nil {
+		where = append(where, "(a.starts_at>=?)")
+		args = append(args, *params.StartsAt)
+	}
+	if params.StopsAt != nil {
+		where = append(where, "(a.stops_at<=?)")
+		args = append(args, *params.StopsAt)
+	}
+	if params.Price != nil {
+		where = append(where, "(a.price<=?)")
+		args = append(args, *params.Price)
+	}
+	if params.MinRequiredBandwidth != nil {
+		where = append(where, "(a.bandwidth>=?)")
+		args = append(args, *params.MinRequiredBandwidth)
+	}
+	if params.Ingress != nil {
+		where = append(where, "(a.ingress=?)")
+		args = append(args, *params.Ingress)
+	}
+	if params.Egress != nil {
+		where = append(where, "(a.egress=?)")
+		args = append(args, *params.Egress)
+	}
+	query = append(query, fmt.Sprintf("WHERE %s", strings.Join(where, "AND\n")))
+	return strings.Join(query, "\n"), args
+}
+
+func (e *executor) buildSearchOwnedAssetsFullOverlapQuery(params *OwnedAssetQuery) (string, []any) {
+	var args []any
+	where := []string{}
+	query := []string{
+		"SELECT " + assetColumnsWithAlias + " FROM Assets a",
+	}
+	query = append(query, "JOIN Accounts owner ON a.account_id = owner.id JOIN "+
+		"Accounts current ON current.id = ?")
+	args = append(args, *params.AccountId)
+	where = append(where, "((current.scope = '' AND owner.user_id = current.user_id) OR "+
+		"(current.scope != '' AND owner.id = current.id))")
 	where = append(where, "(a.state = ?)")
 	args = append(args, AssetStateAvailable)
 	if params.IA != nil {
@@ -710,9 +978,6 @@ func (e *executor) buildSearchQuery(params *AssetQuery) (string, []any) {
 		args = append(args, *params.Egress)
 	}
 	query = append(query, fmt.Sprintf("WHERE %s", strings.Join(where, "AND\n")))
-	query = append(query, "ORDER BY LENGTH(a.id) ASC, a.id ASC")
-	query = append(query, "LIMIT ? OFFSET ?")
-	args = append(args, params.PageSize, params.Page*params.PageSize)
 	return strings.Join(query, "\n"), args
 }
 
@@ -766,8 +1031,8 @@ func (e *executor) InsertReservation(ctx context.Context, r *DBReservation) (int
 		r.Egress,
 		r.Bandwidth,
 		r.EncodedBandwidth,
-		r.StartsAt.UTC().Format(time.RFC3339),
-		r.StopsAt.UTC().Format(time.RFC3339),
+		r.StartsAt,
+		r.StopsAt,
 		r.Key,
 		r.AccountId)
 	if err != nil {
@@ -797,8 +1062,8 @@ func (e *executor) InsertAsset(ctx context.Context, a *DBAsset) (int64, error) {
 			a.TimeGranularity,
 			a.TimeMinDuration,
 			a.TimeMaxDuration,
-			a.StartAt.UTC().Format(time.RFC3339),
-			a.StopsAt.UTC().Format(time.RFC3339),
+			a.StartsAt,
+			a.StopsAt,
 			a.IfIdIngress,
 			a.IfIdEgress,
 			a.AccountId)
@@ -815,8 +1080,8 @@ func (e *executor) InsertAsset(ctx context.Context, a *DBAsset) (int64, error) {
 			a.TimeGranularity,
 			a.TimeMinDuration,
 			a.TimeMaxDuration,
-			a.StartAt.UTC().Format(time.RFC3339),
-			a.StopsAt.UTC().Format(time.RFC3339),
+			a.StartsAt,
+			a.StopsAt,
 			a.IfIdIngress,
 			a.IfIdEgress)
 	}
@@ -1146,4 +1411,223 @@ func (e *executor) AssignReservation(
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+func (e *executor) InsertAssetSegment(ctx context.Context, asset_id int64, from int64, to int64, bw uint32) (int64, error) {
+	if e.write == nil {
+		return 0, serrors.New("No database open")
+	}
+	inst := `INSERT INTO Asset_Segment(asset_id, starts_at, stops_at, available) VALUES (?,?,?,?)`
+	res, err := e.write.ExecContext(ctx, inst, asset_id, from, to, bw)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (e *executor) IncreaseAssetSegmentsBandwidth(ctx context.Context, assetId int64, delta int64) error {
+	if e.write == nil {
+		return serrors.New("No database open")
+	}
+	inst := `
+	UPDATE Asset_Segment SET available = available + ?
+	WHERE asset_id = ?`
+	_, err := e.write.ExecContext(ctx, inst, delta, assetId)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *executor) UpdateAsset(ctx context.Context, a *DBAsset) (int64, error) {
+	if e.write == nil {
+		return 0, serrors.New("No database open")
+	}
+	inst := `
+	UPDATE Assets
+	SET bandwidth = ?, bandwidth_min = ?, bandwidth_max = ?, price = ?, time_granularity = ?,
+	time_min_duration = ?, time_max_duration = ?, starts_at = ?, stops_at = ?
+	WHERE id = ? AND state = ? AND account_ID IS NULL`
+	res, err := e.write.ExecContext(ctx, inst, a.Bandwidth, a.BandwidthMin, a.BandwidthMax,
+		a.Price, a.TimeGranularity, a.TimeMinDuration, a.TimeMaxDuration, a.StartsAt,
+		a.StopsAt, a.ID, AssetStateAvailable)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (e *executor) MergeAssetAt(ctx context.Context, assetId int64, point int64) error {
+	if e.write == nil {
+		return serrors.New("No database open")
+	}
+	updateInst := `
+		UPDATE Asset_Segment AS l
+		SET stops_at = r.stops_at
+		FROM Asset_Segment AS r
+		WHERE l.asset_id = ? AND l.stops_at = ?
+		  AND r.asset_id = ? AND r.starts_at = ?
+		  AND r.available = l.available
+		`
+	res, err := e.write.ExecContext(ctx, updateInst, assetId, point, assetId, point)
+	if err != nil {
+		return fmt.Errorf("merge at %d (update): %w", point, err)
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		deleteInst := `DELETE FROM Asset_Segment WHERE asset_id = ? AND starts_at = ?`
+		if _, err := e.write.ExecContext(ctx, deleteInst, assetId, point); err != nil {
+			return fmt.Errorf("merge at %d (delete): %w", point, err)
+		}
+	}
+	return nil
+}
+
+func (e *executor) SplitAssetAt(ctx context.Context, assetId int64, point int64) error {
+	if e.write == nil {
+		return serrors.New("No database open")
+	}
+	insertInst := `
+		INSERT INTO Asset_segment (asset_id, starts_at, stops_at, available)
+		SELECT asset_id, ?, stops_at, available
+		FROM Asset_segment
+		WHERE asset_id = ? AND starts_at < ? AND stops_at > ?`
+	_, err := e.write.ExecContext(ctx, insertInst, point, assetId, point, point)
+	if err != nil {
+		return err
+	}
+	updateInst := `
+		UPDATE Asset_segment
+		SET stops_at = ?
+		WHERE asset_id = ? AND starts_at < ? AND stops_at > ?
+		`
+	_, err = e.write.ExecContext(ctx, updateInst, point, assetId, point, point)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *executor) CheckAssetAvailability(
+	ctx context.Context,
+	assetId int64,
+	startsAt int64,
+	stopsAt int64,
+	bw uint32,
+) (*DBAsset, error) {
+	if e.read == nil {
+		return nil, serrors.New("No database open")
+	}
+	inst := `
+	SELECT ` + assetColumnsWithAlias + ` FROM Assets a
+	WHERE a.id = ?
+	AND a.account_ID IS NULL
+	AND a.state = ?
+	AND a.starts_at <= ? AND a.stops_at >= ?
+	AND NOT EXISTS (
+		SELECT 1 FROM Asset_Segment g
+		WHERE g.asset_id = a.id
+		AND g.starts_at < ? AND g.stops_at > ?
+		AND g.available < ?);
+	`
+	rows, err := e.read.QueryContext(ctx, inst, assetId, AssetStateAvailable, startsAt, stopsAt, stopsAt, startsAt, bw)
+	if err != nil {
+		return nil, err
+	}
+	if !rows.Next() {
+		return nil, serrors.New("asset not found")
+	}
+	asset, err := scanAsset(rows)
+	if err != nil {
+		return nil, err
+	}
+	return asset, nil
+}
+
+func (e *executor) BuyFromAssetSegment(
+	ctx context.Context,
+	assetId int64,
+	startsAt int64,
+	stopsAt int64,
+	bw uint32,
+	accountId int64,
+	asset *DBAsset,
+) (*DBAsset, error) {
+	decreaseAvailabilityInst := `
+	UPDATE asset_segment
+	SET available = available - ?
+	WHERE asset_id = ? AND starts_at >= ? AND stops_at <= ?`
+	_, err := e.write.ExecContext(ctx, decreaseAvailabilityInst, bw, assetId, startsAt, stopsAt)
+	if err != nil {
+		return nil, err
+	}
+	userAsset := &DBAsset{
+		AccountId: sql.NullInt64{
+			Int64: accountId,
+			Valid: true,
+		},
+		IA:              asset.IA,
+		Bandwidth:       bw,
+		StartsAt:        startsAt,
+		StopsAt:         stopsAt,
+		BandwidthMin:    asset.BandwidthMin,
+		BandwidthMax:    asset.BandwidthMax,
+		Price:           asset.Price,
+		TimeGranularity: asset.TimeGranularity,
+		TimeMinDuration: asset.TimeMinDuration,
+		TimeMaxDuration: asset.TimeMaxDuration,
+		IfIdIngress:     asset.IfIdIngress,
+		IfIdEgress:      asset.IfIdEgress,
+	}
+	newId, err := e.InsertAsset(ctx, userAsset)
+	if err != nil {
+		return nil, err
+	}
+	userAsset.ID = newId
+	return userAsset, nil
+}
+
+// Buys a single asset. Availability must be checked in advance in same transaction.
+func (e *executor) BuyAsset(
+	ctx context.Context,
+	startsAt int64,
+	stopsAt int64,
+	bw uint32,
+	accountId int64,
+	dbAsset *DBAsset,
+) (*DBAsset, error) {
+	if e.write == nil {
+		return nil, serrors.New("No database open")
+	}
+	decreaseAvailabilityInst := `
+	UPDATE asset_segment
+	SET available = available - ?
+	WHERE asset_id = ? AND starts_at >= ? AND stops_at <= ?`
+	_, err := e.write.ExecContext(ctx, decreaseAvailabilityInst, bw, dbAsset.ID, startsAt, stopsAt)
+	if err != nil {
+		return nil, err
+	}
+	userAsset := &DBAsset{
+		AccountId: sql.NullInt64{
+			Int64: accountId,
+			Valid: true,
+		},
+		IA:              dbAsset.IA,
+		Bandwidth:       bw,
+		StartsAt:        startsAt,
+		StopsAt:         stopsAt,
+		BandwidthMin:    dbAsset.BandwidthMin,
+		BandwidthMax:    dbAsset.BandwidthMax,
+		Price:           dbAsset.Price,
+		TimeGranularity: dbAsset.TimeGranularity,
+		TimeMinDuration: dbAsset.TimeMinDuration,
+		TimeMaxDuration: dbAsset.TimeMaxDuration,
+		IfIdIngress:     dbAsset.IfIdIngress,
+		IfIdEgress:      dbAsset.IfIdEgress,
+	}
+	newId, err := e.InsertAsset(ctx, userAsset)
+	if err != nil {
+		return nil, err
+	}
+	userAsset.ID = newId
+	return userAsset, nil
 }

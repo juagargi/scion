@@ -24,7 +24,6 @@ import (
 	marketplacedb "github.com/scionproto/scion/marketplace/db"
 	"github.com/scionproto/scion/pkg/addr"
 	hbird "github.com/scionproto/scion/pkg/hummingbird"
-	hbirdmarketplace "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 	"github.com/scionproto/scion/private/config"
@@ -70,11 +69,18 @@ func NewStorage(
 	}, nil
 }
 
-func (s *MarketplaceStorage) Search(
+func (s *MarketplaceStorage) SearchListedAssets(
 	ctx context.Context,
-	params *marketplacedb.AssetQuery,
+	params *marketplacedb.ListedAssetQuery,
 ) ([]*marketplacedb.DBAsset, error) {
-	return s.db.Search(ctx, params)
+	return s.db.SearchListedAssets(ctx, params)
+}
+
+func (s *MarketplaceStorage) SearchOwnedAssets(
+	ctx context.Context,
+	params *marketplacedb.OwnedAssetQuery,
+) ([]*marketplacedb.DBAsset, error) {
+	return s.db.SearchOwnedAssets(ctx, params)
 }
 
 func (s *MarketplaceStorage) FetchReservations(
@@ -98,7 +104,11 @@ func (s *MarketplaceStorage) PublishAsset(
 		if err != nil {
 			return err
 		}
-		_, err := tx.RegisterAssetEvent(ctx, a, marketplacedb.AssetPublished)
+		_, err = tx.InsertAssetSegment(ctx, assetId, a.StartsAt, a.StopsAt, a.Bandwidth)
+		if err != nil {
+			return err
+		}
+		_, err = tx.RegisterAssetEvent(ctx, a, marketplacedb.AssetPublished)
 		if err != nil {
 			return err
 		}
@@ -108,22 +118,74 @@ func (s *MarketplaceStorage) PublishAsset(
 }
 func (s *MarketplaceStorage) UpdateListedAsset(
 	ctx context.Context,
-	a *marketplacedb.DBAsset,
+	id int64,
+	ia addr.IA,
+	a *hummingbird.UpdateAsset,
 ) (int64, error) {
-	if err := validateAsset(a); err != nil {
-		return 0, err
-	}
 	var newID int64
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
-		x, err := tx.DeleteListedAsset(ctx, a.IA, a.ID)
+		// get current dbAsset
+		dbAsset, err := tx.LookupAsset(ctx, id, ia)
+		if err != nil {
+			return err
+		}
+		// check for illegal modifications
+		if (a.Bandwidth != nil && *a.Bandwidth < dbAsset.Bandwidth) ||
+			(a.StartsAt != nil && *a.StartsAt > dbAsset.StartsAt) ||
+			(a.StopsAt != nil && *a.StopsAt < dbAsset.StopsAt) ||
+			(a.TimeMinDuration != nil && *a.TimeMinDuration > dbAsset.TimeMinDuration) ||
+			(a.TimeMaxDuration != nil && *a.TimeMaxDuration < dbAsset.TimeMaxDuration) ||
+			(a.BandwidthMin != nil && *a.BandwidthMin > dbAsset.BandwidthMin) ||
+			(a.BandwidthMax != nil && *a.BandwidthMax < dbAsset.BandwidthMax) {
+			return serrors.New("invalid asset modifications")
+		}
+		if a.Bandwidth != nil && *a.Bandwidth > dbAsset.Bandwidth {
+			if err = tx.IncreaseAssetSegmentsBandwidth(ctx, id, int64(*a.Bandwidth-dbAsset.Bandwidth)); err != nil {
+				return err
+			}
+			dbAsset.Bandwidth = *a.Bandwidth
+		}
+		if a.StartsAt != nil && *a.StartsAt < dbAsset.StartsAt {
+			if _, err = tx.InsertAssetSegment(ctx, id, *a.StartsAt, dbAsset.StartsAt, dbAsset.Bandwidth); err != nil {
+				return err
+			}
+			if err = tx.MergeAssetAt(ctx, id, dbAsset.StartsAt); err != nil {
+				return err
+			}
+			dbAsset.StartsAt = *a.StartsAt
+		}
+		if a.StopsAt != nil && *a.StopsAt > dbAsset.StopsAt {
+			if _, err = tx.InsertAssetSegment(ctx, id, dbAsset.StopsAt, *a.StopsAt, dbAsset.Bandwidth); err != nil {
+				return err
+			}
+			if err = tx.MergeAssetAt(ctx, id, dbAsset.StopsAt); err != nil {
+				return err
+			}
+			dbAsset.StopsAt = *a.StopsAt
+		}
+		if a.BandwidthMin != nil {
+			dbAsset.BandwidthMin = *a.BandwidthMin
+		}
+		if a.BandwidthMax != nil {
+			dbAsset.BandwidthMax = *a.BandwidthMax
+		}
+		if a.TimeMinDuration != nil {
+			dbAsset.TimeMinDuration = *a.TimeMinDuration
+		}
+		if a.TimeMaxDuration != nil {
+			dbAsset.TimeMaxDuration = *a.TimeMaxDuration
+		}
+		if a.Price != nil {
+			dbAsset.Price = *a.Price
+		}
+		x, err := tx.UpdateAsset(ctx, dbAsset)
 		if err != nil {
 			return err
 		}
 		if x != 1 {
-			return serrors.New("no modifiable asset with that ID found")
+			return serrors.New("invalid assets")
 		}
-		newID, err = tx.InsertAsset(ctx, a)
-		return err
+		return nil
 	})
 	return newID, err
 }
@@ -295,24 +357,24 @@ func (s *MarketplaceStorage) CreateOrUpdateRedemptionDelegations(
 		if err != nil {
 			return err
 		}
-		paidUntil := time.Now()
+		paidUntil := time.Now().Unix()
 		if delegation != nil {
 			paidUntil = delegation.PaidUntil
 		}
 		if s.delegationHourlyFee == 0 {
-			if r.Expiration.After(paidUntil) {
+			if r.Expiration > paidUntil {
 				r.PaidUntil = r.Expiration
 			} else {
 				r.PaidUntil = paidUntil
 			}
-		} else if r.Expiration.After(paidUntil) {
-			paymentDuration := hbird.RoundUpDuration(r.Expiration.Sub(paidUntil), time.Hour)
+		} else if r.Expiration > paidUntil {
+			paymentDuration := hbird.RoundUpDuration(time.Duration(r.Expiration-paidUntil)*time.Second, time.Hour)
 			numHours := uint64(paymentDuration / time.Hour)
 			if _, err := tx.UpdateASMoney(
 				ctx, r.IA, -int64(numHours*s.delegationHourlyFee)); err != nil {
 				return err
 			}
-			r.PaidUntil = paidUntil.Add(paymentDuration)
+			r.PaidUntil = paidUntil + int64(numHours)*60*60
 		} else {
 			r.PaidUntil = paidUntil
 		}
@@ -336,6 +398,33 @@ func addInt64(
 		return 0, false // overflow
 	}
 	return a + b, true
+}
+
+func multiplyInts(xs ...int64) (int64, bool) {
+	result := int64(1)
+
+	for _, x := range xs {
+		if x == 0 {
+			return 0, true
+		}
+		if result > 0 {
+			if x > 0 && result > math.MaxInt64/x {
+				return 0, false
+			}
+			if x < 0 && x < math.MinInt64/result {
+				return 0, false
+			}
+		} else {
+			if x > 0 && result < math.MinInt64/x {
+				return 0, false
+			}
+			if x < 0 && result < math.MaxInt64/x {
+				return 0, false
+			}
+		}
+		result *= x
+	}
+	return result, true
 }
 
 func (s *MarketplaceStorage) IncrementASJWTVersion(
@@ -410,7 +499,7 @@ func (s *MarketplaceStorage) CombineAssets(
 		ingress := assets[0].IfIdIngress
 		egress := assets[0].IfIdEgress
 		combinedStop := assets[0].StopsAt
-		useTimeAxis := assets[0].StopsAt.Equal(assets[1].StartAt)
+		useTimeAxis := assets[0].StopsAt == assets[1].StartsAt
 		combinedMinBW := assets[0].BandwidthMin
 		combinedMaxBW := assets[0].BandwidthMax
 		combinedTimeMinDuration := assets[0].TimeMinDuration
@@ -437,12 +526,12 @@ func (s *MarketplaceStorage) CombineAssets(
 				if assets[0].Bandwidth != asset.Bandwidth {
 					return serrors.New("assets cannot be combined")
 				}
-				if !combinedStop.Equal(asset.StartAt) {
+				if combinedStop != asset.StartsAt {
 					return serrors.New("assets cannot be combined")
 				}
 				combinedStop = asset.StopsAt
 			} else {
-				if !asset.StartAt.Equal(assets[0].StartAt) || !asset.StopsAt.Equal(assets[0].StopsAt) {
+				if asset.StartsAt != assets[0].StartsAt || asset.StopsAt != assets[0].StopsAt {
 					return serrors.New("assets cannot be combined")
 				}
 				combinedBandwidth += asset.Bandwidth
@@ -462,7 +551,7 @@ func (s *MarketplaceStorage) CombineAssets(
 			TimeMaxDuration: combinedTimeMaxDuration,
 			TimeGranularity: combinedTimeGranularity,
 			Bandwidth:       combinedBandwidth,
-			StartAt:         assets[0].StartAt,
+			StartsAt:        assets[0].StartsAt,
 			StopsAt:         combinedStop,
 		}
 		for _, assetId := range assetIds {
@@ -481,7 +570,7 @@ func (s *MarketplaceStorage) SplitAsset(
 	accountID int64,
 	assetId int64,
 	bwSplit []uint32,
-	timeSplit []time.Time,
+	timeSplit []int64,
 ) ([]int64, error) {
 	if len(bwSplit) == 0 && len(timeSplit) == 0 {
 		return nil, serrors.New("invalid split request")
@@ -499,7 +588,7 @@ func (s *MarketplaceStorage) SplitAsset(
 		}
 		var splitSegments []AssetSegment
 		baseSegment := AssetSegment{
-			StartsAt:  dbAsset.StartAt,
+			StartsAt:  dbAsset.StartsAt,
 			StopsAt:   dbAsset.StopsAt,
 			Bandwidth: dbAsset.Bandwidth,
 		}
@@ -542,7 +631,7 @@ func (s *MarketplaceStorage) SplitAsset(
 				}
 			}
 		}
-		if baseSegment.Bandwidth != 0 && !baseSegment.StartsAt.Equal(baseSegment.StopsAt) {
+		if baseSegment.Bandwidth != 0 && baseSegment.StartsAt != baseSegment.StopsAt {
 			splitSegments = append(splitSegments, baseSegment)
 		}
 		if err := tx.RemoveAsset(ctx, assetId); err != nil {
@@ -561,7 +650,7 @@ func (s *MarketplaceStorage) SplitAsset(
 				IfIdIngress:     dbAsset.IfIdIngress,
 				IfIdEgress:      dbAsset.IfIdEgress,
 				Bandwidth:       segment.Bandwidth,
-				StartAt:         segment.StartsAt,
+				StartsAt:        segment.StartsAt,
 				StopsAt:         segment.StopsAt,
 			}
 			splitAssetId, err := tx.InsertAsset(ctx, asset)
@@ -603,130 +692,98 @@ func (s *MarketplaceStorage) BuyAssets(
 	assets []*hummingbird.BuyAsset,
 	maxPrice uint64,
 ) ([]int64, int64, error) {
-	uniqueCheck := make(map[int64]bool)
-	for _, asset := range assets {
-		assetId, err := DatabaseAssetID(asset.AssetId)
-		if err != nil {
-			return nil, 0, err
-		}
-		if uniqueCheck[assetId] {
-			return nil, 0, serrors.New("Only a single split per asset per buy request allowed")
-		}
-		if asset.StopsAtExactly.AsTime().Before(asset.StartsAtExactly.AsTime()) {
-			return nil, 0, serrors.New("End of validity must come after start of validity")
-		}
-		uniqueCheck[assetId] = true
+	if len(assets) == 0 {
+		return nil, 0, serrors.New("no assets specified")
 	}
-	boughtAssets := make([]int64, 0, 1)
+	for _, asset := range assets {
+		if asset.BandwidthExact <= 0 || asset.StartsAtExactly >= asset.StopsAtExactly {
+			return nil, 0, serrors.New("invalid asset")
+		}
+	}
+	boughtIDs := []int64{}
 	costAcc := int64(0)
+
 	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
+		calcCost := func(a *marketplacedb.DBAsset) (int64, bool) {
+			totalAssetPrice, ok := multiplyInts(int64(a.StopsAt-a.StartsAt),
+				int64(a.Bandwidth), int64(a.Price))
+			if !ok {
+				return 0, false
+			}
+			fee := int64(float64(totalAssetPrice)*float64(s.transactionFeeRelative)) +
+				int64(s.transactionFeeAbsolute)
+			return addInt64(int64(totalAssetPrice), fee)
+		}
+		buyAsset := func(
+			assetId int64,
+			startsAt int64,
+			stopsAt int64,
+			bw uint32,
+		) (*marketplacedb.DBAsset, int64, error) {
+			asset, err := tx.CheckAssetAvailability(ctx, assetId, startsAt, stopsAt, bw)
+			if err != nil {
+				return nil, 0, err
+			}
+			if err = tx.SplitAssetAt(ctx, assetId, startsAt); err != nil {
+				return nil, 0, err
+			}
+			if err = tx.SplitAssetAt(ctx, assetId, stopsAt); err != nil {
+				return nil, 0, err
+			}
+			userAsset, err := tx.BuyAsset(ctx, startsAt, stopsAt, bw, accountID, asset)
+			if err != nil {
+				return nil, 0, err
+			}
+			if err = tx.MergeAssetAt(ctx, assetId, startsAt); err != nil {
+				return nil, 0, err
+			}
+			if err = tx.MergeAssetAt(ctx, assetId, stopsAt); err != nil {
+				return nil, 0, err
+			}
+			_, err = tx.RegisterAssetEvent(ctx, userAsset, marketplacedb.AssetBought)
+			if err != nil {
+				return nil, 0, err
+			}
+			cost, ok := calcCost(userAsset)
+			if !ok {
+				return nil, 0, serrors.New("asset parameters would lead to integer overflow")
+			}
+			_, err = tx.UpdateASMoney(ctx, asset.IA, cost)
+			if err != nil {
+				return nil, 0, err
+			}
+			return userAsset, cost, nil
+		}
 		for _, asset := range assets {
 			assetId, err := DatabaseAssetID(asset.AssetId)
 			if err != nil {
 				return err
 			}
-			dbAsset, err := tx.TransitionAsset(ctx, assetId, nil,
-				marketplacedb.AssetStateAvailable, marketplacedb.AssetStateCheckedOut)
+			newAsset, cost, err := buyAsset(assetId, asset.StartsAtExactly, asset.StopsAtExactly, asset.BandwidthExact)
 			if err != nil {
 				return err
 			}
-			baseSegment := AssetSegment{
-				StartsAt:  dbAsset.StartAt,
-				StopsAt:   dbAsset.StopsAt,
-				Bandwidth: dbAsset.Bandwidth,
+			var ok bool
+			costAcc, ok = addInt64(costAcc, cost)
+			if !ok {
+				return serrors.New("asset parameters would lead to integer overflow")
 			}
-			split, err := SplitAsset(baseSegment, RequestedSplit{
-				ExactFrom:      asset.StartsAtExactly.AsTime(),
-				ExactTo:        asset.StopsAtExactly.AsTime(),
-				ExactBandwidth: asset.BandwidthExact,
-			})
-			if err != nil {
-				return err
+			if uint64(costAcc) > maxPrice {
+				// we perform this check per asset to be able to terminate early
+				return serrors.New("assets too expensive")
 			}
-			newAsset := &marketplacedb.DBAsset{
-				AccountId:       sql.NullInt64{Int64: accountID, Valid: true},
-				IA:              dbAsset.IA,
-				BandwidthMin:    dbAsset.BandwidthMin,
-				BandwidthMax:    dbAsset.BandwidthMax,
-				TimeGranularity: dbAsset.TimeGranularity,
-				TimeMinDuration: dbAsset.TimeMinDuration,
-				TimeMaxDuration: dbAsset.TimeMaxDuration,
-				IfIdIngress:     dbAsset.IfIdIngress,
-				IfIdEgress:      dbAsset.IfIdEgress,
-				Bandwidth:       split.Split.Bandwidth,
-				StartAt:         split.Split.StartsAt,
-				StopsAt:         split.Split.StopsAt,
-				Price:           dbAsset.Price,
-			}
-			id, err := tx.InsertAsset(ctx, newAsset)
-			if err != nil {
-				return err
-			}
-			newAsset.ID = id
-			_, err = tx.RegisterAssetEvent(ctx, newAsset, marketplacedb.AssetBought)
-			if err != nil {
-				return err
-			}
-			totalAssetPrice, err := hbirdmarketplace.ReservationPrice(
-				dbAsset.Price,
-				split.Split.Bandwidth,
-				dbAsset.BandwidthMin,
-				dbAsset.TimeMinDuration,
-				dbAsset.TimeGranularity,
-				split.Split.StopsAt.Sub(split.Split.StartsAt))
-			if err != nil {
-				return serrors.Wrap("calculating total asset price", err)
-			}
-			if totalAssetPrice > math.MaxInt64 {
-				return serrors.New("total asset price would lead to integer overflow")
-			}
-			fee := int64(float64(totalAssetPrice)*float64(s.transactionFeeRelative)) +
-				int64(s.transactionFeeAbsolute)
-			pricePlusFee, safe := addInt64(int64(totalAssetPrice), fee)
-			if !safe {
-				return serrors.New("total asset price would lead to integer overflow")
-			}
-			if _, err := tx.UpdateASMoney(ctx, dbAsset.IA, int64(totalAssetPrice)); err != nil {
-				return err
-			}
-			costAcc, safe = addInt64(costAcc, pricePlusFee)
-			if !safe {
-				return serrors.New("total asset price would lead to integer overflow")
-			}
-			boughtAssets = append(boughtAssets, id)
-			for _, segment := range split.Remainders {
-				_, err := tx.InsertAsset(ctx, &marketplacedb.DBAsset{
-					IA:              dbAsset.IA,
-					BandwidthMin:    dbAsset.BandwidthMin,
-					BandwidthMax:    dbAsset.BandwidthMax,
-					TimeGranularity: dbAsset.TimeGranularity,
-					TimeMinDuration: dbAsset.TimeMinDuration,
-					TimeMaxDuration: dbAsset.TimeMaxDuration,
-					IfIdIngress:     dbAsset.IfIdIngress,
-					IfIdEgress:      dbAsset.IfIdEgress,
-					Bandwidth:       segment.Bandwidth,
-					StartAt:         segment.StartsAt,
-					StopsAt:         segment.StopsAt,
-					Price:           dbAsset.Price,
-				})
-				if err != nil {
-					return err
-				}
-			}
-			if err := tx.RemoveAsset(ctx, dbAsset.ID); err != nil {
-				return err
-			}
-		}
-		if uint64(costAcc) > maxPrice {
-			return serrors.New("cost higher than max price")
+			boughtIDs = append(boughtIDs, newAsset.ID)
 		}
 		_, err := tx.UpdateAccountMoney(ctx, accountID, -costAcc)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, 0, err
 	}
-	return boughtAssets, costAcc, nil
+	return boughtIDs, costAcc, nil
 }
 
 func (s *MarketplaceStorage) InsertReservation(
@@ -765,7 +822,7 @@ func (s *MarketplaceStorage) UndoRedemption(
 func validateAsset(
 	a *marketplacedb.DBAsset,
 ) error {
-	duration := a.StopsAt.Sub(a.StartAt)
+	duration := a.StopsAt - a.StartsAt
 	if a.Bandwidth == 0 {
 		return serrors.New("bandwidth is 0")
 	}
@@ -777,7 +834,7 @@ func validateAsset(
 func validateAssetForRedemption(
 	a *marketplacedb.DBAsset,
 ) error {
-	duration := a.StopsAt.Sub(a.StartAt)
+	duration := a.StopsAt - a.StartsAt
 	if err := validateAsset(a); err != nil {
 		return err
 	}
@@ -787,13 +844,13 @@ func validateAssetForRedemption(
 	if a.Bandwidth > a.BandwidthMax {
 		return serrors.New("bandwith > max_bandiwdth")
 	}
-	if duration < time.Duration(a.TimeMinDuration)*time.Second {
+	if duration < int64(a.TimeMinDuration) {
 		return serrors.New("duration < time_min_duration")
 	}
-	if duration > time.Duration(a.TimeMaxDuration)*time.Second {
+	if duration > int64(a.TimeMaxDuration) {
 		return serrors.New("duration > time_max_duration")
 	}
-	if duration%(time.Duration(a.TimeGranularity)*time.Second) != 0 {
+	if duration%int64(a.TimeGranularity) != 0 {
 		return serrors.New("duration not multiple of time granularity")
 	}
 	return nil
@@ -963,4 +1020,27 @@ func (s *MarketplaceStorage) AssignReservation(
 		return 0, err
 	}
 	return 1, nil
+}
+
+func (s *MarketplaceStorage) LookupAssets(ctx context.Context, ia addr.IA) ([]*marketplacedb.DBAsset, error) {
+	return s.db.LookupAssets(ctx, ia)
+}
+
+func (s *MarketplaceStorage) LookupAllAssetSegments(ctx context.Context, id int64, ia addr.IA) ([]*marketplacedb.DBAssetSegment, error) {
+	var segments []*marketplacedb.DBAssetSegment
+	err := s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
+		_, err := tx.LookupAsset(ctx, id, ia)
+		if err != nil {
+			return err
+		}
+		segments, err = tx.LookupAllAssetSegments(ctx, id)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return segments, nil
 }

@@ -113,7 +113,7 @@ func (h *RedemptionServerHandler) Redeem(
 	req *hummingbird.RedeemAssetFromASRequest,
 ) (*hummingbird.RedeemAssetFromASResponse, error) {
 	h.mu.Lock()
-	if h.local != nil && h.local.expiration.After(time.Now()) {
+	if h.local != nil && h.local.expiration > time.Now().Unix() {
 		// The marketplace holds a delegation, so it redeems the asset itself.
 		// Redeem only touches memory, so the lock is held across it.
 		resp := h.local.Redeem(req)
@@ -364,7 +364,7 @@ func (s *Service) DelegateRedemption(
 	}
 	handler := s.FindRedemptionServerHandler(clientID)
 	err := handler.ApplyDelegation(ctx, &RedemptionDelegationUpdate{
-		ExpirationTime: req.Msg.ExpirationTime.AsTime(),
+		ExpirationTime: req.Msg.ExpirationTime,
 		IdLimitLow:     req.Msg.ReservationIdLowerBound,
 		IdLimitHigh:    req.Msg.ReservationIdUpperBound,
 		Key:            req.Msg.Key,

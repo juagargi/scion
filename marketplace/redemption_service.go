@@ -40,10 +40,10 @@ type RedemptionService struct {
 	encodingPoints []uint32
 	cipher         cipher.Block
 	resIdStore     *UsedIDStore
-	expiration     time.Time
+	expiration     int64
 }
 type RedemptionDelegationUpdate struct {
-	ExpirationTime time.Time
+	ExpirationTime int64
 	IdLimitLow     uint32
 	IdLimitHigh    uint32
 	Key            []byte
@@ -99,7 +99,7 @@ func (r *RedemptionService) Redeem(
 	req *hummingbird.RedeemAssetFromASRequest,
 ) *hummingbird.RedeemAssetFromASResponse {
 	now := time.Now()
-	resId, err := r.resIdStore.Next(now.Unix(), req.StartsAt.Seconds, req.StopsAt.Seconds)
+	resId, err := r.resIdStore.Next(now.Unix(), req.StartsAt, req.StopsAt)
 	if err != nil {
 		return &hummingbird.RedeemAssetFromASResponse{
 			Result: &hummingbird.RedeemAssetFromASResponse_Error{
@@ -108,13 +108,13 @@ func (r *RedemptionService) Redeem(
 		}
 	}
 
-	unixStart := uint32(req.StartsAt.Seconds)
-	unixEnd := uint32(req.StopsAt.Seconds)
-	durSeconds := unixEnd - unixStart
+	unixStart := req.StartsAt
+	unixEnd := req.StopsAt
+	durSeconds := uint32(unixEnd - unixStart)
 	encoded_bw := r.encodeBandwidth(req.Bandwidth)
 
 	var buff [16]byte
-	ak := hbird.DeriveAuthKey(r.cipher, resId, encoded_bw, uint16(req.IngressId), uint16(req.EgressId), unixStart, uint16(durSeconds), buff[:])
+	ak := hbird.DeriveAuthKey(r.cipher, resId, encoded_bw, uint16(req.IngressId), uint16(req.EgressId), uint32(unixStart), uint16(durSeconds), buff[:])
 	return &hummingbird.RedeemAssetFromASResponse{
 		Result: &hummingbird.RedeemAssetFromASResponse_ResInfo{
 			ResInfo: &hummingbird.ReservationInfo{

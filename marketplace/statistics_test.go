@@ -126,10 +126,10 @@ func TestStatisticsWindow(t *testing.T) {
 func TestBandwidthPerIntervalGaps(t *testing.T) {
 	// Two one-day assets, days 0 and 4 of a six day window.
 	assets := []*db.DBStat{
-		{Bandwidth: 100, Price: 2, StartsAt: statsBase, StopsAt: statsBase.Add(day)},
+		{Bandwidth: 100, Price: 2, StartsAt: statsBase.Unix(), StopsAt: statsBase.Add(day).Unix()},
 		{
 			Bandwidth: 100, Price: 2,
-			StartsAt: statsBase.Add(4 * day), StopsAt: statsBase.Add(5 * day),
+			StartsAt: statsBase.Add(4 * day).Unix(), StopsAt: statsBase.Add(5 * day).Unix(),
 		},
 	}
 	windowStart, windowEnd, n := marketplace.StatisticsWindow(
@@ -171,7 +171,7 @@ func TestBandwidthPerIntervalEmptyWindow(t *testing.T) {
 // so that the extraction of the loop is covered for both of its outputs.
 func TestBandwidthPerIntervalRevenue(t *testing.T) {
 	assets := []*db.DBStat{
-		{Bandwidth: 100, Price: 3, StartsAt: statsBase, StopsAt: statsBase.Add(day)},
+		{Bandwidth: 100, Price: 3, StartsAt: statsBase.Unix(), StopsAt: statsBase.Add(day).Unix()},
 	}
 	windowStart, windowEnd, n := marketplace.StatisticsWindow(
 		statsBase, statsBase.Add(day), day, day)

@@ -16,18 +16,17 @@ package storage
 
 import (
 	"fmt"
-	"time"
 )
 
 type RequestedSplit struct {
-	ExactFrom      time.Time
-	ExactTo        time.Time
+	ExactFrom      int64
+	ExactTo        int64
 	ExactBandwidth uint32
 }
 
 type AssetSegment struct {
-	StartsAt  time.Time
-	StopsAt   time.Time
+	StartsAt  int64
+	StopsAt   int64
 	Bandwidth uint32
 }
 
@@ -37,14 +36,11 @@ type SplitResult struct {
 }
 
 func validateSplit(asset AssetSegment, p RequestedSplit) error {
-	if p.ExactFrom.Before(asset.StartsAt) || p.ExactTo.After(asset.StopsAt) {
+	if p.ExactFrom < asset.StartsAt || p.ExactTo > asset.StopsAt {
 		return fmt.Errorf("split outside asset bounds")
 	}
-	if !p.ExactFrom.Before(p.ExactTo) {
+	if p.ExactFrom >= p.ExactTo {
 		return fmt.Errorf("invalid validity range")
-	}
-	if p.ExactFrom.Nanosecond() != 0 || p.ExactTo.Nanosecond() != 0 {
-		return fmt.Errorf("timestamps must be second precision")
 	}
 	if p.ExactBandwidth > asset.Bandwidth {
 		return fmt.Errorf("split amount exceeds asset amount")
@@ -52,15 +48,12 @@ func validateSplit(asset AssetSegment, p RequestedSplit) error {
 	if p.ExactBandwidth == 0 {
 		return fmt.Errorf("split cannot be zero")
 	}
-	if p.ExactFrom.Equal(p.ExactTo) {
-		return fmt.Errorf("split cannot be zero")
-	}
 
 	return nil
 }
 
 func SplitAsset(asset AssetSegment, split RequestedSplit) (*SplitResult, error) {
-	if !asset.StartsAt.Before(asset.StopsAt) {
+	if asset.StartsAt >= asset.StopsAt {
 		return nil, fmt.Errorf("invalid asset range")
 	}
 	if err := validateSplit(asset, split); err != nil {
@@ -80,9 +73,9 @@ func SplitAsset(asset AssetSegment, split RequestedSplit) (*SplitResult, error) 
 		})
 		remainingAsset.Bandwidth = split.ExactBandwidth
 	}
-	if split.ExactFrom.Equal(remainingAsset.StartsAt) {
+	if split.ExactFrom == remainingAsset.StartsAt {
 		// no left remainder asset exists
-		if split.ExactTo.Equal(remainingAsset.StopsAt) {
+		if split.ExactTo == remainingAsset.StopsAt {
 			// no right remainder asset exists -> split = asset
 			splitResult.Split = AssetSegment{
 				Bandwidth: remainingAsset.Bandwidth,
@@ -104,7 +97,7 @@ func SplitAsset(asset AssetSegment, split RequestedSplit) (*SplitResult, error) 
 		}
 	} else {
 		// a left remainder asset exists
-		if split.ExactTo.Equal(remainingAsset.StopsAt) {
+		if split.ExactTo == remainingAsset.StopsAt {
 			// no right remainder asset exists -> only a left remainder exists
 			splitResult.Split = AssetSegment{
 				Bandwidth: remainingAsset.Bandwidth,

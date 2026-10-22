@@ -31,8 +31,8 @@ func TestIDStoreNext(t *testing.T) {
 	err = store.Init(0, 3, []*db.UsedReservation{
 		{
 			Id:       0,
-			StartsAt: base,
-			StopsAt:  base.Add(time.Second * 3),
+			StartsAt: b,
+			StopsAt:  b + 3,
 		},
 	})
 	assert.NoError(t, err)
