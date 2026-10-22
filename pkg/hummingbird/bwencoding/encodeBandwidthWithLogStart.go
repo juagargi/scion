@@ -16,6 +16,7 @@ package bwencoding
 
 import (
 	"math"
+	"sort"
 
 	"github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 )
@@ -38,6 +39,7 @@ const (
 // bandwidths holds the bandwidth of every codepoint. It is a table rather than a
 // computation because efficiency.
 var bandwidths = buildBandwidths()
+var encodingPoints = toOrderedSlice(bandwidths)
 
 func buildBandwidths() [Codepoints]uint32 {
 	var table [Codepoints]uint32
@@ -56,9 +58,27 @@ func buildBandwidths() [Codepoints]uint32 {
 	return table
 }
 
-// encodeBandwidthWithLogStart returns the bandwidth of a codepoint in kbps..
+func toOrderedSlice(table [Codepoints]uint32) []uint32 {
+	points := make([]uint32, Codepoints)
+	for i := 0; i < Codepoints; i++ {
+		points[i] = table[i]
+	}
+	return points
+}
+
+// decodeEncodedBandwidthWithLogStart returns the bandwidth of a codepoint in kbps..
 //
 // The codepoint is 10 bits wide, anything wider is truncated to it.
-func encodeBandwidthWithLogStart(codepoint uint16) uint32 {
+func decodeEncodedBandwidthWithLogStart(codepoint uint16) uint32 {
 	return bandwidths[codepoint&(Codepoints-1)]
+}
+
+func encodeBandwidthWithLogStart(bw uint32) (uint32, uint16) {
+	if len(encodingPoints) == 0 {
+		panic("encoding points empty")
+	}
+	point := min(uint16(len(encodingPoints)-1), uint16(sort.Search(len(encodingPoints), func(i int) bool {
+		return encodingPoints[i] >= bw
+	})))
+	return encodingPoints[point], point
 }

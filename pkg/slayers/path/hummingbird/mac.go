@@ -60,14 +60,21 @@ const (
 	MACBufferSize = path.MACBufferSize + FlyoverMacBufferSize + AkBufferSize
 )
 
-// DeriveSecretValue derives the Hummingbird AS secret value from the master secret.
-func DeriveSecretValue(masterSecret []byte) []byte {
+func DeriveSecretValueWithSalt(masterSecret []byte, salt string) []byte {
 	if len(masterSecret) == 0 {
 		panic("empty key")
 	}
+	if len(salt) == 0 {
+		panic("empty salt")
+	}
 	// This uses 16B keys with 1000 hash iterations, which is the same as the
 	// defaults used by pycrypto.
-	return pbkdf2.Key(masterSecret, []byte(SecretValueDerivationSalt), 1000, 16, sha256.New)
+	return pbkdf2.Key(masterSecret, []byte(salt), 1000, 16, sha256.New)
+}
+
+// DeriveSecretValue derives the Hummingbird AS secret value from the master secret.
+func DeriveSecretValue(masterSecret []byte) []byte {
+	return DeriveSecretValueWithSalt(masterSecret, SecretValueDerivationSalt)
 }
 
 // Derive authentication key A_k

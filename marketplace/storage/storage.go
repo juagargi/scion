@@ -24,6 +24,7 @@ import (
 	marketplacedb "github.com/scionproto/scion/marketplace/db"
 	"github.com/scionproto/scion/pkg/addr"
 	hbird "github.com/scionproto/scion/pkg/hummingbird"
+	"github.com/scionproto/scion/pkg/hummingbird/id_stores"
 	hbirdmarketplace "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
@@ -585,7 +586,7 @@ func (s *MarketplaceStorage) Statistics(
 func (s *MarketplaceStorage) FindUsedReservations(
 	ctx context.Context,
 	params *marketplacedb.UsedReservationsQuery,
-) ([]*marketplacedb.UsedReservation, error) {
+) ([]id_stores.Reservation, error) {
 	return s.db.FindUsedReservations(ctx, params)
 }
 
@@ -734,6 +735,14 @@ func (s *MarketplaceStorage) InsertReservation(
 	r *marketplacedb.DBReservation,
 ) (int64, error) {
 	return s.db.InsertReservation(ctx, r)
+}
+
+func (s *MarketplaceStorage) UpdateReservation(
+	ctx context.Context,
+	id int64,
+	reservation *marketplacedb.DBReservation,
+) (int64, error) {
+	return s.db.UpdateReservation(ctx, id, reservation)
 }
 
 func (s *MarketplaceStorage) UndoRedemption(

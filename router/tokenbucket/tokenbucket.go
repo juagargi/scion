@@ -28,7 +28,7 @@ const bytesPerSecondPerKbps = 1000 / 8
 // ConvertBW converts a Hummingbird bandwidth codepoint into bytes per second,
 // which is what the token bucket is configured with.
 func ConvertBW(bw uint16) int64 {
-	return int64(bwencoding.EncodeBandwidth(bw)) * bytesPerSecondPerKbps
+	return int64(bwencoding.DecodeEncodedBandwidth(bw)) * bytesPerSecondPerKbps
 }
 
 type TokenBucket struct {

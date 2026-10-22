@@ -19,9 +19,13 @@
 // reservations.
 package bwencoding
 
-// EncodeBandwidth returns the bandwidth of a codepoint, in kbps.
+// DecodeEncodedBandwidth returns the bandwidth of a codepoint, in kbps.
 //
 // It is a variable so that a different encoding can be put in place, which every
 // user of a codepoint then follows. Replace it during initialization, before any
 // codepoint is interpreted.
-var EncodeBandwidth func(codepoint uint16) uint32 = encodeBandwidthWithLogStart
+var DecodeEncodedBandwidth func(codepoint uint16) uint32 = decodeEncodedBandwidthWithLogStart
+
+// EncodeBandwidth returns the rounded bandwidth and corresponding codepoint for an
+// arbitrary bandwidth
+var EncodeBandwidth func(bw uint32) (uint32, uint16) = encodeBandwidthWithLogStart

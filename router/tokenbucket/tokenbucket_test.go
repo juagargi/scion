@@ -194,7 +194,7 @@ func TestConvertBW(t *testing.T) {
 	for _, codepoint := range []uint16{0, 1, 59, 60, 89, 512, bwencoding.Codepoints - 1} {
 		t.Run(fmt.Sprintf("codepoint=%d", codepoint), func(t *testing.T) {
 			assert.Equal(t,
-				int64(bwencoding.EncodeBandwidth(codepoint))*bytesPerSecondPerKbps,
+				int64(bwencoding.DecodeEncodedBandwidth(codepoint))*bytesPerSecondPerKbps,
 				tokenbucket.ConvertBW(codepoint))
 		})
 	}

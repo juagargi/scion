@@ -156,13 +156,6 @@ class GoGenerator(object):
                 'config_dir': config_dir,
             },
             'log': self._log_entry(self._hummingbird_name(topo_id)),
-            'hummingbird': {
-                'reservation_duration': '5s',
-                'trust_db_path': os.path.join(self.db_dir, '%s.trust.db' % cs_name),
-                'min_bandwidth': 100,
-                'max_bandwidth': 100000,
-                'min_cost': 1,
-            },
         }
 
     def _hummingbird_name(self, topo_id):

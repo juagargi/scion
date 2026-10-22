@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/pkg/addr"
+	"github.com/scionproto/scion/pkg/hummingbird/id_stores"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/private/storage/db"
 )
@@ -44,7 +45,7 @@ type Repository interface {
 	UpdateAccountMoney(ctx context.Context, id int64, amount int64) (int64, error)
 	UpdateASMoney(ctx context.Context, ia addr.IA, amount int64) (int64, error)
 	SearchAssetsForStatistics(ctx context.Context, params *StatisticsQuery) ([]*DBStat, []*DBStat, error)
-	FindUsedReservations(ctx context.Context, params *UsedReservationsQuery) ([]*UsedReservation, error)
+	FindUsedReservations(ctx context.Context, params *UsedReservationsQuery) ([]id_stores.Reservation, error)
 	CreateOrUpdateRedemptionDelegations(ctx context.Context, r *RedemptionDelegation) (int64, error)
 	FindRedemptionDelegations(ctx context.Context) ([]*RedemptionDelegation, error)
 	IncrementASJWTVersion(ctx context.Context, ia addr.IA, current int64) (int64, error)
@@ -64,6 +65,7 @@ type Repository interface {
 	RemoveAsset(ctx context.Context, assetID int64) error
 	RegisterAssetEvent(ctx context.Context, a *DBAsset, eventType AssetEventType) (int64, error)
 	TransitionAsset(ctx context.Context, assetID int64, accountID *int64, from AssetState, to AssetState) (*DBAsset, error)
+	UpdateReservation(ctx context.Context, id int64, reservation *DBReservation) (int64, error)
 }
 
 type MarketplaceDB interface {
@@ -262,11 +264,13 @@ func (e *executor) buildReservationQuery(params *ReservationQuery) (string, []an
 		"SELECT r.id, r.account_id, r.reservation_id, r.isd_id, r.as_id, r.ingress, r.egress, " +
 			"r.bandwidth, r.bw_encoded, r.starts_at, r.stops_at, r.key FROM Reservations r",
 	}
-	query = append(query, "JOIN Accounts owner ON r.account_id = owner.id JOIN "+
-		"Accounts current ON current.id = ?")
-	where = append(where, "( (current.scope = '' AND owner.user_id = current.user_id) OR "+
-		"(current.scope != '' AND owner.id = current.id) )")
-	args = append(args, params.AccountId)
+	if params.AccountId != nil {
+		query = append(query, "JOIN Accounts owner ON r.account_id = owner.id JOIN "+
+			"Accounts current ON current.id = ?")
+		where = append(where, "( (current.scope = '' AND owner.user_id = current.user_id) OR "+
+			"(current.scope != '' AND owner.id = current.id) )")
+		args = append(args, params.AccountId)
+	}
 	if params.IA != nil {
 		where = append(where, "(r.isd_id=?) AND (r.as_id=?)")
 		args = append(args, int64(params.IA.ISD()), int64(params.IA.AS()))
@@ -503,7 +507,7 @@ func (e *executor) CreateOrUpdateRedemptionDelegations(
 func (e *executor) FindUsedReservations(
 	ctx context.Context,
 	params *UsedReservationsQuery,
-) ([]*UsedReservation, error) {
+) ([]id_stores.Reservation, error) {
 	if e.read == nil {
 		return nil, serrors.New("No database open")
 	}
@@ -513,23 +517,25 @@ func (e *executor) FindUsedReservations(
 		return nil, serrors.New("Error looking up assets", "err", err, "q", stmt)
 	}
 	defer rows.Close()
-	var res []*UsedReservation
+	var res []id_stores.Reservation
 	for rows.Next() {
-		a := &UsedReservation{}
+		a := id_stores.Reservation{}
 		var startsAtString string
 		var stopsAtString string
 		err = rows.Scan(&a.Id, &startsAtString, &stopsAtString)
 		if err != nil {
 			return nil, serrors.Wrap("Error reading DB response", err)
 		}
-		a.StartsAt, err = time.Parse(time.RFC3339, startsAtString)
+		startsAt, err := time.Parse(time.RFC3339, startsAtString)
 		if err != nil {
 			return nil, err
 		}
-		a.StopsAt, err = time.Parse(time.RFC3339, stopsAtString)
+		a.StartsAt = startsAt.Unix()
+		stopsAt, err := time.Parse(time.RFC3339, stopsAtString)
 		if err != nil {
 			return nil, err
 		}
+		a.StopsAt = stopsAt.Unix()
 		res = append(res, a)
 	}
 	return res, nil
@@ -1142,6 +1148,27 @@ func (e *executor) AssignReservation(
 	}
 	inst := `UPDATE Reservations SET account_id = ? WHERE id=? AND account_id = ?`
 	res, err := e.write.ExecContext(ctx, inst, accountIDTo, id, accountIDFrom)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// UpdateReservation updates the reservation_id, bandwidth, bw_encoded and key fields of
+// a reservation that is already stored in the database. Returns (1, nil) if the record
+// was found and updated accordingly.
+func (e *executor) UpdateReservation(
+	ctx context.Context,
+	id int64,
+	reservation *DBReservation,
+) (int64, error) {
+	if e.write == nil {
+		return 0, serrors.New("No database open")
+	}
+	inst := `UPDATE Reservations SET reservation_id = ?, bandwidth = ?, bw_encoded = ?,
+	 key = ? WHERE id = ?`
+	res, err := e.write.ExecContext(ctx, inst, reservation.ReservationID, reservation.Bandwidth,
+		reservation.EncodedBandwidth, reservation.Key, id)
 	if err != nil {
 		return 0, err
 	}

@@ -1,0 +1,38 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("//:scion.bzl", "scion_go_binary")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["main.go"],
+    importpath = "github.com/scionproto/scion/redemption_server/cmd/redemption_server",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//pkg/daemon:go_default_library",
+        "//pkg/hummingbird/marketplace:go_default_library",
+        "//pkg/hummingbird/registration:go_default_library",
+        "//pkg/log:go_default_library",
+        "//pkg/private/serrors:go_default_library",
+        "//pkg/segment/iface:go_default_library",
+        "//pkg/snet:go_default_library",
+        "//private/app:go_default_library",
+        "//private/app/launcher:go_default_library",
+        "//private/keyconf:go_default_library",
+        "//private/topology:go_default_library",
+        "//redemption_server/config:go_default_library",
+        "//redemption_server/connector:go_default_library",
+        "//redemption_server/storage:go_default_library",
+        "@org_golang_x_sync//errgroup:go_default_library",
+    ],
+)
+
+scion_go_binary(
+    name = "hummingbird",
+    embed = [":go_default_library"],
+    visibility = ["//visibility:public"],
+)
+
+go_binary(
+    name = "redemption_server",
+    embed = [":go_default_library"],
+    visibility = ["//visibility:public"],
+)
