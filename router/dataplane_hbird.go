@@ -273,13 +273,16 @@ func (p *scionPacketProcessor) verifyHbirdFlyoverMac() disposition {
 		p.flyoverField.ResStartTime, p.hbirdPath.PathMeta.HighResTS,
 		p.macInputBuffer[path.MACBufferSize:], p.hbirdXkbuffer)
 
-	if !p.hbirdPath.IsFirstHopAfterXover() {
-		disp := p.updateHbirdNonConsDirIngressSegIDFlyover(flyoverMac)
-		if disp != pForward {
-			return disp
-		}
+	// The SCION MAC chain is defined over the plain hop MAC, but updateHbirdIngressSegID chained
+	// the aggregate MAC that the packet carries. Remove the flyover MAC's contribution on a
+	// scratch copy of the info field: the packet itself must keep SegID and MAC aggregated, so
+	// that an SCMP reply for a bad MAC reverts the ingress update with the very
+	// MAC the sender supplied, and never discloses the real flyover MAC.
+	macInfo := p.infoField
+	if p.ingressUpdatesSegID() {
+		macInfo.UpdateSegID([path.MacLen]byte(flyoverMac[:path.MacLen]))
 	}
-	scionMac := path.FullMAC(p.mac, p.infoField, p.hopField, p.macInputBuffer[:path.MACBufferSize])
+	scionMac := path.FullMAC(p.mac, macInfo, p.hopField, p.macInputBuffer[:path.MACBufferSize])
 
 	macXor(flyoverMac[:], scionMac[:], flyoverMac[:])
 	verified = subtle.ConstantTimeCompare(p.hopField.Mac[:path.MacLen], flyoverMac[:path.MacLen])
@@ -292,7 +295,7 @@ func (p *scionPacketProcessor) verifyHbirdFlyoverMac() disposition {
 			"cons_dir", p.infoField.ConsDir,
 			"scionMac", fmt.Sprintf("%x", scionMac[:path.MacLen]),
 			"if_id", p.ingressFromLink, "curr_inf", p.hbirdPath.PathMeta.CurrINF,
-			"curr_hf", p.hbirdPath.PathMeta.CurrHF, "seg_id", p.infoField.SegID,
+			"curr_hf", p.hbirdPath.PathMeta.CurrHF, "seg_id", macInfo.SegID,
 			"packet length", p.scionLayer.PacketLen(),
 			"dest", p.scionLayer.DstIA, "startTime", p.flyoverField.ResStartTime,
 			"highResTS", p.hbirdPath.PathMeta.HighResTS,
@@ -304,7 +307,7 @@ func (p *scionPacketProcessor) verifyHbirdFlyoverMac() disposition {
 
 	// Add the full MAC to the SCION packet processor,
 	// such that hummingbird mac de-aggregation do not need to recalculate it.
-	// Do not overwrite cachedmac after doing xover, as it may contain a  flyovermac
+	// Do not overwrite cachedMac after doing xover, as it may contain a  flyovermac
 	// This function is currently not called after a xover, so no need to check
 	// Keep in mind for future changes
 	p.cachedMac = scionMac
@@ -507,36 +510,48 @@ func (p *scionPacketProcessor) handleHbirdEgressRouterAlert() disposition {
 	return pSlowPath
 }
 
-func (p *scionPacketProcessor) updateHbirdNonConsDirIngressSegIDFlyover(flyoverMac []byte) disposition {
-	// against construction dir the ingress router updates the SegID, ifID == 0
-	// means this comes from this AS itself, so nothing has to be done.
-	// If a flyover is present, need to first de-aggregate the first two bytes of the mac
-	// before updating SegID
-	if !p.infoField.ConsDir && p.ingressFromLink != 0 && !p.peering {
-		// de-aggregate first two bytes of mac
-		p.hopField.Mac[0] ^= flyoverMac[0]
-		p.hopField.Mac[1] ^= flyoverMac[1]
-		p.infoField.UpdateSegID(p.hopField.Mac)
-		// restore correct state of MAC field, even if error
-		p.hopField.Mac[0] ^= flyoverMac[0]
-		p.hopField.Mac[1] ^= flyoverMac[1]
-		err := p.hbirdPath.SetInfoField(p.infoField, int(p.hbirdPath.PathMeta.CurrINF))
-		if err != nil {
-			return errorDiscard("error", err)
-		}
+// ingressUpdatesSegID reports whether this router chains the current hop's MAC into the SegID of
+// the current info field when the packet enters the AS. Against construction direction the
+// ingress router does; a packet coming from inside this AS (ifID == 0), one in construction
+// direction, or one at a peering hop is left untouched.
+//
+// It is the same condition under which prepareHbirdSCMP chains that MAC back out on the reversed
+// path, so the two always agree and an SCMP reply carries the SegID the packet arrived with.
+func (p *scionPacketProcessor) ingressUpdatesSegID() bool {
+	return !p.infoField.ConsDir && p.ingressFromLink != 0 && !p.peering
+}
+
+// updateHbirdIngressSegID chains the current hop's MAC, exactly as it appears in the packet,
+// into the SegID of the current info field.
+//
+// The MAC is used verbatim, aggregated with the flyover MAC when the hop carries a flyover,
+// which keeps SegID and MAC a consistent pair: whatever check later fails,
+// prepareHbirdSCMP undoes this update with the very MAC the packet still carries.
+// The SCION MAC chain is defined over the plain hop MAC, so the flyover's contribution
+// is removed again where it matters: on a scratch copy in verifyHbirdFlyoverMac,
+// and for real in deAggregateMac, which moves SegID and MAC to the de-aggregated state together.
+func (p *scionPacketProcessor) updateHbirdIngressSegID() disposition {
+	if !p.ingressUpdatesSegID() {
+		return pForward
+	}
+	p.infoField.UpdateSegID(p.hopField.Mac)
+	if err := p.hbirdPath.SetInfoField(p.infoField, int(p.hbirdPath.PathMeta.CurrINF)); err != nil {
+		return errorDiscard("error", err)
 	}
 	return pForward
 }
 
-func (p *scionPacketProcessor) updateHbirdNonConsDirIngressSegID() disposition {
-	// against construction dir the ingress router updates the SegID, ifID == 0
-	// means this comes from this AS itself, so nothing has to be done.
-	if !p.infoField.ConsDir && p.ingressFromLink != 0 && !p.peering {
-		p.infoField.UpdateSegID(p.hopField.Mac)
-		err := p.hbirdPath.SetInfoField(p.infoField, int(p.hbirdPath.PathMeta.CurrINF))
-		if err != nil {
-			return errorDiscard("error", err)
-		}
+// rechainSegID replaces oldMac's contribution to the current info field's SegID with newMac's,
+// keeping the SegID consistent with a MAC that is being rewritten in the packet.
+// It is a no-op unless this router chained the hop's MAC into the SegID on ingress.
+func (p *scionPacketProcessor) rechainSegID(oldMac, newMac [path.MacLen]byte) disposition {
+	if !p.ingressUpdatesSegID() {
+		return pForward
+	}
+	p.infoField.UpdateSegID(oldMac)
+	p.infoField.UpdateSegID(newMac)
+	if err := p.hbirdPath.SetInfoField(p.infoField, int(p.hbirdPath.PathMeta.CurrINF)); err != nil {
+		return errorDiscard("error", err)
 	}
 	return pForward
 }
@@ -552,16 +567,21 @@ func macXor(d, a, b []byte) {
 // deAggregateMac restores the current hop field's MAC to the plain SCION MAC cached by
 // verifyHbirdFlyoverMac, undoing the flyover XOR aggregation. It is a no-op for a non-flyover
 // hop field.
+//
+// The SegID moves with the MAC, so the packet goes from the aggregated to the de-aggregated state
+// in one step and the two stay a consistent pair. Calling it twice is harmless: the second call
+// rechains the plain MAC onto itself.
 func (p *scionPacketProcessor) deAggregateMac() disposition {
 	if !p.flyoverField.Flyover {
 		return pForward
 	}
+	aggregate := p.hopField.Mac
 	copy(p.hopField.Mac[:], p.cachedMac[:path.MacLen])
 	if err := p.hbirdPath.ReplaceCurrentMac(p.cachedMac); err != nil {
 		log.Debug("Failed to replace MAC after de-aggregation", "error", err.Error())
 		return errorDiscard("error", fmt.Errorf("MAC replacement failed"))
 	}
-	return pForward
+	return p.rechainSegID(aggregate, p.hopField.Mac)
 }
 
 // de-aggregates mac and stores the flyovermac part of the mac in cachedMac
@@ -573,10 +593,16 @@ func (p *scionPacketProcessor) deAggregateAndCacheMac() disposition {
 	// such that it is not overwritten by the following standard mac computation
 	macXor(p.macInputBuffer[path.MACBufferSize:], p.cachedMac, p.hopField.Mac[:])
 	// deaggregate Mac
+	aggregate := p.hopField.Mac
 	copy(p.hopField.Mac[:], p.cachedMac[:path.MacLen])
 	if err := p.hbirdPath.ReplaceCurrentMac(p.cachedMac); err != nil {
 		log.Debug("Failed to replace MAC after de-aggregation", "error", err.Error())
 		return errorDiscard("error", fmt.Errorf("MAC replacement failed"))
+	}
+	// Still the info field of the segment the packet arrived on; doHbirdXoverFlyover only
+	// advances to the next segment after this.
+	if disp := p.rechainSegID(aggregate, p.hopField.Mac); disp != pForward {
+		return disp
 	}
 	// set cachedMac to the buffered flyoverMac
 	p.cachedMac = p.macInputBuffer[path.MACBufferSize : path.MACBufferSize+path.MacLen]
@@ -712,6 +738,12 @@ func (p *scionPacketProcessor) processHummingbird() disposition {
 	if disp := p.determinePeerHbird(); disp != pForward {
 		return disp
 	}
+	// Chain the current hop's MAC into the SegID before any check can divert the packet to the
+	// slow path. From here on the packet's SegID and MAC are a consistent pair, so prepareHbirdSCMP
+	// reverts this update with the MAC the packet carries, whichever check ends up failing.
+	if disp := p.updateHbirdIngressSegID(); disp != pForward {
+		return disp
+	}
 
 	if disp := p.validateHopExpiryHbird(); disp != pForward {
 		return disp
@@ -738,17 +770,37 @@ func (p *scionPacketProcessor) processHummingbird() disposition {
 }
 
 // processHBIRDFlyover processes a packet whose current hop carries a flyover: it checks the
-// reservation's validity window, aggregate MAC, freshness, and bandwidth, then either delivers
-// the packet locally (inbound) or forwards it, performing a crossover, de-aggregation, and
-// egress processing as needed.
+// reservation's validity window and the aggregate MAC, hands the packet to
+// processHBIRDFlyoverVerified for the rest, and decides in which state the hop's MAC is left
+// behind for a packet that ends up on the slow path.
 func (p *scionPacketProcessor) processHBIRDFlyover(sc sizeClass) disposition {
-
 	if disp := p.validateReservationExpiry(sc); disp != pForward {
 		return disp
 	}
 	if disp := p.verifyHbirdFlyoverMac(); disp != pForward {
+		// The aggregate MAC did not verify. Leave the packet exactly as it arrived:
+		// the SCMP error quotes it, and a de-aggregated MAC would hand the flyover MAC to
+		// a sender that could otherwise not compute one,
+		// letting it forge priority traffic for this reservation.
 		return disp
 	}
+	disp := p.processHBIRDFlyoverVerified(sc)
+	if disp == pSlowPath && p.ingressFromLink == 0 && !p.isFlyoverXover {
+		// The reply goes back over an internal link, to the BR that took this packet from the
+		// neighbouring AS. That BR verifies the hop as a plain SCION one, because a reversed
+		// path carries no flyovers, so the packet must leave de-aggregated. The MAC verified here,
+		// so the plain MAC tells the sender nothing it does not already know.
+		if d := p.deAggregateMac(); d != pForward {
+			return d
+		}
+	}
+	return disp
+}
+
+// processHBIRDFlyoverVerified handles a flyover packet whose aggregate MAC has been verified:
+// it checks freshness and bandwidth, then either delivers the packet locally (inbound) or
+// forwards it, performing a crossover, de-aggregation, and egress processing as needed.
+func (p *scionPacketProcessor) processHBIRDFlyoverVerified(sc sizeClass) disposition {
 	p.validatePathMetaTimestamp(sc)
 	if disp := p.checkReservationBandwidth(sc); disp != pForward {
 		return disp
@@ -840,6 +892,14 @@ func (p *scionPacketProcessor) processHBIRDFlyover(sc sizeClass) disposition {
 		if disp := p.xoverMoveFlyoverToNext(); disp != pForward {
 			return disp
 		}
+	} else {
+		// The hop keeps its aggregate MAC for the egress BR to verify, but the SegID must carry
+		// the plain SCION MAC: the egress BR does not repeat the ingress update, and the rest of
+		// the path chains plain MACs. Nothing after this can raise an SCMP, so the pair may part.
+		plainMac := [path.MacLen]byte(p.cachedMac[:path.MacLen])
+		if disp := p.rechainSegID(p.hopField.Mac, plainMac); disp != pForward {
+			return disp
+		}
 	}
 	p.pkt.trafficType = ttInTransit
 	return pForward
@@ -849,9 +909,6 @@ func (p *scionPacketProcessor) processHBIRDFlyover(sc sizeClass) disposition {
 // the plain SCION MAC, then either delivers the packet locally (inbound) or forwards it,
 // performing a crossover and egress processing as needed.
 func (p *scionPacketProcessor) processHBIRDBestEffort() disposition {
-	if disp := p.updateHbirdNonConsDirIngressSegID(); disp != pForward {
-		return disp
-	}
 	if disp := p.verifyHbirdScionMac(); disp != pForward {
 		return disp
 	}

@@ -364,6 +364,18 @@ func ExtractInterfaces(dp *DataPlane) [math.MaxUint16 + 1]Link {
 	return dp.dataPlane.interfaces
 }
 
+// downLink is a Link that reports itself as down, as after its BFD session failed.
+type downLink struct {
+	Link
+}
+
+func (l downLink) IsUp() bool { return false }
+
+// SetLinkDown makes the link of interface ifID report itself as down.
+func (d *DataPlane) SetLinkDown(ifID uint16) {
+	d.interfaces[ifID] = downLink{d.interfaces[ifID]}
+}
+
 // We cannot know which tests are going to mock which underlay and what the opener's
 // signature is. So we'll let the underlay implementation type-assert it.
 func (d *DataPlane) SetConnOpener(underlay string, opener any) {
