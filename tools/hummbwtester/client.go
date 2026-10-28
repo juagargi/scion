@@ -94,15 +94,17 @@ type clientConfig struct {
 	// sequence restricts the paths the client may use; an empty sequence allows all.
 	sequence *pathpol.Sequence
 
-	bandwidthBps       float64
-	maxBurstBps        float64
-	duration           time.Duration
-	payloadSize        int
-	pongRateHz         float64
-	humm               hummingbirdParameters
-	hummEnabled        bool
-	hummReservationID  uint32
-	hummKeysDir        string
+	bandwidthBps      float64
+	maxBurstBps       float64
+	duration          time.Duration
+	payloadSize       int
+	pongRateHz        float64
+	humm              hummingbirdParameters
+	hummEnabled       bool
+	hummReservationID uint32
+	hummKeysDir       string
+	// partial restricts which on-path ASes get flyovers; nil reserves every AS.
+	partial            *humm.ASFilter
 	marketplaceJWT     string
 	reportInterval     time.Duration
 	renewalAhead       time.Duration
@@ -194,7 +196,8 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 		"bandwidth_bps", cfg.bandwidthBps, "maxburst_bps", cfg.maxBurstBps,
 		"payload_size", cfg.payloadSize,
 		"pong_rate_hz", cfg.pongRateHz, "hummingbird_enabled", cfg.hummEnabled,
-		"bidirectional", cfg.bidirectional(), "hummingbird_reservation_id", cfg.hummReservationID)
+		"bidirectional", cfg.bidirectional(), "hummingbird_reservation_id", cfg.hummReservationID,
+		"partial", cfg.partial.String())
 
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
@@ -302,6 +305,9 @@ func (c *client) buildReservationWithMarketplace(
 	startsAt := startTime.Truncate(time.Second)
 	stopsAt := startsAt.Add(time.Duration(c.cfg.humm.Duration) * time.Second)
 	querier := daemon.Querier{Connector: c.cfg.sdConn, IA: c.sn.Topology.LocalIA}
+	baseHops := snetpath.InterfacesToBaseHops(path.Metadata().Interfaces)
+	selected := c.cfg.partial.MarketSelection(baseHops)
+	c.logSelection(baseHops, selected)
 	return marketclient.OneShotReservation(
 		ctx,
 		path,
@@ -309,16 +315,35 @@ func (c *client) buildReservationWithMarketplace(
 		querier,
 		c.sn.Topology,
 		marketplaceInsecure,
-		c.cfg.humm.Bw,
-		c.cfg.humm.ReverseBw,
-		startsAt,
-		stopsAt,
-		marketplaceMaxPrice,
-		marketplaceBuyMode,
-		marketplaceFetchReservations,
-		marketplaceCombineAssets,
-		marketplaceRetries,
+		marketclient.ReservationRequest{
+			BwInKbps:        c.cfg.humm.Bw,
+			ReverseBwInKbps: c.cfg.humm.ReverseBw,
+			StartsAt:        startsAt,
+			StopsAt:         stopsAt,
+			MaxPrice:        marketplaceMaxPrice,
+			BuyMode:         marketplaceBuyMode,
+			FetchExisting:   marketplaceFetchReservations,
+			CombineAssets:   marketplaceCombineAssets,
+			NumRetries:      marketplaceRetries,
+			Selected:        selected,
+		},
 	)
+}
+
+// logSelection logs, at debug level, the IAs that get a flyover on the forward path.
+func (c *client) logSelection(baseHops []snetpath.BaseHop, selected []int) {
+	if selected == nil {
+		selected = make([]int, len(baseHops))
+		for i := range selected {
+			selected[i] = i
+		}
+	}
+	ias := make([]addr.IA, 0, len(selected))
+	for _, hop := range humm.PickHops(baseHops, selected) {
+		ias = append(ias, hop.IA)
+	}
+	log.Debug("Reserving flyovers", "partial", c.cfg.partial.String(), "ias", ias,
+		"path_len", len(baseHops))
 }
 
 func (c *client) buildReservationWithSecretValues(
@@ -326,26 +351,40 @@ func (c *client) buildReservationWithSecretValues(
 	startTime time.Time,
 ) (*snetpath.Reservation, error) {
 	baseHops := snetpath.InterfacesToBaseHops(path.Metadata().Interfaces)
+	selected := c.cfg.partial.SelectIndices(baseHops)
 	scionPath, ok := path.Dataplane().(snetpath.SCION)
 	if !ok {
 		return nil, serrors.New("provided path must be of type scion")
 	}
-	flyovers, err := c.deriveFlyoversFromSecretValues(baseHops, c.cfg.humm.Bw, startTime)
+	c.logSelection(baseHops, selected)
+	flyovers, err := c.deriveFlyoversFromSecretValues(
+		humm.PickHops(baseHops, selected), c.cfg.humm.Bw, startTime)
+	if err != nil {
+		return nil, err
+	}
+	seq, err := humm.ExpandFlyovers(len(baseHops), selected, flyovers)
 	if err != nil {
 		return nil, err
 	}
 	reservation, err := snetpath.NewReservation(
-		snetpath.WithDataplanePath(scionPath, path.Destination(), flyovers),
+		snetpath.WithDataplanePath(scionPath, path.Destination(), seq),
 	)
-	if err != nil || c.cfg.humm.ReverseBw == 0 {
+	if err != nil || c.cfg.humm.ReverseBw == 0 || len(selected) == 0 {
 		return reservation, err
 	}
+	// The reverse reservation covers exactly the mirrored forward selection.
+	reverseHops := reverseBaseHops(baseHops)
+	reverseSelected := humm.MirrorIndices(len(baseHops), selected)
 	reverseFlyovers, err := c.deriveFlyoversFromSecretValues(
-		reverseBaseHops(baseHops), c.cfg.humm.ReverseBw, startTime)
+		humm.PickHops(reverseHops, reverseSelected), c.cfg.humm.ReverseBw, startTime)
 	if err != nil {
 		return nil, err
 	}
-	extn, err := humm.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
+	reverseSeq, err := humm.ExpandFlyovers(len(baseHops), reverseSelected, reverseFlyovers)
+	if err != nil {
+		return nil, err
+	}
+	extn, err := humm.BuildReverseReservationExtn(scionPath, path.Source(), reverseSeq)
 	if err != nil {
 		return nil, err
 	}

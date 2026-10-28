@@ -94,6 +94,9 @@ class HummingbirdReservation:
     renewal_ahead: str | None
     reservation_overlap: str | None
     humm_start_offset: str | None
+    # The -partial flag of the client: the ASes to reserve in, or negated ASes to leave out.
+    # None reserves in every AS of the path.
+    partial: str | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +204,17 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def validate_partial(value: Any, context: str) -> None:
+    """Check a -partial value: comma separated IAs, either all plain or all prefixed with '!'."""
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{context} must be a non-empty string")
+    tokens = [token.strip() for token in value.split(",")]
+    if any(not token or token == "!" for token in tokens):
+        raise ConfigError(f"{context} must not contain empty entries")
+    if len({token.startswith("!") for token in tokens}) > 1:
+        raise ConfigError(f"{context} must be either all plain or all '!'-negated entries")
+
+
 def require_fields(
     value: dict[str, Any], required: set[str], context: str, optional: set[str] | None = None,
 ) -> None:
@@ -280,7 +294,7 @@ def parse_client(
             raise ConfigError(f"{context}.hummingbird_reservation must be an object")
         require_fields(value, {"bandwidth", "duration", "reverse_bandwidth"},
                        f"{context}.hummingbird_reservation",
-                       {"renewal_ahead", "reservation_overlap", "humm_start_offset"})
+                       {"renewal_ahead", "reservation_overlap", "humm_start_offset", "partial"})
         reservation_bandwidth, duration, reverse_bandwidth = (
             value["bandwidth"], value["duration"], value["reverse_bandwidth"])
         validate_reservation_bandwidth(
@@ -300,6 +314,9 @@ def parse_client(
                     f"{context}.hummingbird_reservation.{key} "
                     "must be a non-empty duration string")
             timing[key] = setting
+        partial = value.get("partial")
+        if partial is not None:
+            validate_partial(partial, f"{context}.hummingbird_reservation.partial")
         reservation = HummingbirdReservation(
             bandwidth=reservation_bandwidth,
             duration=duration,
@@ -307,6 +324,7 @@ def parse_client(
             renewal_ahead=timing["renewal_ahead"],
             reservation_overlap=timing["reservation_overlap"],
             humm_start_offset=timing["humm_start_offset"],
+            partial=partial,
         )
 
     payload_size = entry.get("payload_size")
@@ -1159,6 +1177,8 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
                 ("-humm-start-offset", reservation.humm_start_offset)):
             if value is not None:
                 args.extend([flag, value])
+        if reservation.partial is not None:
+            args.extend(["-partial", reservation.partial])
     return args
 
 
