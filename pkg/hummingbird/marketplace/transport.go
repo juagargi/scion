@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/quic-go/quic-go"
@@ -71,21 +72,34 @@ type scionTransport struct {
 	conn *snet.Conn
 }
 
+// closingPeriod is how long the SCION socket stays open after the QUIC connection was closed.
+// RFC 9000 (section 10.2.1) asks an endpoint that sent a CONNECTION_CLOSE to keep answering
+// late packets of the peer for 3 Probe Timeouts (PTO);
+// indeed the marketplace does send some after our close: they were already in flight.
+// A var so tests can shorten it.
+var closingPeriod = time.Second
+
 // close tears the layers down from the outside in.
 // http3 closes the HTTP/3 connections gracefully, so the marketplace learns of the shutdown;
 // otherwise it holds its side of every connection until the idle timeout expires.
-// Then QUIC is stopped. And finally the SCION socket is closed.
+// Then QUIC is stopped, and finally the SCION socket is closed, but not right away:
+// QUIC discards the late packets of the marketplace only while it still owns the socket, and
+// the port would otherwise be handed to the next socket opened, which would then read them.
+// So the last two steps run after closingPeriod, in a timer of their own, and their errors
+// can only be logged. Nothing else closes the socket: QUIC does not own it.
 func (t *scionTransport) close() error {
 	var errs []error
 	if err := t.h3.Close(); err != nil {
 		errs = append(errs, serrors.Wrap("closing the HTTP/3 transport", err))
 	}
-	if err := t.quic.Close(); err != nil {
-		errs = append(errs, serrors.Wrap("closing the QUIC transport", err))
-	}
-	if err := t.conn.Close(); err != nil {
-		errs = append(errs, serrors.Wrap("closing the SCION connection", err))
-	}
+	time.AfterFunc(closingPeriod, func() {
+		if err := t.quic.Close(); err != nil {
+			log.Error("Closing the QUIC transport", "err", err)
+		}
+		if err := t.conn.Close(); err != nil {
+			log.Error("Closing the SCION connection", "err", err)
+		}
+	})
 	return errors.Join(errs...)
 }
 
