@@ -90,6 +90,8 @@ var (
 	hummingbird            string                // e.g. "1,5s" or "1,5s,2"
 	hummKeysDir            string                // for testing purposes only
 	hummParams             hummingbirdParameters // derived from the string in hummingbird
+	partial                string                // e.g. "1-ff00:0:110,1-ff00:0:111" or "!1-ff00:0:110"
+	partialFilter          *humm.ASFilter        // derived from the string in partial
 	marketParams           marketplaceParameters // derived from the environment
 )
 
@@ -132,6 +134,10 @@ func addFlags() {
 			"a bandwidth class, without a unit (e.g. '3,5s' or '3,5s,2'); without it they "+
 			"are bandwidths and need a unit, kbps|mbps|gbps "+
 			"(e.g. '100kbps,20s' or '100kbps,20s,1mbps')")
+	flag.StringVar(&partial, "partial", "",
+		"Only reserve flyovers in some ASes of the path (requires -hummingbird): a "+
+			"comma separated list of the IAs to reserve in, or of IAs prefixed with '!' "+
+			"to reserve everywhere but there. Empty reserves in every AS")
 	flag.StringVar(&hummKeysDir, "hummKeysDir", "",
 		"Root directory containing AS*/keys/master0.key files for Hummingbird. "+
 			"Without it, the reservations are bought from the marketplace the ASes of "+
@@ -141,6 +147,16 @@ func addFlags() {
 func validateFlags() {
 	if epic && hummingbird != "" {
 		integration.LogFatal("EPIC and Hummingbird modes are mutually exclusive")
+	}
+	if partial != "" && hummingbird == "" {
+		integration.LogFatal("-partial requires -hummingbird")
+	}
+	{
+		var err error
+		partialFilter, err = humm.ParseASFilter(partial)
+		if err != nil {
+			integration.LogFatal("bad partial flag", "value", partial, "err", err)
+		}
 	}
 	if integration.Mode == integration.ModeClient {
 		if remote.Host == nil {
@@ -177,7 +193,7 @@ func validateFlags() {
 		}
 	}
 	log.Info("Flags", "timeout", timeout, "epic", epic, "hummingbird", hummingbird,
-		"humm_keys_dir", hummKeysDir, "remote", remote)
+		"partial", partialFilter, "humm_keys_dir", hummKeysDir, "remote", remote)
 }
 
 type server struct{}
@@ -294,6 +310,7 @@ type client struct {
 	useHummingbird bool
 	hummKeysDir    string
 	hummParams     hummingbirdParameters
+	partial        *humm.ASFilter // nil or empty selects every AS
 	hummSVByIA     map[addr.IA][]byte
 	// Specific to Hummingbird without secret values, i.e. buying the flyovers:
 	topo         snet.Topology
@@ -326,6 +343,7 @@ func (c *client) run() int {
 	c.useHummingbird = hummingbird != ""
 	c.hummKeysDir = hummKeysDir
 	c.hummParams = hummParams
+	c.partial = partialFilter
 	c.hummSVByIA = make(map[addr.IA][]byte)
 	c.topo = topo
 	c.marketParams = marketParams
@@ -512,6 +530,7 @@ func (c *client) buildReservationWithMarketplace(
 	startsAt := now.Add(hummStartOffset).Truncate(time.Second)
 	stopsAt := startsAt.Add(time.Duration(c.hummParams.Duration) * time.Second)
 	querier := daemon.Querier{Connector: c.sdConn, IA: c.topo.LocalIA}
+	baseHops := snetpath.InterfacesToBaseHops(path.Metadata().Interfaces)
 	return marketclient.OneShotReservation(
 		ctx,
 		path,
@@ -519,15 +538,18 @@ func (c *client) buildReservationWithMarketplace(
 		querier,
 		c.topo,
 		marketplaceInsecure,
-		c.hummParams.Bw,
-		c.hummParams.ReverseBw,
-		startsAt,
-		stopsAt,
-		marketplaceMaxPrice,
-		marketplaceBuyMode,
-		marketplaceFetchReservations,
-		marketplaceCombineAssets,
-		marketplaceRetries,
+		marketclient.ReservationRequest{
+			BwInKbps:        c.hummParams.Bw,
+			ReverseBwInKbps: c.hummParams.ReverseBw,
+			StartsAt:        startsAt,
+			StopsAt:         stopsAt,
+			MaxPrice:        marketplaceMaxPrice,
+			BuyMode:         marketplaceBuyMode,
+			FetchExisting:   marketplaceFetchReservations,
+			CombineAssets:   marketplaceCombineAssets,
+			NumRetries:      marketplaceRetries,
+			Selected:        c.partial.MarketSelection(baseHops),
+		},
 	)
 }
 
@@ -541,26 +563,39 @@ func (c *client) buildReservationWithSecretValues(
 	if !ok {
 		return nil, serrors.New("provided path must be of type scion")
 	}
-	flyovers, err := c.deriveFlyoversFromSecretValues(baseHops, uint16(c.hummParams.Bw), now)
+	selected := c.partial.SelectIndices(baseHops)
+	flyovers, err := c.deriveFlyoversFromSecretValues(
+		humm.PickHops(baseHops, selected), uint16(c.hummParams.Bw), now)
+	if err != nil {
+		return nil, err
+	}
+	sequence, err := humm.ExpandFlyovers(len(baseHops), selected, flyovers)
 	if err != nil {
 		return nil, err
 	}
 	reservation, err := snetpath.NewReservation(
-		snetpath.WithDataplanePath(scionPath, path.Destination(), flyovers),
+		snetpath.WithDataplanePath(scionPath, path.Destination(), sequence),
 	)
-	if err != nil || c.hummParams.ReverseBw == 0 {
+	if err != nil || c.hummParams.ReverseBw == 0 || len(selected) == 0 {
 		return reservation, err
 	}
 
+	// The reverse reservation mirrors the forward selection.
+	reverseHops := reverseBaseHops(baseHops)
+	reverseSelected := humm.MirrorIndices(len(baseHops), selected)
 	reverseFlyovers, err := c.deriveFlyoversFromSecretValues(
-		reverseBaseHops(baseHops),
+		humm.PickHops(reverseHops, reverseSelected),
 		uint16(c.hummParams.ReverseBw),
 		now,
 	)
 	if err != nil {
 		return nil, err
 	}
-	extn, err := humm.BuildReverseReservationExtn(scionPath, path.Source(), reverseFlyovers)
+	reverseSequence, err := humm.ExpandFlyovers(len(baseHops), reverseSelected, reverseFlyovers)
+	if err != nil {
+		return nil, err
+	}
+	extn, err := humm.BuildReverseReservationExtn(scionPath, path.Source(), reverseSequence)
 	if err != nil {
 		return nil, err
 	}
