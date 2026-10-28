@@ -65,7 +65,8 @@ func TestNewPathMarketplaces(t *testing.T) {
 	p := pathWithNotes(noteWith("a"), "", noteWith("b", "c"))
 	discovered, err := NewPathMarketplaces(p)
 	require.NoError(t, err)
-	assert.Equal(t, p, discovered.Path)
+	require.Len(t, discovered.Hops, 3)
+	assert.Equal(t, snetpath.InterfacesToBaseHops(p.Metadata().Interfaces), discovered.Hops)
 	require.Len(t, discovered.PathASes, 3)
 	assert.Equal(t, []string{"a"}, addressesOf(discovered.PathASes[0].Notes))
 	assert.Empty(t, discovered.PathASes[1].Notes)
@@ -75,6 +76,88 @@ func TestNewPathMarketplaces(t *testing.T) {
 	for _, client := range discovered.clients {
 		assert.Nil(t, client)
 	}
+}
+
+// TestNewPathMarketplacesForASesSubsetsNotes checks that only the selected ASes are kept,
+// with their own notes and hops.
+func TestNewPathMarketplacesForASesSubsetsNotes(t *testing.T) {
+	p := pathWithNotes(noteWith("a"), noteWith("b"), noteWith("c"))
+	all := snetpath.InterfacesToBaseHops(p.Metadata().Interfaces)
+	m, err := NewPathMarketplacesForASes(p, []int{0, 2})
+	require.NoError(t, err)
+	assert.Equal(t, []snetpath.BaseHop{all[0], all[2]}, m.Hops)
+	require.Len(t, m.PathASes, 2)
+	assert.Equal(t, []string{"a"}, addressesOf(m.PathASes[0].Notes))
+	assert.Equal(t, []string{"c"}, addressesOf(m.PathASes[1].Notes))
+	assert.Len(t, m.clients, 2)
+}
+
+// TestNewPathMarketplacesForASesRejectsBadIndices checks the validation of the selection.
+func TestNewPathMarketplacesForASesRejectsBadIndices(t *testing.T) {
+	p := pathWithNotes(noteWith("a"), noteWith("b"), noteWith("c"))
+	for name, indices := range map[string][]int{
+		"out of range":      {0, 3},
+		"negative":          {-1, 1},
+		"descending":        {2, 0},
+		"duplicates":        {1, 1},
+		"descending middle": {0, 2, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := NewPathMarketplacesForASes(p, indices)
+			assert.Error(t, err)
+		})
+	}
+	t.Run("empty is valid", func(t *testing.T) {
+		m, err := NewPathMarketplacesForASes(p, []int{})
+		require.NoError(t, err)
+		assert.Empty(t, m.Hops)
+	})
+}
+
+// TestFullCoverageCountIgnoresUnselectedAS checks that an AS without a marketplace does not
+// prevent covering the selected ones.
+func TestFullCoverageCountIgnoresUnselectedAS(t *testing.T) {
+	p := pathWithNotes(noteWith("a"), "", noteWith("a"))
+	all, err := NewPathMarketplaces(p)
+	require.NoError(t, err)
+	count, _ := all.FullCoverageCount()
+	assert.Equal(t, 0, count)
+
+	subset, err := NewPathMarketplacesForASes(p, []int{0, 2})
+	require.NoError(t, err)
+	count, coverage := subset.FullCoverageCount()
+	assert.Equal(t, 1, count)
+	assert.Equal(t, []string{"a"}, addressesOf(coverage))
+}
+
+// TestNewPathMarketplacesFromNotes checks the constructor taking explicit hops and notes.
+func TestNewPathMarketplacesFromNotes(t *testing.T) {
+	hops := snetpath.InterfacesToBaseHops(
+		pathWithNotes("", "", "").Metadata().Interfaces)[:2]
+	m, err := NewPathMarketplacesFromNotes(hops, []string{noteWith("a"), noteWith("b", "c")})
+	require.NoError(t, err)
+	assert.Equal(t, hops, m.Hops)
+	require.Len(t, m.PathASes, 2)
+	assert.Equal(t, []string{"a"}, addressesOf(m.PathASes[0].Notes))
+	assert.Equal(t, []string{"b", "c"}, addressesOf(m.PathASes[1].Notes))
+	assert.Len(t, m.clients, 3)
+
+	_, err = NewPathMarketplacesFromNotes(hops, []string{noteWith("a")})
+	assert.Error(t, err)
+}
+
+// TestInterfacePairsFromBaseHops checks the conversion keeps order and values.
+func TestInterfacePairsFromBaseHops(t *testing.T) {
+	p := pathWithNotes("", "", "")
+	hops := snetpath.InterfacesToBaseHops(p.Metadata().Interfaces)
+	pairs := interfacePairsFromBaseHops(hops)
+	require.Len(t, pairs, 3)
+	for i, h := range hops {
+		assert.Equal(t, InterfacePair{
+			IA: uint64(h.IA), Ingress: uint32(h.Ingress), Egress: uint32(h.Egress),
+		}, pairs[i])
+	}
+	assert.Equal(t, pairs, interfacePairsFromInterfaces(p.Metadata().Interfaces))
 }
 
 // TestNewPathMarketplacesRejectsInconsistentMetadata checks that pairing a note with an AS

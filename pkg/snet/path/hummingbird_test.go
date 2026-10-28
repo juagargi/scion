@@ -1027,3 +1027,242 @@ func mustDecode16bytes(t *testing.T, s string) [16]byte {
 	require.Len(t, b, 16)
 	return [16]byte(b)
 }
+
+// partialSelections lists, for the 3 base hops of the 111 -> 112 tiny-topology path, which base
+// hops carry a flyover. Base hop 1 (110) is the crossover AS, mapped to hop field index 1.
+var partialSelections = []struct {
+	name string
+	sel  [3]bool
+}{
+	{"none", [3]bool{false, false, false}},
+	{"first", [3]bool{true, false, false}},
+	{"middle", [3]bool{false, true, false}},
+	{"last", [3]bool{false, false, true}},
+	{"first+middle", [3]bool{true, true, false}},
+	{"middle+last", [3]bool{false, true, true}},
+	{"first+last", [3]bool{true, false, true}},
+	{"all", [3]bool{true, true, true}},
+}
+
+// selectedSequence returns the full-length sequence with nil holes for unselected base hops.
+func selectedSequence(
+	t *testing.T,
+	full path.FlyoverSequence,
+	sel [3]bool,
+) path.FlyoverSequence {
+	t.Helper()
+	require.Len(t, full, 3)
+	seq := make(path.FlyoverSequence, len(full))
+	for i := range full {
+		if sel[i] {
+			seq[i] = full[i]
+		}
+	}
+	return seq
+}
+
+// TestPartialReservation builds reservations over the 3-AS path with holes in the flyover
+// sequence, and checks the resulting hops, line counts, and the serialization round trip.
+func TestPartialReservation(t *testing.T) {
+	const referenceEpochTime uint32 = 123456
+	referenceTime := util.SecsToTime(referenceEpochTime)
+	dstIA := addr.MustParseIA("1-ff00:0:112")
+	// Hop field indices of the base hops (the crossover hop field, index 2, has no base hop).
+	hfIdx := [3]int{0, 1, 3}
+
+	for _, tc := range partialSelections {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			scionDec := createScionPath(referenceTime)
+			raw := make([]byte, scionDec.Len())
+			require.NoError(t, scionDec.SerializeTo(raw))
+			seq := selectedSequence(t, createFlyoverSequence(t, referenceEpochTime), tc.sel)
+
+			r, err := path.NewReservation(
+				path.WithDataplanePath(path.SCION{Raw: raw}, dstIA, seq),
+			)
+			require.NoError(t, err)
+			require.Len(t, r.Hops, 4)
+			require.Nil(t, r.Hops[2], "crossover hop field never has a hop")
+
+			count := 0
+			for i, selected := range tc.sel {
+				h := r.Hops[hfIdx[i]]
+				hf := r.Dec.HopFields[hfIdx[i]]
+				if selected {
+					count++
+					require.NotNil(t, h, "base hop %d", i)
+					require.NotNil(t, h.Flyover, "base hop %d", i)
+					require.True(t, hf.Flyover, "base hop %d", i)
+					require.NotNil(t, (*r.AesBlocks())[hfIdx[i]], "base hop %d", i)
+					require.Equal(t, seq[i].Ingress, h.Ingress)
+					require.Equal(t, seq[i].Egress, h.Egress)
+				} else {
+					require.Nil(t, h, "base hop %d", i)
+					require.False(t, hf.Flyover, "base hop %d", i)
+					require.Nil(t, (*r.AesBlocks())[hfIdx[i]], "base hop %d", i)
+				}
+			}
+			require.False(t, r.Dec.HopFields[2].Flyover)
+
+			// Line counts: 3 lines per hop field, 5 per flyover hop field.
+			require.Equal(t, 12+2*count, int(r.Dec.NumLines))
+			wantSeg0 := 6
+			if tc.sel[0] {
+				wantSeg0 += 2
+			}
+			if tc.sel[1] {
+				wantSeg0 += 2
+			}
+			wantSeg1 := 6
+			if tc.sel[2] {
+				wantSeg1 += 2
+			}
+			require.Equal(t, wantSeg0, int(r.Dec.PathMeta.SegLen[0]))
+			require.Equal(t, wantSeg1, int(r.Dec.PathMeta.SegLen[1]))
+			require.Equal(t, 0, int(r.Dec.PathMeta.SegLen[2]))
+			require.Equal(t, int(r.Dec.NumLines),
+				int(r.Dec.PathMeta.SegLen[0])+int(r.Dec.PathMeta.SegLen[1]))
+			for i := range 3 {
+				require.Equal(t, r.Dec.NumberOfHFsInSegment(i) > 0, i < 2)
+			}
+			// The decoded path must serialize to its declared length and decode back.
+			dpRaw := make([]byte, r.Dec.Len())
+			require.NoError(t, r.Dec.SerializeTo(dpRaw))
+			var dec2 dphumm.Decoded
+			require.NoError(t, dec2.DecodeFromBytes(dpRaw))
+			for i, hf := range dec2.HopFields {
+				require.Equal(t, r.Dec.HopFields[i].Flyover, hf.Flyover, "hf %d", i)
+			}
+
+			// Serialize / deserialize round trip of the reservation state.
+			buff := make([]byte, r.SerializedLen())
+			require.NoError(t, r.Serialize(buff))
+			var r2 path.Reservation
+			require.NoError(t, r2.Deserialize(buff))
+			require.Equal(t, r.Hops, r2.Hops)
+			require.Equal(t, r.GetScionMACs(), r2.GetScionMACs())
+			for i := range r.Hops {
+				require.Equal(t, r.Hops[i] == nil, r2.Hops[i] == nil, "hop %d", i)
+				if r.Hops[i] != nil {
+					require.Equal(t, r.Hops[i].Flyover != nil, r2.Hops[i].Flyover != nil)
+				}
+			}
+		})
+	}
+}
+
+// buildForwardAndReverse builds a forward reservation with the given selection, and the serialized
+// reverse reservation (built by the "client" over the reversed SCION path) with revSel, given
+// in reverse path order (index 0 is 112).
+func buildForwardAndReverse(
+	t *testing.T,
+	fwdSel, revSel [3]bool,
+) (snet.RawPath, []byte) {
+	t.Helper()
+	const referenceEpochTime uint32 = 123456
+	referenceTime := util.SecsToTime(referenceEpochTime)
+
+	// Forward reservation, whose dataplane path is what the server receives.
+	scionDec := createScionPath(referenceTime)
+	raw := make([]byte, scionDec.Len())
+	require.NoError(t, scionDec.SerializeTo(raw))
+	fwd, err := path.NewReservation(path.WithDataplanePath(path.SCION{Raw: raw},
+		addr.MustParseIA("1-ff00:0:112"),
+		selectedSequence(t, createFlyoverSequence(t, referenceEpochTime), fwdSel)))
+	require.NoError(t, err)
+	fwdRaw := make([]byte, fwd.Dec.Len())
+	require.NoError(t, fwd.Dec.SerializeTo(fwdRaw))
+	carrier := snet.RawPath{PathType: dphumm.PathType, Raw: fwdRaw}
+
+	// Reverse reservation, built over the reversed SCION path.
+	revDec := createScionPath(referenceTime)
+	_, err = revDec.Reverse()
+	require.NoError(t, err)
+	revRaw := make([]byte, revDec.Len())
+	require.NoError(t, revDec.SerializeTo(revRaw))
+	revSeq := path.FlyoverSequence{
+		{BaseHop: path.BaseHop{IA: addr.MustParseIA("1-ff00:0:112"), Ingress: 0, Egress: 1}},
+		{BaseHop: path.BaseHop{IA: addr.MustParseIA("1-ff00:0:110"), Ingress: 2, Egress: 1}},
+		{BaseHop: path.BaseHop{IA: addr.MustParseIA("1-ff00:0:111"), Ingress: 41, Egress: 0}},
+	}
+	for i := range revSeq {
+		if revSel[i] {
+			revSeq[i].Flyover = createFlyover(t, referenceEpochTime)
+		} else if !revSel[i] {
+			revSeq[i] = nil
+		}
+	}
+	rev, err := path.NewReservation(path.WithDataplanePath(path.SCION{Raw: revRaw},
+		addr.MustParseIA("1-ff00:0:111"), revSeq))
+	require.NoError(t, err)
+	buff := make([]byte, rev.SerializedLen())
+	require.NoError(t, rev.Serialize(buff))
+	return carrier, buff
+}
+
+// TestReverseFromBidirectionalPartial checks that a reverse reservation that mirrors the forward
+// selection yields a usable reservation, and that a reverse reservation that does not provide a
+// flyover for a forward flyover hop field is rejected.
+func TestReverseFromBidirectionalPartial(t *testing.T) {
+	srcIA := addr.MustParseIA("1-ff00:0:111")
+	mirror := func(s [3]bool) [3]bool { return [3]bool{s[2], s[1], s[0]} }
+
+	for _, tc := range partialSelections {
+		t.Run("mirrored_"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			carrier, buff := buildForwardAndReverse(t, tc.sel, mirror(tc.sel))
+			r, err := path.NewReservation(path.WithReverseFromBidirectional(buff, carrier, srcIA))
+			require.NoError(t, err)
+			require.Equal(t, srcIA, r.DstIA)
+			require.Len(t, r.Hops, 4)
+			count := 0
+			for i, hf := range r.Dec.HopFields {
+				hasFlyover := r.Hops[i] != nil && r.Hops[i].Flyover != nil
+				require.Equal(t, hasFlyover, hf.Flyover, "hf %d", i)
+				require.Equal(t, hasFlyover, (*r.AesBlocks())[i] != nil, "hf %d", i)
+				if hasFlyover {
+					count++
+				}
+			}
+			require.Equal(t, 12+2*count, int(r.Dec.NumLines))
+			require.Equal(t, int(r.Dec.NumLines),
+				int(r.Dec.PathMeta.SegLen[0])+int(r.Dec.PathMeta.SegLen[1]))
+			// Must be able to derive the dataplane path (computes flyover MACs).
+			s := &slayers.SCION{}
+			require.NoError(t, r.SetPath(s))
+		})
+	}
+
+	// Non mirrored selections are still usable: WithReverseFromBidirectional reverses the
+	// received path, which drops all of its flyover hop fields (Decoded.Reverse calls
+	// RemoveFlyovers), so no flyover hop field can be left without a bound Ak. The reverse
+	// path carries flyovers exactly where the reverse reservation has them.
+	for _, tc := range []struct {
+		name     string
+		fwd, rev [3]bool
+	}{
+		{"fwd_first_rev_none", [3]bool{true, false, false}, [3]bool{}},
+		{"fwd_all_rev_subset", [3]bool{true, true, true}, [3]bool{true, false, true}},
+		{"fwd_first_rev_same_order", [3]bool{true, false, false}, [3]bool{true, false, false}},
+		{"fwd_none_rev_all", [3]bool{}, [3]bool{true, true, true}},
+	} {
+		t.Run("not_mirrored_"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			carrier, buff := buildForwardAndReverse(t, tc.fwd, tc.rev)
+			r, err := path.NewReservation(path.WithReverseFromBidirectional(buff, carrier, srcIA))
+			require.NoError(t, err)
+			count := 0
+			for i, hf := range r.Dec.HopFields {
+				hasFlyover := r.Hops[i] != nil && r.Hops[i].Flyover != nil
+				require.Equal(t, hasFlyover, hf.Flyover, "hf %d", i)
+				require.Equal(t, hasFlyover, (*r.AesBlocks())[i] != nil, "hf %d", i)
+				if hasFlyover {
+					count++
+				}
+			}
+			require.Equal(t, 12+2*count, int(r.Dec.NumLines))
+			require.NoError(t, r.SetPath(&slayers.SCION{}))
+		})
+	}
+}

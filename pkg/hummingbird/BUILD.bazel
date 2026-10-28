@@ -4,6 +4,7 @@ load("//tools:go.bzl", "go_test")
 go_library(
     name = "go_default_library",
     srcs = [
+        "asfilter.go",
         "hummingbird.go",
         "reverse.go",
     ],
@@ -22,6 +23,7 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = [
+        "asfilter_test.go",
         "hummingbird_test.go",
         "reverse_test.go",
     ],
