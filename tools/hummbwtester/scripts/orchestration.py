@@ -463,6 +463,14 @@ def validate_ssh_marketplace(url: str, scion_address: Any) -> None:
         )
 
 
+def informative_lines(root: dict[str, Any]) -> list[str]:
+    """The optional free-text lines of the configuration, shown when the experiment is set up."""
+    lines = root.get("informative", [])
+    if not isinstance(lines, list) or not all(isinstance(line, str) for line in lines):
+        raise ConfigError("informative must be an array of strings")
+    return lines
+
+
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
@@ -474,7 +482,9 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         root,
         {"server", "hummingbird", "hummingbird_clients", "best_effort_clients", "deployment", "tc"},
         "configuration",
+        {"informative"},
     )
+    informative_lines(root)
     deployment = root["deployment"]
     if not isinstance(deployment, dict) or deployment.get("kind") not in ("docker", "ssh"):
         raise ConfigError("deployment.kind must be docker or ssh")

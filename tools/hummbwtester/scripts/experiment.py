@@ -179,8 +179,18 @@ def run_local(plan: ExperimentPlan) -> int:
     return planner.run_experiment(plan.path, plan.config)
 
 
+def show_informative(config_path: Path) -> None:
+    """Print the configuration's informative lines, framed so they stand out from the log."""
+    lines = planner.informative_lines(planner.read_json(config_path))
+    if lines:
+        print("\n".join(lines))
+        print()
+
+
 def execute(action: str, config_path: Path, dry_run: bool = False) -> int:
     plan = load_plan(config_path, action)
+    if action == "setup":
+        show_informative(config_path)
     if plan.kind == "docker":
         if action == "setup":
             return setup_local(plan, dry_run)

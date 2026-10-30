@@ -69,6 +69,28 @@ class ExperimentTest(unittest.TestCase):
         ])
         self.assertEqual(lines[-1], experiment.planner.DRY_RUN_NOTICE)
 
+    def test_setup_prints_informative_lines_before_acting(self):
+        lines = ["Topology:", "  a --- b"]
+        root = {"deployment": {"kind": "docker"}, "informative": lines}
+        plan = experiment.ExperimentPlan(Path("local.json"), mock.sentinel.config, "docker", None)
+        with mock.patch.object(experiment, "load_plan", return_value=plan), \
+                mock.patch.object(experiment.planner, "read_json", return_value=root), \
+                mock.patch.object(experiment, "setup_local", return_value=0), \
+                mock.patch.object(experiment, "run_local", return_value=0), \
+                mock.patch("builtins.print") as output:
+            experiment.execute("setup", Path("local.json"))
+            output.assert_any_call("\n".join(lines))
+            output.reset_mock()
+            experiment.execute("run", Path("local.json"))
+            output.assert_not_called()
+
+    def test_informative_must_be_a_list_of_strings(self):
+        self.assertEqual(experiment.planner.informative_lines({}), [])
+        with self.assertRaisesRegex(experiment.planner.ConfigError, "informative"):
+            experiment.planner.informative_lines({"informative": "text"})
+        with self.assertRaisesRegex(experiment.planner.ConfigError, "informative"):
+            experiment.planner.informative_lines({"informative": ["ok", 1]})
+
     def test_dry_run_is_only_accepted_for_setup(self):
         with mock.patch.object(experiment.sys, "argv", [
             "experiment.py", "teardown", "--config", "remote.json", "--dry-run",

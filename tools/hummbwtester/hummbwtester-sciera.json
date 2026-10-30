@@ -1,4 +1,20 @@
 {
+  "informative": [
+    "Target topology: SCIERA, three hosts (SSH deployment).",
+    "",
+    "+---------------+            +---------------+            +---------------+",
+    "| ufes          |            | rnp           |            | ufms          |",
+    "| AS 71-2:0:152 |            | AS 71-1916    |            | AS 71-2:0:5c  |",
+    "| best-effort-1 |#101----#106| hummingbird-1 |#103----#104| server :12345 |",
+    "| 127.0.0.1     |            | 127.0.0.1     |            | marketplace   |",
+    "+---------------+            +---------------+            +---------------+",
+    "",
+    "#N are interface IDs. Shaped links: rnp - ufms (10 Mbit, via #103/#104) and",
+    "rnp - ufes (via #106/#101).",
+    "hummingbird-1 (rnp) -> ufms: 71-1916#103 71-2:0:5c#104, with a reservation.",
+    "best-effort-1 (ufes) -> ufms: 71-2:0:152#101 71-1916#106,103 71-2:0:5c#104, best effort.",
+    "Both flows share the rnp -> ufms link; marketplace requests travel over best effort."
+  ],
   "hummingbird": {
     "reservation_source": "marketplace",
     "marketplace": {
