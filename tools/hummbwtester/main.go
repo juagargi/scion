@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/scionproto/scion/pkg/daemon"
+	humm "github.com/scionproto/scion/pkg/hummingbird"
 	"github.com/scionproto/scion/pkg/hummingbird/bwencoding"
 	marketclient "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/log"
@@ -73,6 +74,7 @@ var (
 	pongRateHz         float64
 	sequenceFlag       string
 	hummingbirdFlag    string
+	partialFlag        string
 	hummKeysDir        string
 	metricsAddr        string
 	reportInterval     time.Duration
@@ -154,6 +156,11 @@ func realMain() int {
 		}
 		return runServer(ctx, sn, scfg)
 	case modeClient:
+		partial, err := parsePartialFlag(partialFlag, hummingbirdFlag != "")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing -partial:", err)
+			return 1
+		}
 		var hummParams hummingbirdParameters
 		if hummingbirdFlag != "" {
 			hummParams, err = parseHummingbirdFlag(hummingbirdFlag, hummKeysDir == "")
@@ -207,6 +214,7 @@ func realMain() int {
 			hummEnabled:        hummingbirdFlag != "",
 			hummReservationID:  reservationID,
 			hummKeysDir:        hummKeysDir,
+			partial:            partial,
 			marketplaceJWT:     marketplaceJWT,
 			reportInterval:     reportInterval,
 			renewalAhead:       renewalAhead,
@@ -246,6 +254,10 @@ func addFlags() {
 		"(Client only, optional) Hummingbird reservation spec: BW,dur[,reverseBW]. "+
 			"With -hummKeysDir BW is a class without a unit; otherwise BW is a "+
 			"marketplace bandwidth with kbps|mbps|gbps (e.g. \"100kbps,20s\")")
+	flag.StringVar(&partialFlag, "partial", "",
+		"(Client only, requires -hummingbird) restrict flyovers to some on-path ASes: a "+
+			"comma-separated allow-list of IAs (\"1-ff00:0:111,1-ff00:0:110\") or deny-list "+
+			"with every entry prefixed by ! (\"!1-ff00:0:112\"); empty reserves every AS")
 	flag.StringVar(&hummKeysDir, "hummKeysDir", "",
 		"(Client only, testing) root dir containing AS*/keys/master0.key; without it, buy from the marketplace")
 	flag.DurationVar(&renewalAhead, "renewal-ahead", defaultRenewalAhead,
@@ -290,6 +302,18 @@ func validateFlags() error {
 		}
 	}
 	return nil
+}
+
+// parsePartialFlag parses the -partial AS filter. An empty value yields a nil filter (every AS);
+// a non-empty one requires -hummingbird.
+func parsePartialFlag(raw string, hummEnabled bool) (*humm.ASFilter, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	if !hummEnabled {
+		return nil, serrors.New("-partial requires -hummingbird")
+	}
+	return humm.ParseASFilter(raw)
 }
 
 func validateRenewalTiming(ahead, overlap time.Duration) error {

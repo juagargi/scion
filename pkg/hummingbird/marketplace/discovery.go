@@ -29,10 +29,11 @@ import (
 // together with the clients talking to them.
 // A client reserving the whole path needs a client for each of the on-path ASes.
 type PathMarketplaces struct {
-	// The snet.Path containing the PCB metadata.
-	Path snet.Path
-	// PathASes is the Hummingbird metadata of every on-path AS, in path order.
-	// Entry i belongs to the same AS as hop i of the path.
+	// Hops are the ASes to buy reservations for, in path order. They need not be every AS of
+	// the path: a partially reserved path only buys for some of them.
+	Hops []snetpath.BaseHop
+	// PathASes is the Hummingbird metadata of each AS of Hops, same length and order.
+	// Entry i belongs to the same AS as Hops[i].
 	// If AS i doesn't advertise a valid marketplace, its entry is empty.
 	PathASes []ASNotes
 
@@ -70,11 +71,50 @@ func (m *PathMarketplaces) Close() error {
 // since the several entries of one marketplace differ only in the protocol used to reach it.
 // No marketplace is dialed: use Connect or ConnectAll for that.
 func NewPathMarketplaces(p snet.Path) (*PathMarketplaces, error) {
+	return NewPathMarketplacesForASes(p, nil)
+}
+
+// NewPathMarketplacesForASes discovers the marketplaces of the given subset of the path.
+// indices are positions into the base hops of p, in strictly ascending order; nil means
+// every AS of the path.
+func NewPathMarketplacesForASes(p snet.Path, indices []int) (*PathMarketplaces, error) {
 	if p == nil || p.Metadata() == nil {
 		return nil, serrors.New("path without metadata")
 	}
 	hops := snetpath.InterfacesToBaseHops(p.Metadata().Interfaces)
 	notes := p.Metadata().Notes
+	if len(notes) != len(hops) {
+		return nil, serrors.New("inconsistent path metadata",
+			"notes", len(notes), "ases", len(hops))
+	}
+	if indices == nil {
+		return NewPathMarketplacesFromNotes(hops, notes)
+	}
+	prev := -1
+	selectedHops := make([]snetpath.BaseHop, 0, len(indices))
+	selectedNotes := make([]string, 0, len(indices))
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(hops) {
+			return nil, serrors.New("AS index out of range", "index", idx, "ases", len(hops))
+		}
+		if idx <= prev {
+			return nil, serrors.New("AS indices must be strictly ascending",
+				"index", idx, "previous", prev)
+		}
+		prev = idx
+		selectedHops = append(selectedHops, hops[idx])
+		selectedNotes = append(selectedNotes, notes[idx])
+	}
+	return NewPathMarketplacesFromNotes(selectedHops, selectedNotes)
+}
+
+// NewPathMarketplacesFromNotes builds the marketplaces from an explicit list of ASes and their
+// PCB notes, for callers that do not hold an snet.Path.
+// hops and notes must have the same length, entry i of notes belonging to hops[i].
+func NewPathMarketplacesFromNotes(
+	hops []snetpath.BaseHop,
+	notes []string,
+) (*PathMarketplaces, error) {
 	if len(notes) != len(hops) {
 		return nil, serrors.New("inconsistent path metadata",
 			"notes", len(notes), "ases", len(hops))
@@ -89,7 +129,11 @@ func NewPathMarketplaces(p snet.Path) (*PathMarketplaces, error) {
 			clients[entry] = nil
 		}
 	}
-	return &PathMarketplaces{Path: p, PathASes: metadata, clients: clients}, nil
+	return &PathMarketplaces{
+		Hops:     slices.Clone(hops),
+		PathASes: metadata,
+		clients:  clients,
+	}, nil
 }
 
 // FullCoverageCount returns the smallest set of the advertised marketplaces that together
@@ -236,8 +280,12 @@ func (m *PathMarketplaces) ConnectAll(
 	return nil
 }
 
-// AcquireReservations obtains the reservations of every AS of the path,
+// AcquireReservations obtains the reservations of every AS of m.Hops,
 // also the ones for the reverse reservation if reverseBwInKbps is not zero, nil otherwise.
+// The returned forward slice is aligned with m.Hops (entry i is the flyover of m.Hops[i]).
+// The reverse slice is aligned with the reversed m.Hops (entry j belongs to
+// m.Hops[len(m.Hops)-1-j]), so it mirrors the forward selection exactly.
+// The caller expands both to the full path length when only a subset of the path was selected.
 // The remaining arguments are the ones of ObtainReservationsForInterfacePairs,
 // which does the real acquisition once the ASes have been grouped by the marketplace.
 func (m *PathMarketplaces) AcquireReservations(
@@ -256,7 +304,7 @@ func (m *PathMarketplaces) AcquireReservations(
 	if err != nil {
 		return nil, nil, err
 	}
-	pairs := interfacePairsFromInterfaces(m.Path.Metadata().Interfaces)
+	pairs := interfacePairsFromBaseHops(m.Hops)
 	forward, err = buyPerMarketplace(ctx, pairs, clients, bwInKbps, startsAt, stopsAt,
 		maxPrice, buyMode, fetchReservations, combineAssets, numRetries)
 	if err != nil {
@@ -283,7 +331,6 @@ func (m *PathMarketplaces) AcquireReservations(
 // clientPerAS returns the marketplace to buy each AS of the path from,
 // which is the first one it advertised that has been connected to.
 func (m *PathMarketplaces) clientPerAS() ([]*Client, error) {
-	hops := snetpath.InterfacesToBaseHops(m.Path.Metadata().Interfaces)
 	clients := make([]*Client, len(m.PathASes))
 	for i, meta := range m.PathASes {
 		for _, entry := range meta.Notes {
@@ -294,7 +341,7 @@ func (m *PathMarketplaces) clientPerAS() ([]*Client, error) {
 		}
 		if clients[i] == nil {
 			return nil, serrors.New("no marketplace connected for an AS of the path",
-				"ia", hops[i].IA, "advertised", len(meta.Notes))
+				"ia", m.Hops[i].IA, "advertised", len(meta.Notes))
 		}
 	}
 	return clients, nil

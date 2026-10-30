@@ -113,6 +113,11 @@ Hummingbird clients additionally require `hummingbird_reservation`, an object wi
   defaults to `"15s"`.
 - `humm_start_offset` (optional): a signed offset added to the calculated reservation start time;
   defaults to `"-1s"`. For example, `"-3s"` starts the reservation three seconds earlier.
+- `partial` (optional): reserve flyovers in only some ASes of the path; passed as `-partial`.
+  Either a comma separated list of the ASes to reserve in (`"1-ff00:0:110,1-ff00:0:111"`) or a list
+  of ASes prefixed with `!` to leave out (`"!1-ff00:0:110"`); the two forms cannot be mixed.
+  Omitted, every AS of the path is reserved. The reverse reservation covers only the ASes that
+  have a forward reservation.
 
 Both client types may optionally set `payload_size` and `pong_rate`. They are passed as
 `-payload-size` and `-pong-rate`. The Hummingbird reservation timing fields are passed as
@@ -130,6 +135,26 @@ reservations for that path's hops only; it exits if no path matches. For example
 `"71-1916#103 71-2:0:5c#104"` selects the path that leaves 71-1916 through interface 103 and
 enters 71-2:0:5c through 104. Check a sequence with
 `scion showpaths <server ISD-AS> --sequence "<sequence>"` on the client's host.
+
+### Partial reservations (`-partial`)
+
+By default a Hummingbird client reserves a flyover at every AS on its path. The client flag
+`-partial` (which requires `-hummingbird`; `experiment.py` sets it from the `partial` field of
+`hummingbird_reservation`) restricts the reservation to some of them; the other hops are sent as plain SCION hops.
+
+| Flag | Meaning |
+| --- | --- |
+| `-partial=<list>` | Comma-separated IAs. An allow-list (`1-ff00:0:111,1-ff00:0:110`) reserves only those ASes. A deny-list, where every entry starts with `!` (`!1-ff00:0:112`), reserves every on-path AS except those. |
+
+A list must be all positive or all negated; mixing the two is rejected at startup, as is using the
+flag without `-hummingbird`. IAs that are not on the chosen path are ignored. An
+allow-list matching no on-path AS reserves nothing. Renewals use the same selection, and the
+"Client started" log line prints it under `partial`; at debug level each built reservation lists
+the IAs that got flyovers.
+
+Reverse reservations (a non-zero reverse bandwidth) are only bought for the ASes that have a
+forward reservation, at the mirrored positions of the reversed path. A reverse reservation for an
+AS without a forward one is never requested.
 
 ### Bounded catch-up after a missed deadline
 

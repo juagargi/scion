@@ -47,7 +47,10 @@ type InterfacePair struct {
 }
 
 func interfacePairsFromInterfaces(ifaces []snet.PathInterface) []InterfacePair {
-	baseHops := snetpath.InterfacesToBaseHops(ifaces)
+	return interfacePairsFromBaseHops(snetpath.InterfacesToBaseHops(ifaces))
+}
+
+func interfacePairsFromBaseHops(baseHops []snetpath.BaseHop) []InterfacePair {
 	pairs := make([]InterfacePair, 0, len(baseHops))
 	for _, hop := range baseHops {
 		pairs = append(pairs, InterfacePair{

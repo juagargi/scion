@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -28,6 +29,7 @@ import (
 	"github.com/scionproto/scion/pkg/daemon/mock_daemon"
 	daemontypes "github.com/scionproto/scion/pkg/daemon/types"
 	"github.com/scionproto/scion/pkg/segment/iface"
+	"github.com/scionproto/scion/pkg/slayers"
 	dppath "github.com/scionproto/scion/pkg/slayers/path"
 	dpscion "github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/pkg/snet"
@@ -790,5 +792,192 @@ func TestSelectPath(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
+	}
+}
+
+func TestPartialFlagValidation(t *testing.T) {
+	testCases := map[string]struct {
+		raw         string
+		hummEnabled bool
+		err         string
+		wantAll     bool
+		wantString  string
+	}{
+		"unset without hummingbird": {raw: "", wantAll: true},
+		"unset with hummingbird":    {raw: "", hummEnabled: true, wantAll: true},
+		"allow-list requires -hummingbird": {
+			raw: "1-ff00:0:111", err: "requires -hummingbird",
+		},
+		"deny-list requires -hummingbird": {
+			raw: "!1-ff00:0:111", err: "requires -hummingbird",
+		},
+		"allow-list": {
+			raw: "1-ff00:0:111,1-ff00:0:110", hummEnabled: true,
+			wantString: "only 1-ff00:0:110,1-ff00:0:111",
+		},
+		"deny-list": {
+			raw: "!1-ff00:0:112", hummEnabled: true, wantString: "all except 1-ff00:0:112",
+		},
+		"mixed list": {
+			raw: "1-ff00:0:111,!1-ff00:0:112", hummEnabled: true,
+			err: "all positive or all negated",
+		},
+		"invalid IA": {raw: "bogus", hummEnabled: true, err: "parsing IA"},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			got, err := parsePartialFlag(tc.raw, tc.hummEnabled)
+			if tc.err != "" {
+				require.ErrorContains(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			if tc.wantAll {
+				require.Nil(t, got)
+			} else {
+				require.Equal(t, tc.wantString, got.String())
+			}
+		})
+	}
+}
+
+// tinyTopologyClientPath returns the path 112 -> 111 over 110 of the tiny topology, with the
+// interface sequence 112#1, 110#2, 110#1, 111#41.
+func tinyTopologyClientPath(t *testing.T) snet.Path {
+	t.Helper()
+	decoded := dpscion.Decoded{
+		Base: dpscion.Base{
+			PathMeta: dpscion.MetaHdr{SegLen: [3]uint8{2, 2, 0}},
+			NumINF:   2,
+			NumHops:  4,
+		},
+		InfoFields: []dppath.InfoField{{ConsDir: false}, {ConsDir: true}},
+		HopFields: []dppath.HopField{
+			{ConsIngress: 1, ConsEgress: 0},
+			{ConsIngress: 0, ConsEgress: 2},
+			{ConsIngress: 0, ConsEgress: 1},
+			{ConsIngress: 41, ConsEgress: 0},
+		},
+	}
+	raw := make([]byte, decoded.Len())
+	require.NoError(t, decoded.SerializeTo(raw))
+	ia := addr.MustParseIA
+	return snetpath.Path{
+		Src:           ia("1-ff00:0:112"),
+		Dst:           ia("1-ff00:0:111"),
+		DataplanePath: snetpath.SCION{Raw: raw},
+		Meta: snet.PathMetadata{Interfaces: []snet.PathInterface{
+			{IA: ia("1-ff00:0:112"), ID: 1},
+			{IA: ia("1-ff00:0:110"), ID: 2},
+			{IA: ia("1-ff00:0:110"), ID: 1},
+			{IA: ia("1-ff00:0:111"), ID: 41},
+		}},
+	}
+}
+
+// flyoverIAs returns the IAs of the hops that carry a flyover, in path order.
+func flyoverIAs(hops []*snetpath.Hop) []string {
+	var ias []string
+	for _, h := range hops {
+		if h != nil && h.Flyover != nil {
+			ias = append(ias, h.IA.String())
+		}
+	}
+	return ias
+}
+
+func TestBuildReservationWithSecretValuesPartial(t *testing.T) {
+	const (
+		ia111 = "1-ff00:0:111"
+		ia112 = "1-ff00:0:112"
+		ia110 = "1-ff00:0:110"
+	)
+	// The forward path is 112 -> 110 -> 111; the reverse one is 111 -> 110 -> 112.
+	testCases := map[string]struct {
+		partial     string
+		wantForward []string
+		wantReverse []string
+	}{
+		"absent": {
+			wantForward: []string{ia112, ia110, ia111}, wantReverse: []string{ia111, ia110, ia112},
+		},
+		"!111": {
+			partial: "!" + ia111, wantForward: []string{ia112, ia110},
+			wantReverse: []string{ia110, ia112},
+		},
+		"!112": {
+			partial: "!" + ia112, wantForward: []string{ia110, ia111},
+			wantReverse: []string{ia111, ia110},
+		},
+		"!110": {
+			partial: "!" + ia110, wantForward: []string{ia112, ia111},
+			wantReverse: []string{ia111, ia112},
+		},
+		"111+110": {
+			partial: ia111 + "," + ia110, wantForward: []string{ia110, ia111},
+			wantReverse: []string{ia111, ia110},
+		},
+		"111+112": {
+			partial: ia111 + "," + ia112, wantForward: []string{ia112, ia111},
+			wantReverse: []string{ia111, ia112},
+		},
+		"110+112": {
+			partial: ia110 + "," + ia112, wantForward: []string{ia112, ia110},
+			wantReverse: []string{ia110, ia112},
+		},
+		"nothing on the path": {partial: "1-ff00:0:999"},
+	}
+	for name, tc := range testCases {
+		for _, reverseBw := range []uint32{0, 7} {
+			t.Run(fmt.Sprintf("%s/reverse_bw=%d", name, reverseBw), func(t *testing.T) {
+				partial, err := parsePartialFlag(tc.partial, true)
+				require.NoError(t, err)
+				c := &client{
+					cfg: clientConfig{
+						humm:              hummingbirdParameters{Bw: 5, ReverseBw: reverseBw, Duration: 60},
+						hummEnabled:       true,
+						hummReservationID: 42,
+						partial:           partial,
+					},
+					hummSVByIA: map[addr.IA][]byte{},
+				}
+				for _, s := range []string{ia110, ia111, ia112} {
+					c.hummSVByIA[addr.MustParseIA(s)] = []byte(
+						"0123456789abcdef"[:15] + s[len(s)-1:])
+				}
+				path := tinyTopologyClientPath(t)
+
+				// A renewal goes through the same function with the same configuration.
+				for _, start := range []time.Time{time.Unix(1700000000, 0), time.Unix(1700000060, 0)} {
+					rsv, err := c.buildReservationWithSecretValues(path, start)
+					require.NoError(t, err)
+					require.Equal(t, tc.wantForward, flyoverIAs(rsv.Hops))
+					for _, h := range rsv.Hops {
+						if h != nil && h.Flyover != nil {
+							require.EqualValues(t, 5, h.Flyover.Bw)
+							require.EqualValues(t, 42, h.Flyover.ResID)
+						}
+					}
+
+					extn, err := rsv.EndToEndExtn()
+					require.NoError(t, err)
+					if reverseBw == 0 || len(tc.wantForward) == 0 {
+						require.Nil(t, extn)
+						continue
+					}
+					require.NotNil(t, extn)
+					require.Len(t, extn.Options, 1)
+					require.Equal(t, slayers.OptTypeReversePath, extn.Options[0].OptType)
+					var rev snetpath.Reservation
+					require.NoError(t, rev.Deserialize(extn.Options[0].OptData))
+					require.Equal(t, tc.wantReverse, flyoverIAs(rev.Hops))
+					for _, h := range rev.Hops {
+						if h != nil && h.Flyover != nil {
+							require.EqualValues(t, reverseBw, h.Flyover.Bw)
+						}
+					}
+				}
+			})
+		}
 	}
 }

@@ -49,6 +49,7 @@ class ExperimentTest(unittest.TestCase):
     def test_docker_dry_run_lists_steps_and_starts_nothing(self):
         plan = experiment.ExperimentPlan(Path("local.json"), mock.sentinel.config, "docker", None)
         with mock.patch.object(experiment, "_check_local_prometheus_owner", return_value=False), \
+             mock.patch.object(experiment, "_check_local_grafana_owner", return_value=False), \
              mock.patch.object(experiment.planner, "describe_setup",
                                return_value=["would run ./scion.sh start"]), \
              mock.patch.object(experiment.planner, "setup") as setup, \
@@ -58,13 +59,37 @@ class ExperimentTest(unittest.TestCase):
         setup.assert_not_called()
         run.assert_not_called()
         lines = [call.args[0] for call in output.call_args_list]
-        self.assertEqual(lines[:3], [
+        self.assertEqual(lines[:4], [
             "dry-run: docker setup would perform these steps:",
             "  1. would run ./scion.sh start",
-            "  2. would run docker compose --project-name monitoring up -d prometheus, "
-            "which starts the local hummbwtester-prometheus container",
+            "  2. would run docker compose --project-name monitoring up -d prometheus grafana, "
+            "which starts the local hummbwtester-prometheus and hummbwtester-grafana containers",
+            "  3. would check that both containers keep running and answer on "
+            "Prometheus /-/ready and Grafana /api/health",
         ])
         self.assertEqual(lines[-1], experiment.planner.DRY_RUN_NOTICE)
+
+    def test_setup_prints_informative_lines_before_acting(self):
+        lines = ["Topology:", "  a --- b"]
+        root = {"deployment": {"kind": "docker"}, "informative": lines}
+        plan = experiment.ExperimentPlan(Path("local.json"), mock.sentinel.config, "docker", None)
+        with mock.patch.object(experiment, "load_plan", return_value=plan), \
+                mock.patch.object(experiment.planner, "read_json", return_value=root), \
+                mock.patch.object(experiment, "setup_local", return_value=0), \
+                mock.patch.object(experiment, "run_local", return_value=0), \
+                mock.patch("builtins.print") as output:
+            experiment.execute("setup", Path("local.json"))
+            output.assert_any_call("\n".join(lines))
+            output.reset_mock()
+            experiment.execute("run", Path("local.json"))
+            output.assert_not_called()
+
+    def test_informative_must_be_a_list_of_strings(self):
+        self.assertEqual(experiment.planner.informative_lines({}), [])
+        with self.assertRaisesRegex(experiment.planner.ConfigError, "informative"):
+            experiment.planner.informative_lines({"informative": "text"})
+        with self.assertRaisesRegex(experiment.planner.ConfigError, "informative"):
+            experiment.planner.informative_lines({"informative": ["ok", 1]})
 
     def test_dry_run_is_only_accepted_for_setup(self):
         with mock.patch.object(experiment.sys, "argv", [
@@ -75,10 +100,47 @@ class ExperimentTest(unittest.TestCase):
         execute.assert_not_called()
 
     def test_local_prometheus_refuses_foreign_container(self):
-        with mock.patch.object(experiment, "_local_prometheus_owner",
+        with mock.patch.object(experiment.planner, "local_container_owner",
                                return_value="other/prometheus"):
             with self.assertRaisesRegex(RuntimeError, "belongs to other/prometheus"):
                 experiment._check_local_prometheus_owner()
+
+    def test_local_grafana_refuses_foreign_container(self):
+        with mock.patch.object(experiment.planner, "local_container_owner",
+                               return_value="other/grafana"):
+            with self.assertRaisesRegex(RuntimeError, "belongs to other/grafana"):
+                experiment._check_local_grafana_owner()
+
+    def test_local_setup_starts_both_services_and_waits(self):
+        plan = experiment.ExperimentPlan(Path("local.json"), mock.sentinel.config, "docker", None)
+        with mock.patch.object(experiment, "_check_local_prometheus_owner", return_value=False), \
+             mock.patch.object(experiment, "_check_local_grafana_owner", return_value=False), \
+             mock.patch.object(experiment.planner, "setup", return_value=0), \
+             mock.patch.object(experiment, "_wait_monitoring") as wait, \
+             mock.patch.object(experiment.subprocess, "run") as run:
+            self.assertEqual(experiment.setup_local(plan), 0)
+        self.assertEqual(run.call_args.args[0][-4:], ["up", "-d", "prometheus", "grafana"])
+        wait.assert_called_once_with()
+
+    def test_wait_service_fails_when_container_exited_even_if_port_answers(self):
+        logs = mock.Mock(stdout="bind: address already in use", stderr="")
+        with mock.patch.object(experiment, "_container_running", return_value=False), \
+             mock.patch.object(experiment, "_http_answers", return_value=True), \
+             mock.patch.object(experiment.subprocess, "run", return_value=logs):
+            with self.assertRaisesRegex(RuntimeError, "(?s)not running.*address already in use"):
+                experiment._wait_service("hummbwtester-prometheus", "http://x/-/ready")
+
+    def test_wait_service_returns_when_running_and_answering(self):
+        with mock.patch.object(experiment, "_container_running", return_value=True), \
+             mock.patch.object(experiment, "_http_answers", return_value=True):
+            experiment._wait_service("hummbwtester-grafana", "http://x/api/health")
+
+    def test_wait_service_times_out_when_running_but_silent(self):
+        with mock.patch.object(experiment, "_container_running", return_value=True), \
+             mock.patch.object(experiment, "_http_answers", return_value=False), \
+             mock.patch.object(experiment.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "does not answer"):
+                experiment._wait_service("hummbwtester-grafana", "http://x/api/health", 2)
 
     def test_local_teardown_leaves_topology_running(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -88,11 +150,13 @@ class ExperimentTest(unittest.TestCase):
             with mock.patch.object(experiment.planner, "DOCKER_QDISC_STATE", state), \
                  mock.patch.object(experiment, "_check_local_prometheus_owner",
                                    return_value=True), \
+                 mock.patch.object(experiment, "_check_local_grafana_owner",
+                                   return_value=True), \
                  mock.patch.object(experiment.subprocess, "run", return_value=running) as run:
                 self.assertEqual(experiment.teardown_local(), 0)
             self.assertFalse(state.exists())
         self.assertEqual(run.call_count, 3)
-        self.assertIn("prometheus", run.call_args_list[0].args[0])
+        self.assertEqual(run.call_args_list[0].args[0][-2:], ["prometheus", "grafana"])
         self.assertIn("cleanup", run.call_args_list[2].args[0])
         self.assertFalse(any("down" in call.args[0] for call in run.call_args_list))
 

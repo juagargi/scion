@@ -338,6 +338,27 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(args[args.index("-reservation-overlap") + 1], "4s")
         self.assertEqual(args[args.index("-humm-start-offset") + 1], "-1s")
 
+    def test_partial_is_omitted_or_passed_to_client(self):
+        server, clients, _, _ = load_config(self.write_config(self.base_config()))
+        self.assertNotIn("-partial", client_args(clients[1], server, "172.20.0.21:30255"))
+
+        for partial in ("1-ff00:0:110,1-ff00:0:111", "!1-ff00:0:110",
+                        " !1-ff00:0:110 , !1-ff00:0:111"):
+            with self.subTest(partial=partial):
+                config = self.base_config()
+                config["hummingbird_clients"][0]["hummingbird_reservation"]["partial"] = partial
+                server, clients, _, _ = load_config(self.write_config(config))
+                args = client_args(clients[1], server, "172.20.0.21:30255")
+                self.assertEqual(args[args.index("-partial") + 1], partial)
+
+    def test_rejects_invalid_partial(self):
+        for value in ("", " ", "!", "1-ff00:0:110,", "1-ff00:0:110,!1-ff00:0:111", 3, True):
+            with self.subTest(value=value):
+                config = self.base_config()
+                config["hummingbird_clients"][0]["hummingbird_reservation"]["partial"] = value
+                with self.assertRaises(ConfigError):
+                    load_config(self.write_config(config))
+
     def test_rejects_legacy_renewal_fraction(self):
         config = self.base_config()
         config["hummingbird_clients"][0]["renewal_fraction"] = 0.7
