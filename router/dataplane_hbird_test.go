@@ -1045,9 +1045,10 @@ func TestProcessHbirdPacket(t *testing.T) {
 			mockMsg: func(t *testing.T, afterProcessing bool, _ *router.DataPlane) *router.Packet {
 				spkt, dpath := prepHbirdMsg(now)
 				spkt.SrcIA = addr.MustParseIA("1-ff00:0:110")
-				// Bandwidth codepoint 0 is the smallest reservation, 10 kbps,
-				// i.e. 1250 bytes per second, which one packet already exceeds.
-				largePayload := bytes.Repeat([]byte{0xab}, 2000)
+				// Bandwidth codepoint 0 is the smallest reservation, 10 kbps, i.e. 1250 bytes per
+				// second. The SCION payload (UDP header and data) fits the token bucket, but the
+				// whole packet, with its common, address and path headers, does not.
+				largePayload := bytes.Repeat([]byte{0xab}, 1200)
 				spkt.PayloadLen = uint16(8 + len(largePayload)) // udp header + payload
 				dpath.HopFields = []hummingbird.FlyoverHopField{
 					{HopField: path.HopField{ConsIngress: 0, ConsEgress: 1},

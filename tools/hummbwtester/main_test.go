@@ -262,6 +262,7 @@ func TestHeaderRoundTrip(t *testing.T) {
 	buf := make([]byte, HeaderLen)
 	EncodeHeader(buf, Header{
 		Type:               PacketTypePongRequest,
+		WireOverhead:       123,
 		SequenceNumber:     42,
 		SendTimestampNanos: 1234567890,
 	})
@@ -272,6 +273,7 @@ func TestHeaderRoundTrip(t *testing.T) {
 
 	// Check each field explicitly so regressions point to the broken encoding.
 	assert.Equal(t, PacketTypePongRequest, got.Type)
+	assert.Equal(t, uint16(123), got.WireOverhead)
 	assert.Equal(t, uint64(42), got.SequenceNumber)
 	assert.Equal(t, int64(1234567890), got.SendTimestampNanos)
 }
@@ -304,7 +306,7 @@ func TestPongReplyRoundTrip(t *testing.T) {
 		ServerRecvTimestampNanos: 200,
 		ServerSendTimestampNanos: 300,
 		PayloadPacketsReceived:   11,
-		PayloadBytesReceived:     8800,
+		BytesReceived:            10000,
 		PayloadLost:              2,
 		PayloadOutOfOrder:        3,
 		PongRequestsReceived:     7,
@@ -321,7 +323,7 @@ func TestPongReplyRoundTrip(t *testing.T) {
 	assert.Equal(t, int64(200), got.ServerRecvTimestampNanos)
 	assert.Equal(t, int64(300), got.ServerSendTimestampNanos)
 	assert.Equal(t, uint64(11), got.PayloadPacketsReceived)
-	assert.Equal(t, uint64(8800), got.PayloadBytesReceived)
+	assert.Equal(t, uint64(10000), got.BytesReceived)
 	assert.Equal(t, uint64(2), got.PayloadLost)
 	assert.Equal(t, uint64(3), got.PayloadOutOfOrder)
 	assert.Equal(t, uint64(7), got.PongRequestsReceived)
@@ -335,7 +337,7 @@ func TestRemoteStatsTrackerUsesClientReceiveTime(t *testing.T) {
 	first, accepted := tracker.record(PongReply{
 		Header:                 Header{SequenceNumber: 10, SendTimestampNanos: 100},
 		PayloadPacketsReceived: 10,
-		PayloadBytesReceived:   1000,
+		BytesReceived:          1200,
 		PongRequestsReceived:   1,
 		PongRepliesSent:        1,
 		// Deliberately unrelated server clock values must not affect the rate.
@@ -344,12 +346,12 @@ func TestRemoteStatsTrackerUsesClientReceiveTime(t *testing.T) {
 	}, start)
 	require.True(t, accepted)
 	assert.False(t, first.hasReceiveRate)
-	assert.Equal(t, uint64(1000), first.payloadBytesReceived)
+	assert.Equal(t, uint64(1200), first.bytesReceived)
 
 	second, accepted := tracker.record(PongReply{
 		Header:                   Header{SequenceNumber: 11, SendTimestampNanos: 200},
 		PayloadPacketsReceived:   30,
-		PayloadBytesReceived:     5000,
+		BytesReceived:            6000,
 		PayloadLost:              2,
 		PayloadOutOfOrder:        1,
 		PongRequestsReceived:     2,
@@ -359,8 +361,9 @@ func TestRemoteStatsTrackerUsesClientReceiveTime(t *testing.T) {
 	}, start.Add(2*time.Second))
 	require.True(t, accepted)
 	require.True(t, second.hasReceiveRate)
-	assert.InDelta(t, 16000, second.receiveRateBps, 0.001)
-	assert.Equal(t, uint64(4000), second.payloadBytesReceived)
+	// The receive rate is computed from the full SCION packet bytes: 4800 bytes in 2 s.
+	assert.InDelta(t, 19200, second.receiveRateBps, 0.001)
+	assert.Equal(t, uint64(4800), second.bytesReceived)
 }
 
 func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
@@ -369,7 +372,7 @@ func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
 	_, accepted := tracker.record(PongReply{
 		Header:                 Header{SequenceNumber: 1, SendTimestampNanos: 100},
 		PayloadPacketsReceived: 1,
-		PayloadBytesReceived:   100,
+		BytesReceived:          200,
 		PongRequestsReceived:   1,
 		PongRepliesSent:        1,
 	}, start)
@@ -378,18 +381,18 @@ func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
 	catchUp, accepted := tracker.record(PongReply{
 		Header:                 Header{SequenceNumber: 3, SendTimestampNanos: 300},
 		PayloadPacketsReceived: 5,
-		PayloadBytesReceived:   500,
+		BytesReceived:          1000,
 		PongRequestsReceived:   3,
 		PongRepliesSent:        3,
 	}, start.Add(2*time.Second))
 	require.True(t, accepted)
-	assert.Equal(t, uint64(400), catchUp.payloadBytesReceived)
-	assert.InDelta(t, 1600, catchUp.receiveRateBps, 0.001)
+	assert.Equal(t, uint64(800), catchUp.bytesReceived)
+	assert.InDelta(t, 3200, catchUp.receiveRateBps, 0.001)
 
 	_, accepted = tracker.record(PongReply{
 		Header:                 Header{SequenceNumber: 2, SendTimestampNanos: 200},
 		PayloadPacketsReceived: 3,
-		PayloadBytesReceived:   300,
+		BytesReceived:          600,
 		PongRequestsReceived:   2,
 		PongRepliesSent:        2,
 	}, start.Add(3*time.Second))
@@ -399,7 +402,7 @@ func TestRemoteStatsTrackerCatchesUpAndRejectsOldSnapshots(t *testing.T) {
 	_, accepted = tracker.record(PongReply{
 		Header:                 Header{SequenceNumber: 4, SendTimestampNanos: 250},
 		PayloadPacketsReceived: 6,
-		PayloadBytesReceived:   600,
+		BytesReceived:          1200,
 		PongRequestsReceived:   4,
 		PongRepliesSent:        4,
 	}, start.Add(4*time.Second))
@@ -413,7 +416,6 @@ func TestRemoteStatsTrackerIgnoresNonPositiveRateInterval(t *testing.T) {
 	_, accepted := tracker.record(PongReply{
 		Header:                 Header{SequenceNumber: 1, SendTimestampNanos: 100},
 		PayloadPacketsReceived: 1,
-		PayloadBytesReceived:   100,
 		PongRequestsReceived:   1,
 		PongRepliesSent:        1,
 	}, now)
@@ -422,7 +424,6 @@ func TestRemoteStatsTrackerIgnoresNonPositiveRateInterval(t *testing.T) {
 	delta, accepted := tracker.record(PongReply{
 		Header:                 Header{SequenceNumber: 2, SendTimestampNanos: 200},
 		PayloadPacketsReceived: 2,
-		PayloadBytesReceived:   200,
 		PongRequestsReceived:   2,
 		PongRepliesSent:        2,
 	}, now)
@@ -453,11 +454,11 @@ func TestPongTrackerUsesReplyAfterTimeout(t *testing.T) {
 func TestEncodePayloadFillerNonZeroAndDeterministic(t *testing.T) {
 	// Encode the first payload using a fixed sequence, timestamp, and seed.
 	buf1 := make([]byte, 64)
-	EncodePayload(buf1, 1, 0, fillerSeed)
+	EncodePayload(buf1, 1, 0, fillerSeed, 0)
 
 	// Encode the same payload again to check deterministic filler generation.
 	buf2 := make([]byte, 64)
-	EncodePayload(buf2, 1, 0, fillerSeed)
+	EncodePayload(buf2, 1, 0, fillerSeed, 0)
 	assert.Equal(t, buf1, buf2)
 
 	// Check only the filler area; the header bytes are allowed to contain zeroes.
@@ -980,4 +981,80 @@ func TestBuildReservationWithSecretValuesPartial(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestWireOverhead(t *testing.T) {
+	rawPath := func(t *testing.T) snetpath.SCION {
+		dec := dpscion.Decoded{
+			Base: dpscion.Base{
+				PathMeta: dpscion.MetaHdr{CurrINF: 0, CurrHF: 0, SegLen: [3]uint8{2, 0, 0}},
+				NumINF:   1,
+				NumHops:  2,
+			},
+			InfoFields: []dppath.InfoField{{}},
+			HopFields:  make([]dppath.HopField, 2),
+		}
+		p, err := snetpath.NewSCIONFromDecoded(dec)
+		require.NoError(t, err)
+		return p
+	}
+
+	t.Run("IPv4", func(t *testing.T) {
+		remote := &snet.UDPAddr{
+			Host: &net.UDPAddr{IP: net.IPv4(10, 0, 0, 2), Port: 1},
+			Path: rawPath(t),
+		}
+		got, err := wireOverhead(&net.UDPAddr{IP: net.IPv4(10, 0, 0, 1)}, remote)
+		require.NoError(t, err)
+		// Common header (12) + 2*8 ISD-AS + 2*4 IPv4 + path meta/info/hops (4+8+2*12) + UDP (8).
+		assert.Equal(t, 12+16+8+(4+8+24)+8, got)
+	})
+	t.Run("unspecified local IP uses the remote address family", func(t *testing.T) {
+		remote := &snet.UDPAddr{
+			Host: &net.UDPAddr{IP: net.ParseIP("fd00::2"), Port: 1},
+			Path: rawPath(t),
+		}
+		got, err := wireOverhead(&net.UDPAddr{Port: 5}, remote)
+		require.NoError(t, err)
+		assert.Equal(t, 12+16+32+(4+8+24)+8, got)
+	})
+	t.Run("no path", func(t *testing.T) {
+		_, err := wireOverhead(&net.UDPAddr{}, &snet.UDPAddr{
+			Host: &net.UDPAddr{IP: net.IPv4(10, 0, 0, 2)},
+		})
+		assert.Error(t, err)
+	})
+}
+
+func TestPayloadPacerChargesFullPackets(t *testing.T) {
+	start := time.Unix(100, 0)
+	const overhead = 200
+	// 800 payload bytes + overhead = 1000 wire bytes; 8 Mbps is 1,000,000 wire bytes/s.
+	pacer := newPayloadPacer(start, 800+overhead, 8e6, 8e6)
+	packets := 0
+	for tick := 1; tick <= 10; tick++ {
+		now := start.Add(time.Duration(tick) * time.Millisecond)
+		pacer.beginTick(now)
+		for pacer.canSend(now, 800+overhead) {
+			pacer.sent(800 + overhead)
+			packets++
+		}
+	}
+	// 10 ms at 1,000,000 bytes/s are exactly ten wire-sized packets, not 12.5 payload-sized ones.
+	assert.Equal(t, 10, packets)
+
+	// Probes use the same schedule, so one probe makes room for it.
+	pacer = newPayloadPacer(start, 800+overhead, 8e6, 8e6)
+	pacer.chargeProbe(24 + overhead)
+	packets = 0
+	for tick := 1; tick <= 10; tick++ {
+		now := start.Add(time.Duration(tick) * time.Millisecond)
+		pacer.beginTick(now)
+		for pacer.canSend(now, 800+overhead) {
+			pacer.sent(800 + overhead)
+			packets++
+		}
+	}
+	// The 224 probe bytes leave 9,776 of the 10,000 scheduled bytes: nine packets.
+	assert.Equal(t, 9, packets)
 }

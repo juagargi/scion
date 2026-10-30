@@ -450,7 +450,7 @@ func (p *scionPacketProcessor) checkReservationBandwidth(sc sizeClass) dispositi
 	// It is possible for different reservations to share a reservation key if
 	// they do not overlap in time. Reconfiguration and application must be one
 	// atomic operation because packets are processed concurrently.
-	if !tb.ReconfigureAndApply(int(p.scionLayer.PayloadLen), time.Now(), resBw, resBw) {
+	if !tb.ReconfigureAndApply(int(p.scionLayer.PacketLen()), time.Now(), resBw, resBw) {
 		p.pkt.PriorityLabel = pr.WithBestEffort
 		p.pkt.Link.Metrics()[sc].HummDemotedTokenBucketPkts.Inc()
 	}

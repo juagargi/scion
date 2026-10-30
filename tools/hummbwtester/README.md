@@ -95,8 +95,11 @@ Every client requires these fields:
 
 - `client_id`: a unique identifier used as the sole custom Prometheus label.
 - `isd_as`, `host`, and `port`: the tester-container endpoint. Use port `0` for an ephemeral UDP port.
-- `bandwidth`: payload send rate passed as `-bandwidth`, such as `"1Mbps"`.
-- `maxburst`: maximum payload rate while repaying pacing debt, passed as `-maxburst`. It must be
+- `bandwidth`: send rate passed as `-bandwidth`, such as `"1Mbps"`. It counts the full SCION packet
+  (SCION and UDP headers, the Hummingbird path and the payload), the quantity routers charge to a
+  reservation, so it can be compared directly with the reserved bandwidth. The application payload
+  rate is lower by the header overhead.
+- `maxburst`: maximum rate, counted the same way, while repaying pacing debt, passed as `-maxburst`. It must be
   greater than or equal to `bandwidth`.
 - `duration`: test length passed as `-duration`, such as `"600s"`.
 
@@ -159,7 +162,7 @@ AS without a forward one is never requested.
 ### Bounded catch-up after a missed deadline
 
 Payload packets and pong requests have independent schedules. The client wakes every millisecond
-and compares the bytes sent with an absolute `bandwidth` schedule. It sends the packets due at that
+and compares the full SCION packet bytes sent with an absolute `bandwidth` schedule. It sends the packets due at that
 instant back-to-back, preserving fractional byte credit between wakes so packetization does not
 change the long-term rate. Every packet is encoded and passed separately to `WriteTo`, giving it a
 fresh sequence number, timestamp, and (for Hummingbird) dataplane MAC.
@@ -173,8 +176,15 @@ For example, a 10 Mbps client with `maxburst` 20 Mbps that accumulates 10 megabi
 equal to `bandwidth` retains the debt accounting but provides no acceleration, so it cannot catch
 up while continuously sending.
 
-Pong probes do not contribute to the configured payload bandwidth and retain their independent
-no-catch-up schedule. A pacing tick that leaves its schedule behind contributes to the rate-limited
+Pong probes keep their independent no-catch-up schedule, but they are SCION packets on the same
+reservation: their bytes are charged against `bandwidth`, so payload sends make room for them. The
+SCION header size is computed from the current path (and recomputed after a renewal), sent to the
+server in every packet header, and added by the server to the UDP payload it receives. The
+end-to-end extension of the one small packet following a bidirectional reservation is not counted.
+`hummbwtester_client_send_rate_bps`, `hummbwtester_client_bytes_sent_total` and the remote
+receive rate all use these full-packet bytes; there are no payload-only byte counters.
+
+A pacing tick that leaves its schedule behind contributes to the rate-limited
 `Pacing schedule behind` log message. A request that exceeds its RTT deadline increments
 `hummbwtester_client_pong_lost_total`, but a later reply is still accepted for latency and remote
 receive/loss statistics. Such replies also increment

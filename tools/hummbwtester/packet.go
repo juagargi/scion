@@ -34,7 +34,7 @@ const (
 
 // Version is the wire-format version. It changes whenever the header layout below changes,
 // so that a client and server running mismatched builds fail loudly instead of misparsing.
-const Version = 2
+const Version = 3
 
 // HeaderLen is the size in bytes of the fixed header shared by all packet types.
 const HeaderLen = 24
@@ -48,7 +48,11 @@ const PongReplyLen = HeaderLen + PongReplyExtraLen
 
 // Header is the fixed 24-byte header carried by every packet.
 type Header struct {
-	Type               PacketType
+	Type PacketType
+	// WireOverhead is the number of bytes the SCION and UDP headers add to this packet on the
+	// wire, as computed by the sender. The receiver cannot see them, and needs them to account
+	// for the full SCION packet length, which is what the routers charge to a reservation.
+	WireOverhead       uint16
 	SequenceNumber     uint64
 	SendTimestampNanos int64
 }
@@ -58,7 +62,8 @@ type Header struct {
 func EncodeHeader(buf []byte, h Header) {
 	buf[0] = Version
 	buf[1] = byte(h.Type)
-	buf[2], buf[3], buf[4], buf[5], buf[6], buf[7] = 0, 0, 0, 0, 0, 0
+	binary.BigEndian.PutUint16(buf[2:4], h.WireOverhead)
+	buf[4], buf[5], buf[6], buf[7] = 0, 0, 0, 0
 	binary.BigEndian.PutUint64(buf[8:16], h.SequenceNumber)
 	binary.BigEndian.PutUint64(buf[16:24], uint64(h.SendTimestampNanos))
 }
@@ -75,6 +80,7 @@ func DecodeHeader(buf []byte) (Header, error) {
 	}
 	return Header{
 		Type:               PacketType(buf[1]),
+		WireOverhead:       binary.BigEndian.Uint16(buf[2:4]),
 		SequenceNumber:     binary.BigEndian.Uint64(buf[8:16]),
 		SendTimestampNanos: int64(binary.BigEndian.Uint64(buf[16:24])),
 	}, nil
@@ -86,7 +92,7 @@ type PongReply struct {
 	ServerRecvTimestampNanos int64
 	ServerSendTimestampNanos int64
 	PayloadPacketsReceived   uint64
-	PayloadBytesReceived     uint64
+	BytesReceived            uint64
 	PayloadLost              uint64
 	PayloadOutOfOrder        uint64
 	PongRequestsReceived     uint64
@@ -99,7 +105,7 @@ func EncodePongReply(buf []byte, reply PongReply) {
 	binary.BigEndian.PutUint64(buf[24:32], uint64(reply.ServerRecvTimestampNanos))
 	binary.BigEndian.PutUint64(buf[32:40], uint64(reply.ServerSendTimestampNanos))
 	binary.BigEndian.PutUint64(buf[40:48], reply.PayloadPacketsReceived)
-	binary.BigEndian.PutUint64(buf[48:56], reply.PayloadBytesReceived)
+	binary.BigEndian.PutUint64(buf[48:56], reply.BytesReceived)
 	binary.BigEndian.PutUint64(buf[56:64], reply.PayloadLost)
 	binary.BigEndian.PutUint64(buf[64:72], reply.PayloadOutOfOrder)
 	binary.BigEndian.PutUint64(buf[72:80], reply.PongRequestsReceived)
@@ -124,7 +130,7 @@ func DecodePongReply(buf []byte) (PongReply, error) {
 		ServerRecvTimestampNanos: int64(binary.BigEndian.Uint64(buf[24:32])),
 		ServerSendTimestampNanos: int64(binary.BigEndian.Uint64(buf[32:40])),
 		PayloadPacketsReceived:   binary.BigEndian.Uint64(buf[40:48]),
-		PayloadBytesReceived:     binary.BigEndian.Uint64(buf[48:56]),
+		BytesReceived:            binary.BigEndian.Uint64(buf[48:56]),
 		PayloadLost:              binary.BigEndian.Uint64(buf[56:64]),
 		PayloadOutOfOrder:        binary.BigEndian.Uint64(buf[64:72]),
 		PongRequestsReceived:     binary.BigEndian.Uint64(buf[72:80]),
@@ -151,9 +157,12 @@ func filler(buf []byte, seed uint64) {
 
 // EncodePayload writes a Payload packet of exactly len(buf) bytes (buf must be at least
 // HeaderLen bytes long). Bytes after the header are deterministic filler derived from seed.
-func EncodePayload(buf []byte, seq uint64, sendTimeNanos int64, seed uint64) {
+func EncodePayload(
+	buf []byte, seq uint64, sendTimeNanos int64, seed uint64, wireOverhead uint16,
+) {
 	EncodeHeader(buf, Header{
 		Type:               PacketTypePayload,
+		WireOverhead:       wireOverhead,
 		SequenceNumber:     seq,
 		SendTimestampNanos: sendTimeNanos,
 	})
@@ -164,9 +173,10 @@ func EncodePayload(buf []byte, seq uint64, sendTimeNanos int64, seed uint64) {
 
 // EncodePongRequest writes a PongRequest packet into buf, which must be at least HeaderLen
 // bytes long.
-func EncodePongRequest(buf []byte, seq uint64, sendTimeNanos int64) {
+func EncodePongRequest(buf []byte, seq uint64, sendTimeNanos int64, wireOverhead uint16) {
 	EncodeHeader(buf, Header{
 		Type:               PacketTypePongRequest,
+		WireOverhead:       wireOverhead,
 		SequenceNumber:     seq,
 		SendTimestampNanos: sendTimeNanos,
 	})

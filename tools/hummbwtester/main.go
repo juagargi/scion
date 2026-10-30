@@ -237,9 +237,9 @@ func addFlags() {
 		"Directory containing topology.json/certs for standalone (daemon-less) operation")
 
 	flag.StringVar(&bandwidthFlag, "bandwidth", "1Mbps",
-		"(Client only) target payload send rate, e.g. \"1Mbps\", \"500Kbps\", \"2Gbps\"")
+		"(Client only) target send rate of full SCION packets (headers included), e.g. \"1Mbps\", \"500Kbps\", \"2Gbps\"")
 	flag.StringVar(&maxBurstFlag, "maxburst", "",
-		"(Client only) maximum payload rate while catching up; must be >= -bandwidth; "+
+		"(Client only) maximum rate of full SCION packets while catching up; must be >= -bandwidth; "+
 			"empty uses -bandwidth")
 	flag.DurationVar(&duration, "duration", 30*time.Second,
 		"(Client only) how long to send payload traffic; 0 = run until interrupted")
