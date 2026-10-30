@@ -194,7 +194,7 @@ func (r *RateTracker) Snapshot(now time.Time) IntervalResult {
 // counters reflect everything the server observed before that reply.
 type remoteStatsDelta struct {
 	payloadPacketsReceived uint64
-	payloadBytesReceived   uint64
+	bytesReceived          uint64
 	payloadLost            uint64
 	payloadOutOfOrder      uint64
 	pongRequestsReceived   uint64
@@ -233,7 +233,7 @@ func (t *remoteStatsTracker) record(reply PongReply, receivedAt time.Time) (remo
 	}
 	delta := remoteStatsDelta{
 		payloadPacketsReceived: reply.PayloadPacketsReceived - previous.PayloadPacketsReceived,
-		payloadBytesReceived:   reply.PayloadBytesReceived - previous.PayloadBytesReceived,
+		bytesReceived:          reply.BytesReceived - previous.BytesReceived,
 		payloadLost:            reply.PayloadLost - previous.PayloadLost,
 		payloadOutOfOrder:      reply.PayloadOutOfOrder - previous.PayloadOutOfOrder,
 		pongRequestsReceived:   reply.PongRequestsReceived - previous.PongRequestsReceived,
@@ -242,7 +242,7 @@ func (t *remoteStatsTracker) record(reply PongReply, receivedAt time.Time) (remo
 	if t.haveSnapshot {
 		elapsed := receivedAt.Sub(t.lastReceived)
 		if elapsed > 0 {
-			delta.receiveRateBps = float64(delta.payloadBytesReceived) * 8 / elapsed.Seconds()
+			delta.receiveRateBps = float64(delta.bytesReceived) * 8 / elapsed.Seconds()
 			delta.hasReceiveRate = true
 		}
 	}
@@ -256,7 +256,7 @@ func (t *remoteStatsTracker) record(reply PongReply, receivedAt time.Time) (remo
 
 func cumulativeSnapshotRegressed(current, previous PongReply) bool {
 	return current.PayloadPacketsReceived < previous.PayloadPacketsReceived ||
-		current.PayloadBytesReceived < previous.PayloadBytesReceived ||
+		current.BytesReceived < previous.BytesReceived ||
 		current.PayloadLost < previous.PayloadLost ||
 		current.PayloadOutOfOrder < previous.PayloadOutOfOrder ||
 		current.PongRequestsReceived < previous.PongRequestsReceived ||

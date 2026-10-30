@@ -25,6 +25,7 @@ go_library(
         "//pkg/hummingbird/marketplace:go_default_library",
         "//pkg/log:go_default_library",
         "//pkg/private/serrors:go_default_library",
+        "//pkg/slayers:go_default_library",
         "//pkg/slayers/path/hummingbird:go_default_library",
         "//pkg/snet:go_default_library",
         "//pkg/snet/metrics:go_default_library",

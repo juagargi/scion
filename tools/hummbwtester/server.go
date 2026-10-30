@@ -44,14 +44,14 @@ type serverConfig struct {
 // serialized through the single receive-loop goroutine plus the periodic report/eviction
 // ticker goroutine, both guarded by server.mu.
 type clientState struct {
-	addr         net.Addr
-	payloadLoss  SeqLossTracker
-	rate         *RateTracker
-	payloadBytes uint64
-	pongReqs     uint64
-	pongReplies  uint64
-	corrupted    uint64
-	lastSeen     time.Time
+	addr        net.Addr
+	payloadLoss SeqLossTracker
+	rate        *RateTracker
+	bytes       uint64
+	pongReqs    uint64
+	pongReplies uint64
+	corrupted   uint64
+	lastSeen    time.Time
 }
 
 type server struct {
@@ -151,6 +151,13 @@ func (s *server) handlePacket(conn *snet.Conn, from net.Addr, raw []byte) {
 		log.Info("New client", "client", key)
 	}
 	cs.lastSeen = now
+	if h.Type == PacketTypePayload || h.Type == PacketTypePongRequest {
+		// The routers charge the full SCION packet, of which the receiver only sees the UDP
+		// payload; the sender reports the size of the headers.
+		wire := len(raw) + int(h.WireOverhead)
+		cs.rate.Add(wire)
+		cs.bytes += uint64(wire)
+	}
 	s.mu.Unlock()
 
 	switch h.Type {
@@ -166,8 +173,6 @@ func (s *server) handlePacket(conn *snet.Conn, from net.Addr, raw []byte) {
 func (s *server) handlePayload(cs *clientState, key string, h Header, raw []byte, now time.Time) {
 	s.mu.Lock()
 	cs.payloadLoss.Received(h.SequenceNumber)
-	cs.rate.Add(len(raw))
-	cs.payloadBytes += uint64(len(raw))
 	corrupted := s.cfg.verifyIntegrity && len(raw) > HeaderLen && !verifyFiller(raw[HeaderLen:])
 	if corrupted {
 		cs.corrupted++
@@ -201,7 +206,7 @@ func (s *server) handlePongRequest(
 		},
 		ServerRecvTimestampNanos: recvTime.UnixNano(),
 		PayloadPacketsReceived:   payloadPackets,
-		PayloadBytesReceived:     cs.payloadBytes,
+		BytesReceived:            cs.bytes,
 		PayloadLost:              payloadLost,
 		PayloadOutOfOrder:        payloadOutOfOrder,
 		PongRequestsReceived:     cs.pongReqs,

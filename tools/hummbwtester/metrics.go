@@ -26,8 +26,9 @@ import (
 type clientMetrics struct {
 	// payloadPacketsSent counts payload packets sent by the client.
 	payloadPacketsSent prometheus.Counter
-	// payloadBytesSent counts payload bytes sent by the client.
-	payloadBytesSent prometheus.Counter
+	// bytesSent counts the full SCION packet bytes sent by the client, payload and probe
+	// packets alike. This is the quantity routers charge to a reservation.
+	bytesSent prometheus.Counter
 	// pongRequestsSent counts pong-request packets sent by the client.
 	pongRequestsSent prometheus.Counter
 	// pongRepliesReceived counts pong-reply packets received by the client.
@@ -40,7 +41,7 @@ type clientMetrics struct {
 	rtt prometheus.Histogram
 	// jitter tracks the current RFC 3550 interarrival jitter estimate for pong replies.
 	jitter prometheus.Gauge
-	// sendRateBps tracks the achieved payload send rate over the last report interval.
+	// sendRateBps tracks the achieved wire send rate (full SCION packets) over the last report interval.
 	sendRateBps prometheus.Gauge
 	// marketRoundtripLast stores the most recent successful marketplace roundtrip duration.
 	marketRoundtripLast prometheus.Gauge
@@ -49,7 +50,7 @@ type clientMetrics struct {
 	// reservationExpiry tracks seconds until the currently active reservation expires.
 	reservationExpiry            prometheus.Gauge
 	remotePayloadPacketsReceived prometheus.Counter
-	remotePayloadBytesReceived   prometheus.Counter
+	remoteBytesReceived          prometheus.Counter
 	remotePayloadLost            prometheus.Counter
 	remotePayloadOutOfOrder      prometheus.Counter
 	remotePongRequestsReceived   prometheus.Counter
@@ -64,9 +65,9 @@ func newClientMetrics() *clientMetrics {
 			Name: "hummbwtester_client_payload_packets_sent_total",
 			Help: "Total number of payload packets sent by the client.",
 		}),
-		payloadBytesSent: promauto.NewCounter(prometheus.CounterOpts{
-			Name: "hummbwtester_client_payload_bytes_sent_total",
-			Help: "Total number of payload bytes sent by the client.",
+		bytesSent: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_bytes_sent_total",
+			Help: "Total number of full SCION packet bytes sent by the client.",
 		}),
 		pongRequestsSent: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "hummbwtester_client_pong_requests_sent_total",
@@ -95,7 +96,7 @@ func newClientMetrics() *clientMetrics {
 		}),
 		sendRateBps: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_send_rate_bps",
-			Help: "Achieved payload send rate, in bits per second, over the last report interval.",
+			Help: "Achieved send rate of full SCION packets, in bits per second, over the last report interval.",
 		}),
 		marketRoundtripLast: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_market_roundtrip_last_seconds",
@@ -113,9 +114,9 @@ func newClientMetrics() *clientMetrics {
 			Name: "hummbwtester_client_remote_payload_packets_received_total",
 			Help: "Total payload packets reported received by the remote server.",
 		}),
-		remotePayloadBytesReceived: promauto.NewCounter(prometheus.CounterOpts{
-			Name: "hummbwtester_client_remote_payload_bytes_received_total",
-			Help: "Total payload bytes reported received by the remote server.",
+		remoteBytesReceived: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "hummbwtester_client_remote_bytes_received_total",
+			Help: "Total full SCION packet bytes reported received by the remote server.",
 		}),
 		remotePayloadLost: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "hummbwtester_client_remote_payload_lost_total",
@@ -135,7 +136,7 @@ func newClientMetrics() *clientMetrics {
 		}),
 		remoteReceiveRateBps: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_remote_receive_rate_bps",
-			Help: "Remote payload receive rate computed over client-local reply arrival time.",
+			Help: "Remote receive rate of full SCION packets computed over client-local reply arrival time.",
 		}),
 		remoteStatsAge: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "hummbwtester_client_remote_stats_age_seconds",

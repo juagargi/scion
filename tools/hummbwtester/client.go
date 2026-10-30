@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/netip"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,7 @@ import (
 	marketclient "github.com/scionproto/scion/pkg/hummingbird/marketplace"
 	"github.com/scionproto/scion/pkg/log"
 	"github.com/scionproto/scion/pkg/private/serrors"
+	"github.com/scionproto/scion/pkg/slayers"
 	hummlib "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
 	"github.com/scionproto/scion/pkg/snet"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
@@ -70,11 +72,14 @@ const (
 	// known to both client and server so the server can optionally verify integrity.
 	fillerSeed = 0xC0FFEE1234ABCDEF
 
+	// udpHdrLen is the length of the UDP header carried inside every SCION packet.
+	udpHdrLen = 8
+
 	// payloadPacingCadence is deliberately coarser than typical.
-	// Each wake sends a bounded batch based on the absolute payload schedule.
+	// Each wake sends a bounded batch based on the absolute wire-byte schedule.
 	payloadPacingCadence = time.Millisecond
 
-	// bidirectionalFirstPacketLen is the total packet size (header + filler) used for the one
+	// bidirectionalFirstPacketLen is the total UDP payload size (header + filler) used for the one
 	// Payload packet sent immediately after attaching a bidirectional reservation
 	// (initial dial or renewal), since that packet also carries the reverse-reservation
 	// E2E extension option and must stay small.
@@ -181,6 +186,10 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 			NextHop: path.UnderlayNextHop(),
 		}
 	}
+	if _, err := wireOverhead(cfg.local.Host, remoteAddr); err != nil {
+		log.Error("Computing SCION header overhead", "err", err)
+		return 1
+	}
 	c.currentAddr.Store(remoteAddr)
 	c.forceSmallNextPayload.Store(c.cfg.bidirectional())
 
@@ -240,6 +249,47 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 
 	log.Info("Client finished")
 	return 0
+}
+
+// wireOverhead returns the number of bytes that the SCION and UDP headers add to a UDP payload
+// sent from local to remote over remote.Path. Together with the payload it is the full SCION
+// packet length, which is what routers charge to a reservation. It does not include the
+// end-to-end extension of the one small packet that follows a bidirectional reservation attach.
+func wireOverhead(local *net.UDPAddr, remote *snet.UDPAddr) (int, error) {
+	if remote.Path == nil {
+		return 0, serrors.New("remote address has no dataplane path")
+	}
+	dst, ok := netip.AddrFromSlice(remote.Host.IP)
+	if !ok {
+		return 0, serrors.New("invalid remote IP", "ip", remote.Host.IP)
+	}
+	dst = dst.Unmap()
+	src, ok := netip.AddrFromSlice(local.IP)
+	if !ok || src.IsUnspecified() {
+		// The source IP is chosen when dialing, but it has the same length as the destination.
+		src = netip.IPv4Unspecified()
+		if dst.Is6() {
+			src = netip.IPv6Unspecified()
+		}
+	}
+	var s slayers.SCION
+	if err := s.SetDstAddr(addr.HostIP(dst)); err != nil {
+		return 0, serrors.Wrap("setting destination address", err)
+	}
+	if err := s.SetSrcAddr(addr.HostIP(src.Unmap())); err != nil {
+		return 0, serrors.Wrap("setting source address", err)
+	}
+	var pathLen int
+	if rsv, ok := remote.Path.(*snetpath.Reservation); ok {
+		// SetPath would derive a new flyover MAC, consuming a duplicate detection counter.
+		pathLen = rsv.Dec.Len()
+	} else {
+		if err := remote.Path.SetPath(&s); err != nil {
+			return 0, serrors.Wrap("setting path", err)
+		}
+		pathLen = s.Path.Len()
+	}
+	return slayers.CmnHdrLen + s.AddrHdrLen() + pathLen + udpHdrLen, nil
 }
 
 // selectPath queries the daemon for paths to dst and returns the first one that matches the
@@ -645,7 +695,7 @@ func advanceProbeDeadline(target time.Time, interval time.Duration, now time.Tim
 }
 
 // payloadPacer retains the absolute byte schedule while independently enforcing a maximum
-// catch-up rate. The float-valued schedule preserves sub-packet byte credit across ticks.
+// catch-up rate. All sizes are full SCION packet lengths (wire bytes), the unit of reservations. The float-valued schedule preserves sub-packet byte credit across ticks.
 // burstCreditBytes is capped so idle time cannot accumulate an unbounded instantaneous burst.
 type payloadPacer struct {
 	startedAt            time.Time
@@ -658,12 +708,12 @@ type payloadPacer struct {
 }
 
 func newPayloadPacer(
-	now time.Time, payloadSize int, bandwidthBps, maxBurstBps float64,
+	now time.Time, wireSize int, bandwidthBps, maxBurstBps float64,
 ) payloadPacer {
 	maxBurstBytesPerSec := maxBurstBps / 8
 	burstBytesPerTick := maxBurstBytesPerSec * payloadPacingCadence.Seconds()
-	burstCapacityBytes := math.Ceil(burstBytesPerTick/float64(payloadSize)) *
-		float64(payloadSize)
+	burstCapacityBytes := math.Ceil(burstBytesPerTick/float64(wireSize)) *
+		float64(wireSize)
 	return payloadPacer{
 		startedAt:            now,
 		lastTick:             now,
@@ -706,6 +756,12 @@ func (p *payloadPacer) sent(packetSize int) {
 	p.burstCreditBytes -= float64(packetSize)
 }
 
+// chargeProbe accounts a probe packet against the bandwidth schedule only. Probes keep their own
+// no-catch-up schedule, but they use the reservation too, so payload sends make room for them.
+func (p *payloadPacer) chargeProbe(packetSize int) {
+	p.accountedBytes += uint64(packetSize)
+}
+
 // behind reports how late the next packet already due on the canonical schedule is. This is only
 // true when a tick ended with debt, normally because maxburst or local send work bounded the batch.
 func (p *payloadPacer) behind(now time.Time, packetSize int) (bool, time.Duration) {
@@ -719,7 +775,8 @@ func (p *payloadPacer) behind(now time.Time, packetSize int) (bool, time.Duratio
 }
 
 // sendLoop is the single writer goroutine. It wakes at a coarse cadence, calculates the payload
-// batch from an absolute byte schedule, and writes each packet independently through conn.WriteTo.
+// batch from an absolute schedule of full SCION packet bytes (-bandwidth and -maxburst are wire
+// rates, and Pong probes count against them), and writes each packet independently through conn.WriteTo.
 // This gives every packet a fresh application timestamp, sequence number, Hummingbird timestamp,
 // duplicate-detection counter, and MAC. Payload debt is retained and repaid at no more than
 // maxBurstBps; Pong probes remain on an independent no-catch-up schedule.
@@ -737,10 +794,30 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 	buf := make([]byte, c.cfg.payloadSize)
 	pongBuf := make([]byte, HeaderLen)
 
+	// overhead is the SCION+UDP header size of the current path, refreshed when it is replaced.
+	var overhead int
+	var overheadAddr *snet.UDPAddr
+	refreshOverhead := func() bool {
+		cur := c.currentAddr.Load()
+		if cur == overheadAddr {
+			return true
+		}
+		o, err := wireOverhead(c.cfg.local.Host, cur)
+		if err != nil {
+			log.Error("Computing SCION header overhead", "err", err)
+			return false
+		}
+		overhead, overheadAddr = o, cur
+		return true
+	}
+	if !refreshOverhead() {
+		return
+	}
+
 	var payloadSeq, pongSeq uint64
 	now := time.Now()
 	payloadPacing := newPayloadPacer(
-		now, c.cfg.payloadSize, c.cfg.bandwidthBps, c.cfg.maxBurstBps,
+		now, c.cfg.payloadSize+overhead, c.cfg.bandwidthBps, c.cfg.maxBurstBps,
 	)
 	nextPong := now
 	ticker := time.NewTicker(payloadPacingCadence)
@@ -794,8 +871,12 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 				return
 			}
 
+			if !refreshOverhead() {
+				return
+			}
 			size, small := nextPayload()
-			if !payloadPacing.canSend(tickNow, size) {
+			wireSize := size + overhead
+			if !payloadPacing.canSend(tickNow, wireSize) {
 				break
 			}
 			if small && !c.forceSmallNextPayload.CompareAndSwap(true, false) {
@@ -803,32 +884,39 @@ func (c *client) sendLoop(ctx context.Context, conn *snet.Conn, tracker *pongTra
 			}
 
 			sentAt := time.Now()
-			EncodePayload(buf[:size], payloadSeq, nextSendTimestamp(sentAt), fillerSeed)
+			EncodePayload(buf[:size], payloadSeq, nextSendTimestamp(sentAt), fillerSeed,
+				uint16(overhead))
 			if _, err := conn.WriteTo(buf[:size], c.currentAddr.Load()); err != nil {
 				log.Error("Sending payload packet", "err", err)
 			} else {
 				c.metrics.payloadPacketsSent.Inc()
-				c.metrics.payloadBytesSent.Add(float64(size))
+				c.metrics.bytesSent.Add(float64(wireSize))
 				c.rateMu.Lock()
-				c.rate.Add(size)
+				c.rate.Add(wireSize)
 				c.rateMu.Unlock()
 			}
 			payloadSeq++
-			payloadPacing.sent(size)
+			payloadPacing.sent(wireSize)
 		}
 
 		nextSize, _ := nextPayload()
-		if behind, lateness := payloadPacing.behind(tickNow, nextSize); behind {
+		if behind, lateness := payloadPacing.behind(tickNow, nextSize+overhead); behind {
 			recordPacingDelay(lateness)
 		}
 
 		if !nextPong.After(tickNow) {
 			sentAt := time.Now()
-			EncodePongRequest(pongBuf, pongSeq, nextSendTimestamp(sentAt))
+			EncodePongRequest(pongBuf, pongSeq, nextSendTimestamp(sentAt), uint16(overhead))
 			if _, err := conn.WriteTo(pongBuf, c.currentAddr.Load()); err != nil {
 				log.Error("Sending pong request", "err", err)
 			} else {
+				pongWire := len(pongBuf) + overhead
 				c.metrics.pongRequestsSent.Inc()
+				c.metrics.bytesSent.Add(float64(pongWire))
+				c.rateMu.Lock()
+				c.rate.Add(pongWire)
+				c.rateMu.Unlock()
+				payloadPacing.chargeProbe(pongWire)
 				tracker.recordSent(pongSeq, sentAt)
 			}
 			pongSeq++
@@ -895,7 +983,7 @@ func (c *client) pongReceiveLoop(ctx context.Context, conn *snet.Conn, tracker *
 
 func (c *client) applyRemoteStats(delta remoteStatsDelta) {
 	c.metrics.remotePayloadPacketsReceived.Add(float64(delta.payloadPacketsReceived))
-	c.metrics.remotePayloadBytesReceived.Add(float64(delta.payloadBytesReceived))
+	c.metrics.remoteBytesReceived.Add(float64(delta.bytesReceived))
 	c.metrics.remotePayloadLost.Add(float64(delta.payloadLost))
 	c.metrics.remotePayloadOutOfOrder.Add(float64(delta.payloadOutOfOrder))
 	c.metrics.remotePongRequestsReceived.Add(float64(delta.pongRequestsReceived))
@@ -944,7 +1032,7 @@ func (c *client) reportLoop(ctx context.Context, tracker *pongTracker) {
 			} else {
 				c.metrics.remoteStatsAge.Set(age.Seconds())
 			}
-			fmt.Printf("[client] interval=%s payload_bytes=%d rate=%.2f Mbps jitter=%s\n",
+			fmt.Printf("[client] interval=%s bytes=%d rate=%.2f Mbps jitter=%s\n",
 				res.Duration.Round(time.Millisecond), res.Bytes,
 				res.BitsPerSec/1e6, jitter.Round(time.Microsecond))
 		}
