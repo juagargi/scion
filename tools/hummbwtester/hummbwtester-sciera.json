@@ -9,11 +9,13 @@
     "| 127.0.0.1     |            | 127.0.0.1     |            | marketplace   |",
     "+---------------+            +---------------+            +---------------+",
     "",
-    "#N are interface IDs. Shaped links: rnp - ufms (10 Mbit, via #103/#104) and",
-    "rnp - ufes (via #106/#101).",
+    "#N are interface IDs. Shaped links (tc settings below): rnp - ufms (#103/#104)",
+    "and rnp - ufes (#106/#101).",
     "hummingbird-1 (rnp) -> ufms: 71-1916#103 71-2:0:5c#104, with a reservation.",
     "best-effort-1 (ufes) -> ufms: 71-2:0:152#101 71-1916#106,103 71-2:0:5c#104, best effort.",
-    "Both flows share the rnp -> ufms link; marketplace requests travel over best effort."
+    "Both flows share the shaped rnp -> ufms link (#103/#104).",
+    "Marketplace requests are best effort too, but use the daemon's first path to ufms",
+    "(71-1916#3 71-2:0:5c#4, via br-1), which is not shaped."
   ],
   "hummingbird": {
     "reservation_source": "marketplace",
