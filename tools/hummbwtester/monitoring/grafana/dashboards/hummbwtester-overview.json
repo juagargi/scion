@@ -382,7 +382,7 @@
           "refId": "B"
         }
       ],
-      "title": "Pong Activity",
+      "title": "Pong Activity (lost/min)",
       "type": "timeseries"
     },
     {

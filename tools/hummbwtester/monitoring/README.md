@@ -42,12 +42,10 @@ the configured `client_id` as the sole custom label on each client target.
    python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester.json
    ```
 
-2. Setup starts Prometheus. Optionally start Grafana in another terminal:
-
-   ```bash
-   cd tools/hummbwtester/monitoring
-   docker compose up -d grafana
-   ```
+2. Setup starts Prometheus and Grafana (`docker compose up -d`: running containers are kept,
+   stopped ones are started, and a Grafana configured for another Prometheus port is
+   recreated). It then fails if either container exits, for example because its port is in
+   use, or does not answer on Prometheus `/-/ready` and Grafana `/api/health`.
 
 3. Check that the containers are running:
 
@@ -57,11 +55,8 @@ the configured `client_id` as the sole custom label on each client target.
 
 ## Stop
 
-Stop Grafana from this directory; `experiment.py teardown` stops its owned Prometheus service:
-
-```bash
-docker compose stop grafana
-```
+`experiment.py teardown` stops and removes the Prometheus and Grafana containers of a Docker
+deployment (their data volumes are kept).
 
 If you also want to remove the persisted Prometheus and Grafana data volumes:
 
