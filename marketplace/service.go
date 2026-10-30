@@ -235,7 +235,7 @@ func (s *Service) FetchReservations(ctx context.Context, req *connect.Request[hu
 		StartsAt:  startsAt,
 		StopsAt:   stopsAt,
 		Bandwidth: req.Msg.Bandwidth,
-		AccountId: user,
+		AccountId: &user,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)

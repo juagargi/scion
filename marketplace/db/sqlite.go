@@ -64,6 +64,7 @@ type Repository interface {
 	RemoveAsset(ctx context.Context, assetID int64) error
 	RegisterAssetEvent(ctx context.Context, a *DBAsset, eventType AssetEventType) (int64, error)
 	TransitionAsset(ctx context.Context, assetID int64, accountID *int64, from AssetState, to AssetState) (*DBAsset, error)
+	UpdateReservation(ctx context.Context, id int64, reservation *DBReservation) (int64, error)
 }
 
 type MarketplaceDB interface {
@@ -262,11 +263,13 @@ func (e *executor) buildReservationQuery(params *ReservationQuery) (string, []an
 		"SELECT r.id, r.account_id, r.reservation_id, r.isd_id, r.as_id, r.ingress, r.egress, " +
 			"r.bandwidth, r.bw_encoded, r.starts_at, r.stops_at, r.key FROM Reservations r",
 	}
-	query = append(query, "JOIN Accounts owner ON r.account_id = owner.id JOIN "+
-		"Accounts current ON current.id = ?")
-	where = append(where, "( (current.scope = '' AND owner.user_id = current.user_id) OR "+
-		"(current.scope != '' AND owner.id = current.id) )")
-	args = append(args, params.AccountId)
+	if params.AccountId != nil {
+		query = append(query, "JOIN Accounts owner ON r.account_id = owner.id JOIN "+
+			"Accounts current ON current.id = ?")
+		where = append(where, "( (current.scope = '' AND owner.user_id = current.user_id) OR "+
+			"(current.scope != '' AND owner.id = current.id) )")
+		args = append(args, params.AccountId)
+	}
 	if params.IA != nil {
 		where = append(where, "(r.isd_id=?) AND (r.as_id=?)")
 		args = append(args, int64(params.IA.ISD()), int64(params.IA.AS()))
@@ -1142,6 +1145,27 @@ func (e *executor) AssignReservation(
 	}
 	inst := `UPDATE Reservations SET account_id = ? WHERE id=? AND account_id = ?`
 	res, err := e.write.ExecContext(ctx, inst, accountIDTo, id, accountIDFrom)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// UpdateReservation updates the reservation_id, bandwidth, bw_encoded and key fields of
+// a reservation that is already stored in the database. Returns (1, nil) if the record
+// was found and updated accordingly.
+func (e *executor) UpdateReservation(
+	ctx context.Context,
+	id int64,
+	reservation *DBReservation,
+) (int64, error) {
+	if e.write == nil {
+		return 0, serrors.New("No database open")
+	}
+	inst := `UPDATE Reservations SET reservation_id = ?, bandwidth = ?, bw_encoded = ?,
+	 key = ? WHERE id = ?`
+	res, err := e.write.ExecContext(ctx, inst, reservation.ReservationID, reservation.Bandwidth,
+		reservation.EncodedBandwidth, reservation.Key, id)
 	if err != nil {
 		return 0, err
 	}
