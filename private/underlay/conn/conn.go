@@ -99,7 +99,12 @@ func (c *connUDPIPv4) ReadBatch(msgs Messages) (int, error) {
 }
 
 func (c *connUDPIPv4) WriteBatch(msgs Messages, flags int) (int, error) {
-	return c.pconn.WriteBatch(msgs, flags)
+	n, err := c.pconn.WriteBatch(msgs, flags)
+	// On error, x/net propagates the raw sendmmsg return value, which is -1.
+	if n < 0 {
+		n = 0
+	}
+	return n, err
 }
 
 // SetReadDeadline sets the read deadline associated with the endpoint.
@@ -142,7 +147,12 @@ func (c *connUDPIPv6) ReadBatch(msgs Messages) (int, error) {
 }
 
 func (c *connUDPIPv6) WriteBatch(msgs Messages, flags int) (int, error) {
-	return c.pconn.WriteBatch(msgs, flags)
+	n, err := c.pconn.WriteBatch(msgs, flags)
+	// On error, x/net propagates the raw sendmmsg return value, which is -1.
+	if n < 0 {
+		n = 0
+	}
+	return n, err
 }
 
 // SetReadDeadline sets the read deadline associated with the endpoint.
