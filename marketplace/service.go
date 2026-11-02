@@ -721,7 +721,7 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 				TimeGranularity: asset.TimeGranularity,
 				Price:           asset.Price,
 				Intervals: []*hummingbird.SearchAssetInterval{
-					&hummingbird.SearchAssetInterval{
+					{
 						Bandwidth: asset.Bandwidth,
 						StartsAt:  asset.StartsAt,
 						StopsAt:   asset.StopsAt,

@@ -17,7 +17,6 @@ package marketplace
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -331,7 +330,7 @@ func (c *Client) recursiveSelect(
 	}
 	nextAssets := filterValidAt(currentAsset.StopsAt, otherAssets)
 	if len(nextAssets) == 0 {
-		fmt.Println("no assets found to be valid at ", currentAsset.StopsAt)
+		log.Debug("no assets found to be valid", "at", currentAsset.StopsAt)
 		return nil, false
 	}
 	allChains := []chain{}
@@ -345,12 +344,10 @@ func (c *Client) recursiveSelect(
 			globalStart,
 			globalStop)
 		if !ok {
-			fmt.Println("recursive select failed")
 			continue
 		}
 		for _, resultChain := range resultChains {
 			if resultChain.bandwidthMin > currentAsset.Bandwidth {
-				fmt.Println("bandwidth cannot be satisfied")
 				continue
 			}
 			resultChain.ids = append([]string{currentAsset.UniqueID()}, resultChain.ids...)
@@ -596,39 +593,33 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 	combineAssets bool,
 	num_retries int,
 ) ([]*snetpath.Hop, error) {
-	fmt.Println(1)
 	infoRep, err := c.Marketplace.Info(ctx, &connect.Request[hummingbird.MarketplaceInfoRequest]{})
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(2)
 	startsAtUnix := startsAt.Unix()
 	stopsAtUnix := stopsAt.Unix()
 	combineCost := uint64(infoRep.Msg.SplitCombineFeeAbsolute)
 	startsAt = startsAt.Truncate(time.Second)
 	stopsAt = stopsAt.Truncate(time.Second)
 	hops := make([]*snetpath.Hop, len(pairs))
-	fmt.Println(3)
 	if fetchReservations {
 		hops, err = c.findExistingReservations(ctx, pairs, bwInKbps, startsAtUnix, stopsAtUnix)
 		if err != nil {
 			return nil, err
 		}
 	}
-	fmt.Println(4)
 	var orders = []*hummingbird.BuyAsset{}
 	iaAssets := map[uint64][]assetInfo{}
 	var boughtAssets []*hummingbird.BoughtAsset
 	success := false
 	for retry := -1; retry < num_retries; retry++ {
-		fmt.Println(5)
 		orders = []*hummingbird.BuyAsset{}
 		asAssetsMap, err := c.searchAssetsForAllInterfaces(ctx, false, pairs, bwInKbps, startsAtUnix, stopsAtUnix, combineAssets)
 		if err != nil {
 			log.Debug("error while fetching assets", "try", retry+1, "err", err)
 			continue
 		}
-		fmt.Println(6)
 		for i, pair := range pairs {
 			if hops[i] != nil {
 				continue
@@ -690,19 +681,17 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 	// Look up the assets that were just bought, to learn where and when they apply.
 	// If combineAssets == True, we need to find assets that "touch" the time window.
 	// If not, we need to find assets which each one of them covers the time window.
-	fmt.Println(7)
 	ownedAssetsMap, err := c.searchAssetsForAllInterfaces(ctx, true, pairs, bwInKbps, startsAtUnix, stopsAtUnix, combineAssets)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(8)
 	foundAssetsMap := make(map[uint64][]*UnwrappedAsset)
 	for _, pair := range pairs {
 		asAssets, found := ownedAssetsMap[addr.IA(pair.IA)]
 		if !found {
 			continue
 		}
-		f := func(assets []*UnwrappedAsset) {
+		mapAssetsToAS := func(assets []*UnwrappedAsset) {
 			for _, asset := range assets {
 				for _, boughtAsset := range boughtAssets {
 					if bytes.Equal(asset.AssetId, boughtAsset.AssetId) {
@@ -716,12 +705,10 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 				}
 			}
 		}
-		f(asAssets.ingressAssets)
-		f(asAssets.egressAssets)
-		f(asAssets.pairAssets)
+		mapAssetsToAS(asAssets.ingressAssets)
+		mapAssetsToAS(asAssets.egressAssets)
+		mapAssetsToAS(asAssets.pairAssets)
 	}
-	fmt.Println("foundAssetsMap", foundAssetsMap)
-	fmt.Println("orders", orders)
 	if combineAssets {
 		for k, v := range foundAssetsMap {
 			ingressAssets := []*UnwrappedAsset{}
@@ -832,7 +819,7 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 			}
 		}
 	}
-	redeemedHops, err := c.redeemHopsConcurrently(ctx, pairs, iaAssets, startsAtUnix, stopsAtUnix)
+	redeemedHops, err := c.redeemHopsConcurrently(ctx, pairs, iaAssets)
 	if err != nil {
 		return nil, err
 	}
@@ -844,25 +831,10 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 	return redeemedHops, nil
 }
 
-func later(a time.Time, b time.Time) time.Time {
-	if a.Before(b) {
-		return b
-	}
-	return a
-}
-func earlier(a time.Time, b time.Time) time.Time {
-	if a.Before(b) {
-		return a
-	}
-	return b
-}
-
 func (c *Client) redeemHopsConcurrently(
 	ctx context.Context,
 	pairs []InterfacePair,
 	iaAssets map[uint64][]assetInfo,
-	startsAt int64,
-	stopsAt int64,
 ) ([]*snetpath.Hop, error) {
 	type requestInfo struct {
 		request  *hummingbird.RedeemAssetRequest
