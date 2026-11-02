@@ -92,6 +92,7 @@ go_test(
     name = "go_default_test",
     srcs = [
         "address_test.go",
+        "conn_linux_batch_test.go",
         "conn_linux_test.go",
     ],
     embed = [":go_default_library"],

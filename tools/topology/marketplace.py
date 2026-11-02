@@ -68,9 +68,8 @@ CONTAINER_CACHE_DIR = '/share/cache'
 CONTAINER_TOML = '%s/%s' % (CONTAINER_CONFIG_DIR, MARKETPLACE_CONFIG_NAME)
 CONTAINER_DB = '%s/%s' % (CONTAINER_CACHE_DIR, MARKETPLACE_DB_NAME)
 
-# The marketplace of a supervisord topology binds the loopback address, and keeps
-# its database next to the ones of the other services.
-LOCAL_HOST = '127.0.0.1'
+# The marketplace of a supervisord topology keeps its database next to the ones of the
+# other services.
 LOCAL_CACHE_DIR = 'gen-cache'
 
 # The marketplace program of a supervisord config. There is a single marketplace,
@@ -828,7 +827,8 @@ class MarketplaceGenerator(object):
 
     def _endpoints(self, topo_id) -> Endpoints:
         if not self.args.docker:
-            return Endpoints(LOCAL_HOST, MARKETPLACE_PORT, MARKETPLACE_PORT)
+            return Endpoints(controlServiceHost(self.args.topo_dicts[topo_id]),
+                             MARKETPLACE_PORT, MARKETPLACE_PORT)
         # The marketplace joins the network namespace of the control service, so
         # it binds the very same address, and only its ports set it apart.
         name = control_service_name(topo_id)
@@ -837,6 +837,21 @@ class MarketplaceGenerator(object):
                 return Endpoints(str(net_desc.ip_net[name].ip),
                                  MARKETPLACE_PORT, MARKETPLACE_PORT)
         raise MarketplaceError("no address generated for %s" % name)
+
+
+def controlServiceHost(topo) -> str:
+    """The host of the control service of an AS, given its topology dict.
+
+    The marketplace binds an address of its AS, like the control service. A loopback address
+    would not do: the border routers deliver SCION packets to hosts inside the internal
+    network of the AS, which can be IPv6 only, and cannot reach 127.0.0.1 there.
+    """
+    services = topo.get("control_service", {})
+    if not services:
+        raise MarketplaceError("the AS has no control service to take the address from")
+    # Only a single control service instance per AS is currently supported; take the first.
+    addr = services[sorted(services)[0]]["addr"]
+    return addr.rsplit(":", 1)[0].strip("[]")
 
 
 def control_service_name(topo_id) -> str:

@@ -18,6 +18,7 @@ already in place instead of adding a second marketplace.
 
 import argparse
 import configparser
+import json
 import os
 import re
 import sys
@@ -37,7 +38,6 @@ from topology.marketplace import (  # noqa: E402
     CONTAINER_DB,
     CONTAINER_TOML,
     LOCAL_CACHE_DIR,
-    LOCAL_HOST,
     MARKETPLACE_CONFIG_NAME,
     MARKETPLACE_DB_NAME,
     MARKETPLACE_PORT,
@@ -47,6 +47,7 @@ from topology.marketplace import (  # noqa: E402
     MarketplaceError,
     advertiseMarketplace,
     checkDispatchedPorts,
+    controlServiceHost,
     dockerService,
     dockerServiceName,
     hostPort,
@@ -148,7 +149,12 @@ def planSupervisord(gen_dir: Path, topo_id: TopoID, api_port: int, scion_port: i
     # applied, so that a missing group is not a partial setup.
     config, group_added = addToGroup(config, group_name)
 
-    endpoints = Endpoints(LOCAL_HOST, api_port, scion_port)
+    try:
+        topo = json.loads((gen_dir / topo_id.AS_file() / "topology.json").read_text("utf-8"))
+        host = controlServiceHost(topo)
+    except (OSError, ValueError, KeyError, MarketplaceError) as e:
+        raise MarketplaceError(f"cannot find the address of {topo_id}: {e}")
+    endpoints = Endpoints(host, api_port, scion_port)
     db_path = os.path.join(LOCAL_CACHE_DIR, MARKETPLACE_DB_NAME)
     toml_content = marketplaceToml(as_base, endpoints, db_path)
 
