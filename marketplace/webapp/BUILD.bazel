@@ -6,7 +6,9 @@ go_library(
     embedsrcs = [
         "static/script.js",
         "static/style.css",
+        "static/visualize-assets.js",
         "templates/account.html",
+        "templates/asassets.html",
         "templates/asbalance.html",
         "templates/aslogin.html",
         "templates/assets.html",

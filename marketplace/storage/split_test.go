@@ -26,8 +26,8 @@ import (
 // and what goes back on the market. The remainders must never overlap the
 // purchase, otherwise the same capacity could be sold twice.
 func TestSplitAsset(t *testing.T) {
-	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	stop := start.Add(time.Hour)
+	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).Unix()
+	stop := start + 60*60
 	asset := func() AssetSegment {
 		return AssetSegment{
 			Bandwidth: 1000,
@@ -47,48 +47,48 @@ func TestSplitAsset(t *testing.T) {
 		},
 		"tail, only a left remainder": {
 			split: RequestedSplit{
-				ExactFrom:      start.Add(10 * time.Minute),
+				ExactFrom:      start + (10 * 60),
 				ExactTo:        stop,
 				ExactBandwidth: 1000,
 			},
 			expected: AssetSegment{
-				StartsAt:  start.Add(10 * time.Minute),
+				StartsAt:  start + (10 * 60),
 				StopsAt:   stop,
 				Bandwidth: 1000,
 			},
 			remainders: []AssetSegment{
-				{StartsAt: start, StopsAt: start.Add(10 * time.Minute), Bandwidth: 1000},
+				{StartsAt: start, StopsAt: start + (10 * 60), Bandwidth: 1000},
 			},
 		},
 		"head, only a right remainder": {
 			split: RequestedSplit{
 				ExactFrom:      start,
-				ExactTo:        start.Add(10 * time.Minute),
+				ExactTo:        start + (10 * 60),
 				ExactBandwidth: 1000,
 			},
 			expected: AssetSegment{
 				StartsAt:  start,
-				StopsAt:   start.Add(10 * time.Minute),
+				StopsAt:   start + (10 * 60),
 				Bandwidth: 1000,
 			},
 			remainders: []AssetSegment{
-				{StartsAt: start.Add(10 * time.Minute), StopsAt: stop, Bandwidth: 1000},
+				{StartsAt: start + (10 * 60), StopsAt: stop, Bandwidth: 1000},
 			},
 		},
 		"middle, a left and a right remainder": {
 			split: RequestedSplit{
-				ExactFrom:      start.Add(10 * time.Minute),
-				ExactTo:        start.Add(20 * time.Minute),
+				ExactFrom:      start + (10 * 60),
+				ExactTo:        start + (20 * 60),
 				ExactBandwidth: 1000,
 			},
 			expected: AssetSegment{
-				StartsAt:  start.Add(10 * time.Minute),
-				StopsAt:   start.Add(20 * time.Minute),
+				StartsAt:  start + (10 * 60),
+				StopsAt:   start + (20 * 60),
 				Bandwidth: 1000,
 			},
 			remainders: []AssetSegment{
-				{StartsAt: start, StopsAt: start.Add(10 * time.Minute), Bandwidth: 1000},
-				{StartsAt: start.Add(20 * time.Minute), StopsAt: stop, Bandwidth: 1000},
+				{StartsAt: start, StopsAt: start + (10 * 60), Bandwidth: 1000},
+				{StartsAt: start + (20 * 60), StopsAt: stop, Bandwidth: 1000},
 			},
 		},
 		"part of the bandwidth of the whole asset": {
@@ -100,20 +100,20 @@ func TestSplitAsset(t *testing.T) {
 		},
 		"part of the bandwidth of a middle slice": {
 			split: RequestedSplit{
-				ExactFrom:      start.Add(10 * time.Minute),
-				ExactTo:        start.Add(20 * time.Minute),
+				ExactFrom:      start + (10 * 60),
+				ExactTo:        start + (20 * 60),
 				ExactBandwidth: 400,
 			},
 			expected: AssetSegment{
-				StartsAt:  start.Add(10 * time.Minute),
-				StopsAt:   start.Add(20 * time.Minute),
+				StartsAt:  start + (10 * 60),
+				StopsAt:   start + (20 * 60),
 				Bandwidth: 400,
 			},
 			remainders: []AssetSegment{
 				// The bandwidth that was not bought, for the whole window.
 				{StartsAt: start, StopsAt: stop, Bandwidth: 600},
-				{StartsAt: start, StopsAt: start.Add(10 * time.Minute), Bandwidth: 400},
-				{StartsAt: start.Add(20 * time.Minute), StopsAt: stop, Bandwidth: 400},
+				{StartsAt: start, StopsAt: start + (10 * 60), Bandwidth: 400},
+				{StartsAt: start + (20 * 60), StopsAt: stop, Bandwidth: 400},
 			},
 		},
 	}
@@ -128,8 +128,8 @@ func TestSplitAsset(t *testing.T) {
 			// What is sold and what is left must add up to the asset, so no
 			// remainder may overlap the purchase in both time and bandwidth.
 			for _, remainder := range result.Remainders {
-				overlapsInTime := remainder.StartsAt.Before(result.Split.StopsAt) &&
-					remainder.StopsAt.After(result.Split.StartsAt)
+				overlapsInTime := remainder.StartsAt < (result.Split.StopsAt) &&
+					remainder.StopsAt > (result.Split.StartsAt)
 				if !overlapsInTime {
 					continue
 				}
@@ -144,25 +144,22 @@ func TestSplitAsset(t *testing.T) {
 // TestSplitAssetRejects checks that SplitAsset returns error when the asset cannot be split into
 // the required parts.
 func TestSplitAssetRejects(t *testing.T) {
-	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	stop := start.Add(time.Hour)
+	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).Unix()
+	stop := start + 60*60
 	asset := AssetSegment{Bandwidth: 1000, StartsAt: start, StopsAt: stop}
 
 	testCases := map[string]RequestedSplit{
 		"starts before the asset": {
-			ExactFrom: start.Add(-time.Second), ExactTo: stop, ExactBandwidth: 1000,
+			ExactFrom: start - 1, ExactTo: stop, ExactBandwidth: 1000,
 		},
 		"stops after the asset": {
-			ExactFrom: start, ExactTo: stop.Add(time.Second), ExactBandwidth: 1000,
+			ExactFrom: start, ExactTo: stop + 1, ExactBandwidth: 1000,
 		},
 		"empty range": {
 			ExactFrom: start, ExactTo: start, ExactBandwidth: 1000,
 		},
 		"reversed range": {
 			ExactFrom: stop, ExactTo: start, ExactBandwidth: 1000,
-		},
-		"sub second precision": {
-			ExactFrom: start.Add(time.Millisecond), ExactTo: stop, ExactBandwidth: 1000,
 		},
 		"more bandwidth than the asset has": {
 			ExactFrom: start, ExactTo: stop, ExactBandwidth: 1001,

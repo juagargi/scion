@@ -59,7 +59,8 @@ func StatisticsWindow(
 	start, end time.Time,
 	step, granularity time.Duration,
 ) (time.Time, time.Time, int) {
-	return statisticsWindow(start, end, step, granularity)
+	window_start, window_end, num_intervals := statisticsWindow(start.Unix(), end.Unix(), int64(step/time.Second), int64(granularity/time.Second))
+	return time.Unix(window_start, 0).UTC(), time.Unix(window_end, 0).UTC(), int(num_intervals)
 }
 
 // BandwidthUtilization exposes the share of the published bandwidth that was bought.
@@ -74,5 +75,5 @@ func BandwidthPerInterval(
 	step time.Duration,
 	numIntervals int,
 ) (bandwidth, income []uint64) {
-	return bandwidthPerInterval(assets, windowStart, windowEnd, step, numIntervals)
+	return bandwidthPerInterval(assets, windowStart.Unix(), windowEnd.Unix(), int64(step/time.Second), int64(numIntervals))
 }

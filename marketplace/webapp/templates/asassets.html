@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>View Assets</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script type="text/javascript" src="/static/visualize-assets.js"></script>
+</head>
+
+<body>
+    <nav>
+        <div class="nav-left">
+            {{if .Username}}
+            <a href="/asbalance">Balance</a>
+            <a href="/asassets">Assets</a>
+            {{else}}
+            <a href="/aslogin">AS Login</a>
+            <a href="/login">Login</a>
+            <a href="/register">Register</a>
+            {{end}}
+        </div>
+        {{if .Username}}
+        <div class="nav-right">
+            👤 {{.Username}}
+            <a class="logout-link" href="/logout">Logout</a>
+        </div>
+        {{end}}
+    </nav>
+    <div class="page">
+        <h2>Assets</h2>
+        <p class="error" id="error">{{.Error}}</p>
+        <section class="card">
+            <h3>Assets</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ingress</th>
+                        <th>Egress</th>
+                        <th>Starts at</th>
+                        <th>Stops at</th>
+                        <th>Bandwidth</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range $asset := .Assets}}
+                    <tr>
+                        <td>{{.ID}}</td>
+                        <td>
+                            {{with .IfIdIngress}}
+                            {{.Value}}
+                            {{end}}
+                        </td>
+                        <td>
+                            {{with .IfIdEgress}}
+                            {{.Value}}
+                            {{end}}
+                        </td>
+                        <td>{{.StartsAt}}</td>
+                        <td>{{.StopsAt}}</td>
+                        <td>{{.Bandwidth}}</td>
+                        <td>
+                            <div class="table-actions">
+                                <button type="button" class="primary" onclick="Utilization.visualize(this)"
+                                    data-id="{{.ID}}" data-bandwidth="{{.Bandwidth}}" data-start="{{.StartsAt}}"
+                                    data-end="{{.StopsAt}}" data-price="{{.Price}}">Visualize utilization</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </section>
+        <section id="viz" class="card util" hidden aria-live="polite">
+            <div class="util-head">
+            <h3 id="viz-title"></h3>
+            <button type="button" onclick="Utilization.hide()">Close</button>
+            </div>
+            <p id="viz-error" class="util-error" role="alert" hidden></p>
+            <div class="util-controls">
+                <label>From <input type="datetime-local" step="1" id="from"></label>
+                <label>To <input type="datetime-local" step="1" id="to"></label>
+                <button type="button" onclick="Utilization.apply()">Apply</button>
+                <div class="util-buttons" role="group" aria-label="Zoom and pan">
+                    <button type="button" onclick="Utilization.panLeft()" title="Pan left" aria-label="Pan left">&larr;</button>
+                    <button type="button" onclick="Utilization.zoomIn()">Zoom in</button>
+                    <button type="button" onclick="Utilization.zoomOut()">Zoom out</button>
+                    <button type="button" onclick="Utilization.panRight()" title="Pan right" aria-label="Pan right">&rarr;</button>
+                    <button type="button" onclick="Utilization.reset()">Show everything</button>
+                </div>
+            </div>
+            <p class="util-hint">Drag across the chart to zoom into a range. Double-click to show everything.</p>
+            <div class="util-stats">
+            <span>Bandwidth in kbps <b id="stat-bw"></b></span>
+            <span>Average sold in view <b id="stat-avg"></b></span>
+            <span>Peak in view <b id="stat-peak"></b></span>
+            <span>Revenue in view <b id="stat-revenue"></b></span>
+            <span>Segments in view <b id="stat-count"></b></span>
+            </div>
+            <div class="util-chart">
+                <div class="util-y" id="y"></div>
+                <div class="util-plot" id="plot"
+                    onpointerdown="Utilization.brushStart(event)"
+                    onpointermove="Utilization.brushMove(event)"
+                    onpointerup="Utilization.brushEnd(event)"
+                    onpointercancel="Utilization.brushCancel()"
+                    ondblclick="Utilization.reset()"></div>
+                <div class="util-x" id="x"></div>
+            </div>
+            <div class="util-legend">
+                <span><i class="util-low"></i>&lt; 40% sold</span>
+                <span><i class="util-mid"></i>40&ndash;75%</span>
+                <span><i class="util-high"></i>75&ndash;95%</span>
+                <span><i class="util-full"></i>&ge; 95%</span>
+                <span><i class="util-nodata"></i>No data</span>
+            </div>
+        </section>
+
+    </div>
+</body>
+
+</html>

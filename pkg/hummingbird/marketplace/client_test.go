@@ -22,7 +22,6 @@ import (
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 	"github.com/scionproto/scion/pkg/snet"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestInterfacePairsFromInterfaces(t *testing.T) {
@@ -64,37 +63,37 @@ func TestIsSCIONURL(t *testing.T) {
 
 func TestCombine(t *testing.T) {
 	type Test struct {
-		duration         time.Duration
+		duration         int64
 		bw               uint32
 		splitCombineCost uint64
-		assets           []*hummingbird.SearchAsset
+		assets           []*UnwrappedAsset
 		expectedResponse []*hummingbird.BuyAsset
 	}
-	start, _ := time.Parse(time.RFC3339, "2026-07-07T00:00:00Z")
+	start := time.Date(2026, 07, 07, 0, 0, 0, 0, time.UTC).Unix()
 	tests := map[string]Test{
 		"baseCombine": {
-			duration: time.Second * 2,
+			duration: 2,
 			bw:       1,
 			expectedResponse: []*hummingbird.BuyAsset{
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
-					StartsAtExactly: timestamppb.New(start),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 1)),
+					StartsAtExactly: start,
+					StopsAtExactly:  start + 1,
 					BandwidthExact:  1,
 				},
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 2},
-					StartsAtExactly: timestamppb.New(start.Add(time.Second * 1)),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 2)),
+					StartsAtExactly: start + 1,
+					StopsAtExactly:  start + 2,
 					BandwidthExact:  1,
 				},
 			},
-			assets: []*hummingbird.SearchAsset{
+			assets: []*UnwrappedAsset{
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 1)),
+					StartsAt:        start,
+					StopsAt:         start + 1,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -103,8 +102,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 2},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 1)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 2)),
+					StartsAt:        start + 1,
+					StopsAt:         start + 2,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -113,28 +112,28 @@ func TestCombine(t *testing.T) {
 			},
 		},
 		"baseCombineChooseCheaper": {
-			duration: time.Second * 2,
+			duration: 2,
 			bw:       1,
 			expectedResponse: []*hummingbird.BuyAsset{
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
-					StartsAtExactly: timestamppb.New(start),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 1)),
+					StartsAtExactly: start,
+					StopsAtExactly:  start + 1,
 					BandwidthExact:  1,
 				},
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 3},
-					StartsAtExactly: timestamppb.New(start.Add(time.Second * 1)),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 2)),
+					StartsAtExactly: start + 1,
+					StopsAtExactly:  start + 2,
 					BandwidthExact:  1,
 				},
 			},
-			assets: []*hummingbird.SearchAsset{
+			assets: []*UnwrappedAsset{
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 1)),
+					StartsAt:        start,
+					StopsAt:         start + 1,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -143,8 +142,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 2},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 1)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 2)),
+					StartsAt:        start + 1,
+					StopsAt:         start + 2,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -153,8 +152,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 3},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 1)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 2)),
+					StartsAt:        start + 1,
+					StopsAt:         start + 2,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -163,40 +162,40 @@ func TestCombine(t *testing.T) {
 			},
 		},
 		"combineOverlappingSolutions": {
-			duration: time.Second * 5,
+			duration: 5,
 			bw:       1,
 			expectedResponse: []*hummingbird.BuyAsset{
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
-					StartsAtExactly: timestamppb.New(start),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 1)),
+					StartsAtExactly: start,
+					StopsAtExactly:  start + 1,
 					BandwidthExact:  1,
 				},
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 2},
-					StartsAtExactly: timestamppb.New(start.Add(time.Second * 1)),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 2)),
+					StartsAtExactly: start + 1,
+					StopsAtExactly:  start + 2,
 					BandwidthExact:  1,
 				},
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 3},
-					StartsAtExactly: timestamppb.New(start.Add(time.Second * 2)),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 4)),
+					StartsAtExactly: start + 2,
+					StopsAtExactly:  start + 4,
 					BandwidthExact:  1,
 				},
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 4},
-					StartsAtExactly: timestamppb.New(start.Add(time.Second * 4)),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 5)),
+					StartsAtExactly: start + 4,
+					StopsAtExactly:  start + 5,
 					BandwidthExact:  1,
 				},
 			},
-			assets: []*hummingbird.SearchAsset{
+			assets: []*UnwrappedAsset{
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 1)),
+					StartsAt:        start,
+					StopsAt:         start + 1,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -205,8 +204,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 2},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 1)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 2)),
+					StartsAt:        start + 1,
+					StopsAt:         start + 2,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -215,8 +214,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 3},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 1)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 4)),
+					StartsAt:        start + 1,
+					StopsAt:         start + 4,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -225,8 +224,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 4},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 4)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 5)),
+					StartsAt:        start + 4,
+					StopsAt:         start + 5,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -235,35 +234,35 @@ func TestCombine(t *testing.T) {
 			},
 		},
 		"combineOverlappingSolutionsWithCombineCost": {
-			duration:         time.Second * 5,
+			duration:         5,
 			bw:               1,
 			splitCombineCost: 10,
 			expectedResponse: []*hummingbird.BuyAsset{
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
-					StartsAtExactly: timestamppb.New(start),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 1)),
+					StartsAtExactly: start,
+					StopsAtExactly:  start + 1,
 					BandwidthExact:  1,
 				},
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 3},
-					StartsAtExactly: timestamppb.New(start.Add(time.Second * 1)),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 4)),
+					StartsAtExactly: start + 1,
+					StopsAtExactly:  start + 4,
 					BandwidthExact:  1,
 				},
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 4},
-					StartsAtExactly: timestamppb.New(start.Add(time.Second * 4)),
-					StopsAtExactly:  timestamppb.New(start.Add(time.Second * 5)),
+					StartsAtExactly: start + 4,
+					StopsAtExactly:  start + 5,
 					BandwidthExact:  1,
 				},
 			},
-			assets: []*hummingbird.SearchAsset{
+			assets: []*UnwrappedAsset{
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 1},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 1)),
+					StartsAt:        start,
+					StopsAt:         start + 1,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -272,8 +271,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 2},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 1)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 2)),
+					StartsAt:        start + 1,
+					StopsAt:         start + 2,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -282,8 +281,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 3},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 1)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 4)),
+					StartsAt:        start + 1,
+					StopsAt:         start + 4,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -292,8 +291,8 @@ func TestCombine(t *testing.T) {
 				{
 					AssetId:         []byte{0, 0, 0, 0, 0, 0, 0, 4},
 					Bandwidth:       1,
-					StartsAt:        timestamppb.New(start.Add(time.Second * 4)),
-					StopsAt:         timestamppb.New(start.Add(time.Second * 5)),
+					StartsAt:        start + 4,
+					StopsAt:         start + 5,
 					TimeGranularity: 1,
 					BandwidthMin:    1,
 					TimeMinDuration: 1,
@@ -306,7 +305,7 @@ func TestCombine(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			assert.NotEqual(t, 0, tc.bw)
-			buyAssets, _, ok := c.recursiveSelectStart(tc.assets, tc.bw, start, start.Add(tc.duration), tc.splitCombineCost)
+			buyAssets, _, ok := c.recursiveSelectStart(tc.assets, tc.bw, start, start+tc.duration, tc.splitCombineCost)
 			if tc.expectedResponse == nil {
 				assert.False(t, ok)
 			} else {
@@ -314,8 +313,8 @@ func TestCombine(t *testing.T) {
 				assert.Len(t, buyAssets, len(tc.expectedResponse))
 				for i := range buyAssets {
 					assert.Equal(t, tc.expectedResponse[i].AssetId, buyAssets[i].AssetId)
-					assert.Equal(t, tc.expectedResponse[i].StartsAtExactly.Seconds, buyAssets[i].StartsAtExactly.Seconds)
-					assert.Equal(t, tc.expectedResponse[i].StopsAtExactly.Seconds, buyAssets[i].StopsAtExactly.Seconds)
+					assert.Equal(t, tc.expectedResponse[i].StartsAtExactly, buyAssets[i].StartsAtExactly)
+					assert.Equal(t, tc.expectedResponse[i].StopsAtExactly, buyAssets[i].StopsAtExactly)
 					assert.Equal(t, tc.expectedResponse[i].BandwidthExact, buyAssets[i].BandwidthExact)
 				}
 			}
