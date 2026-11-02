@@ -61,13 +61,17 @@ func (id AssetID) Int64() (int64, error) {
 	return int64(id), nil
 }
 
-type ListedAssetQuery struct {
+type AssetHops struct {
 	// ISD-AS of the asset
 	IA addr.IA
 	// ingress ID of the asset
 	Ingress *uint32
 	// egress ID of the asset
 	Egress *uint32
+}
+
+type ListedAssetQuery struct {
+	Hops []AssetHops
 	// the minimal required bandwidth of the asset
 	MinRequiredBandwidth uint32
 	// starts at in unix seconds
@@ -82,12 +86,7 @@ type ListedAssetQuery struct {
 type OwnedAssetQuery struct {
 	// the account ID of the owner
 	AccountId *int64
-	// ISD-AS of the asset
-	IA *addr.IA
-	// ingress ID of the asset
-	Ingress *uint32
-	// egress ID of the asset
-	Egress *uint32
+	Hops      []AssetHops
 	// the minimal required bandwidth of the asset
 	MinRequiredBandwidth *uint32
 	// starts at in unix seconds

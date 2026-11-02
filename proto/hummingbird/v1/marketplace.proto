@@ -164,24 +164,26 @@ message SearchAssetsRequest {
     ValidityMode validity_mode = 3;
 }
 
-message SearchOwnedAssetsRequest {
-    optional uint64 ia = 1;
+message SearchAssetsHops {
+    uint64 ia = 1;
     optional uint32 if_id_ingress = 2;
     optional uint32 if_id_egress = 3;
-    optional uint32 min_required_bw = 4;
-    optional int64 starts_at_latest = 5;
-    optional int64 stops_at_earliest = 6;
-    optional uint32 price = 7;
+}
+
+message SearchOwnedAssetsRequest {
+    repeated SearchAssetsHops hops = 1;
+    optional uint32 min_required_bw = 2;
+    optional int64 starts_at_latest = 3;
+    optional int64 stops_at_earliest = 4;
+    optional uint32 price = 5;
 }
 
 message SearchListedAssetsRequest {
-    uint64 ia = 2;
-    optional uint32 if_id_ingress = 3;
-    optional uint32 if_id_egress = 4;
-    uint32 min_required_bw = 5;
-    int64 starts_at_latest = 6;
-    int64 stops_at_earliest = 7;
-    optional uint32 price = 8;
+    repeated SearchAssetsHops hops = 1;
+    uint32 min_required_bw = 2;
+    int64 starts_at_latest = 3;
+    int64 stops_at_earliest = 4;
+    optional uint32 price = 5;
 }
 
 message SearchAssetsResponse {

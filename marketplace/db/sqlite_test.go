@@ -87,7 +87,11 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assets, err := backend.SearchListedAssets(ctx, &ListedAssetQuery{
-		IA:           addr.MustParseIA("1-ff00:0:110"),
+		Hops: []AssetHops{
+			{
+				IA: addr.MustParseIA("1-ff00:0:110"),
+			},
+		},
 		StartsAt:     0,
 		StopsAt:      math.MaxInt64,
 		ValidityMode: PartialOverlap,
@@ -108,7 +112,11 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 
 	// Only the asset written by the committed transaction is visible.
 	assets, err = backend.SearchListedAssets(ctx, &ListedAssetQuery{
-		IA:           addr.MustParseIA("1-ff00:0:110"),
+		Hops: []AssetHops{
+			{
+				IA: addr.MustParseIA("1-ff00:0:110"),
+			},
+		},
 		StartsAt:     0,
 		StopsAt:      math.MaxInt64,
 		ValidityMode: PartialOverlap,
@@ -136,7 +144,11 @@ func TestAssetTransitionAndRowScanners(t *testing.T) {
 
 	// Checked-out assets are no longer returned by the available-asset search.
 	assets, err := backend.SearchListedAssets(ctx, &ListedAssetQuery{
-		IA:           addr.MustParseIA("1-ff00:0:110"),
+		Hops: []AssetHops{
+			{
+				IA: addr.MustParseIA("1-ff00:0:110"),
+			},
+		},
 		StartsAt:     0,
 		StopsAt:      math.MaxInt64,
 		ValidityMode: PartialOverlap,
@@ -264,7 +276,11 @@ func TestSearchOwnedAssets(t *testing.T) {
 
 	// Without an account, only the assets nobody owns are listed.
 	assets, err = backend.SearchListedAssets(ctx, &ListedAssetQuery{
-		IA:           addr.MustParseIA("1-ff00:0:110"),
+		Hops: []AssetHops{
+			{
+				IA: addr.MustParseIA("1-ff00:0:110"),
+			},
+		},
 		StartsAt:     0,
 		StopsAt:      math.MaxInt64,
 		ValidityMode: PartialOverlap,

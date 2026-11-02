@@ -978,12 +978,18 @@ func handleSearch(
 		validityMode = hummingbird.ValidityMode_partial_overlap
 	}
 	if owned {
+		hops := []*hummingbird.SearchAssetsHops{}
+		if ia != nil {
+			hops = append(hops, &hummingbird.SearchAssetsHops{
+				Ia:          *ia,
+				IfIdIngress: ingress,
+				IfIdEgress:  egress,
+			})
+		}
 		msg = &hummingbird.SearchAssetsRequest{
 			Request: &hummingbird.SearchAssetsRequest_Owned{
 				Owned: &hummingbird.SearchOwnedAssetsRequest{
-					Ia:              ia,
-					IfIdIngress:     ingress,
-					IfIdEgress:      egress,
+					Hops:            hops,
 					MinRequiredBw:   minReqBw,
 					StartsAtLatest:  startsAtLatestUnix,
 					StopsAtEarliest: stopsAtEarliestUnix,
@@ -993,10 +999,6 @@ func handleSearch(
 			ValidityMode: validityMode,
 		}
 	} else {
-		if ia == nil {
-			fmt.Println("ISD-AS required")
-			return
-		}
 		if startsAtLatestUnix == nil {
 			fmt.Println("start at required")
 			return
@@ -1012,9 +1014,13 @@ func handleSearch(
 		msg = &hummingbird.SearchAssetsRequest{
 			Request: &hummingbird.SearchAssetsRequest_Listed{
 				Listed: &hummingbird.SearchListedAssetsRequest{
-					Ia:              *ia,
-					IfIdIngress:     ingress,
-					IfIdEgress:      egress,
+					Hops: []*hummingbird.SearchAssetsHops{
+						&hummingbird.SearchAssetsHops{
+							Ia:          *ia,
+							IfIdIngress: ingress,
+							IfIdEgress:  egress,
+						},
+					},
 					MinRequiredBw:   *minReqBw,
 					StartsAtLatest:  *startsAtLatestUnix,
 					StopsAtEarliest: *stopsAtEarliestUnix,

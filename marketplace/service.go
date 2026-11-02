@@ -651,10 +651,22 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 	var err error
 	switch t := req.Msg.Request.(type) {
 	case *hummingbird.SearchAssetsRequest_Listed:
+		if len(t.Listed.Hops) == 0 {
+			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("at least one hop filter must be provided"))
+		}
+		if len(t.Listed.Hops) > 64 {
+			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("too many hop filters"))
+		}
+		hopFilter := make([]db.AssetHops, 0, len(t.Listed.Hops))
+		for _, hop := range t.Listed.Hops {
+			hopFilter = append(hopFilter, db.AssetHops{
+				IA:      addr.IA(hop.Ia),
+				Ingress: hop.IfIdIngress,
+				Egress:  hop.IfIdEgress,
+			})
+		}
 		assets, err = s.store.SearchListedAssets(ctx, &db.ListedAssetQuery{
-			IA:                   addr.IA(t.Listed.Ia),
-			Ingress:              t.Listed.IfIdIngress,
-			Egress:               t.Listed.IfIdEgress,
+			Hops:                 hopFilter,
 			MinRequiredBandwidth: t.Listed.MinRequiredBw,
 			Price:                t.Listed.Price,
 			StartsAt:             t.Listed.StartsAtLatest,
@@ -662,11 +674,20 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 			ValidityMode:         db.ValidityMode(req.Msg.ValidityMode),
 		})
 	case *hummingbird.SearchAssetsRequest_Owned:
+		if len(t.Owned.Hops) > 64 {
+			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("too many hop filters"))
+		}
+		hopFilter := make([]db.AssetHops, 0, len(t.Owned.Hops))
+		for _, hop := range t.Owned.Hops {
+			hopFilter = append(hopFilter, db.AssetHops{
+				IA:      addr.IA(hop.Ia),
+				Ingress: hop.IfIdIngress,
+				Egress:  hop.IfIdEgress,
+			})
+		}
 		assets, err = s.store.SearchOwnedAssets(ctx, &db.OwnedAssetQuery{
 			AccountId:            owner_id,
-			IA:                   (*addr.IA)(t.Owned.Ia),
-			Ingress:              t.Owned.IfIdIngress,
-			Egress:               t.Owned.IfIdEgress,
+			Hops:                 hopFilter,
 			MinRequiredBandwidth: t.Owned.MinRequiredBw,
 			Price:                t.Owned.Price,
 			StartsAt:             t.Owned.StartsAtLatest,

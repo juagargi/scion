@@ -791,8 +791,7 @@ func (e *executor) buildSearchListedAssetsPartialOverlapQuery(params *ListedAsse
 	WITH candidates AS (
 		SELECT ` + assetColumnsWithAlias + `
 		FROM Assets a
-		WHERE a.isd_id = ? AND a.as_id = ?
-		AND a.stops_at > ? AND a.starts_at < ?
+		WHERE a.stops_at > ? AND a.starts_at < ?
 		AND a.account_id IS NULL
 		AND a.bandwidth >= ?
 	`}
@@ -829,20 +828,33 @@ func (e *executor) buildSearchListedAssetsPartialOverlapQuery(params *ListedAsse
 	JOIN candidates c ON c.id = i.asset_id
 	GROUP BY i.asset_id, i.island
 	ORDER BY c.isd_id, c.as_id, c.ingress, c.egress, c.id, usable_from`
-	args = append(args, params.IA.ISD(), params.IA.AS(), params.StartsAt, params.StopsAt, params.MinRequiredBandwidth)
+	hopFilter := []string{}
+	hopFilterArgs := []any{}
+	for _, hop := range params.Hops {
+		if hop.Ingress == nil && hop.Egress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ?)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS())
+		} else if hop.Ingress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND a.ingress IS NULL AND a.egress = ?)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Egress)
+		} else if hop.Egress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND a.ingress = ? AND a.egress IS NULL)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Ingress)
+		} else {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND (a.ingress = ? OR a.ingress IS NULL) AND (a.egress = ? OR a.egress IS NULL))")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Ingress, hop.Egress)
+		}
+	}
+	args = append(args, params.StartsAt, params.StopsAt, params.MinRequiredBandwidth)
+	if len(hopFilter) != 0 {
+		where = append(where, fmt.Sprintf("(%s)", strings.Join(hopFilter, "OR")))
+		args = append(args, hopFilterArgs...)
+	}
 	where = append(where, "(a.state = ?)")
 	args = append(args, AssetStateAvailable)
 	if params.Price != nil {
 		where = append(where, "(a.price<=?)")
 		args = append(args, *params.Price)
-	}
-	if params.Ingress != nil {
-		where = append(where, "(a.ingress=?)")
-		args = append(args, *params.Ingress)
-	}
-	if params.Egress != nil {
-		where = append(where, "(a.egress=?)")
-		args = append(args, *params.Egress)
 	}
 	args = append(args, params.StartsAt, params.StopsAt, params.StopsAt, params.StartsAt, params.MinRequiredBandwidth)
 	query := append(queryStart, fmt.Sprintf("AND %s", strings.Join(where, "AND\n")), queryEnd)
@@ -858,8 +870,7 @@ func (e *executor) buildSearchListedAssetsFullOverlapQuery(params *ListedAssetQu
 	FROM Assets a
 	JOIN Asset_Segment g
 	ON g.asset_id = a.id AND g.starts_at < ? AND g.stops_at > ?
-	WHERE a.isd_id = ? AND a.as_id = ?
-	AND a.starts_at <= ? AND a.stops_at >= ?
+	WHERE a.starts_at <= ? AND a.stops_at >= ?
 	AND a.account_id IS NULL
 	AND a.bandwidth >= ?
 	`,
@@ -869,22 +880,35 @@ func (e *executor) buildSearchListedAssetsFullOverlapQuery(params *ListedAssetQu
 	HAVING MIN(g.available) >= ?
 	ORDER BY a.id
 	`
-	args = append(args, params.StopsAt, params.StartsAt, params.IA.ISD(), params.IA.AS(), params.StartsAt,
+	hopFilter := []string{}
+	hopFilterArgs := []any{}
+	for _, hop := range params.Hops {
+		if hop.Ingress == nil && hop.Egress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ?)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS())
+		} else if hop.Ingress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND a.ingress IS NULL AND a.egress = ?)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Egress)
+		} else if hop.Egress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND a.ingress = ? AND a.egress IS NULL)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Ingress)
+		} else {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND (a.ingress = ? OR a.ingress IS NULL) AND (a.egress = ? OR a.egress IS NULL))")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Ingress, hop.Egress)
+		}
+	}
+	args = append(args, params.StopsAt, params.StartsAt, params.StartsAt,
 		params.StopsAt, params.MinRequiredBandwidth)
+	if len(hopFilter) != 0 {
+		where = append(where, fmt.Sprintf("(%s)", strings.Join(hopFilter, "OR")))
+		args = append(args, hopFilterArgs...)
+	}
 
 	where = append(where, "(a.state = ?)")
 	args = append(args, AssetStateAvailable)
 	if params.Price != nil {
 		where = append(where, "(a.price<=?)")
 		args = append(args, *params.Price)
-	}
-	if params.Ingress != nil {
-		where = append(where, "(a.ingress=?)")
-		args = append(args, *params.Ingress)
-	}
-	if params.Egress != nil {
-		where = append(where, "(a.egress=?)")
-		args = append(args, *params.Egress)
 	}
 	args = append(args, params.MinRequiredBandwidth)
 	query := append(queryStart, fmt.Sprintf("AND %s", strings.Join(where, "AND\n")), queryEnd)
@@ -904,9 +928,26 @@ func (e *executor) buildSearchOwnedAssetsPartialOverlapQuery(params *OwnedAssetQ
 		"(current.scope != '' AND owner.id = current.id))")
 	where = append(where, "(a.state = ?)")
 	args = append(args, AssetStateAvailable)
-	if params.IA != nil {
-		where = append(where, "(a.isd_id=?) AND (a.as_id=?)")
-		args = append(args, int64(params.IA.ISD()), int64(params.IA.AS()))
+	hopFilter := []string{}
+	hopFilterArgs := []any{}
+	for _, hop := range params.Hops {
+		if hop.Ingress == nil && hop.Egress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ?)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS())
+		} else if hop.Ingress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND a.ingress IS NULL AND a.egress = ?)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Egress)
+		} else if hop.Egress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND a.ingress = ? AND a.egress IS NULL)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Ingress)
+		} else {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND (a.ingress = ? OR a.ingress IS NULL) AND (a.egress = ? OR a.egress IS NULL))")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Ingress, hop.Egress)
+		}
+	}
+	if len(hopFilter) != 0 {
+		where = append(where, fmt.Sprintf("(%s)", strings.Join(hopFilter, "OR")))
+		args = append(args, hopFilterArgs...)
 	}
 	if params.StartsAt != nil {
 		where = append(where, "(a.starts_at>=?)")
@@ -923,14 +964,6 @@ func (e *executor) buildSearchOwnedAssetsPartialOverlapQuery(params *OwnedAssetQ
 	if params.MinRequiredBandwidth != nil {
 		where = append(where, "(a.bandwidth>=?)")
 		args = append(args, *params.MinRequiredBandwidth)
-	}
-	if params.Ingress != nil {
-		where = append(where, "(a.ingress=?)")
-		args = append(args, *params.Ingress)
-	}
-	if params.Egress != nil {
-		where = append(where, "(a.egress=?)")
-		args = append(args, *params.Egress)
 	}
 	query = append(query, fmt.Sprintf("WHERE %s", strings.Join(where, "AND\n")))
 	return strings.Join(query, "\n"), args
@@ -949,9 +982,26 @@ func (e *executor) buildSearchOwnedAssetsFullOverlapQuery(params *OwnedAssetQuer
 		"(current.scope != '' AND owner.id = current.id))")
 	where = append(where, "(a.state = ?)")
 	args = append(args, AssetStateAvailable)
-	if params.IA != nil {
-		where = append(where, "(a.isd_id=?) AND (a.as_id=?)")
-		args = append(args, int64(params.IA.ISD()), int64(params.IA.AS()))
+	hopFilter := []string{}
+	hopFilterArgs := []any{}
+	for _, hop := range params.Hops {
+		if hop.Ingress == nil && hop.Egress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ?)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS())
+		} else if hop.Ingress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND a.ingress IS NULL AND a.egress = ?)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Egress)
+		} else if hop.Egress == nil {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND a.ingress = ? AND a.egress IS NULL)")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Ingress)
+		} else {
+			hopFilter = append(hopFilter, "(a.isd_id = ? AND a.as_id = ? AND (a.ingress = ? OR a.ingress IS NULL) AND (a.egress = ? OR a.egress IS NULL))")
+			hopFilterArgs = append(hopFilterArgs, hop.IA.ISD(), hop.IA.AS(), hop.Ingress, hop.Egress)
+		}
+	}
+	if len(hopFilter) != 0 {
+		where = append(where, fmt.Sprintf("(%s)", strings.Join(hopFilter, "OR")))
+		args = append(args, hopFilterArgs...)
 	}
 	if params.StartsAt != nil {
 		where = append(where, "(a.starts_at<=?)")
@@ -968,14 +1018,6 @@ func (e *executor) buildSearchOwnedAssetsFullOverlapQuery(params *OwnedAssetQuer
 	if params.MinRequiredBandwidth != nil {
 		where = append(where, "(a.bandwidth>=?)")
 		args = append(args, *params.MinRequiredBandwidth)
-	}
-	if params.Ingress != nil {
-		where = append(where, "(a.ingress=?)")
-		args = append(args, *params.Ingress)
-	}
-	if params.Egress != nil {
-		where = append(where, "(a.egress=?)")
-		args = append(args, *params.Egress)
 	}
 	query = append(query, fmt.Sprintf("WHERE %s", strings.Join(where, "AND\n")))
 	return strings.Join(query, "\n"), args
