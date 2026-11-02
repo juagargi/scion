@@ -45,6 +45,10 @@ type ClientOptions struct {
 	Querier  snet.PathQuerier
 	Topology snet.Topology
 	Insecure bool
+	// KeepAlive, if positive, is the period of the QUIC keep-alive packets of a SCION
+	// connection, which keep it open while idle. It must be shorter than the idle timeout of
+	// the marketplace.
+	KeepAlive time.Duration
 }
 
 // Client contains all marketplace API clients backed by one shared transport.
@@ -272,6 +276,7 @@ func newSCIONHTTPClient(
 		},
 		QUICConfig: &quic.Config{
 			InitialPacketSize: 1200, // Default is 1280, but with SCION we have less payload.
+			KeepAlivePeriod:   options.KeepAlive,
 		},
 	}).NewDialer(remote)
 	roundTripper := &http3.Transport{Dial: dialer.DialEarly}

@@ -9,6 +9,7 @@ go_library(
         "metadata.go",
         "oneshot.go",
         "pricing.go",
+        "reserver.go",
         "transport.go",
     ],
     importpath = "github.com/scionproto/scion/pkg/hummingbird/marketplace",
@@ -40,6 +41,7 @@ go_test(
         "metadata_test.go",
         "oneshot_test.go",
         "pricing_test.go",
+        "reserver_test.go",
     ],
     embed = [":go_default_library"],
     deps = [

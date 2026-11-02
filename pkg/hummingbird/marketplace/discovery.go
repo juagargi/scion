@@ -241,13 +241,7 @@ func (m *PathMarketplaces) Connect(
 	topo snet.Topology,
 	insecure bool,
 ) error {
-	advertised := make([]NoteEntry, 0, len(m.clients))
-	for entry := range m.clients {
-		if entry.APIAddress == apiAddress {
-			advertised = append(advertised, entry)
-		}
-	}
-	if len(advertised) == 0 {
+	if len(m.entriesOf(apiAddress)) == 0 {
 		return serrors.New("no AS of the path advertises this marketplace",
 			"api_address", apiAddress)
 	}
@@ -256,10 +250,33 @@ func (m *PathMarketplaces) Connect(
 	if err != nil {
 		return serrors.Wrap("connecting to marketplace", err, "api_address", apiAddress)
 	}
+	return m.attach(apiAddress, client)
+}
+
+// attach makes client the one talking to the marketplace advertised at apiAddress, for all the
+// entries with that address. Close still closes it; callers that own the client themselves and
+// want to keep it open must not call Close.
+func (m *PathMarketplaces) attach(apiAddress string, client *Client) error {
+	advertised := m.entriesOf(apiAddress)
+	if len(advertised) == 0 {
+		return serrors.New("no AS of the path advertises this marketplace",
+			"api_address", apiAddress)
+	}
 	for _, entry := range advertised {
 		m.clients[entry] = client
 	}
 	return nil
+}
+
+// entriesOf returns the marketplace entries advertised at apiAddress.
+func (m *PathMarketplaces) entriesOf(apiAddress string) []NoteEntry {
+	var entries []NoteEntry
+	for entry := range m.clients {
+		if entry.APIAddress == apiAddress {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 // ConnectAll dials every marketplace of jwts, which maps the API address of a marketplace to
