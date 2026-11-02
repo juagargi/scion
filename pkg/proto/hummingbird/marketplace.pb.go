@@ -1345,6 +1345,7 @@ func (x *SearchAssetsRequest) GetMaxReturnedAssets() uint32 {
 type SearchAssetsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Assets        []*SearchAsset         `protobuf:"bytes,1,rep,name=assets,proto3" json:"assets,omitempty"`
+	HasMore       bool                   `protobuf:"varint,2,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1384,6 +1385,13 @@ func (x *SearchAssetsResponse) GetAssets() []*SearchAsset {
 		return x.Assets
 	}
 	return nil
+}
+
+func (x *SearchAssetsResponse) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
 }
 
 type SearchAsset struct {
@@ -2286,9 +2294,10 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x11_starts_at_latestB\x14\n" +
 	"\x12_stops_at_earliestB\b\n" +
 	"\x06_priceB\x16\n" +
-	"\x14_max_returned_assets\"Q\n" +
+	"\x14_max_returned_assets\"l\n" +
 	"\x14SearchAssetsResponse\x129\n" +
-	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.SearchAssetR\x06assets\"\x9c\x04\n" +
+	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.SearchAssetR\x06assets\x12\x19\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"\x9c\x04\n" +
 	"\vSearchAsset\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\fR\aassetId\x12\x0e\n" +
 	"\x02ia\x18\x02 \x01(\x04R\x02ia\x12'\n" +

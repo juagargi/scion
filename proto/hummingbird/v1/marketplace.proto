@@ -162,6 +162,9 @@ message SearchAssetsRequest {
 
 message SearchAssetsResponse {
     repeated SearchAsset assets = 1;
+    // Whether the page after this one contains more assets. A client that gets false
+    // already has all results and must not request another page.
+    bool has_more = 2;
 }
 message SearchAsset {
     bytes asset_id = 1;

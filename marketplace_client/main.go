@@ -1008,6 +1008,9 @@ func handleSearch(
 			return
 		}
 		fmt.Println(string(j))
+		if !rep.Msg.HasMore {
+			return
+		}
 		prompt := "More assets? [yes, no]: "
 		if !readConfirm(reader, &prompt) {
 			return

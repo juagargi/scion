@@ -74,7 +74,7 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 		return err
 	})
 	require.NoError(t, err)
-	assets, err := backend.Search(ctx, &AssetQuery{PageSize: 64})
+	assets, _, err := backend.Search(ctx, &AssetQuery{PageSize: 64})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 
@@ -90,7 +90,7 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 	require.ErrorIs(t, err, rollbackErr)
 
 	// Only the asset written by the committed transaction is visible.
-	assets, err = backend.Search(ctx, &AssetQuery{PageSize: 64})
+	assets, _, err = backend.Search(ctx, &AssetQuery{PageSize: 64})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 }
@@ -113,7 +113,7 @@ func TestAssetTransitionAndRowScanners(t *testing.T) {
 	require.False(t, transitioned.AccountId.Valid)
 
 	// Checked-out assets are no longer returned by the available-asset search.
-	assets, err := backend.Search(ctx, &AssetQuery{PageSize: 64})
+	assets, _, err := backend.Search(ctx, &AssetQuery{PageSize: 64})
 	require.NoError(t, err)
 	require.Empty(t, assets)
 
@@ -208,7 +208,7 @@ func TestSearchOwnedAssets(t *testing.T) {
 	_, err = backend.InsertAsset(ctx, otherAsset)
 	require.NoError(t, err)
 
-	assets, err := backend.Search(ctx, &AssetQuery{AccountId: &alicesAccountID, PageSize: 64})
+	assets, _, err := backend.Search(ctx, &AssetQuery{AccountId: &alicesAccountID, PageSize: 64})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 	require.Equal(t, ownedID, assets[0].ID)
@@ -216,7 +216,7 @@ func TestSearchOwnedAssets(t *testing.T) {
 	// The validity filters still apply to the assets of the account.
 	startsAt := owned.StartAt.UTC().Format(time.RFC3339)
 	stopsAt := owned.StopsAt.UTC().Format(time.RFC3339)
-	assets, err = backend.Search(ctx, &AssetQuery{
+	assets, _, err = backend.Search(ctx, &AssetQuery{
 		AccountId: &alicesAccountID,
 		StartsAt:  &startsAt,
 		StopsAt:   &stopsAt,
@@ -226,7 +226,7 @@ func TestSearchOwnedAssets(t *testing.T) {
 	require.Len(t, assets, 1)
 
 	tooLate := owned.StopsAt.Add(time.Hour).UTC().Format(time.RFC3339)
-	assets, err = backend.Search(ctx, &AssetQuery{
+	assets, _, err = backend.Search(ctx, &AssetQuery{
 		AccountId: &alicesAccountID,
 		StartsAt:  &startsAt,
 		StopsAt:   &tooLate,
@@ -236,7 +236,7 @@ func TestSearchOwnedAssets(t *testing.T) {
 	require.Empty(t, assets, "an asset that stops too early must not be returned")
 
 	// Without an account, only the assets nobody owns are listed.
-	assets, err = backend.Search(ctx, &AssetQuery{PageSize: 64})
+	assets, _, err = backend.Search(ctx, &AssetQuery{PageSize: 64})
 	require.NoError(t, err)
 	require.Len(t, assets, 1)
 	require.Equal(t, notOwnedAssetID, assets[0].ID)
@@ -345,4 +345,49 @@ func TestRegisterAssetEvent(t *testing.T) {
 	require.Equal(t, buyAsset.Price, uint32(buyStats[0].Price))
 	require.Equal(t, buyAsset.StartAt, buyStats[0].StartsAt)
 	require.Equal(t, buyAsset.StopsAt, buyStats[0].StopsAt)
+}
+
+// TestSearchReportsNextPage verifies that a page holds at most PageSize assets,
+// that the flag tells whether a next page exists, and that an asset is on exactly one page.
+func TestSearchReportsNextPage(t *testing.T) {
+	ctx := context.Background()
+	backend := newTestBackend(t)
+	for i := 0; i < 5; i++ {
+		_, err := backend.InsertAsset(ctx, testAsset())
+		require.NoError(t, err)
+	}
+
+	testCases := map[string]struct {
+		pageSize uint32
+		// the number of assets on every page, in order
+		pages []int
+	}{
+		"the last page is partial":   {pageSize: 2, pages: []int{2, 2, 1}},
+		"the last page is full":      {pageSize: 5, pages: []int{5}},
+		"pages of one asset":         {pageSize: 1, pages: []int{1, 1, 1, 1, 1}},
+		"a page larger than the set": {pageSize: 64, pages: []int{5}},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			seen := map[int64]bool{}
+			for page, want := range tc.pages {
+				assets, hasMore, err := backend.Search(ctx,
+					&AssetQuery{PageSize: tc.pageSize, Page: uint32(page)})
+				require.NoError(t, err)
+				require.Len(t, assets, want, "page %d", page)
+				require.Equal(t, page < len(tc.pages)-1, hasMore, "page %d", page)
+				for _, a := range assets {
+					require.False(t, seen[a.ID], "asset %d repeated on page %d", a.ID, page)
+					seen[a.ID] = true
+				}
+			}
+			require.Len(t, seen, 5)
+		})
+	}
+
+	// Past the last page there is nothing, and nothing follows.
+	assets, hasMore, err := backend.Search(ctx, &AssetQuery{PageSize: 2, Page: 3})
+	require.NoError(t, err)
+	require.Empty(t, assets)
+	require.False(t, hasMore)
 }

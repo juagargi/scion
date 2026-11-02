@@ -73,7 +73,7 @@ func NewStorage(
 func (s *MarketplaceStorage) Search(
 	ctx context.Context,
 	params *marketplacedb.AssetQuery,
-) ([]*marketplacedb.DBAsset, error) {
+) ([]*marketplacedb.DBAsset, bool, error) {
 	return s.db.Search(ctx, params)
 }
 
