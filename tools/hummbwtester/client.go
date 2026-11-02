@@ -142,6 +142,10 @@ type client struct {
 
 	rateMu sync.Mutex
 	rate   *RateTracker
+
+	// reserver keeps the connection to the marketplace open across the renewals.
+	// It is nil unless the reservations are bought from a marketplace.
+	reserver *marketclient.Reserver
 }
 
 func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int {
@@ -153,6 +157,18 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 		rate:       NewRateTracker(time.Now()),
 	}
 	c.metrics.remoteStatsAge.Set(-1)
+	if cfg.hummEnabled && cfg.hummKeysDir == "" {
+		c.reserver = marketclient.NewReserver(
+			cfg.marketplaceJWT,
+			daemon.Querier{Connector: cfg.sdConn, IA: sn.Topology.LocalIA},
+			sn.Topology,
+			marketplaceInsecure)
+		defer func() {
+			if err := c.reserver.Close(); err != nil {
+				log.Error("Closing the marketplace connection", "err", err)
+			}
+		}()
+	}
 
 	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA, cfg.sequence)
 	if err != nil {
@@ -354,17 +370,12 @@ func (c *client) buildReservationWithMarketplace(
 ) (*snetpath.Reservation, error) {
 	startsAt := startTime.Truncate(time.Second)
 	stopsAt := startsAt.Add(time.Duration(c.cfg.humm.Duration) * time.Second)
-	querier := daemon.Querier{Connector: c.cfg.sdConn, IA: c.sn.Topology.LocalIA}
 	baseHops := snetpath.InterfacesToBaseHops(path.Metadata().Interfaces)
 	selected := c.cfg.partial.MarketSelection(baseHops)
 	c.logSelection(baseHops, selected)
-	return marketclient.OneShotReservation(
+	return c.reserver.Reserve(
 		ctx,
 		path,
-		c.cfg.marketplaceJWT,
-		querier,
-		c.sn.Topology,
-		marketplaceInsecure,
 		marketclient.ReservationRequest{
 			BwInKbps:        c.cfg.humm.Bw,
 			ReverseBwInKbps: c.cfg.humm.ReverseBw,

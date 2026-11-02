@@ -356,7 +356,7 @@ func (c *Client) recursiveSelect(
 
 func (c *Client) searchAllAssets(ctx context.Context, owned bool, ia *uint64, ingress *uint32, egress *uint32,
 	minBW uint32, startsAtLatest time.Time, stopsAtLatest time.Time) ([]*hummingbird.SearchAsset, error) {
-	// TODO: this is a temporary fix for pagination. We just fetch all pages
+	// Fetch all pages, until the marketplace reports that no page follows.
 	// To properly implement pagination, especially for the combine assets case, the recursive select algorithm would have to be changed.
 	var assets []*hummingbird.SearchAsset
 	for i := uint32(0); ; i++ {
@@ -375,50 +375,117 @@ func (c *Client) searchAllAssets(ctx context.Context, owned bool, ia *uint64, in
 		if err != nil {
 			return nil, err
 		}
-		if len(resp.Msg.Assets) == 0 {
+		assets = append(assets, resp.Msg.Assets...)
+		if !resp.Msg.HasMore {
 			break
-		}
-		for _, asset := range resp.Msg.Assets {
-			assets = append(assets, asset)
 		}
 	}
 	return assets, nil
 }
 
-// checkoutAssetForInterfacePairWithCombine tries to find assets that can be combined on the time axis. It does not check for combinations on the bandwidth axis.
-func (c *Client) checkoutAssetForInterfacePairWithCombine(ctx context.Context, pair InterfacePair, bwInKbps uint32,
+// pairSearch holds the search results for one interface pair: assets that cover only the
+// ingress interface, only the egress interface, and the interface pair.
+type pairSearch struct {
+	ingress []*hummingbird.SearchAsset
+	egress  []*hummingbird.SearchAsset
+	pair    []*hummingbird.SearchAsset
+	err     error
+}
+
+// searchForPair issues the three searches needed to select assets for one interface pair
+// concurrently. With combine, the time bounds are swapped so that assets which merely touch the
+// time window are returned, to be combined later.
+func (c *Client) searchForPair(
+	ctx context.Context,
+	pair InterfacePair,
+	bwInKbps uint32,
+	startsAt time.Time,
+	stopsAt time.Time,
+	combine bool,
+) pairSearch {
+	if combine {
+		startsAt, stopsAt = stopsAt, startsAt
+	}
+	var ingress, egress, both []*hummingbird.SearchAsset
+	var ingressErr, egressErr, bothErr error
+	wg := sync.WaitGroup{}
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		ingress, ingressErr = c.searchAllAssets(
+			ctx, false, &pair.IA, &pair.Ingress, nil, bwInKbps, startsAt, stopsAt)
+	}()
+	go func() {
+		defer wg.Done()
+		egress, egressErr = c.searchAllAssets(
+			ctx, false, &pair.IA, nil, &pair.Egress, bwInKbps, startsAt, stopsAt)
+	}()
+	go func() {
+		defer wg.Done()
+		both, bothErr = c.searchAllAssets(
+			ctx, false, &pair.IA, &pair.Ingress, &pair.Egress, bwInKbps, startsAt, stopsAt)
+	}()
+	wg.Wait()
+	for _, err := range []error{ingressErr, egressErr, bothErr} {
+		if err != nil {
+			return pairSearch{err: err}
+		}
+	}
+	return pairSearch{
+		ingress: filter(ingress, func(a *hummingbird.SearchAsset) bool {
+			return a.IfIdEgress == nil
+		}),
+		egress: filter(egress, func(a *hummingbird.SearchAsset) bool {
+			return a.IfIdIngress == nil
+		}),
+		pair: both,
+	}
+}
+
+// searchForPairs runs searchForPair concurrently for the pairs at the given indices.
+// The result has one entry per pair, only those at the given indices are filled.
+func (c *Client) searchForPairs(
+	ctx context.Context,
+	pairs []InterfacePair,
+	indices []int,
+	bwInKbps uint32,
+	startsAt time.Time,
+	stopsAt time.Time,
+	combine bool,
+) []pairSearch {
+	results := make([]pairSearch, len(pairs))
+	wg := sync.WaitGroup{}
+	wg.Add(len(indices))
+	for _, i := range indices {
+		go func(i int) {
+			defer wg.Done()
+			results[i] = c.searchForPair(ctx, pairs[i], bwInKbps, startsAt, stopsAt, combine)
+		}(i)
+	}
+	wg.Wait()
+	return results
+}
+
+// selectAssetsWithCombine selects assets that can be combined on the time axis from the search
+// results. It does not check for combinations on the bandwidth axis.
+func (c *Client) selectAssetsWithCombine(search pairSearch, bwInKbps uint32,
 	startsAt time.Time, stopsAt time.Time, combineCost uint64) ([]*hummingbird.BuyAsset, error) {
 
 	ingressAndEgressSuccess := false
 	var ingressBuyAssets, egressBuyAssets, pairBuyAssets []*hummingbird.BuyAsset
 	var ingressAssetPrice, egressAssetPrice, pairAssetPrice uint64
 	var ok bool
-	ingressAssetsResponse, err := c.searchAllAssets(ctx, false, &pair.IA, &pair.Ingress, nil, bwInKbps, stopsAt, startsAt)
-	if err != nil {
-		return nil, err
-	}
-	ingressSearchAssets := filter(ingressAssetsResponse, func(a *hummingbird.SearchAsset) bool {
-		return a.IfIdEgress == nil
-	})
-	ingressBuyAssets, ingressAssetPrice, ok = c.recursiveSelectStart(ingressSearchAssets, bwInKbps, startsAt, stopsAt, combineCost)
+	ingressBuyAssets, ingressAssetPrice, ok =
+		c.recursiveSelectStart(search.ingress, bwInKbps, startsAt, stopsAt, combineCost)
 	if ok {
-		egressAssetsResponse, err := c.searchAllAssets(ctx, false, &pair.IA, nil, &pair.Egress, bwInKbps, stopsAt, startsAt)
-		if err != nil {
-			return nil, err
-		}
-		egressSearchAssets := filter(egressAssetsResponse, func(a *hummingbird.SearchAsset) bool {
-			return a.IfIdIngress == nil
-		})
-		egressBuyAssets, egressAssetPrice, ok = c.recursiveSelectStart(egressSearchAssets, bwInKbps, startsAt, stopsAt, combineCost)
+		egressBuyAssets, egressAssetPrice, ok =
+			c.recursiveSelectStart(search.egress, bwInKbps, startsAt, stopsAt, combineCost)
 		if ok {
 			ingressAndEgressSuccess = true
 		}
 	}
-	pairAssetsResponse, err := c.searchAllAssets(ctx, false, &pair.IA, &pair.Ingress, &pair.Egress, bwInKbps, stopsAt, startsAt)
-	if err != nil {
-		return nil, err
-	}
-	pairBuyAssets, pairAssetPrice, ok = c.recursiveSelectStart(pairAssetsResponse, bwInKbps, startsAt, stopsAt, combineCost)
+	pairBuyAssets, pairAssetPrice, ok =
+		c.recursiveSelectStart(search.pair, bwInKbps, startsAt, stopsAt, combineCost)
 	if ok {
 		if ingressAndEgressSuccess {
 			if ingressAssetPrice+egressAssetPrice < pairAssetPrice {
@@ -437,40 +504,22 @@ func (c *Client) checkoutAssetForInterfacePairWithCombine(ctx context.Context, p
 	}
 }
 
-// checkoutAssetForInterfacePair searches on the marketplace for assets that match
-// the interface pair. It searches for ingress, egress and interface-pair assets.
+// selectAssets selects, from the search results for an interface pair, the assets to buy.
+// The assets are the ingress, egress and interface-pair assets found by the searches.
 // It ensures that the selected assets when bought should be redeemable without
 // further splits or combines necessary.
 // The function does not combine assets. If no single (ingress-asset, egress-asset) tuple
 // or interface-pair asset can satisfy the request, no buy order is returned.
-func (c *Client) checkoutAssetForInterfacePair(
-	ctx context.Context,
+func selectAssets(
 	pair InterfacePair,
+	search pairSearch,
 	bwInKbps uint32,
 	startsAt time.Time,
 	stopsAt time.Time,
 ) ([]*hummingbird.BuyAsset, error) {
-	var ingressSearchAssets, egressSearchAssets, pairSearchAssets []*hummingbird.SearchAsset
-	ingressAssetsResponse, err := c.searchAllAssets(ctx, false, &pair.IA, &pair.Ingress, nil, bwInKbps, startsAt, stopsAt)
-	if err != nil {
-		return nil, err
-	}
-	ingressSearchAssets = filter(ingressAssetsResponse, func(a *hummingbird.SearchAsset) bool {
-		return a.IfIdEgress == nil
-	})
-	if len(ingressSearchAssets) != 0 {
-		egressAssetsResponse, err := c.searchAllAssets(ctx, false, &pair.IA, nil, &pair.Ingress, bwInKbps, startsAt, stopsAt)
-		if err != nil {
-			return nil, err
-		}
-		egressSearchAssets = filter(egressAssetsResponse, func(a *hummingbird.SearchAsset) bool {
-			return a.IfIdIngress == nil
-		})
-	}
-	pairSearchAssets, err = c.searchAllAssets(ctx, false, &pair.IA, &pair.Ingress, &pair.Egress, bwInKbps, startsAt, stopsAt)
-	if err != nil {
-		return nil, err
-	}
+	ingressSearchAssets := search.ingress
+	egressSearchAssets := search.egress
+	pairSearchAssets := search.pair
 
 	duration := stopsAt.Sub(startsAt)
 	actualPrice := func(a *hummingbird.SearchAsset) uint64 {
@@ -560,52 +609,100 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 	combineAssets bool,
 	num_retries int,
 ) ([]*snetpath.Hop, error) {
-	infoRep, err := c.Marketplace.Info(ctx, &connect.Request[hummingbird.MarketplaceInfoRequest]{})
-	if err != nil {
-		return nil, err
-	}
-	combineCost := uint64(infoRep.Msg.SplitCombineFeeAbsolute)
 	startsAt = startsAt.Truncate(time.Second)
 	stopsAt = stopsAt.Truncate(time.Second)
+	begin := time.Now()
+	var fetchTook, searchTook time.Duration
+
+	// Info, FetchReservations and the searches for every interface pair do not depend on each
+	// other, so they all run at the same time. The searches for pairs that turn out to be
+	// reserved already are discarded.
+	var combineCost uint64
+	var infoErr, fetchErr error
 	hops := make([]*snetpath.Hop, len(pairs))
-	if fetchReservations {
-		hops, err = c.findExistingReservations(ctx, pairs, bwInKbps, startsAt, stopsAt)
-		if err != nil {
-			return nil, err
-		}
+	allPairs := make([]int, len(pairs))
+	for i := range pairs {
+		allPairs[i] = i
 	}
+	var searches []pairSearch
+	wg := sync.WaitGroup{}
+	if combineAssets {
+		// The fee is only needed to price the combination of assets.
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			infoRep, err := c.Marketplace.Info(ctx, &connect.Request[hummingbird.MarketplaceInfoRequest]{})
+			if err != nil {
+				infoErr = err
+				return
+			}
+			combineCost = uint64(infoRep.Msg.SplitCombineFeeAbsolute)
+		}()
+	}
+	if fetchReservations {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hops, fetchErr = c.findExistingReservations(ctx, pairs, bwInKbps, startsAt, stopsAt)
+			fetchTook = time.Since(begin)
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		searches = c.searchForPairs(ctx, pairs, allPairs, bwInKbps, startsAt, stopsAt, combineAssets)
+		searchTook = time.Since(begin)
+	}()
+	wg.Wait()
+	lookupDone := time.Now()
+	if infoErr != nil {
+		return nil, infoErr
+	}
+	if fetchErr != nil {
+		return nil, fetchErr
+	}
+
 	var orders = []*hummingbird.BuyAsset{}
 	iaAssets := map[uint64][]assetInfo{}
 	var boughtAssets []*hummingbird.BoughtAsset
 	success := false
+	var lastErr error
 	for retry := -1; retry < num_retries; retry++ {
+		if retry >= 0 {
+			// The purchase failed, so the offers might have changed. Search again, but only
+			// for the pairs that still need assets.
+			var missing []int
+			for i := range pairs {
+				if hops[i] == nil {
+					missing = append(missing, i)
+				}
+			}
+			searches = c.searchForPairs(
+				ctx, pairs, missing, bwInKbps, startsAt, stopsAt, combineAssets)
+		}
 		orders = []*hummingbird.BuyAsset{}
 		for i, pair := range pairs {
 			if hops[i] != nil {
 				continue
 			}
-			if combineAssets {
-				o, err := c.checkoutAssetForInterfacePairWithCombine(
-					ctx, pair, bwInKbps, startsAt, stopsAt, combineCost)
-				if err != nil {
-					if buyMode == FailOnError {
-						return nil, err
-					} else if buyMode == ContinueOnError {
-						continue
-					}
+			var o []*hummingbird.BuyAsset
+			err := searches[i].err
+			if err == nil {
+				if combineAssets {
+					o, err = c.selectAssetsWithCombine(
+						searches[i], bwInKbps, startsAt, stopsAt, combineCost)
+				} else {
+					o, err = selectAssets(pair, searches[i], bwInKbps, startsAt, stopsAt)
 				}
-				orders = append(orders, o...)
-			} else {
-				o, err := c.checkoutAssetForInterfacePair(ctx, pair, bwInKbps, startsAt, stopsAt)
-				if err != nil {
-					if buyMode == FailOnError {
-						return nil, err
-					} else if buyMode == ContinueOnError {
-						continue
-					}
-				}
-				orders = append(orders, o...)
 			}
+			if err != nil {
+				if buyMode == FailOnError {
+					return nil, err
+				} else if buyMode == ContinueOnError {
+					continue
+				}
+			}
+			orders = append(orders, o...)
 		}
 		if len(orders) == 0 {
 			log.FromCtx(ctx).Debug("Skip purchase since no assets are selected for purchasing")
@@ -620,6 +717,7 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 				})
 			if err != nil {
 				log.FromCtx(ctx).Debug("Error buying asset", "err", err)
+				lastErr = err
 				continue
 			}
 			boughtAssets = boughtAssetsResponse.Msg.Assets
@@ -628,19 +726,20 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 		break
 	}
 	if !success {
-		return nil, err
+		return nil, lastErr
 	}
 	// Look up the assets that were just bought, to learn where and when they apply.
 	// If combineAssets == True, we need to find assets that "touch" the time window.
 	// If not, we need to find assets which each one of them covers the time window.
+	buyDone := time.Now()
 	var foundAssets []*hummingbird.SearchAsset
-	if combineAssets {
-		foundAssets, err = c.searchAllAssets(ctx, true, nil, nil, nil, bwInKbps, stopsAt, startsAt)
-		if err != nil {
-			return nil, err
+	if len(boughtAssets) != 0 {
+		var err error
+		if combineAssets {
+			foundAssets, err = c.searchAllAssets(ctx, true, nil, nil, nil, bwInKbps, stopsAt, startsAt)
+		} else {
+			foundAssets, err = c.searchAllAssets(ctx, true, nil, nil, nil, bwInKbps, startsAt, stopsAt)
 		}
-	} else {
-		foundAssets, err = c.searchAllAssets(ctx, true, nil, nil, nil, bwInKbps, startsAt, stopsAt)
 		if err != nil {
 			return nil, err
 		}
@@ -770,6 +869,7 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 			}
 		}
 	}
+	ownedDone := time.Now()
 	redeemedHops, err := c.redeemHopsConcurrently(ctx, pairs, iaAssets, startsAt, stopsAt)
 	if err != nil {
 		return nil, err
@@ -779,6 +879,12 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 			redeemedHops[i] = hops[i]
 		}
 	}
+	redeemDone := time.Now()
+	log.FromCtx(ctx).Debug("marketplace stage timings", "pairs", len(pairs),
+		"fetch", fetchTook, "search", searchTook,
+		"1_lookups", lookupDone.Sub(begin), "2_buy", buyDone.Sub(lookupDone),
+		"3_owned_search", ownedDone.Sub(buyDone), "4_redeem", redeemDone.Sub(ownedDone),
+		"total", redeemDone.Sub(begin))
 	return redeemedHops, nil
 }
 

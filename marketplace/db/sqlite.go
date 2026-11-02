@@ -33,7 +33,8 @@ import (
 type Repository interface {
 	InsertAsset(ctx context.Context, a *DBAsset) (int64, error)
 	InsertReservation(ctx context.Context, r *DBReservation) (int64, error)
-	Search(ctx context.Context, params *AssetQuery) ([]*DBAsset, error)
+	// Search returns one page of assets, and whether a next page exists.
+	Search(ctx context.Context, params *AssetQuery) ([]*DBAsset, bool, error)
 	FetchReservations(ctx context.Context, params *ReservationQuery) ([]*DBReservation, error)
 	GetUser(ctx context.Context, id int64) (*DBUser, error)
 	GetUserByName(ctx context.Context, name string) (*DBUser, error)
@@ -641,25 +642,29 @@ func (e *executor) RegisterAssetEvent(ctx context.Context, a *DBAsset, eventType
 	return res.LastInsertId()
 }
 
-func (e *executor) Search(ctx context.Context, params *AssetQuery) ([]*DBAsset, error) {
+func (e *executor) Search(ctx context.Context, params *AssetQuery) ([]*DBAsset, bool, error) {
 	if e.read == nil {
-		return nil, serrors.New("No database open")
+		return nil, false, serrors.New("No database open")
 	}
 	stmt, args := e.buildSearchQuery(params)
 	rows, err := e.read.QueryContext(ctx, stmt, args...)
 	if err != nil {
-		return nil, serrors.New("Error looking up assets", "err", err, "q", stmt)
+		return nil, false, serrors.New("Error looking up assets", "err", err, "q", stmt)
 	}
 	defer rows.Close()
 	var res []*DBAsset
 	for rows.Next() {
 		a, err := scanAsset(rows)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		res = append(res, a)
 	}
-	return res, nil
+	// The query asks for one asset past the page, only to learn whether a next page exists.
+	if uint64(len(res)) > uint64(params.PageSize) {
+		return res[:params.PageSize], true, nil
+	}
+	return res, false, nil
 }
 
 func (e *executor) buildSearchQuery(params *AssetQuery) (string, []any) {
@@ -712,7 +717,8 @@ func (e *executor) buildSearchQuery(params *AssetQuery) (string, []any) {
 	query = append(query, fmt.Sprintf("WHERE %s", strings.Join(where, "AND\n")))
 	query = append(query, "ORDER BY LENGTH(a.id) ASC, a.id ASC")
 	query = append(query, "LIMIT ? OFFSET ?")
-	args = append(args, params.PageSize, params.Page*params.PageSize)
+	// One asset more than the page, to tell whether a next page exists.
+	args = append(args, uint64(params.PageSize)+1, params.Page*params.PageSize)
 	return strings.Join(query, "\n"), args
 }
 

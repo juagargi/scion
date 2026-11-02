@@ -716,7 +716,7 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 		pageSize = min(pageSize, *req.Msg.MaxReturnedAssets)
 	}
 
-	assets, err := s.store.Search(ctx, &db.AssetQuery{
+	assets, hasMore, err := s.store.Search(ctx, &db.AssetQuery{
 		AccountId:            owner_id,
 		IA:                   ia,
 		Ingress:              req.Msg.IfIdIngress,
@@ -758,7 +758,8 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 	}
 	return &connect.Response[hummingbird.SearchAssetsResponse]{
 		Msg: &hummingbird.SearchAssetsResponse{
-			Assets: repAssets,
+			Assets:  repAssets,
+			HasMore: hasMore,
 		},
 	}, nil
 }

@@ -512,7 +512,7 @@ func (h *Handler) assetsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	assets, err := h.store.Search(r.Context(), &db.AssetQuery{
+	assets, _, err := h.store.Search(r.Context(), &db.AssetQuery{
 		AccountId: &filterAccount.ID,
 		Page:      0,
 		PageSize:  1024, //TODO: add pagination also for GUI website

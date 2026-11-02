@@ -15,9 +15,13 @@
 package marketplace
 
 import (
+	"context"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/scionproto/scion/marketplace/db"
+	"github.com/scionproto/scion/marketplace/storage"
+	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 )
 
@@ -52,6 +56,29 @@ func (h *RedemptionServerHandler) PendingLen() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.pending)
+}
+
+// NewSearchService returns a service that can only answer asset searches,
+// with pages of at most maxReturnedAssets assets.
+func NewSearchService(store *storage.MarketplaceStorage, maxReturnedAssets uint32) *Service {
+	return &Service{
+		info:  &MarketplaceInfo{MaxReturnedAssets: maxReturnedAssets},
+		store: store,
+	}
+}
+
+// SearchAssetsAs runs a search the way the authentication interceptor would hand it to the
+// service, for the AS with the given ISD-AS.
+func (s *Service) SearchAssetsAs(
+	ia addr.IA,
+	req *hummingbird.SearchAssetsRequest,
+) (*hummingbird.SearchAssetsResponse, error) {
+	rep, err := s.SearchAssets(context.WithValue(context.Background(), "user", ia),
+		connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return rep.Msg, nil
 }
 
 // StatisticsWindow exposes the rounding of a requested statistics window.
