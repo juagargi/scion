@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/scionproto/scion/pkg/private/serrors"
@@ -286,6 +287,7 @@ func (m *PathMarketplaces) ConnectAll(
 // The reverse slice is aligned with the reversed m.Hops (entry j belongs to
 // m.Hops[len(m.Hops)-1-j]), so it mirrors the forward selection exactly.
 // The caller expands both to the full path length when only a subset of the path was selected.
+// The forward and the reverse reservations are bought concurrently.
 // The remaining arguments are the ones of ObtainReservationsForInterfacePairs,
 // which does the real acquisition once the ASes have been grouped by the marketplace.
 func (m *PathMarketplaces) AcquireReservations(
@@ -305,12 +307,12 @@ func (m *PathMarketplaces) AcquireReservations(
 		return nil, nil, err
 	}
 	pairs := interfacePairsFromBaseHops(m.Hops)
-	forward, err = buyPerMarketplace(ctx, pairs, clients, bwInKbps, startsAt, stopsAt,
-		maxPrice, buyMode, fetchReservations, combineAssets, numRetries)
-	if err != nil {
-		return nil, nil, err
-	}
 	if reverseBwInKbps == 0 {
+		forward, err = buyPerMarketplace(ctx, pairs, clients, bwInKbps, startsAt, stopsAt,
+			maxPrice, buyMode, fetchReservations, combineAssets, numRetries)
+		if err != nil {
+			return nil, nil, err
+		}
 		return forward, nil, nil
 	}
 	// The reverse direction visits the same ASes in the opposite order, so the client of
@@ -319,11 +321,40 @@ func (m *PathMarketplaces) AcquireReservations(
 	for i, client := range clients {
 		reverseClients[len(clients)-1-i] = client
 	}
-	reverse, err = buyPerMarketplace(ctx, reverseInterfacePairs(pairs), reverseClients,
-		reverseBwInKbps, startsAt, stopsAt, maxPrice, buyMode, fetchReservations,
-		combineAssets, numRetries)
-	if err != nil {
-		return nil, nil, serrors.Wrap("obtaining the reverse reservations", err)
+
+	// Both directions are bought at the same time. If one fails, the other is cancelled so that
+	// it does not go on buying, and the error reported is the one that caused the cancellation.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var firstErr error
+	var once sync.Once
+	fail := func(err error) {
+		once.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var err error
+		reverse, err = buyPerMarketplace(ctx, reverseInterfacePairs(pairs), reverseClients,
+			reverseBwInKbps, startsAt, stopsAt, maxPrice, buyMode, fetchReservations,
+			combineAssets, numRetries)
+		if err != nil {
+			fail(serrors.Wrap("obtaining the reverse reservations", err))
+		}
+	}()
+	var forwardErr error
+	forward, forwardErr = buyPerMarketplace(ctx, pairs, clients, bwInKbps, startsAt, stopsAt,
+		maxPrice, buyMode, fetchReservations, combineAssets, numRetries)
+	if forwardErr != nil {
+		fail(forwardErr)
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, nil, firstErr
 	}
 	return forward, reverse, nil
 }

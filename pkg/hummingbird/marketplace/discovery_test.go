@@ -15,13 +15,20 @@
 package marketplace
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/scionproto/scion/pkg/addr"
+	"github.com/scionproto/scion/pkg/proto/hummingbird"
+	"github.com/scionproto/scion/pkg/proto/hummingbird/v1/hummingbirdconnect"
 	"github.com/scionproto/scion/pkg/segment/iface"
 	"github.com/scionproto/scion/pkg/snet"
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
@@ -343,4 +350,114 @@ func addressesOf(coverage []NoteEntry) []string {
 		addresses = append(addresses, entry.APIAddress)
 	}
 	return addresses
+}
+
+// singleHopMarketplaces returns the marketplaces of a path with one AS, 1-ff00:0:1 entered through
+// interface 3 and left through interface 4, whose only marketplace is the given one.
+func singleHopMarketplaces(marketplace hummingbirdconnect.MarketplaceServiceClient) *PathMarketplaces {
+	entry := NoteEntry{APIAddress: "a"}
+	return &PathMarketplaces{
+		Hops:     []snetpath.BaseHop{{IA: 1, Ingress: 3, Egress: 4}},
+		PathASes: []ASNotes{{Notes: []NoteEntry{entry}}},
+		clients:  map[NoteEntry]*Client{entry: {Marketplace: marketplace}},
+	}
+}
+
+// TestAcquireReservationsBuysBothDirectionsConcurrently checks that the forward and the reverse
+// reservations are looked up at the same time: the mock marketplace only answers once the fetch and
+// the three searches of both directions are in flight.
+func TestAcquireReservationsBuysBothDirectionsConcurrently(t *testing.T) {
+	startsAt := time.Unix(1_000_000, 0)
+	stopsAt := startsAt.Add(time.Minute)
+	mock := &mockMarketplace{
+		startsAt:    startsAt,
+		stopsAt:     stopsAt,
+		barrierSize: 2 * (1 + 3),
+		barrier:     make(chan struct{}),
+		requests:    map[string]int{},
+	}
+
+	// The mock reports the forward hop (3 -> 4) as reserved, so only the reverse one is bought.
+	forward, reverse, err := singleHopMarketplaces(mock).AcquireReservations(
+		context.Background(), 100, 100, startsAt, stopsAt, 1_000_000_000, FailOnError,
+		true, false, 0)
+	require.NoError(t, err)
+	require.Len(t, forward, 1)
+	require.Len(t, reverse, 1)
+	assert.Equal(t, uint32(7), forward[0].Flyover.ResID, "the existing reservation is kept")
+	assert.Equal(t, uint32(9), reverse[0].Flyover.ResID, "the reverse hop is bought and redeemed")
+	assert.Equal(t, 2, mock.requests["fetch"], "one fetch per direction")
+	assert.Len(t, mock.bought, 1)
+}
+
+// failingReverseMarketplace fails every search of the reverse direction, and leaves the forward ones waiting until they are cancelled.
+type failingReverseMarketplace struct {
+	hummingbirdconnect.MarketplaceServiceClient
+
+	forwardCancelled atomic.Bool
+}
+
+func (f *failingReverseMarketplace) FetchReservations(
+	context.Context, *connect.Request[hummingbird.FetchReservationsRequest],
+) (*connect.Response[hummingbird.FetchReservationsResponse], error) {
+
+	return connect.NewResponse(&hummingbird.FetchReservationsResponse{}), nil
+}
+
+func (f *failingReverseMarketplace) SearchAssets(
+	ctx context.Context, req *connect.Request[hummingbird.SearchAssetsRequest],
+) (*connect.Response[hummingbird.SearchAssetsResponse], error) {
+
+	// The reverse direction enters through interface 4 and leaves through interface 3.
+	enters4 := req.Msg.IfIdIngress != nil && *req.Msg.IfIdIngress == 4
+	leaves3 := req.Msg.IfIdIngress == nil && req.Msg.IfIdEgress != nil && *req.Msg.IfIdEgress == 3
+	if enters4 || leaves3 {
+		return nil, errors.New("reverse failure")
+	}
+	select {
+	case <-ctx.Done():
+		f.forwardCancelled.Store(true)
+		return nil, ctx.Err()
+	case <-time.After(5 * time.Second):
+		return nil, errors.New("the forward direction was not cancelled")
+	}
+}
+
+// TestAcquireReservationsCancelsTheOtherDirectionOnFailure checks that a failing direction stops
+// the other one, and that the error reported is the cause, not the resulting cancellation.
+func TestAcquireReservationsCancelsTheOtherDirectionOnFailure(t *testing.T) {
+	mock := &failingReverseMarketplace{}
+	start := time.Now()
+
+	_, _, err := singleHopMarketplaces(mock).AcquireReservations(
+		context.Background(), 100, 100, time.Unix(1_000_000, 0), time.Unix(1_000_060, 0),
+		1_000_000_000, FailOnError, true, false, 0)
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "reverse failure")
+	assert.ErrorContains(t, err, "reverse reservations")
+	assert.NotErrorIs(t, err, context.Canceled)
+	assert.True(t, mock.forwardCancelled.Load(), "the forward direction must be cancelled")
+	assert.Less(t, time.Since(start), 4*time.Second)
+}
+
+// TestAcquireReservationsWithoutReverseBuysOnlyForward checks that nothing is bought for the
+// reverse direction if no bandwidth is requested for it.
+func TestAcquireReservationsWithoutReverseBuysOnlyForward(t *testing.T) {
+	startsAt := time.Unix(1_000_000, 0)
+	mock := &mockMarketplace{
+		startsAt:    startsAt,
+		stopsAt:     startsAt.Add(time.Minute),
+		barrierSize: 1 + 3,
+		barrier:     make(chan struct{}),
+		requests:    map[string]int{},
+	}
+
+	forward, reverse, err := singleHopMarketplaces(mock).AcquireReservations(
+		context.Background(), 100, 0, startsAt, startsAt.Add(time.Minute), 1_000_000_000,
+		FailOnError, true, false, 0)
+	require.NoError(t, err)
+	assert.Len(t, forward, 1)
+	assert.Nil(t, reverse)
+	assert.Equal(t, 1, mock.requests["fetch"])
 }
