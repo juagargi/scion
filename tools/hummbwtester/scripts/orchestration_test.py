@@ -24,7 +24,6 @@ from tools.hummbwtester.scripts.orchestration import (
     RouterInterface,
     server_args,
     TCStats,
-    validate_marketplace_location,
 )
 
 
@@ -76,7 +75,7 @@ class ConfigTest(unittest.TestCase):
             "reservation_source": "marketplace",
             "marketplace": {
                 "url": "https://marketplace.invalid", "username": "alice",
-                "password_env": "MARKETPLACE_PASSWORD",
+                "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
             },
         }
         config["hummingbird_clients"][0]["hummingbird_reservation"].update({
@@ -93,48 +92,55 @@ class ConfigTest(unittest.TestCase):
         self.assertIsNone(hummingbird.marketplace.sub_account)
         self.assertIsNone(hummingbird.marketplace.host)
 
-    def test_marketplace_location_override_is_passed_to_marketplace_clients(self):
+    def marketplace_config(self, **marketplace):
+        """A Docker configuration buying from a marketplace configured with marketplace."""
         config = self.base_config()
         config["hummingbird"] = {
             "reservation_source": "marketplace",
             "marketplace": {
                 "url": "https://marketplace.invalid", "username": "alice",
-                "password_env": "MARKETPLACE_PASSWORD",
+                "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
+                **marketplace,
             },
         }
         config["hummingbird_clients"][0]["hummingbird_reservation"].update({
             "bandwidth": "100kbps", "reverse_bandwidth": "1mbps",
         })
-        server, clients, _, _ = load_config(self.write_config(config))
+        return config
+
+    def test_location_override_is_a_required_boolean(self):
+        config = self.marketplace_config()
+        del config["hummingbird"]["marketplace"]["location_override"]
+        with self.assertRaisesRegex(ConfigError, "location_override"):
+            load_config(self.write_config(config))
+        for value in ("true", 1, None):
+            with self.subTest(value=value), self.assertRaisesRegex(ConfigError, "boolean"):
+                load_config(self.write_config(self.marketplace_config(location_override=value)))
+
+    def test_location_override_requires_scion_address(self):
+        with self.assertRaisesRegex(ConfigError, "requires scion_address"):
+            load_config(self.write_config(self.marketplace_config(location_override=True)))
+
+    def test_docker_scion_address_requires_location_override(self):
+        config = self.marketplace_config(scion_address="[1-ff00:0:111,172.20.0.27]:31888")
+        with self.assertRaisesRegex(ConfigError, "location_override"):
+            load_config(self.write_config(config))
+
+    def test_location_override_passes_scion_address_to_marketplace_clients(self):
+        location = "[1-ff00:0:111,172.20.0.27]:31888"
+        server, clients, _, _ = load_config(self.write_config(self.marketplace_config(
+            location_override=True, scion_address=location)))
         best_effort, hummingbird = clients
-        location = "[1-ff00:0:111,172.20.0.20]:8888"
-        args = client_args(hummingbird, server, "172.20.0.21:30255", location)
+        args = client_args(hummingbird, server, "172.20.0.21:30255")
         self.assertEqual(args[args.index("-marketplace-location-override") + 1], location)
         self.assertNotIn("-marketplace-location-override",
-                         client_args(hummingbird, server, "172.20.0.21:30255"))
+                         client_args(best_effort, server, "172.20.0.21:30255"))
+
+        server, clients, _, _ = load_config(self.write_config(self.marketplace_config()))
         self.assertNotIn("-marketplace-location-override",
-                         client_args(best_effort, server, "172.20.0.21:30255", location))
+                         client_args(clients[1], server, "172.20.0.21:30255"))
 
-    def test_marketplace_location_override_is_not_passed_in_keys_mode(self):
-        server, clients, _, _ = load_config(self.write_config(self.base_config()))
-        args = client_args(clients[1], server, "172.20.0.21:30255", "https://172.20.0.20:8888")
-        self.assertIn("-hummKeysDir", args)
-        self.assertNotIn("-marketplace-location-override", args)
-
-    def test_validates_marketplace_location(self):
-        for location in ("https://172.20.0.20:8888", "https://market.invalid:443",
-                         "[1-ff00:0:111,172.20.0.20]:8888", "[1-ff00:0:111,fd00::20]:8888"):
-            with self.subTest(location=location):
-                validate_marketplace_location(location, "override")
-        for location in ("", "172.20.0.20:8888", "http://172.20.0.20:8888",
-                         "https://172.20.0.20", "https://172.20.0.20:99999",
-                         "[1-ff00:0:111,not-an-ip]:8888", "[1-ff00:0:111,172.20.0.20]:0"):
-            with self.subTest(location=location), self.assertRaises(ConfigError):
-                validate_marketplace_location(location, "override")
-
-    def test_marketplace_login_url_follows_the_location(self):
-        self.assertEqual(marketplace_login_url("https://172.20.0.20:8888"),
-                         "https://172.20.0.20:8888")
+    def test_marketplace_login_url_follows_the_scion_address(self):
         self.assertEqual(marketplace_login_url("[1-ff00:0:111,172.20.0.20]:8888"),
                          "https://172.20.0.20:8888")
         self.assertEqual(marketplace_login_url("[1-ff00:0:111,fd00::20]:8888"),
@@ -146,7 +152,7 @@ class ConfigTest(unittest.TestCase):
             "reservation_source": "marketplace",
             "marketplace": {
                 "host": "ufms", "url": "https://127.0.0.1:8888", "username": "alice",
-                "password_env": "MARKETPLACE_PASSWORD",
+                "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
             },
         }
         with self.assertRaisesRegex(ConfigError, "only valid for SSH"):
@@ -158,7 +164,8 @@ class ConfigTest(unittest.TestCase):
             "reservation_source": "marketplace",
             "marketplace": {
                 "url": "https://127.0.0.1:8888", "username": "alice",
-                "password_env": "MARKETPLACE_PASSWORD", "interfaces": {"1-ff00:0:110": [0, 1]},
+                "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
+                "interfaces": {"1-ff00:0:110": [0, 1]},
             },
         }
         with self.assertRaisesRegex(ConfigError, "interfaces is only valid for SSH"):
@@ -209,7 +216,7 @@ class ConfigTest(unittest.TestCase):
         config = self.base_config()
         config["hummingbird"]["marketplace"] = {
             "url": "https://marketplace.invalid", "username": "alice",
-            "password_env": "MARKETPLACE_PASSWORD",
+            "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
         }
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
@@ -245,7 +252,10 @@ class ConfigTest(unittest.TestCase):
         config = self.base_config()
         config["hummingbird"] = {
             "reservation_source": "marketplace",
-            "marketplace": {"username": "alice", "password_env": "MARKETPLACE_PASSWORD"},
+            "marketplace": {
+                "username": "alice", "password_env": "MARKETPLACE_PASSWORD",
+                "location_override": False,
+            },
         }
         with self.assertRaisesRegex(ConfigError, "url"):
             load_config(self.write_config(config))

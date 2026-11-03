@@ -170,13 +170,13 @@ def teardown_local() -> int:
     return 0
 
 
-def run_local(plan: ExperimentPlan, marketplace_location: str | None = None) -> int:
+def run_local(plan: ExperimentPlan) -> int:
     # The generated local marketplace account uses this development-only password.
     hummingbird_clients = [client for client in plan.config[1] if client.hummingbird]
     marketplace = hummingbird_clients[0].marketplace if hummingbird_clients else None
     if marketplace is not None and marketplace.password_env == "HUMMBWTESTER_MARKETPLACE_PASSWORD":
         os.environ.setdefault("HUMMBWTESTER_MARKETPLACE_PASSWORD", "1234")
-    return planner.run_experiment(plan.path, plan.config, marketplace_location)
+    return planner.run_experiment(plan.path, plan.config)
 
 
 def show_informative(config_path: Path) -> None:
@@ -187,38 +187,22 @@ def show_informative(config_path: Path) -> None:
         print()
 
 
-def check_marketplace_location(plan: ExperimentPlan, location: str) -> None:
-    """Check that the clients of plan buy from a marketplace that location can stand for."""
-    planner.validate_marketplace_location(location, "--marketplace-location-override")
-    if not any(client.hummingbird and client.reservation_source == "marketplace"
-               for client in plan.config[1]):
-        raise planner.ConfigError(
-            "--marketplace-location-override requires Hummingbird clients and "
-            "hummingbird.reservation_source \"marketplace\"",
-        )
-
-
-def execute(
-    action: str, config_path: Path, dry_run: bool = False,
-    marketplace_location: str | None = None,
-) -> int:
+def execute(action: str, config_path: Path, dry_run: bool = False) -> int:
     plan = load_plan(config_path, action)
-    if marketplace_location is not None:
-        check_marketplace_location(plan, marketplace_location)
     if action == "setup":
         show_informative(config_path)
     if plan.kind == "docker":
         if action == "setup":
             return setup_local(plan, dry_run)
         if action == "run":
-            return run_local(plan, marketplace_location)
+            return run_local(plan)
         return teardown_local()
     # plan.kind is ssh:
     assert plan.inventory is not None
     if action == "setup":
         return ssh_setup.setup(plan.path, plan.config, plan.inventory, dry_run)
     if action == "run":
-        return ssh.run_experiment(plan.path, plan.config, plan.inventory, marketplace_location)
+        return ssh.run_experiment(plan.path, plan.config, plan.inventory)
     return ssh_setup.teardown(plan.path, plan.config, plan.inventory)
 
 
@@ -230,20 +214,11 @@ def main() -> int:
         "--dry-run", action="store_true",
         help="setup only: run every check and read, report what would change, change nothing",
     )
-    parser.add_argument(
-        "--marketplace-location-override", metavar="API_ADDRESS",
-        help="run only: buy the reservations from the marketplace at this API address, "
-             "https://<host>:<port> or [<ISD-AS>,<host>]:<port>, instead of the one the ASes of "
-             "the paths advertise; the topology then need not advertise any",
-    )
     args = parser.parse_args()
     if args.dry_run and args.action != "setup":
         parser.error("--dry-run is only supported with setup")
-    if args.marketplace_location_override is not None and args.action != "run":
-        parser.error("--marketplace-location-override is only supported with run")
     try:
-        return execute(args.action, args.config, args.dry_run,
-                       args.marketplace_location_override)
+        return execute(args.action, args.config, args.dry_run)
     except (planner.ConfigError, ssh.SSHError, ssh_setup.selective_qdisc.Error,
             argparse.ArgumentTypeError, subprocess.SubprocessError,
             RuntimeError, OSError, ValueError) as err:

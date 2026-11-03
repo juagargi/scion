@@ -22,7 +22,7 @@ class InventoryTest(unittest.TestCase):
                 "reservation_source": "marketplace",
                 "marketplace": {
                     "host": marketplace_host, "url": "https://127.0.0.1:8888", "username": "alice",
-                    "password_env": "MARKETPLACE_PASSWORD",
+                    "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
                     "scion_address": "[1-ff00:0:111,127.0.0.1]:31888",
                 },
             },

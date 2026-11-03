@@ -58,7 +58,10 @@ Each run uses one self-contained JSON file.
 - `hummingbird`: required global reservation source (`keys` or `marketplace`).
   SSH deployments support only `marketplace`: key-derived reservations need the master keys of every
   on-path AS, which only a generated Docker topology provides.
-  Marketplace mode also requires a `marketplace` object with `url`, `username`, and `password_env`; `sub_account` is optional. The password is read from the named environment variable, never from JSON.
+  Marketplace mode also requires a `marketplace` object with `url`, `username`, `password_env`,
+  and `location_override`; `sub_account` is optional. The password is read from the named
+  environment variable, never from JSON. `location_override` is a boolean, see
+  [Marketplace location override](#marketplace-location-override).
   In SSH deployments, `host` is required: it names the `deployment.hosts` entry from which `url` is
   reachable, e.g. `"host": "ufms"` with `"url": "https://127.0.0.1:8888"` for a marketplace bound to
   the loopback of that host. Every SSH command (`setup`, `run`, `teardown`) rejects a configuration
@@ -68,8 +71,8 @@ Each run uses one self-contained JSON file.
   marketplace bound to the `url` (TCP, TLS) and `scion_address` (UDP, SCION) endpoints, so both must
   use a loopback address and `url` must be `https://<loopback>:<port>`: the web app and API are
   then reachable only on the marketplace host, and the SCION API only over SCION through that
-  host's border routers. Docker deployments reject `scion_address`, because their generated
-  topology already advertises its marketplace.
+  host's border routers. Docker deployments reject `scion_address` unless `location_override` is
+  `true`, because their generated topology otherwise advertises its marketplace.
   In SSH deployments, `interfaces` optionally lists the interfaces that support Hummingbird per
   ISD-AS, e.g. `"interfaces": {"71-1916": [0, 103, 106], "71-2:0:5c": [0, 104]}`, where `0` stands
   for flyovers that start or end in the AS. The marketplace database then offers assets only for
@@ -269,24 +272,36 @@ Logs are written beneath `logs/hummbwtester/`, one file per `client_id` plus `se
 ### Marketplace location override
 
 By default, marketplace clients buy from the marketplace that the ASes of their path advertise in
-their static info Note. `run --marketplace-location-override API_ADDRESS` makes them buy from the
-marketplace at `API_ADDRESS` instead, and nothing else is consulted: the topology need not
-advertise any marketplace. `API_ADDRESS` is a SCION address, `[ISD-AS,host]:port`, or an HTTPS URL,
-`https://host:port`, and is passed to every marketplace client as `-marketplace-location-override`.
-A Docker run then also logs in at that location instead of reading `gen/AS*/staticInfoConfig.json`:
-an HTTPS URL as is, a SCION address at `https://host:port`, where the generated marketplace serves
-its web app. Docker clients have no TCP route to the marketplace, so use the SCION address there:
+their static info Note. With `"location_override": true` in `hummingbird.marketplace`, they buy
+from the marketplace at its `scion_address` instead, and nothing else is consulted: the topology
+need not advertise any marketplace. `run` passes the `scion_address` to every marketplace client
+as `-marketplace-location-override`; with `false`, it passes nothing. `location_override` is
+required whenever `hummingbird.marketplace` is present, and `true` requires `scion_address`.
+A Docker run with the override also logs in at `https://host:port` of the `scion_address`, where
+the generated marketplace serves its web app, instead of reading `gen/AS*/staticInfoConfig.json`.
+For a Docker topology generated without marketplace metainfo, set in a copy of `hummbwtester.json`:
+
+```json
+"marketplace": {
+  "url": "https://127.0.0.1:8888",
+  "scion_address": "[1-ff00:0:111,172.20.0.27]:31888",
+  "username": "alice",
+  "password_env": "HUMMBWTESTER_MARKETPLACE_PASSWORD",
+  "location_override": true
+}
+```
+
+and run it as usual:
 
 ```bash
 ./scion.sh topology -d -c topology/tiny.topo -m 1-ff00:0:111 --no-marketplace-metainfo
-python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester.json
-python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester.json \
-    --marketplace-location-override '[1-ff00:0:111,172.20.0.27]:31888'
+python3 tools/hummbwtester/experiment.py setup --config <copy>.json
+python3 tools/hummbwtester/experiment.py run --config <copy>.json
 ```
 
-`--no-marketplace-metainfo` generates the marketplace without advertising it, and the address is
-the `scion_api_addr` of `gen/ASff00_0_111/marketplace.toml`. SSH runs log in at the configured
-`url` as usual, and SSH setup still advertises `scion_address` when it is set.
+`--no-marketplace-metainfo` generates the marketplace without advertising it, and the
+`scion_address` is the `scion_api_addr` of `gen/ASff00_0_111/marketplace.toml`. SSH runs log in at
+the configured `url` as usual, and SSH setup still advertises `scion_address`.
 
 `setup --dry-run` lists, as numbered steps, what setup would do without doing any of it:
 whether it would edit the `[router]` section of the generated border-router configs or rewrite the
