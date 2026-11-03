@@ -411,6 +411,38 @@ def validate_scion_address(value: Any, context: str) -> None:
         raise ConfigError(f"{context} has an invalid port: {value}")
 
 
+def check_docker_marketplace_location(clients: list[Client]) -> None:
+    """Check that the scion_address the clients buy from is where gen/ runs the marketplace.
+
+    It only applies to a marketplace location override, the sole case where the address is used
+    in Docker: a wrong one fails only when the clients dial it, long after setup.
+    """
+    marketplace = next((client.marketplace for client in clients
+                        if client.marketplace is not None and client.marketplace.location_override),
+                       None)
+    if marketplace is None:
+        return
+    assert marketplace.scion_address is not None  # load_config requires it.
+    match = SCION_ADDRESS_RE.fullmatch(marketplace.scion_address)
+    assert match is not None
+    expected = f"{match.group('host')}:{match.group('port')}"
+    found = []
+    for path in sorted(GEN.glob("AS*/marketplace.toml")):
+        address = re.search(r'^scion_api_addr\s*=\s*"([^"]+)"', path.read_text(), re.MULTILINE)
+        if address is None:
+            continue
+        host, _, port = address.group(1).rpartition(":")
+        as_dir = path.parent.name.removeprefix("AS").replace("_", ":")
+        found.append((as_dir, f"{host.strip('[]')}:{port}"))
+        if as_dir == match.group("ia").split("-", 1)[1] and found[-1][1] == expected:
+            return
+    where = ", ".join(f"AS {as_dir} at {address}" for as_dir, address in found) or "none in gen/"
+    raise ConfigError(
+        f"hummingbird.marketplace.scion_address {marketplace.scion_address} is not where the "
+        f"generated topology runs its marketplace ({where})",
+    )
+
+
 def marketplace_login_url(scion_address: str) -> str:
     """The URL to log in to the marketplace whose SCION API is at scion_address.
 

@@ -8,6 +8,7 @@ from unittest import mock
 
 from tools.hummbwtester.scripts import orchestration
 from tools.hummbwtester.scripts.orchestration import (
+    check_docker_marketplace_location,
     ConfigError,
     client_args,
     interface_counters,
@@ -139,6 +140,34 @@ class ConfigTest(unittest.TestCase):
         server, clients, _, _ = load_config(self.write_config(self.marketplace_config()))
         self.assertNotIn("-marketplace-location-override",
                          client_args(clients[1], server, "172.20.0.21:30255"))
+
+    def test_docker_location_override_must_match_the_generated_marketplace(self):
+        def clients_at(scion_address):
+            return load_config(self.write_config(self.marketplace_config(
+                location_override=True, scion_address=scion_address)))[1]
+
+        with tempfile.TemporaryDirectory() as directory:
+            generated = Path(directory)
+            (generated / "ASff00_0_112").mkdir()
+            (generated / "ASff00_0_112" / "marketplace.toml").write_text(
+                'api_addr = "[fd00:f00d:cafe::7f00:13]:31888"\n'
+                'scion_api_addr = "[fd00:f00d:cafe::7f00:13]:31888"\n')
+            with mock.patch.object(orchestration, "GEN", generated):
+                check_docker_marketplace_location(
+                    clients_at("[1-ff00:0:112,fd00:f00d:cafe::7f00:13]:31888"))
+                for address in ("[1-ff00:0:111,fd00:f00d:cafe::7f00:13]:31888",
+                                "[1-ff00:0:112,127.0.0.1]:31888",
+                                "[1-ff00:0:112,fd00:f00d:cafe::7f00:13]:8888"):
+                    with self.subTest(address=address), \
+                         self.assertRaisesRegex(ConfigError, "not where the generated"):
+                        check_docker_marketplace_location(clients_at(address))
+                # Without the override the address is not used, nothing to check.
+                check_docker_marketplace_location(
+                    load_config(self.write_config(self.marketplace_config()))[1])
+            with mock.patch.object(orchestration, "GEN", generated / "empty"), \
+                 self.assertRaisesRegex(ConfigError, "none in gen/"):
+                check_docker_marketplace_location(
+                    clients_at("[1-ff00:0:112,fd00:f00d:cafe::7f00:13]:31888"))
 
     def test_marketplace_login_url_follows_the_scion_address(self):
         self.assertEqual(marketplace_login_url("[1-ff00:0:111,172.20.0.20]:8888"),

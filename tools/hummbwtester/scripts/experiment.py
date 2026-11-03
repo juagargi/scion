@@ -46,6 +46,7 @@ def load_plan(path: Path, action: str) -> ExperimentPlan:
     if kind == "docker":
         if action != "teardown":
             planner.validate_endpoints(planner.compose_data(), server, clients)
+            planner.check_docker_marketplace_location(clients)
         return ExperimentPlan(path, config, kind, None)
     inventory = ssh.load_inventory(path, server, clients)
     return ExperimentPlan(path, config, kind, inventory)
