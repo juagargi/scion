@@ -45,6 +45,9 @@ def add_arguments(parser):
     parser.add_argument('-m', '--marketplace', metavar='ISD-AS',
                         help='Add a marketplace to the given AS of the topology, and fill its \
                         database with the default users, assets and redemption delegations')
+    parser.add_argument('--no-marketplace-metainfo', action='store_true',
+                        help='With -m, do not advertise the marketplace in the static info config \
+                        of the ASes, so that no path tells where it is')
     parser.add_argument('-t', '--topology-jsons-only', action='store_true',
                         help='Create only topology.json files')
     parser.add_argument('--random-ifids', action='store_true',
