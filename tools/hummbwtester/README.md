@@ -127,6 +127,12 @@ Hummingbird clients additionally require `hummingbird_reservation`, an object wi
   of ASes prefixed with `!` to leave out (`"!1-ff00:0:110"`); the two forms cannot be mixed.
   Omitted, every AS of the path is reserved. The reverse reservation covers only the ASes that
   have a forward reservation.
+- `path_to_marketplace` (optional, `marketplace` mode only): hop predicates, with the syntax of
+  `sequence` below, that the path to a marketplace in another AS must match; passed as
+  `-marketplace-sequence`. The client connects over the first matching path of the daemon, with
+  the same refreshing retries as `sequence`, and fails the reservation if none matches. Use it to
+  keep the marketplace traffic off the interfaces under test. Omitted, the client uses the
+  daemon's first path.
 
 Both client types may optionally set `payload_size` and `pong_rate`. They are passed as
 `-payload-size` and `-pong-rate`. The Hummingbird reservation timing fields are passed as

@@ -77,6 +77,7 @@ var (
 	partialFlag        string
 	hummKeysDir        string
 	marketplaceAddr    string
+	marketplaceSeqFlag string
 	metricsAddr        string
 	reportInterval     time.Duration
 	renewalAhead       time.Duration
@@ -196,32 +197,41 @@ func realMain() int {
 			fmt.Fprintln(os.Stderr, "error parsing -sequence:", err)
 			return 1
 		}
+		var marketplaceSequence *pathpol.Sequence
+		if marketplaceSeqFlag != "" {
+			marketplaceSequence, err = pathpol.NewSequence(marketplaceSeqFlag)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error parsing -marketplace-sequence:", err)
+				return 1
+			}
+		}
 		bandwidthBps, maxBurstBps, err := parsePacingBandwidths(bandwidthFlag, maxBurstFlag)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error configuring client pacing:", err)
 			return 1
 		}
 		cfg := clientConfig{
-			local:              localFlag,
-			remote:             remoteFlag,
-			sdConn:             sdConn,
-			sequence:           sequence,
-			bandwidthBps:       bandwidthBps,
-			maxBurstBps:        maxBurstBps,
-			duration:           duration,
-			payloadSize:        payloadSize,
-			pongRateHz:         pongRateHz,
-			humm:               hummParams,
-			hummEnabled:        hummingbirdFlag != "",
-			hummReservationID:  reservationID,
-			hummKeysDir:        hummKeysDir,
-			partial:            partial,
-			marketplaceJWT:     marketplaceJWT,
-			marketplaceAddr:    marketplaceAddr,
-			reportInterval:     reportInterval,
-			renewalAhead:       renewalAhead,
-			reservationOverlap: reservationOverlap,
-			hummStartOffset:    hummStartOffset,
+			local:               localFlag,
+			remote:              remoteFlag,
+			sdConn:              sdConn,
+			sequence:            sequence,
+			bandwidthBps:        bandwidthBps,
+			maxBurstBps:         maxBurstBps,
+			duration:            duration,
+			payloadSize:         payloadSize,
+			pongRateHz:          pongRateHz,
+			humm:                hummParams,
+			hummEnabled:         hummingbirdFlag != "",
+			hummReservationID:   reservationID,
+			hummKeysDir:         hummKeysDir,
+			partial:             partial,
+			marketplaceJWT:      marketplaceJWT,
+			marketplaceAddr:     marketplaceAddr,
+			marketplaceSequence: marketplaceSequence,
+			reportInterval:      reportInterval,
+			renewalAhead:        renewalAhead,
+			reservationOverlap:  reservationOverlap,
+			hummStartOffset:     hummStartOffset,
 		}
 		return runClient(ctx, sn, cfg)
 	default:
@@ -266,6 +276,9 @@ func addFlags() {
 		"(Client only) API address of the marketplace to buy from, e.g. "+
 			"\"[1-ff00:0:111,172.20.0.20]:8888\" or \"https://172.20.0.20:8888\"; "+
 			"without it, buy from the marketplace the ASes of the path advertise")
+	flag.StringVar(&marketplaceSeqFlag, "marketplace-sequence", "",
+		"(Client only) hop predicates that the path to the marketplace must match, as in "+
+			"-sequence; empty uses the daemon's first path")
 	flag.DurationVar(&renewalAhead, "renewal-ahead", defaultRenewalAhead,
 		"(Client only) how long before reservation expiry to request its replacement")
 	flag.DurationVar(&reservationOverlap, "reservation-overlap", defaultReservationOverlap,
@@ -306,6 +319,10 @@ func validateFlags() error {
 			marketplaceAddr, hummingbirdFlag, hummKeysDir); err != nil {
 			return err
 		}
+		if err := validateMarketplaceSequence(
+			marketplaceSeqFlag, hummingbirdFlag, hummKeysDir); err != nil {
+			return err
+		}
 		if payloadSize < HeaderLen {
 			return serrors.New("payload-size too small, must be at least the header size",
 				"value", payloadSize, "min", HeaderLen)
@@ -332,6 +349,15 @@ func validateMarketplaceOverride(addr, hummingbird, keysDir string) error {
 	if addr != "" && (hummingbird == "" || keysDir != "") {
 		return serrors.New("-marketplace-location-override requires -hummingbird " +
 			"without -hummKeysDir")
+	}
+	return nil
+}
+
+// validateMarketplaceSequence checks that -marketplace-sequence is only given when the
+// reservations are bought from a marketplace.
+func validateMarketplaceSequence(sequence, hummingbird, keysDir string) error {
+	if sequence != "" && (hummingbird == "" || keysDir != "") {
+		return serrors.New("-marketplace-sequence requires -hummingbird without -hummKeysDir")
 	}
 	return nil
 }

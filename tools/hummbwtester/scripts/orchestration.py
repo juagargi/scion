@@ -97,6 +97,9 @@ class HummingbirdReservation:
     # The -partial flag of the client: the ASes to reserve in, or negated ASes to leave out.
     # None reserves in every AS of the path.
     partial: str | None = None
+    # The -marketplace-sequence flag of the client: hop predicates the path to the marketplace must
+    # match. None uses the daemon's first path.
+    path_to_marketplace: str | None = None
 
 
 @dataclass(frozen=True)
@@ -305,7 +308,8 @@ def parse_client(
             raise ConfigError(f"{context}.hummingbird_reservation must be an object")
         require_fields(value, {"bandwidth", "duration", "reverse_bandwidth"},
                        f"{context}.hummingbird_reservation",
-                       {"renewal_ahead", "reservation_overlap", "humm_start_offset", "partial"})
+                       {"renewal_ahead", "reservation_overlap", "humm_start_offset", "partial",
+                        "path_to_marketplace"})
         reservation_bandwidth, duration, reverse_bandwidth = (
             value["bandwidth"], value["duration"], value["reverse_bandwidth"])
         validate_reservation_bandwidth(
@@ -328,6 +332,17 @@ def parse_client(
         partial = value.get("partial")
         if partial is not None:
             validate_partial(partial, f"{context}.hummingbird_reservation.partial")
+        # The client parses the sequence itself and exits on a malformed one.
+        path_to_marketplace = value.get("path_to_marketplace")
+        if path_to_marketplace is not None:
+            if not isinstance(path_to_marketplace, str) or not path_to_marketplace.strip():
+                raise ConfigError(
+                    f"{context}.hummingbird_reservation.path_to_marketplace "
+                    "must be a non-empty string of hop predicates")
+            if reservation_source != "marketplace":
+                raise ConfigError(
+                    f"{context}.hummingbird_reservation.path_to_marketplace "
+                    "requires reservation_source marketplace")
         reservation = HummingbirdReservation(
             bandwidth=reservation_bandwidth,
             duration=duration,
@@ -336,6 +351,7 @@ def parse_client(
             reservation_overlap=timing["reservation_overlap"],
             humm_start_offset=timing["humm_start_offset"],
             partial=partial,
+            path_to_marketplace=path_to_marketplace,
         )
 
     payload_size = entry.get("payload_size")
@@ -1247,6 +1263,8 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
                 args.extend([flag, value])
         if reservation.partial is not None:
             args.extend(["-partial", reservation.partial])
+        if reservation.path_to_marketplace is not None:
+            args.extend(["-marketplace-sequence", reservation.path_to_marketplace])
     return args
 
 

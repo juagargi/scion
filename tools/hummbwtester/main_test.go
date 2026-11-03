@@ -283,6 +283,34 @@ func TestValidateMarketplaceOverride(t *testing.T) {
 	}
 }
 
+func TestValidateMarketplaceSequence(t *testing.T) {
+	const sequence = "71-1916#3 71-2:0:5c#4"
+	tests := map[string]struct {
+		sequence    string
+		hummingbird string
+		keysDir     string
+		wantErr     bool
+	}{
+		"not restricted":       {},
+		"not restricted, keys": {hummingbird: "1,10", keysDir: "gen"},
+		"marketplace":          {sequence: sequence, hummingbird: "1mbps,10"},
+		"without hummingbird":  {sequence: sequence, wantErr: true},
+		"with key-derived flyovers": {
+			sequence: sequence, hummingbird: "1,10", keysDir: "gen", wantErr: true,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := validateMarketplaceSequence(tc.sequence, tc.hummingbird, tc.keysDir)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, "-marketplace-sequence")
+		})
+	}
+}
+
 // TestHeaderRoundTrip checks that a packet header can be encoded and decoded
 // without losing any fields.
 func TestHeaderRoundTrip(t *testing.T) {
@@ -813,7 +841,7 @@ func TestSelectPath(t *testing.T) {
 			sequence, err := pathpol.NewSequence(tc.sequence)
 			require.NoError(t, err)
 
-			got, err := selectPath(context.Background(), sdConn, src, dst, sequence)
+			got, err := selectPath(context.Background(), sdConn, src, dst, sequence, "server")
 			if tc.err != "" {
 				assert.ErrorContains(t, err, tc.err)
 				return
@@ -822,6 +850,33 @@ func TestSelectPath(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestSequenceQuerier checks that the path to the marketplace is the first one matching the
+// sequence, the other paths of the daemon not being offered at all.
+func TestSequenceQuerier(t *testing.T) {
+	src := addr.MustParseIA("71-1916")
+	dst := addr.MustParseIA("71-2:0:5c")
+	twoHopPath := func(egress, ingress uint16) snet.Path {
+		return snetpath.Path{Src: src, Dst: dst, Meta: snet.PathMetadata{
+			Interfaces: []snet.PathInterface{
+				{IA: src, ID: iface.ID(egress)},
+				{IA: dst, ID: iface.ID(ingress)},
+			},
+		}}
+	}
+	viaBR1, viaBR2 := twoHopPath(3, 4), twoHopPath(103, 104)
+	ctrl := gomock.NewController(t)
+	sdConn := mock_daemon.NewMockConnector(ctrl)
+	sdConn.EXPECT().Paths(gomock.Any(), dst, src, daemontypes.PathReqFlags{}).
+		Return([]snet.Path{viaBR2, viaBR1}, nil)
+	sequence, err := pathpol.NewSequence("71-1916#3 71-2:0:5c#4")
+	require.NoError(t, err)
+
+	q := sequenceQuerier{sdConn: sdConn, local: src, sequence: sequence}
+	got, err := q.Query(context.Background(), dst)
+	require.NoError(t, err)
+	assert.Equal(t, []snet.Path{viaBR1}, got)
 }
 
 func TestPartialFlagValidation(t *testing.T) {

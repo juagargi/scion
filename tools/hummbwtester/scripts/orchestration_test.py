@@ -142,6 +142,39 @@ class ConfigTest(unittest.TestCase):
         self.assertNotIn("-marketplace-location-override",
                          client_args(clients[1], server, "172.20.0.21:30255"))
 
+    def test_path_to_marketplace_is_omitted_or_passed_to_client(self):
+        server, clients, _, _ = load_config(self.write_config(self.marketplace_config()))
+        self.assertNotIn("-marketplace-sequence",
+                         client_args(clients[1], server, "172.20.0.21:30255"))
+
+        sequence = "1-ff00:0:111#41 1-ff00:0:110#1"
+        config = self.marketplace_config()
+        config["hummingbird_clients"][0]["hummingbird_reservation"][
+            "path_to_marketplace"] = sequence
+        server, clients, _, _ = load_config(self.write_config(config))
+        args = client_args(clients[1], server, "172.20.0.21:30255")
+        self.assertEqual(args[args.index("-marketplace-sequence") + 1], sequence)
+
+    def test_rejects_invalid_path_to_marketplace(self):
+        for value in ("", " ", 3, None):
+            with self.subTest(value=value):
+                config = self.marketplace_config()
+                config["hummingbird_clients"][0]["hummingbird_reservation"][
+                    "path_to_marketplace"] = value
+                if value is None:
+                    # An explicit null is the same as leaving the field out.
+                    load_config(self.write_config(config))
+                    continue
+                with self.assertRaisesRegex(ConfigError, "path_to_marketplace"):
+                    load_config(self.write_config(config))
+
+    def test_path_to_marketplace_requires_marketplace_reservations(self):
+        config = self.base_config()
+        config["hummingbird_clients"][0]["hummingbird_reservation"][
+            "path_to_marketplace"] = "0-0#41 0*"
+        with self.assertRaisesRegex(ConfigError, "requires reservation_source marketplace"):
+            load_config(self.write_config(config))
+
     def test_docker_location_override_must_match_the_generated_marketplace(self):
         def clients_at(scion_address):
             return load_config(self.write_config(self.marketplace_config(
