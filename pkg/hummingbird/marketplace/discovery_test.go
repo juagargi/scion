@@ -137,6 +137,82 @@ func TestFullCoverageCountIgnoresUnselectedAS(t *testing.T) {
 	assert.Equal(t, []string{"a"}, addressesOf(coverage))
 }
 
+// TestNewPathMarketplacesAt checks that a marketplace location given beforehand covers the
+// selected ASes, whatever the path advertises, and also when it advertises nothing at all.
+func TestNewPathMarketplacesAt(t *testing.T) {
+	const tcp = "https://172.20.0.20:8888"
+	const scion = "[1-ff00:0:111,172.20.0.20]:8888"
+	// A topology without marketplace metainfo yields paths without any notes.
+	noNotes := pathWithNotes("", "", "").(snetpath.Path)
+	noNotes.Meta.Notes = nil
+	testCases := map[string]struct {
+		path     snet.Path
+		indices  []int
+		address  string
+		protocol string
+		ases     int
+	}{
+		"no notes": {
+			path: noNotes, address: tcp, protocol: "connectrpc/TLS/TCP", ases: 3,
+		},
+		"over SCION": {
+			path: noNotes, address: scion, protocol: "connectrpc/TLS/QUIC/SCION", ases: 3,
+		},
+		"other marketplaces advertised": {
+			path:    pathWithNotes(noteWith("a"), noteWith("b"), noteWith("c")),
+			address: tcp, protocol: "connectrpc/TLS/TCP", ases: 3,
+		},
+		"subset": {
+			path: noNotes, indices: []int{0, 2}, address: tcp,
+			protocol: "connectrpc/TLS/TCP", ases: 2,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			m, err := NewPathMarketplacesAt(tc.path, tc.indices, tc.address)
+			require.NoError(t, err)
+			all := snetpath.InterfacesToBaseHops(tc.path.Metadata().Interfaces)
+			if tc.indices == nil {
+				assert.Equal(t, all, m.Hops)
+			} else {
+				assert.Equal(t, []snetpath.BaseHop{all[0], all[2]}, m.Hops)
+			}
+			require.Len(t, m.PathASes, tc.ases)
+			count, coverage := m.FullCoverageCount()
+			assert.Equal(t, 1, count)
+			require.Len(t, coverage, 1)
+			assert.Equal(t, tc.address, coverage[0].APIAddress)
+			assert.Equal(t, tc.protocol, coverage[0].APIProtocol)
+
+			// Every AS buys from the client attached at the overridden address.
+			client := &Client{}
+			require.NoError(t, m.attach(tc.address, client))
+			clients, err := m.clientPerAS()
+			require.NoError(t, err)
+			for _, c := range clients {
+				assert.Same(t, client, c)
+			}
+		})
+	}
+}
+
+// TestNewPathMarketplacesAtRejects checks the validation of the arguments.
+func TestNewPathMarketplacesAtRejects(t *testing.T) {
+	p := pathWithNotes("", "", "")
+	t.Run("nil path", func(t *testing.T) {
+		_, err := NewPathMarketplacesAt(nil, nil, "https://a")
+		assert.Error(t, err)
+	})
+	t.Run("empty address", func(t *testing.T) {
+		_, err := NewPathMarketplacesAt(p, nil, "")
+		assert.Error(t, err)
+	})
+	t.Run("bad indices", func(t *testing.T) {
+		_, err := NewPathMarketplacesAt(p, []int{2, 0}, "https://a")
+		assert.Error(t, err)
+	})
+}
+
 // TestNewPathMarketplacesFromNotes checks the constructor taking explicit hops and notes.
 func TestNewPathMarketplacesFromNotes(t *testing.T) {
 	hops := snetpath.InterfacesToBaseHops(

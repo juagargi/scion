@@ -111,6 +111,7 @@ type clientConfig struct {
 	// partial restricts which on-path ASes get flyovers; nil reserves every AS.
 	partial            *humm.ASFilter
 	marketplaceJWT     string
+	marketplaceAddr    string
 	reportInterval     time.Duration
 	renewalAhead       time.Duration
 	reservationOverlap time.Duration
@@ -377,16 +378,17 @@ func (c *client) buildReservationWithMarketplace(
 		ctx,
 		path,
 		marketclient.ReservationRequest{
-			BwInKbps:        c.cfg.humm.Bw,
-			ReverseBwInKbps: c.cfg.humm.ReverseBw,
-			StartsAt:        startsAt,
-			StopsAt:         stopsAt,
-			MaxPrice:        marketplaceMaxPrice,
-			BuyMode:         marketplaceBuyMode,
-			FetchExisting:   marketplaceFetchReservations,
-			CombineAssets:   marketplaceCombineAssets,
-			NumRetries:      marketplaceRetries,
-			Selected:        selected,
+			BwInKbps:           c.cfg.humm.Bw,
+			ReverseBwInKbps:    c.cfg.humm.ReverseBw,
+			StartsAt:           startsAt,
+			StopsAt:            stopsAt,
+			MaxPrice:           marketplaceMaxPrice,
+			BuyMode:            marketplaceBuyMode,
+			FetchExisting:      marketplaceFetchReservations,
+			CombineAssets:      marketplaceCombineAssets,
+			NumRetries:         marketplaceRetries,
+			Selected:           selected,
+			MarketplaceAddress: c.cfg.marketplaceAddr,
 		},
 	)
 }

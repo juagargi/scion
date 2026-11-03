@@ -76,6 +76,7 @@ var (
 	hummingbirdFlag    string
 	partialFlag        string
 	hummKeysDir        string
+	marketplaceAddr    string
 	metricsAddr        string
 	reportInterval     time.Duration
 	renewalAhead       time.Duration
@@ -216,6 +217,7 @@ func realMain() int {
 			hummKeysDir:        hummKeysDir,
 			partial:            partial,
 			marketplaceJWT:     marketplaceJWT,
+			marketplaceAddr:    marketplaceAddr,
 			reportInterval:     reportInterval,
 			renewalAhead:       renewalAhead,
 			reservationOverlap: reservationOverlap,
@@ -260,6 +262,10 @@ func addFlags() {
 			"with every entry prefixed by ! (\"!1-ff00:0:112\"); empty reserves every AS")
 	flag.StringVar(&hummKeysDir, "hummKeysDir", "",
 		"(Client only, testing) root dir containing AS*/keys/master0.key; without it, buy from the marketplace")
+	flag.StringVar(&marketplaceAddr, "marketplace-location-override", "",
+		"(Client only) API address of the marketplace to buy from, e.g. "+
+			"\"[1-ff00:0:111,172.20.0.20]:8888\" or \"https://172.20.0.20:8888\"; "+
+			"without it, buy from the marketplace the ASes of the path advertise")
 	flag.DurationVar(&renewalAhead, "renewal-ahead", defaultRenewalAhead,
 		"(Client only) how long before reservation expiry to request its replacement")
 	flag.DurationVar(&reservationOverlap, "reservation-overlap", defaultReservationOverlap,
@@ -296,6 +302,10 @@ func validateFlags() error {
 		if remoteFlag.Host == nil {
 			return serrors.New("missing -remote")
 		}
+		if err := validateMarketplaceOverride(
+			marketplaceAddr, hummingbirdFlag, hummKeysDir); err != nil {
+			return err
+		}
 		if payloadSize < HeaderLen {
 			return serrors.New("payload-size too small, must be at least the header size",
 				"value", payloadSize, "min", HeaderLen)
@@ -314,6 +324,16 @@ func parsePartialFlag(raw string, hummEnabled bool) (*humm.ASFilter, error) {
 		return nil, serrors.New("-partial requires -hummingbird")
 	}
 	return humm.ParseASFilter(raw)
+}
+
+// validateMarketplaceOverride checks that -marketplace-location-override is only given when the
+// reservations are bought from a marketplace.
+func validateMarketplaceOverride(addr, hummingbird, keysDir string) error {
+	if addr != "" && (hummingbird == "" || keysDir != "") {
+		return serrors.New("-marketplace-location-override requires -hummingbird " +
+			"without -hummKeysDir")
+	}
+	return nil
 }
 
 func validateRenewalTiming(ahead, overlap time.Duration) error {

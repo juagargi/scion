@@ -459,6 +459,7 @@ def run_experiment(
         workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str],
     ] | None = None,
     inventory: Inventory | None = None,
+    marketplace_location: str | None = None,
 ) -> int:
     workload.require_built_binary()
     server, clients, _, _ = config if config is not None else workload.load_config(config_path)
@@ -485,7 +486,8 @@ def run_experiment(
             host = inventory.hosts[inventory.client_hosts[client.client_id]]
             jwt_file = jwt_path(host) if client.hummingbird else None
             processes.append((host, client.client_id, launch(
-                host, run_id, client.client_id, workload.client_args(client, server, host.sciond),
+                host, run_id, client.client_id,
+                workload.client_args(client, server, host.sciond, marketplace_location),
                 log_path(client.client_id), jwt_file)))
         exited: set[str] = set()
         while any(process.poll() is None for _, _, process in processes[1:]):

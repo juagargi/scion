@@ -35,6 +35,8 @@ marketplace advertised by the selected SCION path, according to the global `humm
 Marketplace runs log in through the registration website advertised in `gen/AS*/staticInfoConfig.json`
 (the workload `url` is only used by SSH deployments) and pass the resulting JWT to client processes
 through an owner-only file.
+See [Marketplace location override](#marketplace-location-override) for topologies that advertise
+no marketplace.
 Key-derived Hummingbird clients choose a random nonzero 22-bit reservation ID when they start and
 reuse it across reservation renewals. Marketplace reservations use the IDs returned by the
 marketplace. Client workload and reservation settings are read from the JSON configuration.
@@ -263,6 +265,28 @@ python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwt
 ```
 
 Logs are written beneath `logs/hummbwtester/`, one file per `client_id` plus `server.log`.
+
+### Marketplace location override
+
+By default, marketplace clients buy from the marketplace that the ASes of their path advertise in
+their static info Note. `run --marketplace-location-override API_ADDRESS` makes them buy from the
+marketplace at `API_ADDRESS` instead, and nothing else is consulted: the topology need not
+advertise any marketplace. `API_ADDRESS` is a SCION address, `[ISD-AS,host]:port`, or an HTTPS URL,
+`https://host:port`, and is passed to every marketplace client as `-marketplace-location-override`.
+A Docker run then also logs in at that location instead of reading `gen/AS*/staticInfoConfig.json`:
+an HTTPS URL as is, a SCION address at `https://host:port`, where the generated marketplace serves
+its web app. Docker clients have no TCP route to the marketplace, so use the SCION address there:
+
+```bash
+./scion.sh topology -d -c topology/tiny.topo -m 1-ff00:0:111 --no-marketplace-metainfo
+python3 tools/hummbwtester/experiment.py setup --config tools/hummbwtester/hummbwtester.json
+python3 tools/hummbwtester/experiment.py run --config tools/hummbwtester/hummbwtester.json \
+    --marketplace-location-override '[1-ff00:0:111,172.20.0.27]:31888'
+```
+
+`--no-marketplace-metainfo` generates the marketplace without advertising it, and the address is
+the `scion_api_addr` of `gen/ASff00_0_111/marketplace.toml`. SSH runs log in at the configured
+`url` as usual, and SSH setup still advertises `scion_address` when it is set.
 
 `setup --dry-run` lists, as numbered steps, what setup would do without doing any of it:
 whether it would edit the `[router]` section of the generated border-router configs or rewrite the

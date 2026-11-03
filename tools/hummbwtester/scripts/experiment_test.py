@@ -91,6 +91,55 @@ class ExperimentTest(unittest.TestCase):
         with self.assertRaisesRegex(experiment.planner.ConfigError, "informative"):
             experiment.planner.informative_lines({"informative": ["ok", 1]})
 
+    def marketplace_client(self, reservation_source="marketplace"):
+        return mock.Mock(hummingbird=True, reservation_source=reservation_source)
+
+    def test_marketplace_location_override_is_forwarded_to_both_runs(self):
+        location = "[1-ff00:0:111,172.20.0.20]:8888"
+        config = (mock.sentinel.server, [self.marketplace_client()], {}, {})
+        with mock.patch.object(experiment.planner, "load_config", return_value=config), \
+             mock.patch.object(experiment.planner, "compose_data", return_value={}), \
+             mock.patch.object(experiment.planner, "validate_endpoints"), \
+             mock.patch.object(experiment, "run_local", return_value=0) as local, \
+             mock.patch.object(experiment.ssh, "load_inventory"), \
+             mock.patch.object(experiment.ssh, "run_experiment", return_value=0) as remote:
+            with mock.patch.object(experiment.planner, "read_json", return_value={
+                "deployment": {"kind": "docker"},
+            }):
+                self.assertEqual(experiment.execute(
+                    "run", Path("local.json"), marketplace_location=location), 0)
+            with mock.patch.object(experiment.planner, "read_json", return_value={
+                "deployment": {"kind": "ssh"},
+            }):
+                self.assertEqual(experiment.execute(
+                    "run", Path("remote.json"), marketplace_location=location), 0)
+        self.assertEqual(local.call_args.args[1], location)
+        self.assertEqual(remote.call_args.args[3], location)
+
+    def test_marketplace_location_override_requires_marketplace_clients(self):
+        for clients in ([], [self.marketplace_client("keys")]):
+            with self.subTest(clients=clients):
+                with mock.patch.object(experiment.planner, "load_config", return_value=(
+                    mock.sentinel.server, clients, {}, {},
+                )), mock.patch.object(experiment.planner, "compose_data", return_value={}), \
+                     mock.patch.object(experiment.planner, "validate_endpoints"), \
+                     mock.patch.object(experiment, "run_local") as local:
+                    with mock.patch.object(experiment.planner, "read_json", return_value={
+                        "deployment": {"kind": "docker"},
+                    }), self.assertRaisesRegex(experiment.planner.ConfigError, "source"):
+                        experiment.execute("run", Path("local.json"),
+                                           marketplace_location="https://172.20.0.20:8888")
+                local.assert_not_called()
+
+    def test_marketplace_location_override_is_only_accepted_for_run(self):
+        with mock.patch.object(experiment.sys, "argv", [
+            "experiment.py", "setup", "--config", "local.json",
+            "--marketplace-location-override", "https://172.20.0.20:8888",
+        ]), mock.patch.object(experiment, "execute") as execute, \
+             mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            experiment.main()
+        execute.assert_not_called()
+
     def test_dry_run_is_only_accepted_for_setup(self):
         with mock.patch.object(experiment.sys, "argv", [
             "experiment.py", "teardown", "--config", "remote.json", "--dry-run",

@@ -408,6 +408,39 @@ def validate_scion_address(value: Any, context: str) -> None:
         raise ConfigError(f"{context} has an invalid port: {value}")
 
 
+def validate_marketplace_location(value: str, context: str) -> None:
+    """Check a marketplace API address: an HTTPS URL, or a SCION address for the SCION API."""
+    if SCION_ADDRESS_RE.fullmatch(value):
+        validate_scion_address(value, context)
+        return
+    parts = urllib.parse.urlsplit(value)
+    try:
+        port = parts.port
+    except ValueError as err:
+        raise ConfigError(f"{context} has an invalid port: {value}") from err
+    if parts.scheme != "https" or not parts.hostname or port is None:
+        raise ConfigError(
+            f"{context} must be https://<host>:<port> or a SCION address such as "
+            "[1-ff00:0:110,127.0.0.1]:31888",
+        )
+
+
+def marketplace_login_url(location: str) -> str:
+    """The URL to log in to the marketplace at location, an address validate_marketplace_location
+    accepts.
+
+    A SCION address is mapped to the HTTPS URL of the same host and port: a generated topology
+    serves the TCP API and the web app on the address and port of the SCION API.
+    """
+    match = SCION_ADDRESS_RE.fullmatch(location)
+    if match is None:
+        return location
+    host = match.group("host")
+    if ":" in host:
+        host = f"[{host}]"
+    return f"https://{host}:{match.group('port')}"
+
+
 def parse_marketplace_interfaces(value: Any) -> dict[str, tuple[int, ...]]:
     """Check the Hummingbird-capable interface IDs per ISD-AS that the marketplace sells."""
     context = "hummingbird.marketplace.interfaces"
@@ -1159,8 +1192,14 @@ def server_args(server: Endpoint, sciond: str) -> list[str]:
     ]
 
 
-def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
-    """Build the hummbwtester command-line arguments for one configured client."""
+def client_args(
+    client: Client, server: Endpoint, sciond: str, marketplace_location: str | None = None,
+) -> list[str]:
+    """Build the hummbwtester command-line arguments for one configured client.
+
+    A marketplace_location makes a client buying from a marketplace buy from the one there,
+    instead of the one the ASes of its path advertise.
+    """
     args = ["/share/bin/hummbwtester", "-mode", "client", "-local", client.endpoint.local(),
             "-remote", server.local(), "-sciond", sciond,
             "-bandwidth", client.bandwidth, "-maxburst", client.maxburst,
@@ -1181,6 +1220,8 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
         ])
         if client.reservation_source == "keys":
             args.extend(["-hummKeysDir", "/share/gen"])
+        elif marketplace_location is not None:
+            args.extend(["-marketplace-location-override", marketplace_location])
         for flag, value in (
                 ("-renewal-ahead", reservation.renewal_ahead),
                 ("-reservation-overlap", reservation.reservation_overlap),
@@ -1536,8 +1577,13 @@ def print_report(
 def run_experiment(
     config_path: Path,
     config: tuple[Endpoint, list[Client], dict[str, int], dict[str, str]] | None = None,
+    marketplace_location: str | None = None,
 ) -> int:
-    """Launch the server and all clients, then return their aggregate experiment status."""
+    """Launch the server and all clients, then return their aggregate experiment status.
+
+    With a marketplace_location, the clients buy from the marketplace there, and the
+    advertisements of gen/ are not read: the topology need not advertise any marketplace.
+    """
     server, clients, _, _ = config if config is not None else load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
@@ -1564,7 +1610,9 @@ def run_experiment(
                                     for client in hummingbird_clients}
             # A Docker topology advertises the registration endpoint that is actually reachable
             # from this controller. The workload URL is for the SSH backend, where gen/ is absent.
-            marketplace = replace(client.marketplace, url=marketplace_registration_website())
+            url = (marketplace_registration_website() if marketplace_location is None
+                   else marketplace_login_url(marketplace_location))
+            marketplace = replace(client.marketplace, url=url)
             marketplace_jwt_file, remote_jwt_file = install_docker_jwt(
                 obtain_marketplace_jwt(marketplace), marketplace_services)
         server_process = launch(server_service, server_pidfile, args, log_dir / "server.log")
@@ -1572,7 +1620,8 @@ def run_experiment(
         time.sleep(2)
         for client in clients:
             suffix = client.client_id
-            args = client_args(client, server, endpoint_sciond(client.endpoint, daemons))
+            args = client_args(client, server, endpoint_sciond(client.endpoint, daemons),
+                               marketplace_location)
             pidfile = f"/tmp/hummbwtester-{suffix}.pid"
             jwt_file = remote_jwt_file if client.hummingbird else None
             process = launch(tester_service(client.endpoint.isd_as), pidfile, args,

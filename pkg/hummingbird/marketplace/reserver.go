@@ -42,6 +42,10 @@ type ReservationRequest struct {
 	// in strictly ascending order.
 	// Nil selects every AS of the path; non-nil but empty reserves nothing.
 	Selected []int
+	// MarketplaceAddress, if not empty, is the API address of the marketplace to buy every
+	// selected AS from. The marketplaces the path advertises are then ignored, and the path
+	// need not advertise any.
+	MarketplaceAddress string
 }
 
 // Reserver obtains reservations from the marketplaces, keeping the connections to them open
@@ -129,7 +133,8 @@ func (r *Reserver) discard(apiAddress string) {
 // obtains the forward and optional reverse reservations,
 // and returns a Hummingbird reservation ready to be used in the dataplane.
 //
-// The selected ASes must be fully covered by exactly one marketplace.
+// The selected ASes must be fully covered by exactly one marketplace,
+// which req.MarketplaceAddress can name instead of the path advertising it.
 // The returned reservation always has one entry per AS of the path, nil for the unselected ones.
 // If req.Selected is empty but not nil, nothing is bought, no marketplace is contacted, and the
 // reservation has no flyovers (nor a reverse reservation).
@@ -161,7 +166,13 @@ func (r *Reserver) Reserve(
 		)
 	}
 
-	market, err := NewPathMarketplacesForASes(p, req.Selected)
+	var market *PathMarketplaces
+	var err error
+	if req.MarketplaceAddress != "" {
+		market, err = NewPathMarketplacesAt(p, req.Selected, req.MarketplaceAddress)
+	} else {
+		market, err = NewPathMarketplacesForASes(p, req.Selected)
+	}
 	if err != nil {
 		return nil, serrors.Wrap("discovering the marketplaces of the path", err)
 	}
