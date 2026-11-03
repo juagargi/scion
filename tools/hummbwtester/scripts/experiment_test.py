@@ -1,3 +1,4 @@
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -90,6 +91,33 @@ class ExperimentTest(unittest.TestCase):
             experiment.planner.informative_lines({"informative": "text"})
         with self.assertRaisesRegex(experiment.planner.ConfigError, "informative"):
             experiment.planner.informative_lines({"informative": ["ok", 1]})
+
+    def run_main(self, action, **execute_result):
+        with mock.patch.object(experiment.sys, "argv", [
+            "experiment.py", action, "--config", "local.json",
+        ]), mock.patch.object(experiment, "execute", **execute_result), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            status = experiment.main()
+        return status, stdout.getvalue(), stderr.getvalue()
+
+    def test_setup_reports_that_it_is_done(self):
+        status, stdout, stderr = self.run_main("setup", return_value=0)
+        self.assertEqual(status, 0)
+        self.assertEqual(stdout.splitlines()[-1], "setup: done.")
+        self.assertNotIn("FAILED", stderr)
+
+    def test_setup_reports_that_it_failed(self):
+        for result in ({"return_value": 1}, {"side_effect": RuntimeError("boom")}):
+            with self.subTest(result=result):
+                status, stdout, stderr = self.run_main("setup", **result)
+                self.assertEqual(status, 1)
+                self.assertNotIn("done", stdout)
+                self.assertEqual(stderr.splitlines()[-1], "setup: FAILED.")
+
+    def test_only_setup_reports_its_outcome(self):
+        _, stdout, stderr = self.run_main("run", return_value=1)
+        self.assertEqual((stdout, stderr), ("", ""))
 
     def test_dry_run_is_only_accepted_for_setup(self):
         with mock.patch.object(experiment.sys, "argv", [

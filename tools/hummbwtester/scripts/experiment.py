@@ -228,12 +228,19 @@ def main() -> int:
     if args.dry_run and args.action != "setup":
         parser.error("--dry-run is only supported with setup")
     try:
-        return execute(args.action, args.config, args.dry_run)
+        status = execute(args.action, args.config, args.dry_run)
     except (planner.ConfigError, ssh.SSHError, ssh_setup.selective_qdisc.Error,
             argparse.ArgumentTypeError, subprocess.SubprocessError,
             RuntimeError, OSError, ValueError) as err:
         print(f"error: {err}", file=sys.stderr)
-        return 1
+        status = 1
+    if args.action == "setup":
+        # Setup prints a lot; the last line says how it ended.
+        if status == 0:
+            print("setup: done.")
+        else:
+            print("setup: FAILED.", file=sys.stderr)
+    return status
 
 
 if __name__ == "__main__":
