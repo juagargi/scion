@@ -895,7 +895,7 @@ def _compose_document(config_hash: str) -> str:
     restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.time=180d
       - --web.listen-address=127.0.0.1:{PROMETHEUS_PORT}
     labels:
       {CONFIG_HASH_LABEL}: "{config_hash}"
