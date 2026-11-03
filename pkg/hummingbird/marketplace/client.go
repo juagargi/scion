@@ -17,9 +17,9 @@ package marketplace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -38,6 +38,12 @@ const (
 	FailOnError BuyMode = iota
 	ContinueOnError
 )
+
+// when using partial overlap, we might only get asset intervals back until the exact end, which makes
+// it impossible without a second seach query to know whether we can extend it, for example to satisfy
+// the time_min_duration or time_granularity constraints. We extend the search asset validity by
+// 10min, which should be enough to satisfy all reasonable time_min_duration or time_granularity constraints.
+const extended_search_validity = 600
 
 type InterfacePair struct {
 	IA      uint64
@@ -123,13 +129,6 @@ func lcm(a, b uint32) uint32 {
 	return a / gcd(a, b) * b
 }
 
-func timeMin(a time.Time, b time.Time) time.Time {
-	if a.Before(b) {
-		return a
-	}
-	return b
-}
-
 type UnwrappedAsset struct {
 	AssetId         []byte
 	Ia              uint64
@@ -146,8 +145,11 @@ type UnwrappedAsset struct {
 	Bandwidth       uint32
 }
 
+// UniqueID computes an internal unique ID, since an asset returned by the marketplace can have
+// multiple validity intervals, we cannot just use the asset ID as ID when unwrapping them.
+// The combination of the original asset ID and the start of the validity interval makes it unique.
 func (a *UnwrappedAsset) UniqueID() string {
-	return strconv.Itoa(len(a.AssetId)) + string(a.AssetId) + strconv.Itoa(int(a.StartsAt))
+	return fmt.Sprintf("%s,%d", string(a.AssetId), int(a.StartsAt))
 }
 
 func activeAt(
@@ -381,6 +383,10 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 			IfIdEgress:  &hop.Egress,
 		})
 	}
+	stop := stopsAtLatest
+	if validityMode == hummingbird.ValidityMode_partial_overlap {
+		stop += extended_search_validity
+	}
 	if owned {
 		resp, err = c.Marketplace.SearchAssets(ctx, &connect.Request[hummingbird.SearchAssetsRequest]{
 			Msg: &hummingbird.SearchAssetsRequest{
@@ -389,7 +395,7 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 						Hops:            hops,
 						MinRequiredBw:   &minBW,
 						StartsAtLatest:  &startsAtLatest,
-						StopsAtEarliest: &stopsAtLatest,
+						StopsAtEarliest: &stop,
 					},
 				},
 				ValidityMode: validityMode,
@@ -403,7 +409,7 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 						Hops:            hops,
 						MinRequiredBw:   minBW,
 						StartsAtLatest:  startsAtLatest,
-						StopsAtEarliest: stopsAtLatest,
+						StopsAtEarliest: stop,
 					},
 				},
 				ValidityMode: validityMode,
@@ -461,7 +467,7 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 }
 
 // checkoutAssetForInterfacePairWithCombine tries to find assets that can be combined on the time axis. It does not check for combinations on the bandwidth axis.
-func (c *Client) checkoutAssetForInterfacePairWithCombine(ctx context.Context, asAssets *ASAssets, bwInKbps uint32,
+func (c *Client) checkoutAssetForInterfacePairWithCombine(asAssets *ASAssets, bwInKbps uint32,
 	startsAt int64, stopsAt int64, combineCost uint64) ([]*hummingbird.BuyAsset, error) {
 
 	ingressAndEgressSuccess := false
@@ -470,9 +476,18 @@ func (c *Client) checkoutAssetForInterfacePairWithCombine(ctx context.Context, a
 	var ok bool
 	ingressBuyAssets, ingressAssetPrice, ok = c.recursiveSelectStart(asAssets.ingressAssets, bwInKbps, startsAt, stopsAt, combineCost)
 	if ok {
-		egressBuyAssets, egressAssetPrice, ok = c.recursiveSelectStart(asAssets.egressAssets, bwInKbps, startsAt, stopsAt, combineCost)
+		ingressChainEnd := ingressBuyAssets[len(ingressBuyAssets)-1].StopsAtExactly
+		egressBuyAssets, egressAssetPrice, ok = c.recursiveSelectStart(asAssets.egressAssets, bwInKbps, startsAt, ingressChainEnd, combineCost)
 		if ok {
 			ingressAndEgressSuccess = true
+		}
+		if ingressBuyAssets[len(ingressBuyAssets)-1].StopsAtExactly != egressBuyAssets[len(egressBuyAssets)-1].StopsAtExactly {
+			// TODO: this edge case here is not properly handled. If there is a mismatch between time_min_duration or time_granularity
+			// between the ingress and the egress chain, the chain for ingress assets and egress assets might stop at a different
+			// timestamp. But when redeeming the assets, the marketplace rejects ingress+egress assets, if they do not match the
+			// exact validity period.
+			ingressAndEgressSuccess = false
+			log.Debug("found ingress and egress assets chain with missmatching validity period")
 		}
 	}
 	pairBuyAssets, pairAssetPrice, ok = c.recursiveSelectStart(asAssets.pairAssets, bwInKbps, startsAt, stopsAt, combineCost)
@@ -501,7 +516,6 @@ func (c *Client) checkoutAssetForInterfacePairWithCombine(ctx context.Context, a
 // The function does not combine assets. If no single (ingress-asset, egress-asset) tuple
 // or interface-pair asset can satisfy the request, no buy order is returned.
 func (c *Client) checkoutAssetForInterfacePair(
-	ctx context.Context,
 	asAssets *ASAssets,
 	bwInKbps uint32,
 	startsAt int64,
@@ -634,7 +648,7 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 			}
 			if combineAssets {
 				o, err := c.checkoutAssetForInterfacePairWithCombine(
-					ctx, asAssets, bwInKbps, startsAtUnix, stopsAtUnix, combineCost)
+					asAssets, bwInKbps, startsAtUnix, stopsAtUnix, combineCost)
 				if err != nil {
 					if buyMode == FailOnError {
 						return nil, err
@@ -644,7 +658,7 @@ func (c *Client) ObtainReservationsForInterfacePairs(
 				}
 				orders = append(orders, o...)
 			} else {
-				o, err := c.checkoutAssetForInterfacePair(ctx, asAssets, bwInKbps, startsAtUnix, stopsAtUnix)
+				o, err := c.checkoutAssetForInterfacePair(asAssets, bwInKbps, startsAtUnix, stopsAtUnix)
 				if err != nil {
 					if buyMode == FailOnError {
 						return nil, err
