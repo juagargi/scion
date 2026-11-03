@@ -301,7 +301,9 @@ python3 tools/hummbwtester/experiment.py run --config <copy>.json
 
 `--no-marketplace-metainfo` generates the marketplace without advertising it, and the
 `scion_address` is the `scion_api_addr` of `gen/ASff00_0_111/marketplace.toml`. SSH runs log in at
-the `https://host:port` of `scion_address` through the tunnel, and SSH setup still advertises it.
+the `https://host:port` of `scion_address` through the tunnel. With the override, SSH setup
+withdraws the marketplace from the static info Notes of the hosts instead of advertising it, so
+that no path announces its location (see step 5 of "How SSH setup works").
 
 `setup --dry-run` lists, as numbered steps, what setup would do without doing any of it:
 whether it would edit the `[router]` section of the generated border-router configs or rewrite the
@@ -404,6 +406,9 @@ what differs. Setup performs these steps in order:
    the `scion_address`, and `client_registration_website` the `https://host:port` of the `scion_address`. Other static info settings,
    other Note keys, and other marketplaces' entries are kept; an entry for the same `api_address`
    under another name is replaced, because clients would treat it as a different marketplace.
+   With `location_override` set to `true`, the helper instead removes the `hummbwtester` entry,
+   and any entry for the same `api_address` under another name, so that no path announces the
+   marketplace's location; a host whose file changes gets the same control-service restart step.
    The file keeps its owner and mode and is created if missing. Each host's file is `static_info`
    (default `/etc/scion/staticInfoConfig.json`).
 6. **Prometheus.** It writes the file-SD targets to `gen/hummbwtester-prometheus/` locally and, with

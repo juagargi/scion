@@ -29,6 +29,8 @@ setup performs, in this order:
    with sudo -n, unless its recorded state and the live root qdisc already match.
 5. Static info Note: on the server, client and marketplace hosts, pipe static_info_note.py to
    `sudo -n python3 -` to insert or update the hummbwtester entry of the Note's hummingbird list.
+   With hummingbird.marketplace.location_override, remove it instead, and any entry for the same
+   api_address, so that no path announces the marketplace's location.
    Control services are never restarted; a changed file becomes a manual step.
 6. Prometheus: write the file-SD targets locally and to /tmp/hummbwtester/prometheus/ on the
    Prometheus host, and (re)create the hummbwtester-prometheus container (host networking,
@@ -668,11 +670,14 @@ def restart_instruction(host: remote.SSHHost) -> str:
 
 
 def ensure_marketplace_notes(inventory: remote.Inventory, dry_run: bool = False) -> list[str]:
-    """Advertise the marketplace and return the manual steps the changed files need."""
+    """Advertise the marketplace, or withdraw it with location_override, and return the manual
+    steps the changed files need."""
     entry = note_entry(inventory.marketplace)
     if entry is None:
         print("hummingbird.marketplace.scion_address is not set; static info Notes are unchanged")
         return []
+    if inventory.marketplace.location_override:
+        return withdraw_marketplace_notes(inventory, entry, dry_run)
     manual = []
     for name in note_hosts(inventory):
         host = inventory.hosts[name]
@@ -683,6 +688,29 @@ def ensure_marketplace_notes(inventory: remote.Inventory, dry_run: bool = False)
             manual.append(restart_instruction(host))
         else:
             print(f"marketplace Note in {host.static_info} on {name} is current")
+    return manual
+
+
+def withdraw_marketplace_notes(
+    inventory: remote.Inventory, entry: dict[str, str], dry_run: bool = False,
+) -> list[str]:
+    """Remove the marketplace from the Notes, so that no path announces where it is.
+
+    With location_override the clients are told the location instead, and the experiment must
+    work without the metadata. Entries for its address under another name go too.
+    """
+    manual = []
+    for name in note_hosts(inventory):
+        host = inventory.hosts[name]
+        if _static_info_note(host, "remove", "--name", entry["name"],
+                             "--api-address", entry["api_address"], dry_run=dry_run):
+            print(f"{'dry-run: would withdraw' if dry_run else 'withdrew'} marketplace "
+                  f"{entry['api_address']} from {host.static_info} on {name} "
+                  "(location_override)")
+            manual.append(restart_instruction(host))
+        else:
+            print(f"{host.static_info} on {name} does not advertise the marketplace "
+                  "(location_override)")
     return manual
 
 

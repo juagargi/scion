@@ -77,12 +77,15 @@ def ensure_entry(config: dict[str, Any], entry: dict[str, str]) -> bool:
     return True
 
 
-def remove_entry(config: dict[str, Any], name: str) -> bool:
-    """Remove the entries with this name, dropping keys that become empty."""
+def remove_entry(config: dict[str, Any], name: str, api_address: str | None = None) -> bool:
+    """Remove the entries with this name, or advertising api_address under any name, dropping
+    keys that become empty."""
     note = read_note(config)
     current = note.get("hummingbird", [])
     remaining = [item for item in current
-                 if not (isinstance(item, dict) and item.get("name") == name)]
+                 if not (isinstance(item, dict) and (
+                     item.get("name") == name
+                     or (api_address is not None and item.get("api_address") == api_address)))]
     if remaining == current:
         return False
     if remaining:
@@ -151,6 +154,8 @@ def main() -> int:
     remove = subparsers.add_parser("remove")
     remove.add_argument("--file", required=True, type=Path)
     remove.add_argument("--name", required=True)
+    remove.add_argument("--api-address",
+                        help="also remove the entries advertising this address under any name")
     for subparser in (ensure, remove):
         subparser.add_argument("--dry-run", action="store_true",
                                help="report whether the file would change without writing it")
@@ -161,7 +166,7 @@ def main() -> int:
             changed = ensure_entry(config, args.entry)
         else:
             # remove
-            changed = remove_entry(config, args.name)
+            changed = remove_entry(config, args.name, args.api_address)
         if changed and not args.dry_run:
             store(args.file, config)
     except (Error, OSError) as err:
