@@ -33,8 +33,8 @@ waits two seconds, and starts all clients concurrently.
 Hummingbird clients either derive reservations from `/share/gen` master keys or buy them from the
 marketplace advertised by the selected SCION path, according to the global `hummingbird` setting.
 Marketplace runs log in through the registration website advertised in `gen/AS*/staticInfoConfig.json`
-(the workload `url` is only used by SSH deployments) and pass the resulting JWT to client processes
-through an owner-only file.
+(or, with `location_override`, at the `https://host:port` of the marketplace's `scion_address`) and
+pass the resulting JWT to client processes through an owner-only file.
 See [Marketplace location override](#marketplace-location-override) for topologies that advertise
 no marketplace.
 Key-derived Hummingbird clients choose a random nonzero 22-bit reservation ID when they start and
@@ -58,18 +58,17 @@ Each run uses one self-contained JSON file.
 - `hummingbird`: required global reservation source (`keys` or `marketplace`).
   SSH deployments support only `marketplace`: key-derived reservations need the master keys of every
   on-path AS, which only a generated Docker topology provides.
-  Marketplace mode also requires a `marketplace` object with `url`, `username`, `password_env`,
-  and `location_override`; `sub_account` is optional. The password is read from the named
+  Marketplace mode also requires a `marketplace` object with `username`, `password_env`, and
+  `location_override`; `sub_account` is optional. The password is read from the named
   environment variable, never from JSON. `location_override` is a boolean, see
   [Marketplace location override](#marketplace-location-override).
-  In SSH deployments, `host` is required: it names the `deployment.hosts` entry from which `url` is
-  reachable, e.g. `"host": "ufms"` with `"url": "https://127.0.0.1:8888"` for a marketplace bound to
-  the loopback of that host. Every SSH command (`setup`, `run`, `teardown`) rejects a configuration
+  In SSH deployments, `host` is required: it names the `deployment.hosts` entry the marketplace runs
+  on, e.g. `"host": "ufms"` for a marketplace bound to the loopback of that host. Every SSH command (`setup`, `run`, `teardown`) rejects a configuration
   without it. Docker deployments reject `host`.
   In SSH deployments, `scion_address` is required too: the SCION API address of the marketplace,
   e.g. `"[71-2:0:5c,127.0.0.1]:31888"`, whose ISD-AS must be that of `host`. SSH setup deploys the
-  marketplace bound to the `url` (TCP, TLS) and `scion_address` (UDP, SCION) endpoints, so both must
-  use a loopback address and `url` must be `https://<loopback>:<port>`: the web app and API are
+  marketplace bound to the host and port of `scion_address`, for the TCP (TLS) web app and API
+  and for the UDP (SCION) API alike, so the host must be a loopback address: the web app and API are
   then reachable only on the marketplace host, and the SCION API only over SCION through that
   host's border routers. Docker deployments reject `scion_address` unless `location_override` is
   `true`, because their generated topology otherwise advertises its marketplace.
@@ -79,7 +78,9 @@ Each run uses one self-contained JSON file.
   ordered pairs of distinct listed interfaces (`0→103`, `103→106`, `106→0`, ...), and none for an
   AS that is not listed. Without `interfaces`, every interface of every AS supports Hummingbird,
   as in a Docker topology. Docker deployments reject `interfaces`.
-  The Docker runner discovers the reachable registration URL from `gen/`; `url` is used by SSH runs.
+  There is no `url` field: where a login URL is needed, it is the `https://host:port` of
+  `scion_address`. The Docker runner discovers the reachable registration URL from `gen/`, unless
+  `location_override` is `true`.
 - `deployment.metrics` (SSH): `prometheus` is the host that runs Prometheus, `local_port_base` the
   first controller and Prometheus-host loopback port of the metric relays, `routers` the extra
   border-router targets, and the optional `local_prometheus_port` (default `8090`, outside the
@@ -283,7 +284,6 @@ For a Docker topology generated without marketplace metainfo, set in a copy of `
 
 ```json
 "marketplace": {
-  "url": "https://127.0.0.1:8888",
   "scion_address": "[1-ff00:0:111,172.20.0.27]:31888",
   "username": "alice",
   "password_env": "HUMMBWTESTER_MARKETPLACE_PASSWORD",
@@ -301,7 +301,7 @@ python3 tools/hummbwtester/experiment.py run --config <copy>.json
 
 `--no-marketplace-metainfo` generates the marketplace without advertising it, and the
 `scion_address` is the `scion_api_addr` of `gen/ASff00_0_111/marketplace.toml`. SSH runs log in at
-the configured `url` as usual, and SSH setup still advertises `scion_address`.
+the `https://host:port` of `scion_address` through the tunnel, and SSH setup still advertises it.
 
 `setup --dry-run` lists, as numbered steps, what setup would do without doing any of it:
 whether it would edit the `[router]` section of the generated border-router configs or rewrite the
@@ -370,12 +370,12 @@ what differs. Setup performs these steps in order:
      `systemctl daemon-reload`. It runs the marketplace as the SSH user (e.g. `sciera`), never
      restarts it by itself, and has no `[Install]` section, so it cannot be enabled;
    - `/etc/scion/marketplace/` with `marketplace.toml` (the Docker topology's template, bound to
-     `url` and `scion_address`) and links to `/etc/scion/topology.json` and `/etc/scion/certs`.
+     the host and port of `scion_address`) and links to `/etc/scion/topology.json` and `/etc/scion/certs`.
      The marketplace keeps its TLS certificate and JWT signing keys there;
    - `/var/lib/scion/marketplace/` for its database.
 
-   The service keeps running untouched when nothing changed and both APIs answer: HTTPS at `url`,
-   and a UDP socket bound to the `scion_address` port. Otherwise (something replaced, not running,
+   The service keeps running untouched when nothing changed and both APIs answer: HTTPS at the host and port of
+   `scion_address`, and a UDP socket bound to its port. Otherwise (something replaced, not running,
    or unreachable) setup stops it if it runs, rebuilds the database, starts it, and waits up to
    30 s until both APIs answer. The database gets the Docker topology's default entries for the
    server, client, and marketplace ASes: users `alice` and `bob` with password `1234`, assets for
@@ -387,7 +387,8 @@ what differs. Setup performs these steps in order:
    they change, it counts as something replaced. The database is rebuilt only for such a
    (re)start, so earlier purchases are lost then.
 3. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
-   loopback port to `hummingbird.marketplace.url` as seen from `hummingbird.marketplace.host`,
+   loopback port to the host and port of `hummingbird.marketplace.scion_address` as seen from
+   `hummingbird.marketplace.host`,
    logs in through it with `marketplace/tools/get_jwt.py`, and closes it. The JWT is copied with
    mode `600` to `<run_dir>/setup/marketplace.jwt` on the Hummingbird client hosts, and the
    controller's copy is deleted. The SSH launch shell reads the JWT file only immediately before
@@ -400,7 +401,7 @@ what differs. Setup performs these steps in order:
    pipes `scripts/static_info_note.py` to `sudo -n python3 -` on the server, client, and
    marketplace hosts. The helper inserts or updates one entry named `hummbwtester` at the front of
    the Note's `hummingbird` list, with `api_protocol` `connectrpc/TLS/QUIC/SCION`, `api_address`
-   the `scion_address`, and `client_registration_website` the `url`. Other static info settings,
+   the `scion_address`, and `client_registration_website` the `https://host:port` of the `scion_address`. Other static info settings,
    other Note keys, and other marketplaces' entries are kept; an entry for the same `api_address`
    under another name is replaced, because clients would treat it as a different marketplace.
    The file keeps its owner and mode and is created if missing. Each host's file is `static_info`

@@ -21,7 +21,8 @@ setup performs, in this order:
    rebuilt from the Docker topology's default entries, only when something was replaced, it is
    not running, or its APIs are unreachable; setup then waits until both APIs answer.
 3. Marketplace JWT: open a temporary ssh-control-master that forwards a free controller loopback
-   port to hummingbird.marketplace.url as seen from hummingbird.marketplace.host, log in through
+   port to the host and port of hummingbird.marketplace.scion_address, as seen from
+   hummingbird.marketplace.host (its TLS web app), log in through
    it with marketplace/tools/get_jwt.py, close it, and copy the JWT (mode 600) to the hosts of the
    Hummingbird clients. The controller's copy is deleted.
 4. Selective qdiscs: on each shaping host, copy selective_qdisc.py to <run_dir>/setup/ and run it
@@ -68,7 +69,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Generator
 import contextlib
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 import os
@@ -215,10 +216,10 @@ def _tunneled_url(url: str, local_port: int) -> tuple[str, str]:
         port = parts.port or (443 if parts.scheme == "https" else 80)
     except ValueError as err:
         raise workload.ConfigError(
-            f"hummingbird.marketplace.url has an invalid port: {url}",
+            f"marketplace url has an invalid port: {url}",
         ) from err
     if not parts.hostname:
-        raise workload.ConfigError(f"hummingbird.marketplace.url has no host: {url}")
+        raise workload.ConfigError(f"marketplace url has no host: {url}")
     host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
     local = parts._replace(netloc=f"127.0.0.1:{local_port}")
     return f"{host}:{port}", urllib.parse.urlunsplit(local)
@@ -246,19 +247,21 @@ def marketplace_tunnel(host: remote.SSHHost, url: str) -> Generator[str, None, N
 
 
 def obtain_marketplace_jwt(inventory: remote.Inventory) -> str:
-    """Log in at the marketplace url as seen from its host, through a temporary tunnel."""
+    """Log in at the marketplace web app as seen from its host, through a temporary tunnel."""
     marketplace = inventory.marketplace
+    url = marketplace.url
+    assert url is not None  # load_config requires scion_address for SSH deployments.
     host = inventory.hosts[inventory.marketplace_host]
     if not os.environ.get(marketplace.password_env):
         # Checked before the tunnel is opened, which would be pointless without a password.
         raise workload.ConfigError(
             f"marketplace password environment variable {marketplace.password_env} is not set")
-    with marketplace_tunnel(host, marketplace.url) as local_url:
+    with marketplace_tunnel(host, url) as local_url:
         try:
-            return workload.obtain_marketplace_jwt(replace(marketplace, url=local_url))
+            return workload.obtain_marketplace_jwt(marketplace, local_url)
         except workload.ConfigError as err:
             raise workload.ConfigError(
-                f"{err} (tunneled to {marketplace.url} on {host.name})",
+                f"{err} (tunneled to {url} on {host.name})",
             ) from err
 
 
@@ -283,11 +286,6 @@ def _topology_marketplace():
     return topology_marketplace
 
 
-def _url_endpoint(url: str) -> tuple[str, int]:
-    parts = urllib.parse.urlsplit(url)
-    return parts.hostname or "", parts.port or (443 if parts.scheme == "https" else 80)
-
-
 def _scion_endpoint(scion_address: str) -> tuple[str, str, int]:
     match = workload.SCION_ADDRESS_RE.fullmatch(scion_address)
     assert match is not None  # load_config validated it.
@@ -304,7 +302,8 @@ def marketplace_toml(marketplace: workload.MarketplaceConfig) -> str:
     _, scion_host, scion_port = _scion_endpoint(marketplace.scion_address)
     return _topology_marketplace().MARKETPLACE_TOML.format(
         config_dir=REMOTE_MARKETPLACE_CONFIG_DIR,
-        api_addr=_host_port(*_url_endpoint(marketplace.url)),
+        # The TCP and the SCION API listen on the same host and port.
+        api_addr=_host_port(scion_host, scion_port),
         scion_api_addr=_host_port(scion_host, scion_port),
         db_path=REMOTE_MARKETPLACE_DB,
     )
@@ -345,6 +344,7 @@ def _marketplace_probe(marketplace: workload.MarketplaceConfig) -> str:
     """A shell test that succeeds while both marketplace APIs listen on the marketplace host."""
     assert marketplace.scion_address is not None
     _, _, scion_port = _scion_endpoint(marketplace.scion_address)
+    assert marketplace.url is not None
     login = marketplace.url.rstrip("/") + "/login"
     return (f"python3 -c {shlex.quote(_HTTPS_PROBE)} {shlex.quote(login)} && "
             f"ss -Hlun {shlex.quote(f'sport = :{scion_port}')} | grep -q .")

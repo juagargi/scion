@@ -146,7 +146,7 @@ class SSHSetupTest(unittest.TestCase):
 
     def marketplace(self, **changes):
         return replace(orchestration.MarketplaceConfig(
-            "https://127.0.0.1:8888/", "alice", "MARKETPLACE_PASSWORD", None, "monitor",
+            "alice", "MARKETPLACE_PASSWORD", None, "monitor",
             "[1-ff00:0:110,127.0.0.1]:31888",
         ), **changes)
 
@@ -167,9 +167,9 @@ class SSHSetupTest(unittest.TestCase):
              mock.patch.object(ssh_setup.subprocess, "run", return_value=completed) as run:
             jwt = ssh_setup.obtain_marketplace_jwt(inventory)
         self.assertEqual(jwt, "jwt")
-        self.assertEqual(obtain.call_args.args[0].url, "https://127.0.0.1:18888/")
+        self.assertEqual(obtain.call_args.args[1], "https://127.0.0.1:18888")
         start, stop = (call.args[0] for call in run.call_args_list)
-        self.assertEqual(start[start.index("-L") + 1], "127.0.0.1:18888:127.0.0.1:8888")
+        self.assertEqual(start[start.index("-L") + 1], "127.0.0.1:18888:127.0.0.1:31888")
         self.assertEqual(start[-1], "monitor-alias")
         self.assertEqual(stop[stop.index("-O") + 1], "exit")
 
@@ -212,7 +212,7 @@ class SSHSetupTest(unittest.TestCase):
             "name": "hummbwtester",
             "api_protocol": "connectrpc/TLS/QUIC/SCION",
             "api_address": "[1-ff00:0:110,127.0.0.1]:31888",
-            "client_registration_website": "https://127.0.0.1:8888/",
+            "client_registration_website": "https://127.0.0.1:31888",
         })
         self.assertEqual(helper.kwargs["input"], ssh_setup.STATIC_INFO_HELPER.read_text())
         self.assertEqual(len(manual), 1)
@@ -539,7 +539,7 @@ class MarketplaceServiceTest(unittest.TestCase):
     def test_config_binds_both_apis_to_the_configured_loopback_addresses(self):
         config = ssh_setup.marketplace_toml(SSHSetupTest.marketplace(SSHSetupTest()))
         self.assertIn('config_dir = "/etc/scion/marketplace"', config)
-        self.assertIn('api_addr = "127.0.0.1:8888"', config)
+        self.assertIn('api_addr = "127.0.0.1:31888"', config)
         self.assertIn('scion_api_addr = "127.0.0.1:31888"', config)
         self.assertIn('connection = "/var/lib/scion/marketplace/marketplace.db"', config)
 
