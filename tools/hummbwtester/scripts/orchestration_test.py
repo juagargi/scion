@@ -8,12 +8,14 @@ from unittest import mock
 
 from tools.hummbwtester.scripts import orchestration
 from tools.hummbwtester.scripts.orchestration import (
+    check_docker_marketplace_location,
     ConfigError,
     client_args,
     interface_counters,
     inter_as_router_peers,
     InterfaceCounters,
     load_config,
+    marketplace_login_url,
     marketplace_registration_website,
     obtain_marketplace_jwt,
     patch_compose,
@@ -73,8 +75,8 @@ class ConfigTest(unittest.TestCase):
         config["hummingbird"] = {
             "reservation_source": "marketplace",
             "marketplace": {
-                "url": "https://marketplace.invalid", "username": "alice",
-                "password_env": "MARKETPLACE_PASSWORD",
+                "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
             },
         }
         config["hummingbird_clients"][0]["hummingbird_reservation"].update({
@@ -87,17 +89,100 @@ class ConfigTest(unittest.TestCase):
         self.assertNotIn("-hummKeysDir", args)
         assert hummingbird.marketplace is not None
         self.assertEqual(hummingbird.marketplace.username, "alice")
-        self.assertEqual(hummingbird.marketplace.url, "https://marketplace.invalid")
+        # Without an address of its own, the URL comes from the topology's advertisement.
+        self.assertIsNone(hummingbird.marketplace.url)
         self.assertIsNone(hummingbird.marketplace.sub_account)
         self.assertIsNone(hummingbird.marketplace.host)
+
+    def marketplace_config(self, **marketplace):
+        """A Docker configuration buying from a marketplace configured with marketplace."""
+        config = self.base_config()
+        config["hummingbird"] = {
+            "reservation_source": "marketplace",
+            "marketplace": {
+                "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
+                **marketplace,
+            },
+        }
+        config["hummingbird_clients"][0]["hummingbird_reservation"].update({
+            "bandwidth": "100kbps", "reverse_bandwidth": "1mbps",
+        })
+        return config
+
+    def test_location_override_is_a_required_boolean(self):
+        config = self.marketplace_config()
+        del config["hummingbird"]["marketplace"]["location_override"]
+        with self.assertRaisesRegex(ConfigError, "location_override"):
+            load_config(self.write_config(config))
+        for value in ("true", 1, None):
+            with self.subTest(value=value), self.assertRaisesRegex(ConfigError, "boolean"):
+                load_config(self.write_config(self.marketplace_config(location_override=value)))
+
+    def test_location_override_requires_scion_address(self):
+        with self.assertRaisesRegex(ConfigError, "requires scion_address"):
+            load_config(self.write_config(self.marketplace_config(location_override=True)))
+
+    def test_docker_scion_address_requires_location_override(self):
+        config = self.marketplace_config(scion_address="[1-ff00:0:111,172.20.0.27]:31888")
+        with self.assertRaisesRegex(ConfigError, "location_override"):
+            load_config(self.write_config(config))
+
+    def test_location_override_passes_scion_address_to_marketplace_clients(self):
+        location = "[1-ff00:0:111,172.20.0.27]:31888"
+        server, clients, _, _ = load_config(self.write_config(self.marketplace_config(
+            location_override=True, scion_address=location)))
+        best_effort, hummingbird = clients
+        args = client_args(hummingbird, server, "172.20.0.21:30255")
+        self.assertEqual(args[args.index("-marketplace-location-override") + 1], location)
+        self.assertNotIn("-marketplace-location-override",
+                         client_args(best_effort, server, "172.20.0.21:30255"))
+
+        server, clients, _, _ = load_config(self.write_config(self.marketplace_config()))
+        self.assertNotIn("-marketplace-location-override",
+                         client_args(clients[1], server, "172.20.0.21:30255"))
+
+    def test_docker_location_override_must_match_the_generated_marketplace(self):
+        def clients_at(scion_address):
+            return load_config(self.write_config(self.marketplace_config(
+                location_override=True, scion_address=scion_address)))[1]
+
+        with tempfile.TemporaryDirectory() as directory:
+            generated = Path(directory)
+            (generated / "ASff00_0_112").mkdir()
+            (generated / "ASff00_0_112" / "marketplace.toml").write_text(
+                'api_addr = "[fd00:f00d:cafe::7f00:13]:31888"\n'
+                'scion_api_addr = "[fd00:f00d:cafe::7f00:13]:31888"\n')
+            with mock.patch.object(orchestration, "GEN", generated):
+                check_docker_marketplace_location(
+                    clients_at("[1-ff00:0:112,fd00:f00d:cafe::7f00:13]:31888"))
+                for address in ("[1-ff00:0:111,fd00:f00d:cafe::7f00:13]:31888",
+                                "[1-ff00:0:112,127.0.0.1]:31888",
+                                "[1-ff00:0:112,fd00:f00d:cafe::7f00:13]:8888"):
+                    with self.subTest(address=address), \
+                         self.assertRaisesRegex(ConfigError, "not where the generated"):
+                        check_docker_marketplace_location(clients_at(address))
+                # Without the override the address is not used, nothing to check.
+                check_docker_marketplace_location(
+                    load_config(self.write_config(self.marketplace_config()))[1])
+            with mock.patch.object(orchestration, "GEN", generated / "empty"), \
+                 self.assertRaisesRegex(ConfigError, "none in gen/"):
+                check_docker_marketplace_location(
+                    clients_at("[1-ff00:0:112,fd00:f00d:cafe::7f00:13]:31888"))
+
+    def test_marketplace_login_url_follows_the_scion_address(self):
+        self.assertEqual(marketplace_login_url("[1-ff00:0:111,172.20.0.20]:8888"),
+                         "https://172.20.0.20:8888")
+        self.assertEqual(marketplace_login_url("[1-ff00:0:111,fd00::20]:8888"),
+                         "https://[fd00::20]:8888")
 
     def test_rejects_marketplace_host_in_docker_mode(self):
         config = self.base_config()
         config["hummingbird"] = {
             "reservation_source": "marketplace",
             "marketplace": {
-                "host": "ufms", "url": "https://127.0.0.1:8888", "username": "alice",
-                "password_env": "MARKETPLACE_PASSWORD",
+                "host": "ufms", "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
             },
         }
         with self.assertRaisesRegex(ConfigError, "only valid for SSH"):
@@ -108,25 +193,36 @@ class ConfigTest(unittest.TestCase):
         config["hummingbird"] = {
             "reservation_source": "marketplace",
             "marketplace": {
-                "url": "https://127.0.0.1:8888", "username": "alice",
-                "password_env": "MARKETPLACE_PASSWORD", "interfaces": {"1-ff00:0:110": [0, 1]},
+                "username": "alice",
+                "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
+                "interfaces": {"1-ff00:0:110": [0, 1]},
             },
         }
         with self.assertRaisesRegex(ConfigError, "interfaces is only valid for SSH"):
             load_config(self.write_config(config))
 
     def test_ssh_marketplace_must_bind_loopback_addresses(self):
-        orchestration.validate_ssh_marketplace("https://127.0.0.1:8888",
-                                               "[71-2:0:5c,127.0.0.1]:31888")
-        orchestration.validate_ssh_marketplace("https://[::1]:8888", "[71-2:0:5c,::1]:31888")
-        for url, scion_address in (
-                ("https://200.129.206.243:8888", "[71-2:0:5c,127.0.0.1]:31888"),
-                ("http://127.0.0.1:8888", "[71-2:0:5c,127.0.0.1]:31888"),
-                ("https://127.0.0.1", "[71-2:0:5c,127.0.0.1]:31888"),
-                ("https://127.0.0.1:8888", "[71-2:0:5c,10.6.7.1]:31888"),
-                ("https://127.0.0.1:8888", None)):
-            with self.subTest(url=url, scion_address=scion_address), self.assertRaises(ConfigError):
-                orchestration.validate_ssh_marketplace(url, scion_address)
+        orchestration.validate_ssh_marketplace("[71-2:0:5c,127.0.0.1]:31888")
+        orchestration.validate_ssh_marketplace("[71-2:0:5c,::1]:31888")
+        for scion_address in ("[71-2:0:5c,10.6.7.1]:31888", "[71-2:0:5c,200.129.206.243]:31888",
+                              None):
+            with self.subTest(scion_address=scion_address), self.assertRaises(ConfigError):
+                orchestration.validate_ssh_marketplace(scion_address)
+
+    def test_marketplace_url_is_derived_from_the_scion_address(self):
+        marketplace = orchestration.MarketplaceConfig(
+            "alice", "MARKETPLACE_PASSWORD", None, None, "[71-2:0:5c,127.0.0.1]:31888")
+        self.assertEqual(marketplace.url, "https://127.0.0.1:31888")
+        marketplace = orchestration.MarketplaceConfig(
+            "alice", "MARKETPLACE_PASSWORD", None, None, "[71-2:0:5c,fd00::20]:8888")
+        self.assertEqual(marketplace.url, "https://[fd00::20]:8888")
+        self.assertIsNone(orchestration.MarketplaceConfig(
+            "alice", "MARKETPLACE_PASSWORD", None).url)
+
+    def test_rejects_the_removed_marketplace_url(self):
+        config = self.marketplace_config(url="https://127.0.0.1:8888")
+        with self.assertRaisesRegex(ConfigError, "unknown url"):
+            load_config(self.write_config(config))
 
     def test_validates_marketplace_scion_address(self):
         orchestration.validate_scion_address("[71-2:0:5c,127.0.0.1]:31888", "address")
@@ -159,8 +255,8 @@ class ConfigTest(unittest.TestCase):
     def test_rejects_marketplace_configuration_in_keys_mode(self):
         config = self.base_config()
         config["hummingbird"]["marketplace"] = {
-            "url": "https://marketplace.invalid", "username": "alice",
-            "password_env": "MARKETPLACE_PASSWORD",
+            "username": "alice",
+            "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
         }
         with self.assertRaises(ConfigError):
             load_config(self.write_config(config))
@@ -181,10 +277,11 @@ class ConfigTest(unittest.TestCase):
     def test_obtains_marketplace_jwt_without_logging_credentials(self):
         completed = mock.Mock(returncode=0, stdout="jwt-value\n", stderr="")
         marketplace = orchestration.MarketplaceConfig(
-            "https://market.invalid", "alice", "MARKETPLACE_PASSWORD", "hummbwtester")
+            "alice", "MARKETPLACE_PASSWORD", "hummbwtester")
         with mock.patch.dict(orchestration.os.environ, {"MARKETPLACE_PASSWORD": "secret"}), \
              mock.patch.object(orchestration.subprocess, "run", return_value=completed) as run:
-            self.assertEqual(obtain_marketplace_jwt(marketplace), "jwt-value")
+            self.assertEqual(
+                obtain_marketplace_jwt(marketplace, "https://market.invalid"), "jwt-value")
         self.assertEqual(run.call_args.kwargs["capture_output"], True)
         command = run.call_args.args[0]
         self.assertIn("alice", command)
@@ -192,13 +289,13 @@ class ConfigTest(unittest.TestCase):
         self.assertIn("MARKETPLACE_PASSWORD", command)
         self.assertNotIn("secret", command)
 
-    def test_marketplace_url_and_password_env_are_required(self):
+    def test_marketplace_username_and_password_env_are_required(self):
         config = self.base_config()
         config["hummingbird"] = {
             "reservation_source": "marketplace",
-            "marketplace": {"username": "alice", "password_env": "MARKETPLACE_PASSWORD"},
+            "marketplace": {"password_env": "MARKETPLACE_PASSWORD", "location_override": False},
         }
-        with self.assertRaisesRegex(ConfigError, "url"):
+        with self.assertRaisesRegex(ConfigError, "username"):
             load_config(self.write_config(config))
 
     def test_clients_are_sorted_for_metrics_ports(self):

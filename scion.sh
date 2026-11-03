@@ -198,10 +198,11 @@ cmd_help() {
 	topology subcommand.
 
 	Usage:
-	    $PROGRAM topology [-d] [-c TOPOFILE] [-m ISD-AS]
+	    $PROGRAM topology [-d] [-c TOPOFILE] [-m ISD-AS [--no-marketplace-metainfo]]
 	        Create topology, configuration, and execution files.
 	        With -m, the given AS also runs a marketplace, and its database is
 	        pre-populated with default users, assets and redemption delegations.
+	        With --no-marketplace-metainfo, the ASes do not advertise where it is.
 	        All arguments or options are passed to tools/topogen.py
 	    $PROGRAM run
 	        Run network.

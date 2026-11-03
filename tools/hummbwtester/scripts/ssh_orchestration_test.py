@@ -21,8 +21,8 @@ class InventoryTest(unittest.TestCase):
             "hummingbird": {
                 "reservation_source": "marketplace",
                 "marketplace": {
-                    "host": marketplace_host, "url": "https://127.0.0.1:8888", "username": "alice",
-                    "password_env": "MARKETPLACE_PASSWORD",
+                    "host": marketplace_host, "username": "alice",
+                    "password_env": "MARKETPLACE_PASSWORD", "location_override": False,
                     "scion_address": "[1-ff00:0:111,127.0.0.1]:31888",
                 },
             },

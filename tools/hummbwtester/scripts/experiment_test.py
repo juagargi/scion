@@ -1,3 +1,4 @@
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -91,6 +92,33 @@ class ExperimentTest(unittest.TestCase):
         with self.assertRaisesRegex(experiment.planner.ConfigError, "informative"):
             experiment.planner.informative_lines({"informative": ["ok", 1]})
 
+    def run_main(self, action, **execute_result):
+        with mock.patch.object(experiment.sys, "argv", [
+            "experiment.py", action, "--config", "local.json",
+        ]), mock.patch.object(experiment, "execute", **execute_result), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            status = experiment.main()
+        return status, stdout.getvalue(), stderr.getvalue()
+
+    def test_setup_reports_that_it_is_done(self):
+        status, stdout, stderr = self.run_main("setup", return_value=0)
+        self.assertEqual(status, 0)
+        self.assertEqual(stdout.splitlines()[-1], "setup: done.")
+        self.assertNotIn("FAILED", stderr)
+
+    def test_setup_reports_that_it_failed(self):
+        for result in ({"return_value": 1}, {"side_effect": RuntimeError("boom")}):
+            with self.subTest(result=result):
+                status, stdout, stderr = self.run_main("setup", **result)
+                self.assertEqual(status, 1)
+                self.assertNotIn("done", stdout)
+                self.assertEqual(stderr.splitlines()[-1], "setup: FAILED.")
+
+    def test_only_setup_reports_its_outcome(self):
+        _, stdout, stderr = self.run_main("run", return_value=1)
+        self.assertEqual((stdout, stderr), ("", ""))
+
     def test_dry_run_is_only_accepted_for_setup(self):
         with mock.patch.object(experiment.sys, "argv", [
             "experiment.py", "teardown", "--config", "remote.json", "--dry-run",
@@ -132,8 +160,21 @@ class ExperimentTest(unittest.TestCase):
 
     def test_wait_service_returns_when_running_and_answering(self):
         with mock.patch.object(experiment, "_container_running", return_value=True), \
-             mock.patch.object(experiment, "_http_answers", return_value=True):
+             mock.patch.object(experiment, "_http_answers", return_value=True), \
+             mock.patch.object(experiment.time, "sleep"):
             experiment._wait_service("hummbwtester-grafana", "http://x/api/health")
+
+    def test_wait_service_fails_when_container_exits_right_after_the_port_answered(self):
+        # The port is held by another process, which answers at once; the container fails to bind
+        # it and exits only a moment after it was seen running.
+        logs = mock.Mock(stdout="bind: address already in use", stderr="")
+        with mock.patch.object(experiment, "_container_running", side_effect=[True, False]), \
+             mock.patch.object(experiment, "_http_answers", return_value=True), \
+             mock.patch.object(experiment.time, "sleep") as sleep, \
+             mock.patch.object(experiment.subprocess, "run", return_value=logs):
+            with self.assertRaisesRegex(RuntimeError, "(?s)not running.*address already in use"):
+                experiment._wait_service("hummbwtester-prometheus", "http://x/-/ready")
+        sleep.assert_called_once_with(experiment.MONITORING_SETTLE_SECONDS)
 
     def test_wait_service_times_out_when_running_but_silent(self):
         with mock.patch.object(experiment, "_container_running", return_value=True), \

@@ -79,34 +79,51 @@ func NewPathMarketplaces(p snet.Path) (*PathMarketplaces, error) {
 // indices are positions into the base hops of p, in strictly ascending order; nil means
 // every AS of the path.
 func NewPathMarketplacesForASes(p snet.Path, indices []int) (*PathMarketplaces, error) {
-	if p == nil || p.Metadata() == nil {
-		return nil, serrors.New("path without metadata")
+	hops, err := pathHops(p)
+	if err != nil {
+		return nil, err
 	}
-	hops := snetpath.InterfacesToBaseHops(p.Metadata().Interfaces)
 	notes := p.Metadata().Notes
 	if len(notes) != len(hops) {
 		return nil, serrors.New("inconsistent path metadata",
 			"notes", len(notes), "ases", len(hops))
 	}
-	if indices == nil {
-		return NewPathMarketplacesFromNotes(hops, notes)
+	if err := checkIndices(indices, len(hops)); err != nil {
+		return nil, err
 	}
-	prev := -1
-	selectedHops := make([]snetpath.BaseHop, 0, len(indices))
-	selectedNotes := make([]string, 0, len(indices))
-	for _, idx := range indices {
-		if idx < 0 || idx >= len(hops) {
-			return nil, serrors.New("AS index out of range", "index", idx, "ases", len(hops))
-		}
-		if idx <= prev {
-			return nil, serrors.New("AS indices must be strictly ascending",
-				"index", idx, "previous", prev)
-		}
-		prev = idx
-		selectedHops = append(selectedHops, hops[idx])
-		selectedNotes = append(selectedNotes, notes[idx])
+	return NewPathMarketplacesFromNotes(pick(hops, indices), pick(notes, indices))
+}
+
+// NewPathMarketplacesAt is NewPathMarketplacesForASes for a marketplace whose location is
+// known beforehand: every selected AS is taken to sell its reservations through the
+// marketplace at apiAddress, whatever the ASes of the path advertise.
+// The notes of the path are not read, so the path need not carry any.
+func NewPathMarketplacesAt(
+	p snet.Path,
+	indices []int,
+	apiAddress string,
+) (*PathMarketplaces, error) {
+	if apiAddress == "" {
+		return nil, serrors.New("empty marketplace API address")
 	}
-	return NewPathMarketplacesFromNotes(selectedHops, selectedNotes)
+	hops, err := pathHops(p)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkIndices(indices, len(hops)); err != nil {
+		return nil, err
+	}
+	hops = pick(hops, indices)
+	protocol := "connectrpc/TLS/TCP"
+	if IsSCIONURL(apiAddress) {
+		protocol = "connectrpc/TLS/QUIC/SCION"
+	}
+	entry := NoteEntry{Name: "location override", APIProtocol: protocol, APIAddress: apiAddress}
+	metadata := make([]ASNotes, len(hops))
+	for i := range metadata {
+		metadata[i] = ASNotes{Notes: []NoteEntry{entry}}
+	}
+	return newPathMarketplaces(hops, metadata), nil
 }
 
 // NewPathMarketplacesFromNotes builds the marketplaces from an explicit list of ASes and their
@@ -121,12 +138,20 @@ func NewPathMarketplacesFromNotes(
 			"notes", len(notes), "ases", len(hops))
 	}
 	metadata := make([]ASNotes, len(notes))
-	clients := make(map[NoteEntry]*Client)
 	for i, note := range notes {
 		metadata[i] = ASNotes{
 			Notes: ParseNote(note).UniqueAPIsOnly().WithAPI(),
 		}
-		for _, entry := range metadata[i].Notes {
+	}
+	return newPathMarketplaces(hops, metadata), nil
+}
+
+// newPathMarketplaces builds the marketplaces of hops, metadata[i] being the marketplaces
+// hops[i] sells through. Every entry of metadata becomes a key of clients, none dialed yet.
+func newPathMarketplaces(hops []snetpath.BaseHop, metadata []ASNotes) *PathMarketplaces {
+	clients := make(map[NoteEntry]*Client)
+	for _, meta := range metadata {
+		for _, entry := range meta.Notes {
 			clients[entry] = nil
 		}
 	}
@@ -134,7 +159,44 @@ func NewPathMarketplacesFromNotes(
 		Hops:     slices.Clone(hops),
 		PathASes: metadata,
 		clients:  clients,
-	}, nil
+	}
+}
+
+// pathHops returns the base hops of p, which must carry metadata.
+func pathHops(p snet.Path) ([]snetpath.BaseHop, error) {
+	if p == nil || p.Metadata() == nil {
+		return nil, serrors.New("path without metadata")
+	}
+	return snetpath.InterfacesToBaseHops(p.Metadata().Interfaces), nil
+}
+
+// checkIndices checks that indices are positions into n ASes, in strictly ascending order.
+// Nil indices select every AS.
+func checkIndices(indices []int, n int) error {
+	prev := -1
+	for _, idx := range indices {
+		if idx < 0 || idx >= n {
+			return serrors.New("AS index out of range", "index", idx, "ases", n)
+		}
+		if idx <= prev {
+			return serrors.New("AS indices must be strictly ascending",
+				"index", idx, "previous", prev)
+		}
+		prev = idx
+	}
+	return nil
+}
+
+// pick returns the elements of s at indices, all of s if indices is nil.
+func pick[T any](s []T, indices []int) []T {
+	if indices == nil {
+		return s
+	}
+	picked := make([]T, 0, len(indices))
+	for _, idx := range indices {
+		picked = append(picked, s[idx])
+	}
+	return picked
 }
 
 // FullCoverageCount returns the smallest set of the advertised marketplaces that together

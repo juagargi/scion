@@ -255,6 +255,34 @@ func TestValidateRenewalTiming(t *testing.T) {
 	}
 }
 
+func TestValidateMarketplaceOverride(t *testing.T) {
+	const addr = "[1-ff00:0:111,172.20.0.20]:8888"
+	tests := map[string]struct {
+		addr        string
+		hummingbird string
+		keysDir     string
+		wantErr     bool
+	}{
+		"not overridden":       {},
+		"not overridden, keys": {hummingbird: "1,10", keysDir: "gen"},
+		"marketplace":          {addr: addr, hummingbird: "1mbps,10"},
+		"without hummingbird":  {addr: addr, wantErr: true},
+		"with key-derived flyovers": {
+			addr: addr, hummingbird: "1,10", keysDir: "gen", wantErr: true,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := validateMarketplaceOverride(tc.addr, tc.hummingbird, tc.keysDir)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, "-marketplace-location-override")
+		})
+	}
+}
+
 // TestHeaderRoundTrip checks that a packet header can be encoded and decoded
 // without losing any fields.
 func TestHeaderRoundTrip(t *testing.T) {

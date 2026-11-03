@@ -146,7 +146,7 @@ class SSHSetupTest(unittest.TestCase):
 
     def marketplace(self, **changes):
         return replace(orchestration.MarketplaceConfig(
-            "https://127.0.0.1:8888/", "alice", "MARKETPLACE_PASSWORD", None, "monitor",
+            "alice", "MARKETPLACE_PASSWORD", None, "monitor",
             "[1-ff00:0:110,127.0.0.1]:31888",
         ), **changes)
 
@@ -167,9 +167,9 @@ class SSHSetupTest(unittest.TestCase):
              mock.patch.object(ssh_setup.subprocess, "run", return_value=completed) as run:
             jwt = ssh_setup.obtain_marketplace_jwt(inventory)
         self.assertEqual(jwt, "jwt")
-        self.assertEqual(obtain.call_args.args[0].url, "https://127.0.0.1:18888/")
+        self.assertEqual(obtain.call_args.args[1], "https://127.0.0.1:18888")
         start, stop = (call.args[0] for call in run.call_args_list)
-        self.assertEqual(start[start.index("-L") + 1], "127.0.0.1:18888:127.0.0.1:8888")
+        self.assertEqual(start[start.index("-L") + 1], "127.0.0.1:18888:127.0.0.1:31888")
         self.assertEqual(start[-1], "monitor-alias")
         self.assertEqual(stop[stop.index("-O") + 1], "exit")
 
@@ -212,13 +212,34 @@ class SSHSetupTest(unittest.TestCase):
             "name": "hummbwtester",
             "api_protocol": "connectrpc/TLS/QUIC/SCION",
             "api_address": "[1-ff00:0:110,127.0.0.1]:31888",
-            "client_registration_website": "https://127.0.0.1:8888/",
+            "client_registration_website": "https://127.0.0.1:31888",
         })
         self.assertEqual(helper.kwargs["input"], ssh_setup.STATIC_INFO_HELPER.read_text())
         self.assertEqual(len(manual), 1)
         self.assertIn("on market", manual[0])
         self.assertIn("ssh -t market-alias sudo systemctl restart scion-control@cs-1.service",
                       manual[0])
+
+    def test_marketplace_note_is_withdrawn_with_location_override(self):
+        inventory = replace(self.inventory(), marketplace=self.marketplace(
+            scion_address="[1-ff00:0:110,127.0.0.1]:31888", location_override=True,
+        ))
+        changed = subprocess.CompletedProcess([], 0, '{"changed": true}\n', "")
+        current = subprocess.CompletedProcess([], 0, '{"changed": false}\n', "")
+        # Hosts are visited in sorted order: monitor still advertises it, source does not.
+        with mock.patch.object(ssh_setup.remote, "ssh_command",
+                               side_effect=[changed, current]) as run:
+            manual = ssh_setup.ensure_marketplace_notes(inventory)
+        self.assertEqual([call.args[0].name for call in run.call_args_list],
+                         ["monitor", "source"])
+        argv = shlex.split(run.call_args_list[0].args[1])
+        self.assertEqual(argv[:5], ["sudo", "-n", "python3", "-", "remove"])
+        self.assertEqual(argv[argv.index("--name") + 1], "hummbwtester")
+        self.assertEqual(argv[argv.index("--api-address") + 1], "[1-ff00:0:110,127.0.0.1]:31888")
+        self.assertNotIn("ensure", argv)
+        # The withdrawal needs the same control service restart as an advertisement.
+        self.assertEqual(len(manual), 1)
+        self.assertIn("on monitor", manual[0])
 
     def test_manual_steps_are_numbered_or_reported_as_none(self):
         with mock.patch("builtins.print") as output:
@@ -539,7 +560,7 @@ class MarketplaceServiceTest(unittest.TestCase):
     def test_config_binds_both_apis_to_the_configured_loopback_addresses(self):
         config = ssh_setup.marketplace_toml(SSHSetupTest.marketplace(SSHSetupTest()))
         self.assertIn('config_dir = "/etc/scion/marketplace"', config)
-        self.assertIn('api_addr = "127.0.0.1:8888"', config)
+        self.assertIn('api_addr = "127.0.0.1:31888"', config)
         self.assertIn('scion_api_addr = "127.0.0.1:31888"', config)
         self.assertIn('connection = "/var/lib/scion/marketplace/marketplace.db"', config)
 

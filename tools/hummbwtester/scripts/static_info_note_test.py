@@ -62,6 +62,15 @@ class StaticInfoNoteTest(unittest.TestCase):
         self.assertTrue(note.remove_entry(only_ours, "hummbwtester"))
         self.assertEqual(only_ours, {})
 
+    def test_remove_with_address_drops_the_marketplace_under_any_name(self):
+        ours = {"name": "hummbwtester", "api_address": "[1-ff00:0:110,127.0.0.1]:31888"}
+        renamed = {"name": "other", "api_address": "[1-ff00:0:110,127.0.0.1]:31888"}
+        elsewhere = {"name": "other", "api_address": "[1-ff00:0:111,127.0.0.1]:31888"}
+        config = {"Note": json.dumps({"hummingbird": [renamed, elsewhere]})}
+        self.assertTrue(note.remove_entry(config, "hummbwtester", ours["api_address"]))
+        self.assertEqual(note.read_note(config)["hummingbird"], [elsewhere])
+        self.assertFalse(note.remove_entry(config, "hummbwtester", ours["api_address"]))
+
     def test_store_keeps_mode_and_removes_emptied_file(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "staticInfoConfig.json"

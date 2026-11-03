@@ -120,6 +120,9 @@ class ConfigGenerator(object):
 
     def _ensure_marketplace_as(self):
         if not self.args.marketplace:
+            if getattr(self.args, 'no_marketplace_metainfo', False):
+                logging.critical("--no-marketplace-metainfo requires a marketplace (-m)")
+                sys.exit(1)
             return
         try:
             ia = str(ISD_AS(self.args.marketplace))

@@ -808,14 +808,15 @@ class MarketplaceGenerator(object):
                    marketplaceToml(config_dir, endpoints, db_path))
 
         # Every AS of the topology delegates its redemptions to this marketplace,
-        # so every AS must advertise it.
+        # so every AS must advertise it, unless its clients are told where it is instead.
         # The control service copies the note into the beacons it propagates,
         # which is how the ASes of a path tell a client where to buy.
-        for as_topo_id in self.args.topo_dicts:
-            advertiseMarketplace(
-                os.path.join(as_topo_id.base_dir(self.args.output_dir),
-                             STATIC_INFO_CONFIG_NAME),
-                topo_id, endpoints)
+        if not getattr(self.args, 'no_marketplace_metainfo', False):
+            for as_topo_id in self.args.topo_dicts:
+                advertiseMarketplace(
+                    os.path.join(as_topo_id.base_dir(self.args.output_dir),
+                                 STATIC_INFO_CONFIG_NAME),
+                    topo_id, endpoints)
 
         # The marketplace applies the schema itself, but it cannot invent the
         # entries: they are the ones a local topology is expected to start with.

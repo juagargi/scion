@@ -28,6 +28,7 @@ LOCAL_PROMETHEUS_PROJECT = planner.MONITORING_PROJECT
 LOCAL_PROMETHEUS_CONTAINER = "hummbwtester-prometheus"
 LOCAL_GRAFANA_CONTAINER = "hummbwtester-grafana"
 MONITORING_WAIT_SECONDS = 30
+MONITORING_SETTLE_SECONDS = 2
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ def load_plan(path: Path, action: str) -> ExperimentPlan:
     if kind == "docker":
         if action != "teardown":
             planner.validate_endpoints(planner.compose_data(), server, clients)
+            planner.check_docker_marketplace_location(clients)
         return ExperimentPlan(path, config, kind, None)
     inventory = ssh.load_inventory(path, server, clients)
     return ExperimentPlan(path, config, kind, inventory)
@@ -86,20 +88,29 @@ def _http_answers(url: str) -> bool:
     return True
 
 
+def _require_running(container: str) -> None:
+    if _container_running(container):
+        return
+    logs = subprocess.run(["docker", "logs", "--tail", "5", container], check=False,
+                          capture_output=True, text=True)
+    raise RuntimeError(
+        f"{container} is not running; last log lines:\n{logs.stdout}{logs.stderr}".rstrip(),
+    )
+
+
 def _wait_service(container: str, url: str, seconds: int = MONITORING_WAIT_SECONDS) -> None:
     """Wait until the container runs and answers at url.
 
     The container must keep running: another process holding the port would answer too, while
-    the container itself has already exited (for example on a bind failure).
+    the container itself has already exited (for example on a bind failure). Such a failure comes
+    right after the start, so the container is checked again once the url answered and the
+    startup settled.
     """
     for _ in range(seconds):
-        if not _container_running(container):
-            logs = subprocess.run(["docker", "logs", "--tail", "5", container], check=False,
-                                  capture_output=True, text=True)
-            raise RuntimeError(
-                f"{container} is not running; last log lines:\n{logs.stdout}{logs.stderr}".rstrip(),
-            )
+        _require_running(container)
         if _http_answers(url):
+            time.sleep(MONITORING_SETTLE_SECONDS)
+            _require_running(container)
             return
         time.sleep(1)
     raise RuntimeError(f"{container} does not answer at {url} after {seconds}s")
@@ -218,12 +229,19 @@ def main() -> int:
     if args.dry_run and args.action != "setup":
         parser.error("--dry-run is only supported with setup")
     try:
-        return execute(args.action, args.config, args.dry_run)
+        status = execute(args.action, args.config, args.dry_run)
     except (planner.ConfigError, ssh.SSHError, ssh_setup.selective_qdisc.Error,
             argparse.ArgumentTypeError, subprocess.SubprocessError,
             RuntimeError, OSError, ValueError) as err:
         print(f"error: {err}", file=sys.stderr)
-        return 1
+        status = 1
+    if args.action == "setup":
+        # Setup prints a lot; the last line says how it ended.
+        if status == 0:
+            print("setup: done.")
+        else:
+            print("setup: FAILED.", file=sys.stderr)
+    return status
 
 
 if __name__ == "__main__":

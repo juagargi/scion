@@ -103,17 +103,28 @@ class HummingbirdReservation:
 class MarketplaceConfig:
     """The non-secret marketplace identity and location for one workload."""
 
-    url: str
     username: str
     password_env: str
     sub_account: str | None
-    # SSH inventory host from which url is reachable; None means reachable from the controller.
+    # SSH inventory host the marketplace runs on; None in Docker deployments.
     host: str | None = None
-    # SCION API address that SSH setup advertises in the static info Note of the participant ASes.
+    # SCION API address of the marketplace. SSH setup deploys the marketplace there and advertises
+    # it in the static info Note of the participant ASes. Docker deployments have it only with
+    # location_override, otherwise the generated topology advertises the marketplace.
     scion_address: str | None = None
     # ISD-AS -> IDs of the interfaces that support Hummingbird, 0 standing for flyovers that start
     # or end in the AS. SSH setup offers assets only for pairs of these; None offers every pair.
     interfaces: dict[str, tuple[int, ...]] | None = None
+    # Whether the clients buy from the marketplace at scion_address instead of the one the ASes of
+    # their path advertise.
+    location_override: bool = False
+
+    @property
+    def url(self) -> str | None:
+        """The HTTPS URL of the web app and TCP API: the host and port of scion_address."""
+        if self.scion_address is None:
+            return None
+        return marketplace_login_url(self.scion_address)
 
 
 @dataclass(frozen=True)
@@ -408,6 +419,52 @@ def validate_scion_address(value: Any, context: str) -> None:
         raise ConfigError(f"{context} has an invalid port: {value}")
 
 
+def check_docker_marketplace_location(clients: list[Client]) -> None:
+    """Check that the scion_address the clients buy from is where gen/ runs the marketplace.
+
+    It only applies to a marketplace location override, the sole case where the address is used
+    in Docker: a wrong one fails only when the clients dial it, long after setup.
+    """
+    marketplace = next((client.marketplace for client in clients
+                        if client.marketplace is not None and client.marketplace.location_override),
+                       None)
+    if marketplace is None:
+        return
+    assert marketplace.scion_address is not None  # load_config requires it.
+    match = SCION_ADDRESS_RE.fullmatch(marketplace.scion_address)
+    assert match is not None
+    expected = f"{match.group('host')}:{match.group('port')}"
+    found = []
+    for path in sorted(GEN.glob("AS*/marketplace.toml")):
+        address = re.search(r'^scion_api_addr\s*=\s*"([^"]+)"', path.read_text(), re.MULTILINE)
+        if address is None:
+            continue
+        host, _, port = address.group(1).rpartition(":")
+        as_dir = path.parent.name.removeprefix("AS").replace("_", ":")
+        found.append((as_dir, f"{host.strip('[]')}:{port}"))
+        if as_dir == match.group("ia").split("-", 1)[1] and found[-1][1] == expected:
+            return
+    where = ", ".join(f"AS {as_dir} at {address}" for as_dir, address in found) or "none in gen/"
+    raise ConfigError(
+        f"hummingbird.marketplace.scion_address {marketplace.scion_address} is not where the "
+        f"generated topology runs its marketplace ({where})",
+    )
+
+
+def marketplace_login_url(scion_address: str) -> str:
+    """The URL to log in to the marketplace whose SCION API is at scion_address.
+
+    It is the HTTPS URL of the same host and port: a generated topology serves the TCP API and
+    the web app on the address and port of the SCION API.
+    """
+    match = SCION_ADDRESS_RE.fullmatch(scion_address)
+    assert match is not None  # validate_scion_address accepted it.
+    host = match.group("host")
+    if ":" in host:
+        host = f"[{host}]"
+    return f"https://{host}:{match.group('port')}"
+
+
 def parse_marketplace_interfaces(value: Any) -> dict[str, tuple[int, ...]]:
     """Check the Hummingbird-capable interface IDs per ISD-AS that the marketplace sells."""
     context = "hummingbird.marketplace.interfaces"
@@ -437,24 +494,15 @@ def is_loopback(host: str) -> bool:
         return False
 
 
-def validate_ssh_marketplace(url: str, scion_address: Any) -> None:
-    """SSH setup deploys the marketplace bound to these addresses, which must stay on loopback.
+def validate_ssh_marketplace(scion_address: Any) -> None:
+    """SSH setup deploys the marketplace bound to the host and port of this address, which must
+    stay on loopback.
 
     The TLS web app and API are then reachable only on the marketplace host itself (setup uses an
     SSH forward), and the SCION API only through the border routers of that host.
     """
     if scion_address is None:
         raise ConfigError("hummingbird.marketplace.scion_address is required for SSH deployments")
-    parts = urllib.parse.urlsplit(url)
-    try:
-        port = parts.port
-    except ValueError as err:
-        raise ConfigError(f"hummingbird.marketplace.url has an invalid port: {url}") from err
-    if parts.scheme != "https" or port is None or not is_loopback(parts.hostname or ""):
-        raise ConfigError(
-            "hummingbird.marketplace.url must be https://<loopback address>:<port> in SSH "
-            "deployments, e.g. https://127.0.0.1:8888",
-        )
     match = SCION_ADDRESS_RE.fullmatch(scion_address)
     assert match is not None  # validate_scion_address accepted it.
     if not is_loopback(match.group("host")):
@@ -507,13 +555,10 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         marketplace = hummingbird_config.get("marketplace")
         if not isinstance(marketplace, dict):
             raise ConfigError("hummingbird.marketplace is required in marketplace mode")
-        require_fields(marketplace, {"url", "username", "password_env"},
+        require_fields(marketplace, {"username", "password_env", "location_override"},
                        "hummingbird.marketplace",
                        {"sub_account", "host", "scion_address", "interfaces"})
-        url, username, password_env = (
-            marketplace["url"], marketplace["username"], marketplace["password_env"])
-        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
-            raise ConfigError("hummingbird.marketplace.url must be an HTTP(S) URL")
+        username, password_env = marketplace["username"], marketplace["password_env"]
         if not isinstance(username, str) or not username:
             raise ConfigError("hummingbird.marketplace.username must be a non-empty string")
         if (not isinstance(password_env, str)
@@ -532,18 +577,27 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
             if deployment["kind"] == "docker":
                 raise ConfigError("hummingbird.marketplace.host is only valid for SSH deployments")
         elif deployment["kind"] == "ssh":
-            # SSH setup reaches the marketplace url only through a tunnel to the host it runs on.
+            # SSH setup reaches the marketplace only through a tunnel to the host it runs on.
             raise ConfigError("hummingbird.marketplace.host is required for SSH deployments")
+        location_override = marketplace["location_override"]
+        if not isinstance(location_override, bool):
+            raise ConfigError("hummingbird.marketplace.location_override must be a boolean")
         scion_address = marketplace.get("scion_address")
         if scion_address is not None:
-            if deployment["kind"] == "docker":
+            if deployment["kind"] == "docker" and not location_override:
                 # The generated Docker topology already advertises its marketplace.
                 raise ConfigError(
-                    "hummingbird.marketplace.scion_address is only valid for SSH deployments",
+                    "hummingbird.marketplace.scion_address is only valid for SSH deployments, "
+                    "or with location_override",
                 )
             validate_scion_address(scion_address, "hummingbird.marketplace.scion_address")
+        elif location_override:
+            raise ConfigError(
+                "hummingbird.marketplace.location_override requires scion_address, "
+                "the location the clients buy from",
+            )
         if deployment["kind"] == "ssh":
-            validate_ssh_marketplace(url, scion_address)
+            validate_ssh_marketplace(scion_address)
         interfaces = None
         if "interfaces" in marketplace:
             if deployment["kind"] == "docker":
@@ -553,7 +607,8 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
                 )
             interfaces = parse_marketplace_interfaces(marketplace["interfaces"])
         marketplace_config = MarketplaceConfig(
-            url, username, password_env, sub_account, host, scion_address, interfaces,
+            username, password_env, sub_account, host, scion_address, interfaces,
+            location_override,
         )
     elif "marketplace" in hummingbird_config:
         raise ConfigError("hummingbird.marketplace is only valid in marketplace mode")
@@ -1181,6 +1236,9 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
         ])
         if client.reservation_source == "keys":
             args.extend(["-hummKeysDir", "/share/gen"])
+        elif client.marketplace is not None and client.marketplace.location_override:
+            # Buy from the configured marketplace instead of the one the path advertises.
+            args.extend(["-marketplace-location-override", client.marketplace.scion_address])
         for flag, value in (
                 ("-renewal-ahead", reservation.renewal_ahead),
                 ("-reservation-overlap", reservation.reservation_overlap),
@@ -1221,13 +1279,14 @@ def marketplace_registration_website() -> str:
     return next(iter(websites))
 
 
-def obtain_marketplace_jwt(marketplace: MarketplaceConfig) -> str:
-    """Request the configured user's JWT without exposing its password or token in argv."""
+def obtain_marketplace_jwt(marketplace: MarketplaceConfig, url: str) -> str:
+    """Request the configured user's JWT from the web app at url, without exposing its password
+    or token in argv."""
     if not os.environ.get(marketplace.password_env):
         raise ConfigError(
             f"marketplace password environment variable {marketplace.password_env} is not set")
     command = [sys.executable, str(ROOT / "marketplace" / "tools" / "get_jwt.py"),
-               marketplace.username, "--url", marketplace.url,
+               marketplace.username, "--url", url,
                "--password-env", marketplace.password_env]
     if marketplace.sub_account is not None:
         command.extend(["--sub-account", marketplace.sub_account])
@@ -1236,7 +1295,7 @@ def obtain_marketplace_jwt(marketplace: MarketplaceConfig) -> str:
         cwd=ROOT, check=False, capture_output=True, text=True,
     )
     if result.returncode != 0:
-        raise ConfigError(f"marketplace login failed at {marketplace.url}: {result.stderr.strip()}")
+        raise ConfigError(f"marketplace login failed at {url}: {result.stderr.strip()}")
     token = result.stdout.strip()
     if not token:
         raise ConfigError("marketplace login returned an empty JWT")
@@ -1563,10 +1622,14 @@ def run_experiment(
             marketplace_services = {tester_service(client.endpoint.isd_as)
                                     for client in hummingbird_clients}
             # A Docker topology advertises the registration endpoint that is actually reachable
-            # from this controller. The workload URL is for the SSH backend, where gen/ is absent.
-            marketplace = replace(client.marketplace, url=marketplace_registration_website())
+            # from this controller. With the location overridden, the topology need not advertise
+            # any marketplace, and the endpoint is the one of the marketplace's scion_address.
+            url = client.marketplace.url
+            if not client.marketplace.location_override:
+                url = marketplace_registration_website()
+            assert url is not None  # load_config requires scion_address with the override.
             marketplace_jwt_file, remote_jwt_file = install_docker_jwt(
-                obtain_marketplace_jwt(marketplace), marketplace_services)
+                obtain_marketplace_jwt(client.marketplace, url), marketplace_services)
         server_process = launch(server_service, server_pidfile, args, log_dir / "server.log")
         # Give the server a predictable head start before clients begin selecting paths and dialing.
         time.sleep(2)
