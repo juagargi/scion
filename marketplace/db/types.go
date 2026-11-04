@@ -116,7 +116,7 @@ type RedemptionDelegation struct {
 
 type ReservationQuery struct {
 	// the account ID
-	AccountId int64
+	AccountId *int64
 	// ISD-AS of the reservation
 	IA *addr.IA
 	// ingress ID of the reservation
