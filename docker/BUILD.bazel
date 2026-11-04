@@ -69,12 +69,12 @@ scion_app_image(
 
 scion_app_image(
     name = "hummingbird",
-    src = "//hbird/cmd/hummingbird",
+    src = "//redemption_server/cmd/redemption_server",
     cmd = [
         "--config",
         "/etc/scion/hbird.toml",
     ],
-    entrypoint = ["/app/hummingbird"],
+    entrypoint = ["/app/redemption_server"],
 )
 
 scion_app_image(

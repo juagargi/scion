@@ -21,15 +21,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/scionproto/scion/marketplace/db"
 	"github.com/scionproto/scion/pkg/hummingbird/bwencoding"
+	"github.com/scionproto/scion/pkg/hummingbird/id_stores"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/proto/hummingbird"
 	hbird "github.com/scionproto/scion/pkg/slayers/path/hummingbird"
-)
-
-const (
-	AkBufferSize = hbird.AkBufferSize
 )
 
 // aesKeySizes are the key lengths in bytes that aes.NewCipher accepts, i.e. the ones
@@ -39,7 +35,7 @@ var aesKeySizes = []int{16, 24, 32}
 type RedemptionService struct {
 	encodingPoints []uint32
 	cipher         cipher.Block
-	resIdStore     *UsedIDStore
+	resIdStore     *id_stores.UsedIDStore
 	expiration     time.Time
 }
 type RedemptionDelegationUpdate struct {
@@ -73,7 +69,7 @@ func validateDelegationParams(state *RedemptionDelegationUpdate) error {
 	return nil
 }
 
-func NewRedemptionService(initState *RedemptionDelegationUpdate, r []*db.UsedReservation) (*RedemptionService, error) {
+func NewRedemptionService(initState *RedemptionDelegationUpdate, r []id_stores.Reservation) (*RedemptionService, error) {
 	if err := validateDelegationParams(initState); err != nil {
 		return nil, err
 	}
@@ -82,7 +78,7 @@ func NewRedemptionService(initState *RedemptionDelegationUpdate, r []*db.UsedRes
 	if err != nil {
 		return nil, err
 	}
-	idStore := &UsedIDStore{}
+	idStore := &id_stores.UsedIDStore{}
 	err = idStore.Init(initState.IdLimitLow, initState.IdLimitHigh, r)
 	if err != nil {
 		return nil, err
