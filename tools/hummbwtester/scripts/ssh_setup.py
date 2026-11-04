@@ -133,13 +133,58 @@ TUNNEL_MANIFEST = TUNNEL_STATE_DIR / "manifest.json"
 
 
 @dataclass(frozen=True)
+class MonitoringStack:
+    """The identity of one tool's monitoring stack: what it names and where it keeps state.
+
+    Two tools with different stacks can run side by side: neither replaces the other's
+    Prometheus or Grafana containers, nor closes its relays.
+    """
+    prometheus_config: Path
+    remote_dir: str
+    prometheus_container: str
+    prometheus_project: str
+    remote_prometheus_port: int
+    config_hash_label: str
+    grafana_container: str
+    grafana_compose: Path
+    grafana_project: str
+    tunnel_state_dir: Path
+    # The relay manifest; None means manifest.json in tunnel_state_dir.
+    tunnel_manifest: Path | None = None
+
+    @property
+    def manifest(self) -> Path:
+        return self.tunnel_manifest or self.tunnel_state_dir / "manifest.json"
+
+
+def hummbwtester_stack() -> MonitoringStack:
+    """hummbwtester's own stack, read from the module constants above when called."""
+    return MonitoringStack(
+        PROMETHEUS_CONFIG, REMOTE_PROMETHEUS_DIR, PROMETHEUS_CONTAINER, PROMETHEUS_PROJECT,
+        PROMETHEUS_PORT, CONFIG_HASH_LABEL, GRAFANA_CONTAINER, workload.MONITORING_COMPOSE,
+        workload.MONITORING_PROJECT, TUNNEL_STATE_DIR, TUNNEL_MANIFEST,
+    )
+
+
+HUMMBWTESTER_STACK = hummbwtester_stack()
+
+
+def _stack(stack: MonitoringStack | None) -> MonitoringStack:
+    # None resolves at call time, so that the module constants stay the single source of truth
+    # for hummbwtester itself (and patchable); other tools pass their own stack.
+    return stack if stack is not None else hummbwtester_stack()
+
+
+@dataclass(frozen=True)
 class MetricSource:
     """A metrics endpoint: address on its host, and the relay port reserved for it."""
-    host: str
+    # The inventory host the endpoint is on; None is the controller itself.
+    host: str | None
     address: str
     port: int
     labels: dict[str, str]
-    router: bool
+    # The Prometheus file-SD file the target goes to, e.g. "targets/clients.json".
+    target_file: str
 
 
 @dataclass(frozen=True)
@@ -152,7 +197,8 @@ class PrometheusForward:
 
 @dataclass(frozen=True)
 class TunnelSpec:
-    source_alias: str
+    # None: the controller reaches the source directly, so only the -R relay is needed.
+    source_alias: str | None
     prometheus_alias: str
     port: int
     source_address: str
@@ -161,8 +207,7 @@ class TunnelSpec:
 def setup_hosts(inventory: remote.Inventory) -> list[str]:
     """The hosts that receive the binary and helpers: participants and shaping hosts."""
     return sorted({
-        inventory.server_host,
-        *inventory.client_hosts.values(),
+        *inventory.participant_hosts,
         *(shape.host for shape in inventory.shaping),
     })
 
@@ -630,9 +675,7 @@ def note_entry(marketplace: workload.MarketplaceConfig) -> dict[str, str] | None
 
 def note_hosts(inventory: remote.Inventory) -> list[str]:
     """The hosts whose ASes advertise the marketplace: every participant and the marketplace."""
-    return sorted({
-        inventory.server_host, *inventory.client_hosts.values(), inventory.marketplace_host,
-    })
+    return sorted({*inventory.participant_hosts, inventory.marketplace_host})
 
 
 def _static_info_note(
@@ -869,38 +912,65 @@ def remove_selective_qdiscs(inventory: remote.Inventory, tc: dict[str, str]) -> 
         print(f"removed selective qdisc {config.name} from {host.name}")
 
 
+CLIENT_TARGETS_FILE = "targets/clients.json"
+ROUTER_TARGETS_FILE = "targets/border_routers.json"
+
+
+def client_metric_sources(
+    inventory: remote.Inventory, clients: list[workload.Client],
+) -> list[MetricSource]:
+    """Every client metrics port, each with relay port base + i."""
+    return [
+        MetricSource(inventory.client_hosts[client.client_id], f"127.0.0.1:{client.metrics_port}",
+                     inventory.local_port_base + index, {"client_id": client.client_id},
+                     CLIENT_TARGETS_FILE)
+        for index, client in enumerate(clients)
+    ]
+
+
+def router_metric_sources(inventory: remote.Inventory, first_port: int) -> list[MetricSource]:
+    """Every router target, each with relay port first_port + i."""
+    return [
+        MetricSource(router.host, router.address, first_port + index, router.labels,
+                     ROUTER_TARGETS_FILE)
+        for index, router in enumerate(inventory.routers)
+    ]
+
+
 def metric_sources(
     inventory: remote.Inventory, clients: list[workload.Client],
 ) -> list[MetricSource]:
     """Every client metrics port, then every router target, each with relay port base + i."""
-    sources = [
-        MetricSource(inventory.client_hosts[client.client_id], f"127.0.0.1:{client.metrics_port}",
-                     inventory.local_port_base + index, {"client_id": client.client_id}, False)
-        for index, client in enumerate(clients)
+    return [
+        *client_metric_sources(inventory, clients),
+        *router_metric_sources(inventory, inventory.local_port_base + len(clients)),
     ]
-    sources.extend(
-        MetricSource(router.host, router.address, inventory.local_port_base + index,
-                     router.labels, True)
-        for index, router in enumerate(inventory.routers, start=len(clients))
-    )
-    return sources
+
+
+def target_documents_for(
+    inventory: remote.Inventory, sources: list[MetricSource],
+    target_files: tuple[str, ...] = (CLIENT_TARGETS_FILE, ROUTER_TARGETS_FILE),
+) -> dict[str, str]:
+    """Prometheus file-SD targets grouped by target_file.
+
+    A source on the Prometheus host is scraped directly, any other (and a controller-local one)
+    through its relay on 127.0.0.1. target_files are always written, even without sources.
+    """
+    targets: dict[str, list[dict[str, object]]] = {name: [] for name in target_files}
+    for source in sources:
+        local = source.host is not None and source.host == inventory.prometheus_host
+        targets.setdefault(source.target_file, []).append({
+            "targets": [source.address if local else f"127.0.0.1:{source.port}"],
+            "labels": source.labels,
+        })
+    return {name: json.dumps(entries, indent=2) + "\n" for name, entries in targets.items()}
 
 
 def target_documents(
     inventory: remote.Inventory, clients: list[workload.Client],
 ) -> dict[str, str]:
     """Prometheus file-SD targets: a source on the Prometheus host directly, others via relays."""
-    targets: dict[bool, list[dict[str, object]]] = {False: [], True: []}
-    for source in metric_sources(inventory, clients):
-        local = source.host == inventory.prometheus_host
-        targets[source.router].append({
-            "targets": [source.address if local else f"127.0.0.1:{source.port}"],
-            "labels": source.labels,
-        })
-    return {
-        "targets/clients.json": json.dumps(targets[False], indent=2) + "\n",
-        "targets/border_routers.json": json.dumps(targets[True], indent=2) + "\n",
-    }
+    return target_documents_for(inventory, metric_sources(inventory, clients))
 
 
 def write_local_targets(documents: dict[str, str]) -> None:
@@ -914,22 +984,23 @@ def _configuration_hash(documents: dict[str, str]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _compose_document(config_hash: str) -> str:
+def _compose_document(config_hash: str, stack: MonitoringStack | None = None) -> str:
+    stack = _stack(stack)
     return f"""services:
   prometheus:
     image: {PROMETHEUS_IMAGE}
-    container_name: {PROMETHEUS_CONTAINER}
+    container_name: {stack.prometheus_container}
     network_mode: host
     restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=180d
-      - --web.listen-address=127.0.0.1:{PROMETHEUS_PORT}
+      - --web.listen-address=127.0.0.1:{stack.remote_prometheus_port}
     labels:
-      {CONFIG_HASH_LABEL}: "{config_hash}"
+      {stack.config_hash_label}: "{config_hash}"
     volumes:
-      - {REMOTE_PROMETHEUS_DIR}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - {REMOTE_PROMETHEUS_DIR}/targets:/etc/prometheus/targets:ro
+      - {stack.remote_dir}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - {stack.remote_dir}/targets:/etc/prometheus/targets:ro
       - prometheus-data:/prometheus
 
 volumes:
@@ -937,65 +1008,78 @@ volumes:
 """
 
 
-def prometheus_documents(targets: dict[str, str]) -> tuple[dict[str, str], str]:
-    documents = {**targets, "prometheus.yml": PROMETHEUS_CONFIG.read_text()}
+def prometheus_documents(
+    targets: dict[str, str], stack: MonitoringStack | None = None,
+) -> tuple[dict[str, str], str]:
+    stack = _stack(stack)
+    documents = {**targets, "prometheus.yml": stack.prometheus_config.read_text()}
     config_hash = _configuration_hash(documents)
-    documents["docker-compose.yml"] = _compose_document(config_hash)
+    documents["docker-compose.yml"] = _compose_document(config_hash, stack)
     return documents, config_hash
 
 
 def _remote_prometheus_files_current(
-    host: remote.SSHHost, documents: dict[str, str],
+    host: remote.SSHHost, documents: dict[str, str], stack: MonitoringStack | None = None,
 ) -> bool:
+    stack = _stack(stack)
     return _remote_test(host, " && ".join(
-        remote.digest_matches(f"{REMOTE_PROMETHEUS_DIR}/{relative}",
+        remote.digest_matches(f"{stack.remote_dir}/{relative}",
                               hashlib.sha256(content.encode()).hexdigest())
         for relative, content in sorted(documents.items())
     ))
 
 
-def _prometheus_container_current(host: remote.SSHHost, config_hash: str) -> bool:
+def _prometheus_container_current(
+    host: remote.SSHHost, config_hash: str, stack: MonitoringStack | None = None,
+) -> bool:
+    stack = _stack(stack)
     result = remote.ssh_command(
         host,
         "docker inspect --format "
-        + shlex.quote(f'{{{{.State.Running}}}} {{{{index .Config.Labels "{CONFIG_HASH_LABEL}"}}}}')
-        + " " + shlex.quote(PROMETHEUS_CONTAINER),
+        + shlex.quote(f'{{{{.State.Running}}}} '
+                      f'{{{{index .Config.Labels "{stack.config_hash_label}"}}}}')
+        + " " + shlex.quote(stack.prometheus_container),
         check=False, capture_output=True,
     )
     return result.returncode == 0 and result.stdout.strip() == f"true {config_hash}"
 
 
-def _owned_prometheus_exists(host: remote.SSHHost) -> bool:
+def _owned_prometheus_exists(host: remote.SSHHost, stack: MonitoringStack | None = None) -> bool:
     """Whether our Prometheus container exists; raise if a foreign one has its name."""
+    stack = _stack(stack)
     owner = remote.ssh_command(
         host,
         "docker inspect --format "
         + shlex.quote('{{index .Config.Labels "com.docker.compose.project"}}/'
                       '{{index .Config.Labels "com.docker.compose.service"}}')
-        + " " + shlex.quote(PROMETHEUS_CONTAINER),
+        + " " + shlex.quote(stack.prometheus_container),
         check=False, capture_output=True,
     )
     if owner.returncode:
         return False
-    expected = f"{PROMETHEUS_PROJECT}/prometheus"
+    expected = f"{stack.prometheus_project}/prometheus"
     if owner.stdout.strip() != expected:
         raise remote.SSHError(
-            f"refusing to stop {PROMETHEUS_CONTAINER} on {host.name}: "
+            f"refusing to stop {stack.prometheus_container} on {host.name}: "
             f"container belongs to {owner.stdout.strip()!r}, not {expected}",
         )
     return True
 
 
-def stop_prometheus(host: remote.SSHHost) -> None:
-    if _owned_prometheus_exists(host):
-        remote.ssh_command(host, f"docker rm -f {shlex.quote(PROMETHEUS_CONTAINER)}")
+def stop_prometheus(host: remote.SSHHost, stack: MonitoringStack | None = None) -> None:
+    stack = _stack(stack)
+    if _owned_prometheus_exists(host, stack):
+        remote.ssh_command(host, f"docker rm -f {shlex.quote(stack.prometheus_container)}")
 
 
 def ensure_prometheus(
     inventory: remote.Inventory, targets: dict[str, str], dry_run: bool = False,
+    stack: MonitoringStack | None = None,
 ) -> None:
+    given = {} if stack is None else {"stack": stack}
+    stack = _stack(stack)
     host = inventory.hosts[inventory.prometheus_host]
-    documents, config_hash = prometheus_documents(targets)
+    documents, config_hash = prometheus_documents(targets, stack)
     remote.ssh_command(host, " && ".join([
         "command -v sha256sum >/dev/null",
         "command -v docker >/dev/null",
@@ -1003,58 +1087,66 @@ def ensure_prometheus(
         # Fails early when the SSH user may not use the Docker daemon.
         "docker info >/dev/null",
         "true" if dry_run
-        else f"install -d -m 755 {shlex.quote(REMOTE_PROMETHEUS_DIR + '/targets')}",
+        else f"install -d -m 755 {shlex.quote(stack.remote_dir + '/targets')}",
     ]))
-    if (_remote_prometheus_files_current(host, documents)
-            and _prometheus_container_current(host, config_hash)):
+    if (_remote_prometheus_files_current(host, documents, stack)
+            and _prometheus_container_current(host, config_hash, stack)):
         print(f"Prometheus on {host.name} is current")
         return
     if dry_run:
-        replacing = _owned_prometheus_exists(host)
-        print(f"dry-run: would {'replace' if replacing else 'create'} {PROMETHEUS_CONTAINER} "
-              f"and its files in {REMOTE_PROMETHEUS_DIR} on {host.name}")
+        replacing = _owned_prometheus_exists(host, stack)
+        print(f"dry-run: would {'replace' if replacing else 'create'} {stack.prometheus_container} "
+              f"and its files in {stack.remote_dir} on {host.name}")
         return
 
-    stop_prometheus(host)
+    stop_prometheus(host, **given)
     with tempfile.TemporaryDirectory() as directory:
         staging = Path(directory)
         for relative, content in documents.items():
             local = staging / relative
             local.parent.mkdir(parents=True, exist_ok=True)
             local.write_text(content)
-            target = f"{REMOTE_PROMETHEUS_DIR}/{relative}"
+            target = f"{stack.remote_dir}/{relative}"
             remote.scp_to(host, local, target + ".tmp")
             remote.ssh_command(host, " && ".join([
                 f"chmod 644 {shlex.quote(target + '.tmp')}",
                 f"mv -f {shlex.quote(target + '.tmp')} {shlex.quote(target)}",
             ]))
-    compose = f"{REMOTE_PROMETHEUS_DIR}/docker-compose.yml"
+    compose = f"{stack.remote_dir}/docker-compose.yml"
     remote.ssh_command(
         host,
         # --progress quiet hides the image pull and container progress; errors are still printed.
-        f"docker compose --progress quiet --project-name {PROMETHEUS_PROJECT} "
+        f"docker compose --progress quiet --project-name {stack.prometheus_project} "
         f"-f {shlex.quote(compose)} "
         "up -d --force-recreate",
     )
-    if not _prometheus_container_current(host, config_hash):
+    if not _prometheus_container_current(host, config_hash, stack):
         raise remote.SSHError(f"Prometheus container failed to start on {host.name}")
     print(f"started Prometheus on {host.name}")
+
+
+def tunnel_specs_for(
+    inventory: remote.Inventory, sources: list[MetricSource],
+) -> list[TunnelSpec]:
+    """One relay per metric source that is not on the Prometheus host.
+
+    Prometheus uses host networking, so it scrapes sources on its own host directly. A source
+    without host (the controller's own) needs only the -R half of a relay.
+    """
+    prometheus_alias = inventory.hosts[inventory.prometheus_host].alias
+    return [
+        TunnelSpec(None if source.host is None else inventory.hosts[source.host].alias,
+                   prometheus_alias, source.port, source.address)
+        for source in sources
+        if source.host != inventory.prometheus_host
+    ]
 
 
 def tunnel_specs(
     inventory: remote.Inventory, clients: list[workload.Client],
 ) -> list[TunnelSpec]:
-    """One relay per metric source that is not on the Prometheus host.
-
-    Prometheus uses host networking, so it scrapes sources on its own host directly.
-    """
-    prometheus_alias = inventory.hosts[inventory.prometheus_host].alias
-    return [
-        TunnelSpec(inventory.hosts[source.host].alias, prometheus_alias, source.port,
-                   source.address)
-        for source in metric_sources(inventory, clients)
-        if source.host != inventory.prometheus_host
-    ]
+    """The relays of the clients' and routers' metric sources."""
+    return tunnel_specs_for(inventory, metric_sources(inventory, clients))
 
 
 def docker_bridge_gateway() -> str | None:
@@ -1126,9 +1218,9 @@ def _stop_ssh_control_master(control_master: ControlMaster) -> bool:
     return result.returncode == 0
 
 
-def _load_tunnel_manifest() -> dict[str, object] | None:
+def _load_tunnel_manifest(stack: MonitoringStack | None = None) -> dict[str, object] | None:
     try:
-        value = json.loads(TUNNEL_MANIFEST.read_text())
+        value = json.loads(_stack(stack).manifest.read_text())
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return None
     return value if isinstance(value, dict) else None
@@ -1149,9 +1241,10 @@ def _manifest_ssh_control_masters(
     return valid, len(valid) == len(recorded)
 
 
-def stop_tunnels() -> None:
+def stop_tunnels(stack: MonitoringStack | None = None) -> None:
     """Close every ssh-control-master in the manifest, newest first, and remove the state."""
-    control_masters, _ = _manifest_ssh_control_masters(_load_tunnel_manifest())
+    stack = _stack(stack)
+    control_masters, _ = _manifest_ssh_control_masters(_load_tunnel_manifest(stack))
     failures = []
     for control_master in reversed(control_masters):
         if _ssh_control_master_running(control_master) and not _stop_ssh_control_master(
@@ -1161,9 +1254,9 @@ def stop_tunnels() -> None:
         Path(control_master["socket"]).unlink(missing_ok=True)
     if failures:
         raise remote.SSHError("failed to stop ssh-control-masters for " + ", ".join(failures))
-    TUNNEL_MANIFEST.unlink(missing_ok=True)
+    stack.manifest.unlink(missing_ok=True)
     try:
-        TUNNEL_STATE_DIR.rmdir()
+        stack.tunnel_state_dir.rmdir()
     except OSError:
         pass
 
@@ -1182,6 +1275,7 @@ def _check_local_port_free(forward: PrometheusForward) -> None:
 
 def ensure_tunnels(
     specs: list[TunnelSpec], forward: PrometheusForward | None = None, dry_run: bool = False,
+    stack: MonitoringStack | None = None,
 ) -> None:
     """Relay every metric source to the Prometheus host through two ssh-control-masters.
 
@@ -1191,15 +1285,17 @@ def ensure_tunnels(
     ssh-control-master forwards the controller port of forward, on each of its bind addresses,
     to the remote Prometheus, for the browser and for Grafana. The manifest records a hash of
     the specs and the forward, and every ssh-control-master; if the hash matches and all of
-    them answer -O check, nothing changes, otherwise all are replaced.
+    them answer -O check, nothing changes, otherwise all are replaced. A spec without
+    source_alias has no -L half: the controller reaches its source directly.
     """
-    manifest = _load_tunnel_manifest()
+    stack = _stack(stack)
+    manifest = _load_tunnel_manifest(stack)
     if not specs and forward is None:
         if dry_run:
             if manifest is not None:
                 print("dry-run: would stop the existing Prometheus metric relays")
             return
-        stop_tunnels()
+        stop_tunnels(stack)
         print("no Prometheus metric relays are configured")
         return
     digest = _tunnel_hash(specs, forward)
@@ -1219,37 +1315,42 @@ def ensure_tunnels(
               f"{forwarding}")
         return
 
-    stop_tunnels()
+    stop_tunnels(stack)
     if forward is not None:
         _check_local_port_free(forward)
-    TUNNEL_STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    stack.tunnel_state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     control_masters: list[ControlMaster] = []
     try:
         for index, spec in enumerate(specs):
+            if spec.source_alias is not None:
+                control_masters.append(_start_ssh_control_master(
+                    ["-L", f"127.0.0.1:{spec.port}:{spec.source_address}"],
+                    stack.tunnel_state_dir / f"source-{index}.sock", spec.source_alias,
+                ))
+                remote_target = f"127.0.0.1:{spec.port}"
+            else:
+                remote_target = spec.source_address
             control_masters.append(_start_ssh_control_master(
-                ["-L", f"127.0.0.1:{spec.port}:{spec.source_address}"],
-                TUNNEL_STATE_DIR / f"source-{index}.sock", spec.source_alias,
-            ))
-            control_masters.append(_start_ssh_control_master(
-                ["-R", f"127.0.0.1:{spec.port}:127.0.0.1:{spec.port}"],
-                TUNNEL_STATE_DIR / f"prometheus-{index}.sock", spec.prometheus_alias,
+                ["-R", f"127.0.0.1:{spec.port}:{remote_target}"],
+                stack.tunnel_state_dir / f"prometheus-{index}.sock", spec.prometheus_alias,
             ))
         if forward is not None:
+            ui_target = f"127.0.0.1:{stack.remote_prometheus_port}"
             control_masters.append(_start_ssh_control_master(
                 [argument for bind in forward.binds
-                 for argument in ("-L", f"{bind}:{forward.port}:127.0.0.1:{PROMETHEUS_PORT}")],
-                TUNNEL_STATE_DIR / "prometheus-ui.sock", forward.alias,
+                 for argument in ("-L", f"{bind}:{forward.port}:{ui_target}")],
+                stack.tunnel_state_dir / "prometheus-ui.sock", forward.alias,
             ))
     except BaseException:
         # Record what did start, so that stop_tunnels can close it.
-        TUNNEL_MANIFEST.write_text(json.dumps({"ssh_control_masters": control_masters}))
-        stop_tunnels()
+        stack.manifest.write_text(json.dumps({"ssh_control_masters": control_masters}))
+        stop_tunnels(stack)
         raise
-    TUNNEL_MANIFEST.write_text(json.dumps({
+    stack.manifest.write_text(json.dumps({
         "spec_sha256": digest,
         "ssh_control_masters": control_masters,
     }, indent=2) + "\n")
-    TUNNEL_MANIFEST.chmod(0o600)
+    stack.manifest.chmod(0o600)
     print(f"started {len(specs)} Prometheus metric relays"
           + (f" and forwarded controller port {forward.port} to Prometheus" if forward else ""))
 
@@ -1272,11 +1373,12 @@ def _wait_http(url: str, seconds: int) -> bool:
     return _http_answers(url)
 
 
-def _grafana_state() -> tuple[bool, str | None]:
+def _grafana_state(stack: MonitoringStack | None = None) -> tuple[bool, str | None]:
     """Whether the local Grafana container runs, and the Prometheus port it is configured for."""
     result = subprocess.run(
         ["docker", "inspect", "--format",
-         "{{.State.Running}}{{range .Config.Env}}\n{{.}}{{end}}", GRAFANA_CONTAINER],
+         "{{.State.Running}}{{range .Config.Env}}\n{{.}}{{end}}",
+         _stack(stack).grafana_container],
         check=False, capture_output=True, text=True,
     )
     if result.returncode:
@@ -1287,7 +1389,9 @@ def _grafana_state() -> tuple[bool, str | None]:
     return running == "true", port
 
 
-def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
+def ensure_grafana(
+    forward: PrometheusForward, dry_run: bool = False, stack: MonitoringStack | None = None,
+) -> None:
     """Run the monitoring stack's Grafana on the controller, pointed at the Prometheus forward.
 
     It is the same container, provisioning, dashboards, and volume as in the Docker mode. Its
@@ -1295,13 +1399,15 @@ def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
     Docker bridge gateway. A running Grafana configured for that port is left alone; otherwise it
     is recreated with PROMETHEUS_PORT set to it. Prometheus itself is not started (--no-deps).
     """
-    owner = workload.local_container_owner(GRAFANA_CONTAINER)
-    expected = f"{workload.MONITORING_PROJECT}/grafana"
+    stack = _stack(stack)
+    owner = workload.local_container_owner(stack.grafana_container)
+    expected = f"{stack.grafana_project}/grafana"
     if owner is not None and owner != expected:
         raise remote.SSHError(
-            f"refusing to replace {GRAFANA_CONTAINER}: it belongs to {owner!r}, not {expected}",
+            f"refusing to replace {stack.grafana_container}: it belongs to {owner!r}, "
+            f"not {expected}",
         )
-    running, configured = _grafana_state() if owner is not None else (False, None)
+    running, configured = _grafana_state(stack) if owner is not None else (False, None)
     port = str(forward.port)
     grafana_url = f"http://127.0.0.1:{os.environ.get('GRAFANA_PORT', '3000')}"
     if running and configured == port:
@@ -1316,7 +1422,8 @@ def ensure_grafana(forward: PrometheusForward, dry_run: bool = False) -> None:
         # longer exists, e.g. after `docker network prune`. Its data is in a named volume.
         subprocess.run(
             workload.monitoring_compose(
-                "up", "-d", "--no-deps", "--force-recreate", "grafana", quiet=True),
+                "up", "-d", "--no-deps", "--force-recreate", "grafana", quiet=True,
+                compose=stack.grafana_compose, project=stack.grafana_project),
             env={**os.environ, "PROMETHEUS_PORT": port}, check=True, text=True)
         done = {"start": "started", "re-point": "re-pointed"}[verb]
         print(f"{done} Grafana {change}")

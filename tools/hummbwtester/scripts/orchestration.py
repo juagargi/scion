@@ -541,6 +541,65 @@ def informative_lines(root: dict[str, Any]) -> list[str]:
     return lines
 
 
+def parse_marketplace_config(marketplace: dict[str, Any], kind: str) -> MarketplaceConfig:
+    """Validate the hummingbird.marketplace object of a `docker` or `ssh` deployment."""
+    require_fields(marketplace, {"username", "password_env", "location_override"},
+                   "hummingbird.marketplace",
+                   {"sub_account", "host", "scion_address", "interfaces"})
+    username, password_env = marketplace["username"], marketplace["password_env"]
+    if not isinstance(username, str) or not username:
+        raise ConfigError("hummingbird.marketplace.username must be a non-empty string")
+    if (not isinstance(password_env, str)
+            or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", password_env)):
+        raise ConfigError(
+            "hummingbird.marketplace.password_env must name an environment variable")
+    sub_account = marketplace.get("sub_account")
+    if sub_account is not None and (not isinstance(sub_account, str) or not sub_account):
+        raise ConfigError("hummingbird.marketplace.sub_account must be a non-empty string")
+    host = marketplace.get("host")
+    if host is not None:
+        if not isinstance(host, str) or not host or any(char.isspace() for char in host):
+            raise ConfigError(
+                "hummingbird.marketplace.host must be a non-empty string without whitespace",
+            )
+        if kind == "docker":
+            raise ConfigError("hummingbird.marketplace.host is only valid for SSH deployments")
+    elif kind == "ssh":
+        # SSH setup reaches the marketplace only through a tunnel to the host it runs on.
+        raise ConfigError("hummingbird.marketplace.host is required for SSH deployments")
+    location_override = marketplace["location_override"]
+    if not isinstance(location_override, bool):
+        raise ConfigError("hummingbird.marketplace.location_override must be a boolean")
+    scion_address = marketplace.get("scion_address")
+    if scion_address is not None:
+        if kind == "docker" and not location_override:
+            # The generated Docker topology already advertises its marketplace.
+            raise ConfigError(
+                "hummingbird.marketplace.scion_address is only valid for SSH deployments, "
+                "or with location_override",
+            )
+        validate_scion_address(scion_address, "hummingbird.marketplace.scion_address")
+    elif location_override:
+        raise ConfigError(
+            "hummingbird.marketplace.location_override requires scion_address, "
+            "the location the clients buy from",
+        )
+    if kind == "ssh":
+        validate_ssh_marketplace(scion_address)
+    interfaces = None
+    if "interfaces" in marketplace:
+        if kind == "docker":
+            # The topology generator fills the Docker marketplace database.
+            raise ConfigError(
+                "hummingbird.marketplace.interfaces is only valid for SSH deployments",
+            )
+        interfaces = parse_marketplace_interfaces(marketplace["interfaces"])
+    return MarketplaceConfig(
+        username, password_env, sub_account, host, scion_address, interfaces,
+        location_override,
+    )
+
+
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
@@ -577,61 +636,7 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
         marketplace = hummingbird_config.get("marketplace")
         if not isinstance(marketplace, dict):
             raise ConfigError("hummingbird.marketplace is required in marketplace mode")
-        require_fields(marketplace, {"username", "password_env", "location_override"},
-                       "hummingbird.marketplace",
-                       {"sub_account", "host", "scion_address", "interfaces"})
-        username, password_env = marketplace["username"], marketplace["password_env"]
-        if not isinstance(username, str) or not username:
-            raise ConfigError("hummingbird.marketplace.username must be a non-empty string")
-        if (not isinstance(password_env, str)
-                or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", password_env)):
-            raise ConfigError(
-                "hummingbird.marketplace.password_env must name an environment variable")
-        sub_account = marketplace.get("sub_account")
-        if sub_account is not None and (not isinstance(sub_account, str) or not sub_account):
-            raise ConfigError("hummingbird.marketplace.sub_account must be a non-empty string")
-        host = marketplace.get("host")
-        if host is not None:
-            if not isinstance(host, str) or not host or any(char.isspace() for char in host):
-                raise ConfigError(
-                    "hummingbird.marketplace.host must be a non-empty string without whitespace",
-                )
-            if deployment["kind"] == "docker":
-                raise ConfigError("hummingbird.marketplace.host is only valid for SSH deployments")
-        elif deployment["kind"] == "ssh":
-            # SSH setup reaches the marketplace only through a tunnel to the host it runs on.
-            raise ConfigError("hummingbird.marketplace.host is required for SSH deployments")
-        location_override = marketplace["location_override"]
-        if not isinstance(location_override, bool):
-            raise ConfigError("hummingbird.marketplace.location_override must be a boolean")
-        scion_address = marketplace.get("scion_address")
-        if scion_address is not None:
-            if deployment["kind"] == "docker" and not location_override:
-                # The generated Docker topology already advertises its marketplace.
-                raise ConfigError(
-                    "hummingbird.marketplace.scion_address is only valid for SSH deployments, "
-                    "or with location_override",
-                )
-            validate_scion_address(scion_address, "hummingbird.marketplace.scion_address")
-        elif location_override:
-            raise ConfigError(
-                "hummingbird.marketplace.location_override requires scion_address, "
-                "the location the clients buy from",
-            )
-        if deployment["kind"] == "ssh":
-            validate_ssh_marketplace(scion_address)
-        interfaces = None
-        if "interfaces" in marketplace:
-            if deployment["kind"] == "docker":
-                # The topology generator fills the Docker marketplace database.
-                raise ConfigError(
-                    "hummingbird.marketplace.interfaces is only valid for SSH deployments",
-                )
-            interfaces = parse_marketplace_interfaces(marketplace["interfaces"])
-        marketplace_config = MarketplaceConfig(
-            username, password_env, sub_account, host, scion_address, interfaces,
-            location_override,
-        )
+        marketplace_config = parse_marketplace_config(marketplace, deployment["kind"])
     elif "marketplace" in hummingbird_config:
         raise ConfigError("hummingbird.marketplace is only valid in marketplace mode")
     if not isinstance(root["server"], dict):
@@ -953,13 +958,17 @@ def ignore_sigint_during_cleanup() -> object:
             continue
 
 
-def monitoring_compose(*args: str, quiet: bool = False) -> list[str]:
+def monitoring_compose(
+    *args: str, quiet: bool = False, compose: Path = MONITORING_COMPOSE,
+    project: str = MONITORING_PROJECT,
+) -> list[str]:
     """A docker compose command for the controller's monitoring stack.
 
-    quiet hides image pull and container progress; errors are still printed.
+    quiet hides image pull and container progress; errors are still printed. compose and project
+    select another tool's stack.
     """
     return ["docker", "compose", *(["--progress", "quiet"] if quiet else []),
-            "--project-name", MONITORING_PROJECT, "-f", str(MONITORING_COMPOSE), *args]
+            "--project-name", project, "-f", str(compose), *args]
 
 
 def local_container_owner(container: str) -> str | None:
@@ -982,19 +991,29 @@ def require_built_binary() -> None:
         )
 
 
-def wait_for_reachability(server: Endpoint, client: Client, timeout: float = 60) -> None:
-    """Poll SCION ping from client until it can reach server or timeout expires."""
-    # scion ping takes a SCION host address, not the UDP endpoint used by hummbwtester.
-    destination = f"{server.isd_as},{server.host}"
+def wait_for_scion(source_ia: str, destination: str, timeout: float = 60) -> None:
+    """Poll SCION ping from the tester of source_ia until it reaches destination (a SCION host
+    address such as `1-ff00:0:112,10.0.0.1`) or timeout expires."""
+    _wait_for_scion(source_ia, destination, timeout, source_ia)
+
+
+def _wait_for_scion(source_ia: str, destination: str, timeout: float, name: str) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        result = run(dc_args("exec", "-T", tester_service(client.endpoint.isd_as),
+        result = run(dc_args("exec", "-T", tester_service(source_ia),
                              "scion", "ping", "-c", "1", destination), check=False,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if result.returncode == 0:
             return
         time.sleep(1)
-    raise RuntimeError(f"timed out waiting for {client.client_id} to reach {destination}")
+    raise RuntimeError(f"timed out waiting for {name} to reach {destination}")
+
+
+def wait_for_reachability(server: Endpoint, client: Client, timeout: float = 60) -> None:
+    """Poll SCION ping from client until it can reach server or timeout expires."""
+    # scion ping takes a SCION host address, not the UDP endpoint used by hummbwtester.
+    _wait_for_scion(client.endpoint.isd_as, f"{server.isd_as},{server.host}", timeout,
+                    client.client_id)
 
 
 def write_targets(compose: dict[str, Any], clients: list[Client]) -> None:
@@ -1013,9 +1032,16 @@ def target_files(clients: list[Client]) -> dict[Path, str]:
         "labels": {"client_id": client.client_id},
     } for client in clients]
 
-    ia_by_br = br_ias()
-    targets = []
-    for service, ia in sorted(ia_by_br.items()):
+    return {
+        TARGET_DIR / "clients.json": json.dumps(client_targets, indent=2) + "\n",
+        TARGET_DIR / "border_routers.json": json.dumps(border_router_targets(), indent=2) + "\n",
+    }
+
+
+def border_router_targets() -> list[dict[str, object]]:
+    """The scion-border-routers file_sd entries, with their `as` and `br` labels."""
+    targets: list[dict[str, object]] = []
+    for service, ia in sorted(br_ias().items()):
         # The BR's internal address is its second generated network address. Read topology instead
         # of relying on Compose network ordering.
         for topology in GEN.glob("AS*/topology.json"):
@@ -1026,10 +1052,7 @@ def target_files(clients: list[Client]) -> dict[Path, str]:
                 labels = {"as": ia.split("-", 1)[1].replace(":", "_"), "br": service}
                 targets.append({"targets": [join_host_port(host, 30442)], "labels": labels})
                 break
-    return {
-        TARGET_DIR / "clients.json": json.dumps(client_targets, indent=2) + "\n",
-        TARGET_DIR / "border_routers.json": json.dumps(targets, indent=2) + "\n",
-    }
+    return targets
 
 
 def setup(
@@ -1051,6 +1074,34 @@ def setup(
     # This is safe after `scion.sh stop`: Compose recreates the removed bridges before tc runs.
     run([str(ROOT / "scion.sh"), "start"], cwd=ROOT)
     wait_for_reachability(server, clients[0])
+    ensure_docker_qdiscs(compose, tc, peers)
+    for client in clients:
+        print(f"client_id={client.client_id} metrics_port={client.metrics_port}")
+    with BIN.open("rb") as binary:
+        digest = hashlib.file_digest(binary, "sha256").hexdigest()
+    services = {tester_service(server.isd_as),
+                *(tester_service(c.endpoint.isd_as) for c in clients)}
+    for service in sorted(services):
+        current = run(dc_args("exec", "-T", service, "sha256sum", "/share/bin/hummbwtester"),
+                      cwd=ROOT, check=False, capture_output=True)
+        if current.returncode or not current.stdout.split() or current.stdout.split()[0] != digest:
+            run(dc_args("cp", str(BIN), f"{service}:/share/bin/hummbwtester"), cwd=ROOT)
+        run(dc_args("exec", "-T", service, "test", "-x", "/share/bin/hummbwtester"), cwd=ROOT)
+    write_targets(compose, clients)
+    return 0
+
+
+def ensure_docker_qdiscs(
+    compose: dict[str, Any], tc: dict[str, str], peers: dict[str, list[str]] | None = None,
+) -> dict[str, list[str]]:
+    """Apply, or check, the TBF qdiscs of every inter-AS border router and record them in
+    DOCKER_QDISC_STATE; return the applied peers per router.
+
+    compose is the topology's Compose data; peers, if the caller already derived it with
+    inter_as_router_peers, is not derived again.
+    """
+    if peers is None:
+        peers = inter_as_router_peers(compose)
     previous_peers = recorded_qdisc_peers(tc)
     applied_peers: dict[str, list[str]] = {}
     for router_service in peers:
@@ -1067,20 +1118,32 @@ def setup(
         DOCKER_QDISC_STATE.write_text(json.dumps(
             {"tc": tc, "peers": applied_peers}, sort_keys=True, indent=2,
         ) + "\n")
-    for client in clients:
-        print(f"client_id={client.client_id} metrics_port={client.metrics_port}")
-    with BIN.open("rb") as binary:
-        digest = hashlib.file_digest(binary, "sha256").hexdigest()
-    services = {tester_service(server.isd_as),
-                *(tester_service(c.endpoint.isd_as) for c in clients)}
-    for service in sorted(services):
-        current = run(dc_args("exec", "-T", service, "sha256sum", "/share/bin/hummbwtester"),
-                      cwd=ROOT, check=False, capture_output=True)
-        if current.returncode or not current.stdout.split() or current.stdout.split()[0] != digest:
-            run(dc_args("cp", str(BIN), f"{service}:/share/bin/hummbwtester"), cwd=ROOT)
-        run(dc_args("exec", "-T", service, "test", "-x", "/share/bin/hummbwtester"), cwd=ROOT)
-    write_targets(compose, clients)
-    return 0
+    return applied_peers
+
+
+def remove_docker_qdiscs() -> None:
+    """Remove the qdiscs recorded in DOCKER_QDISC_STATE and delete it; no-op without it."""
+    try:
+        peers = json.loads(DOCKER_QDISC_STATE.read_text())
+    except FileNotFoundError:
+        return
+    if isinstance(peers, dict) and "peers" in peers:
+        peers = peers["peers"]
+    if not isinstance(peers, dict) or not all(
+        isinstance(router, str) and isinstance(addresses, list)
+        and all(isinstance(address, str) for address in addresses)
+        for router, addresses in peers.items()
+    ):
+        raise RuntimeError(f"invalid qdisc manifest: {DOCKER_QDISC_STATE}")
+    for router, addresses in peers.items():
+        running = subprocess.run(dc_args("ps", "-q", router), cwd=ROOT,
+                                 check=True, capture_output=True, text=True)
+        if not running.stdout.strip():
+            continue  # A stopped container has no network namespace or qdisc to remove.
+        subprocess.run(dc_args(
+            "run", "--rm", "--no-deps", tc_helper_name(router), "cleanup", *addresses,
+        ), cwd=ROOT, check=True, text=True)
+    DOCKER_QDISC_STATE.unlink()
 
 
 def recorded_qdisc_peers(tc: dict[str, str]) -> dict[str, Any]:

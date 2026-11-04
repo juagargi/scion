@@ -664,6 +664,38 @@ Prometheus is available at `http://localhost:8090`;
 Grafana is at `http://localhost:3000` (`admin` / `admin`).
 The dashboard groups client series by `client_id`.
 
+## Reuse from other tools
+
+Other experiment runners import the infrastructure code of `scripts/orchestration.py`,
+`scripts/ssh_orchestration.py` and `scripts/ssh_setup.py` (the `scripts` directory on `sys.path`,
+or the package `tools.hummbwtester.scripts`). The following names are that API;
+`scripts/reuse_api_test.py` checks their signatures, so renaming one fails a test here.
+Every parameter added for reuse defaults to hummbwtester's own behaviour.
+
+- Docker topology and shaping (`orchestration`): `patch_router_configs`, `compose_data`,
+  `inter_as_router_peers`, `patch_compose`, `ensure_docker_qdiscs`, `remove_docker_qdiscs`
+  (shared state file `DOCKER_QDISC_STATE`), `border_router_targets`, `wait_for_scion`,
+  `monitoring_compose` (`compose`/`project` select another stack).
+- Deployment parsing: `orchestration.parse_marketplace_config`, `ssh_orchestration.load_marketplace`
+  and `load_deployment(root, participants)`, which parse `hummingbird.marketplace` and `deployment`
+  without a server and clients; `Inventory.participant_hosts` holds the participants' hosts, while
+  `server_host` and `client_hosts` stay empty.
+- Marketplace, Notes and shaping over SSH (`ssh_setup`): `ensure_marketplace`,
+  `obtain_marketplace_jwt`, `ensure_marketplace_notes`, `stop_marketplace`,
+  `ensure_selective_qdiscs`, `remove_selective_qdiscs`, `copy_if_changed`, `print_manual_steps`.
+- Monitoring over SSH (`ssh_setup`): `ensure_prometheus`, `stop_prometheus`, `ensure_tunnels`,
+  `stop_tunnels` and `ensure_grafana` take `stack=`, a `MonitoringStack` naming the containers,
+  Compose project, remote port, remote directory and relay state of one tool, so that two tools
+  do not replace each other's. `None` (the default) is `HUMMBWTESTER_STACK`, read from the module
+  constants at call time. Metric sources are `MetricSource` values: `client_metric_sources`,
+  `router_metric_sources`, then `target_documents_for` and `tunnel_specs_for`. A source with
+  `host=None` is on the controller and only gets the `-R` half of a relay.
+- Hosts and commands (`ssh_orchestration`): `SSHHost`, `Inventory`, `ssh_command`, `scp_to`, and
+  `preflight(host, required_tools=...)` (the daemon check still runs `nc`).
+
+Running two tools against the same hosts at the same time is not supported: both deploy the same
+marketplace service.
+
 ## Tests
 
 Run the focused Go and orchestration tests from the repository root:
@@ -672,8 +704,8 @@ Run the focused Go and orchestration tests from the repository root:
 go test ./tools/hummbwtester
 bazel test //tools/hummbwtester:go_default_test //tools/hummbwtester:experiment_test \
   //tools/hummbwtester:orchestration_test //tools/hummbwtester:ssh_orchestration_test \
-  //tools/hummbwtester:ssh_setup_test //tools/hummbwtester:selective_qdisc_test \
-  //tools/hummbwtester:static_info_note_test
+  //tools/hummbwtester:ssh_setup_test //tools/hummbwtester:reuse_api_test \
+  //tools/hummbwtester:selective_qdisc_test //tools/hummbwtester:static_info_note_test
 ```
 
 Run the no-sleep client send-path benchmark with:
