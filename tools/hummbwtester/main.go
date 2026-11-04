@@ -67,23 +67,24 @@ var (
 	sciondAddr    string
 	sciondConfDir string
 
-	bandwidthFlag      string
-	maxBurstFlag       string
-	duration           time.Duration
-	payloadSize        int
-	pongRateHz         float64
-	sequenceFlag       string
-	hummingbirdFlag    string
-	partialFlag        string
-	hummKeysDir        string
-	marketplaceAddr    string
-	metricsAddr        string
-	reportInterval     time.Duration
-	renewalAhead       time.Duration
-	reservationOverlap time.Duration
-	hummStartOffset    time.Duration
-	verifyIntegrity    bool
-	receiveBufferSize  int
+	bandwidthFlag               string
+	maxBurstFlag                string
+	duration                    time.Duration
+	payloadSize                 int
+	pongRateHz                  float64
+	pathToServerFilterFlag      string
+	hummingbirdFlag             string
+	partialFlag                 string
+	hummKeysDir                 string
+	marketplaceAddr             string
+	pathToMarketplaceFilterFlag string
+	metricsAddr                 string
+	reportInterval              time.Duration
+	renewalAhead                time.Duration
+	reservationOverlap          time.Duration
+	hummStartOffset             time.Duration
+	verifyIntegrity             bool
+	receiveBufferSize           int
 )
 
 func main() {
@@ -191,10 +192,18 @@ func realMain() int {
 				return 1
 			}
 		}
-		sequence, err := pathpol.NewSequence(sequenceFlag)
+		sequence, err := pathpol.NewSequence(pathToServerFilterFlag)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing -sequence:", err)
+			fmt.Fprintln(os.Stderr, "error parsing -path-to-server-filter:", err)
 			return 1
+		}
+		var marketplaceSequence *pathpol.Sequence
+		if pathToMarketplaceFilterFlag != "" {
+			marketplaceSequence, err = pathpol.NewSequence(pathToMarketplaceFilterFlag)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error parsing -path-to-marketplace-filter:", err)
+				return 1
+			}
 		}
 		bandwidthBps, maxBurstBps, err := parsePacingBandwidths(bandwidthFlag, maxBurstFlag)
 		if err != nil {
@@ -202,26 +211,27 @@ func realMain() int {
 			return 1
 		}
 		cfg := clientConfig{
-			local:              localFlag,
-			remote:             remoteFlag,
-			sdConn:             sdConn,
-			sequence:           sequence,
-			bandwidthBps:       bandwidthBps,
-			maxBurstBps:        maxBurstBps,
-			duration:           duration,
-			payloadSize:        payloadSize,
-			pongRateHz:         pongRateHz,
-			humm:               hummParams,
-			hummEnabled:        hummingbirdFlag != "",
-			hummReservationID:  reservationID,
-			hummKeysDir:        hummKeysDir,
-			partial:            partial,
-			marketplaceJWT:     marketplaceJWT,
-			marketplaceAddr:    marketplaceAddr,
-			reportInterval:     reportInterval,
-			renewalAhead:       renewalAhead,
-			reservationOverlap: reservationOverlap,
-			hummStartOffset:    hummStartOffset,
+			local:               localFlag,
+			remote:              remoteFlag,
+			sdConn:              sdConn,
+			sequence:            sequence,
+			bandwidthBps:        bandwidthBps,
+			maxBurstBps:         maxBurstBps,
+			duration:            duration,
+			payloadSize:         payloadSize,
+			pongRateHz:          pongRateHz,
+			humm:                hummParams,
+			hummEnabled:         hummingbirdFlag != "",
+			hummReservationID:   reservationID,
+			hummKeysDir:         hummKeysDir,
+			partial:             partial,
+			marketplaceJWT:      marketplaceJWT,
+			marketplaceAddr:     marketplaceAddr,
+			marketplaceSequence: marketplaceSequence,
+			reportInterval:      reportInterval,
+			renewalAhead:        renewalAhead,
+			reservationOverlap:  reservationOverlap,
+			hummStartOffset:     hummStartOffset,
 		}
 		return runClient(ctx, sn, cfg)
 	default:
@@ -249,7 +259,7 @@ func addFlags() {
 		"(Client only) UDP payload size in bytes for Payload packets")
 	flag.Float64Var(&pongRateHz, "pong-rate", defaultPongRateHz,
 		"(Client only) rate, in Hz, at which to send latency probe (pong-request) packets")
-	flag.StringVar(&sequenceFlag, "sequence", "",
+	flag.StringVar(&pathToServerFilterFlag, "path-to-server-filter", "",
 		"(Client only) Space separated list of hop predicates that the path must match, as "+
 			"in `scion showpaths --sequence`, e.g. \"0-0#103 0*\" (empty: any path)")
 	flag.StringVar(&hummingbirdFlag, "hummingbird", "",
@@ -266,6 +276,9 @@ func addFlags() {
 		"(Client only) API address of the marketplace to buy from, e.g. "+
 			"\"[1-ff00:0:111,172.20.0.20]:8888\" or \"https://172.20.0.20:8888\"; "+
 			"without it, buy from the marketplace the ASes of the path advertise")
+	flag.StringVar(&pathToMarketplaceFilterFlag, "path-to-marketplace-filter", "",
+		"(Client only) hop predicates that the path to the marketplace must match, as in "+
+			"-path-to-server-filter; empty uses the daemon's first path")
 	flag.DurationVar(&renewalAhead, "renewal-ahead", defaultRenewalAhead,
 		"(Client only) how long before reservation expiry to request its replacement")
 	flag.DurationVar(&reservationOverlap, "reservation-overlap", defaultReservationOverlap,
@@ -306,6 +319,10 @@ func validateFlags() error {
 			marketplaceAddr, hummingbirdFlag, hummKeysDir); err != nil {
 			return err
 		}
+		if err := validatePathToMarketplaceFilter(
+			pathToMarketplaceFilterFlag, hummingbirdFlag, hummKeysDir); err != nil {
+			return err
+		}
 		if payloadSize < HeaderLen {
 			return serrors.New("payload-size too small, must be at least the header size",
 				"value", payloadSize, "min", HeaderLen)
@@ -332,6 +349,15 @@ func validateMarketplaceOverride(addr, hummingbird, keysDir string) error {
 	if addr != "" && (hummingbird == "" || keysDir != "") {
 		return serrors.New("-marketplace-location-override requires -hummingbird " +
 			"without -hummKeysDir")
+	}
+	return nil
+}
+
+// validatePathToMarketplaceFilter checks that -path-to-marketplace-filter is only given when the
+// reservations are bought from a marketplace.
+func validatePathToMarketplaceFilter(sequence, hummingbird, keysDir string) error {
+	if sequence != "" && (hummingbird == "" || keysDir != "") {
+		return serrors.New("-path-to-marketplace-filter requires -hummingbird without -hummKeysDir")
 	}
 	return nil
 }

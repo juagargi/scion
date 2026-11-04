@@ -142,6 +142,39 @@ class ConfigTest(unittest.TestCase):
         self.assertNotIn("-marketplace-location-override",
                          client_args(clients[1], server, "172.20.0.21:30255"))
 
+    def test_path_to_marketplace_filter_is_omitted_or_passed_to_client(self):
+        server, clients, _, _ = load_config(self.write_config(self.marketplace_config()))
+        self.assertNotIn("-path-to-marketplace-filter",
+                         client_args(clients[1], server, "172.20.0.21:30255"))
+
+        path_filter = "1-ff00:0:111#41 1-ff00:0:110#1"
+        config = self.marketplace_config()
+        config["hummingbird_clients"][0]["hummingbird_reservation"][
+            "path_to_marketplace_filter"] = path_filter
+        server, clients, _, _ = load_config(self.write_config(config))
+        args = client_args(clients[1], server, "172.20.0.21:30255")
+        self.assertEqual(args[args.index("-path-to-marketplace-filter") + 1], path_filter)
+
+    def test_rejects_invalid_path_to_marketplace_filter(self):
+        for value in ("", " ", 3, None):
+            with self.subTest(value=value):
+                config = self.marketplace_config()
+                config["hummingbird_clients"][0]["hummingbird_reservation"][
+                    "path_to_marketplace_filter"] = value
+                if value is None:
+                    # An explicit null is the same as leaving the field out.
+                    load_config(self.write_config(config))
+                    continue
+                with self.assertRaisesRegex(ConfigError, "path_to_marketplace_filter"):
+                    load_config(self.write_config(config))
+
+    def test_path_to_marketplace_filter_requires_marketplace_reservations(self):
+        config = self.base_config()
+        config["hummingbird_clients"][0]["hummingbird_reservation"][
+            "path_to_marketplace_filter"] = "0-0#41 0*"
+        with self.assertRaisesRegex(ConfigError, "requires reservation_source marketplace"):
+            load_config(self.write_config(config))
+
     def test_docker_location_override_must_match_the_generated_marketplace(self):
         def clients_at(scion_address):
             return load_config(self.write_config(self.marketplace_config(
@@ -384,13 +417,24 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(ConfigError):
                     load_config(self.write_config(config))
 
-    def test_rejects_empty_or_non_string_sequence(self):
-        for sequence in ("", " ", 103, ["0-0#103"]):
-            config = self.base_config()
-            config["hummingbird_clients"][0]["sequence"] = sequence
-            with self.subTest(sequence=sequence), \
-                    self.assertRaisesRegex(ConfigError, "sequence must be a non-empty string"):
-                load_config(self.write_config(config))
+    def test_rejects_empty_or_non_string_path_to_server_filter(self):
+        for path_filter in ("", " ", 103, ["0-0#103"]):
+            for kind in ("hummingbird", "best_effort"):
+                config = self.base_config()
+                config[f"{kind}_clients"][0]["path_to_server_filter"] = path_filter
+                with self.subTest(path_filter=path_filter, kind=kind), \
+                        self.assertRaisesRegex(ConfigError,
+                                               "path_to_server_filter must be a non-empty string"):
+                    load_config(self.write_config(config))
+
+    def test_hummingbird_path_to_server_filter_is_passed_to_client(self):
+        config = self.base_config()
+        config["hummingbird_clients"][0]["path_to_server_filter"] = "0-0#103 0*"
+        server, clients, _, _ = load_config(self.write_config(config))
+        args = client_args(clients[1], server, "172.20.0.21:30255")
+        self.assertEqual(args[args.index("-path-to-server-filter") + 1], "0-0#103 0*")
+        self.assertNotIn("-path-to-server-filter",
+                         client_args(clients[0], server, "172.20.0.21:30255"))
 
     def test_rejects_latency_instead_of_explicit_limit(self):
         config = self.base_config()
@@ -407,11 +451,11 @@ class ConfigTest(unittest.TestCase):
         self.assertNotIn("-pong-rate", args)
         self.assertNotIn("-renewal-ahead", args)
         self.assertNotIn("-hummingbird", args)
-        self.assertNotIn("-sequence", args)
+        self.assertNotIn("-path-to-server-filter", args)
 
         config = self.base_config()
         config["best_effort_clients"][0].update({
-            "payload_size": 1200, "pong_rate": 2.0, "sequence": "0-0#103 0*",
+            "payload_size": 1200, "pong_rate": 2.0, "path_to_server_filter": "0-0#103 0*",
         })
         config["hummingbird_clients"][0]["hummingbird_reservation"].update({
             "renewal_ahead": "6s",
@@ -427,7 +471,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(args[args.index("-duration") + 1], "30s")
         self.assertEqual(args[args.index("-payload-size") + 1], "1200")
         self.assertEqual(args[args.index("-pong-rate") + 1], "2.0")
-        self.assertEqual(args[args.index("-sequence") + 1], "0-0#103 0*")
+        self.assertEqual(args[args.index("-path-to-server-filter") + 1], "0-0#103 0*")
 
         args = client_args(hummingbird, server, "172.20.0.21:30255")
         self.assertEqual(args[args.index("-hummingbird") + 1], "1000,1m,1000")

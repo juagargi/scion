@@ -109,13 +109,15 @@ type clientConfig struct {
 	hummReservationID uint32
 	hummKeysDir       string
 	// partial restricts which on-path ASes get flyovers; nil reserves every AS.
-	partial            *humm.ASFilter
-	marketplaceJWT     string
-	marketplaceAddr    string
-	reportInterval     time.Duration
-	renewalAhead       time.Duration
-	reservationOverlap time.Duration
-	hummStartOffset    time.Duration
+	partial         *humm.ASFilter
+	marketplaceJWT  string
+	marketplaceAddr string
+	// marketplaceSequence restricts the paths to the marketplace; nil uses the daemon's first.
+	marketplaceSequence *pathpol.Sequence
+	reportInterval      time.Duration
+	renewalAhead        time.Duration
+	reservationOverlap  time.Duration
+	hummStartOffset     time.Duration
 }
 
 // bidirectional reports whether the client requested a reverse-direction reservation.
@@ -159,9 +161,15 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	}
 	c.metrics.remoteStatsAge.Set(-1)
 	if cfg.hummEnabled && cfg.hummKeysDir == "" {
+		var querier snet.PathQuerier = daemon.Querier{
+			Connector: cfg.sdConn, IA: sn.Topology.LocalIA}
+		if cfg.marketplaceSequence != nil {
+			querier = sequenceQuerier{
+				sdConn: cfg.sdConn, local: sn.Topology.LocalIA, sequence: cfg.marketplaceSequence}
+		}
 		c.reserver = marketclient.NewReserver(
 			cfg.marketplaceJWT,
-			daemon.Querier{Connector: cfg.sdConn, IA: sn.Topology.LocalIA},
+			querier,
 			sn.Topology,
 			marketplaceInsecure)
 		defer func() {
@@ -171,7 +179,7 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 		}()
 	}
 
-	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA, cfg.sequence)
+	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA, cfg.sequence, "server")
 	if err != nil {
 		log.Error("Selecting path", "err", err)
 		return 1
@@ -312,8 +320,10 @@ func wireOverhead(local *net.UDPAddr, remote *snet.UDPAddr) (int, error) {
 // selectPath queries the daemon for paths to dst and returns the first one that matches the
 // sequence. The reservations, if any, are then bought for the hops of that path only.
 // Without a matching path it retries up to pathLookupRetries times, forcing a refresh.
+// Purpose names the path's use in the log.
 func selectPath(
 	ctx context.Context, sdConn daemon.Connector, src, dst addr.IA, sequence *pathpol.Sequence,
+	purpose string,
 ) (snet.Path, error) {
 	for attempt := 0; ; attempt++ {
 		paths, err := sdConn.Paths(ctx, dst, src, daemontypes.PathReqFlags{Refresh: attempt > 0})
@@ -324,7 +334,8 @@ func selectPath(
 		if len(matching) > 0 {
 			path := matching[0]
 			if desc, err := pathpol.GetSequence(path); err == nil {
-				log.Info("Selected path", "sequence", desc, "matching", len(matching),
+				log.Info("Selected path", "to", purpose, "sequence", desc,
+					"matching", len(matching),
 					"paths", len(paths), "attempt", attempt+1)
 			}
 			return path, nil
@@ -338,7 +349,7 @@ func selectPath(
 		if attempt == pathLookupRetries {
 			return nil, serrors.Wrap("no usable path after retries", err, "attempts", attempt+1)
 		}
-		log.Info("No usable path, retrying", "err", err, "retry", attempt+1,
+		log.Info("No usable path, retrying", "to", purpose, "err", err, "retry", attempt+1,
 			"retries", pathLookupRetries)
 		select {
 		case <-ctx.Done():
@@ -346,6 +357,22 @@ func selectPath(
 		case <-time.After(pathLookupRetryDelay):
 		}
 	}
+}
+
+// sequenceQuerier is the path querier of the marketplace connection when its path is
+// restricted: it returns only the first path matching the sequence, as selectPath does.
+type sequenceQuerier struct {
+	sdConn   daemon.Connector
+	local    addr.IA
+	sequence *pathpol.Sequence
+}
+
+func (q sequenceQuerier) Query(ctx context.Context, dst addr.IA) ([]snet.Path, error) {
+	path, err := selectPath(ctx, q.sdConn, q.local, dst, q.sequence, "marketplace")
+	if err != nil {
+		return nil, err
+	}
+	return []snet.Path{path}, nil
 }
 
 // buildReservation obtains a fresh forward (and, if configured, reverse) Hummingbird
