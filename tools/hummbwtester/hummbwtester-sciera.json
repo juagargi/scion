@@ -15,7 +15,7 @@
     "best-effort-1 (ufes) -> ufms: 71-2:0:152#101 71-1916#106,103 71-2:0:5c#104, best effort.",
     "Both flows share the shaped rnp -> ufms link (#103/#104).",
     "Marketplace requests are best effort too, over 71-1916#3 71-2:0:5c#4 (br-1, not",
-    "shaped), pinned by path_to_marketplace so that they share no interface with the",
+    "shaped), pinned by path_to_marketplace_filter so that they share no interface with the",
     "best-effort flow."
   ],
   "hummingbird": {
@@ -50,7 +50,7 @@
       "bandwidth": "5Mbps",
       "maxburst": "50Mbps",
       "duration": "3h",
-      "sequence": "71-1916#103 71-2:0:5c#104",
+      "path_to_server_filter": "71-1916#103 71-2:0:5c#104",
       "hummingbird_reservation": {
         "bandwidth": "5mbps",
         "duration": "5m",
@@ -58,7 +58,7 @@
         "renewal_ahead": "30s",
         "reservation_overlap": "20s",
         "humm_start_offset": "-5s",
-        "path_to_marketplace": "71-1916#3 71-2:0:5c#4"
+        "path_to_marketplace_filter": "71-1916#3 71-2:0:5c#4"
       }
     }
   ],
@@ -72,7 +72,7 @@
       "bandwidth": "10Mbps",
       "maxburst": "20Mbps",
       "duration": "3h",
-      "sequence": "71-2:0:152#101 71-1916#106,103 71-2:0:5c#104"
+      "path_to_server_filter": "71-2:0:152#101 71-1916#106,103 71-2:0:5c#104"
     }
   ],
   "deployment": {

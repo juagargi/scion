@@ -283,7 +283,7 @@ func TestValidateMarketplaceOverride(t *testing.T) {
 	}
 }
 
-func TestValidateMarketplaceSequence(t *testing.T) {
+func TestValidatePathToMarketplaceFilter(t *testing.T) {
 	const sequence = "71-1916#3 71-2:0:5c#4"
 	tests := map[string]struct {
 		sequence    string
@@ -301,12 +301,12 @@ func TestValidateMarketplaceSequence(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := validateMarketplaceSequence(tc.sequence, tc.hummingbird, tc.keysDir)
+			err := validatePathToMarketplaceFilter(tc.sequence, tc.hummingbird, tc.keysDir)
 			if !tc.wantErr {
 				require.NoError(t, err)
 				return
 			}
-			require.ErrorContains(t, err, "-marketplace-sequence")
+			require.ErrorContains(t, err, "-path-to-marketplace-filter")
 		})
 	}
 }
