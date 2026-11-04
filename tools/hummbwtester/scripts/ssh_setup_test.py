@@ -144,6 +144,86 @@ class SSHSetupTest(unittest.TestCase):
         self.assertEqual(len(second_calls), 2)
         self.assertTrue(all("check" in call.args[0] for call in second_calls))
 
+    def foreign_stack(self, directory):
+        state = Path(directory) / "tunnels"
+        return ssh_setup.MonitoringStack(
+            Path(directory) / "prometheus.yml", "/tmp/other/prometheus", "other-prometheus",
+            "other-ssh", 8091, "org.other.config-sha256", "other-grafana",
+            Path(directory) / "compose.yml", "other-monitoring", state,
+        )
+
+    def test_monitoring_stack_names_the_prometheus_and_its_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stack = self.foreign_stack(directory)
+            stack.prometheus_config.write_text("global: {}\n")
+            documents, config_hash = ssh_setup.prometheus_documents({}, stack)
+        compose = documents["docker-compose.yml"]
+        self.assertIn("container_name: other-prometheus", compose)
+        self.assertIn("--web.listen-address=127.0.0.1:8091", compose)
+        self.assertIn(f'org.other.config-sha256: "{config_hash}"', compose)
+        self.assertIn("/tmp/other/prometheus/targets:/etc/prometheus/targets:ro", compose)
+        self.assertNotIn("hummbwtester", compose)
+
+    def test_monitoring_stack_ownership_check_uses_the_stack_project(self):
+        stack = self.foreign_stack("/nonexistent")
+        owned = subprocess.CompletedProcess([], 0, "other-ssh/prometheus\n", "")
+        foreign = subprocess.CompletedProcess([], 0, "hummbwtester-ssh/prometheus\n", "")
+        host = self.inventory().hosts["monitor"]
+        with mock.patch.object(ssh_setup.remote, "ssh_command", return_value=owned):
+            self.assertTrue(ssh_setup._owned_prometheus_exists(host, stack))
+        with mock.patch.object(ssh_setup.remote, "ssh_command", return_value=foreign):
+            with self.assertRaisesRegex(remote.SSHError, "refusing to stop other-prometheus"):
+                ssh_setup._owned_prometheus_exists(host, stack)
+
+    def test_stack_tunnels_keep_their_own_state_and_port(self):
+        specs = [ssh_setup.TunnelSpec("source-alias", "monitor-alias", 19090, "127.0.0.1:9090")]
+        forward = ssh_setup.PrometheusForward("monitor-alias", 18091, ("127.0.0.1",))
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(ssh_setup, "_check_local_port_free"), \
+             mock.patch.object(ssh_setup.subprocess, "run", return_value=completed) as run:
+            stack = self.foreign_stack(directory)
+            ssh_setup.ensure_tunnels(specs, forward, stack=stack)
+            self.assertTrue((stack.tunnel_state_dir / "manifest.json").is_file())
+            ssh_setup.stop_tunnels(stack)
+            self.assertFalse((stack.tunnel_state_dir / "manifest.json").exists())
+        last = run.call_args_list[2].args[0]
+        self.assertIn("127.0.0.1:18091:127.0.0.1:8091", last)
+        self.assertEqual(ssh_setup.TUNNEL_STATE_DIR, Path("/tmp/hummbwtester/ssh-tunnels"))
+
+    def test_controller_source_has_only_the_remote_half_of_a_relay(self):
+        inventory = self.inventory()
+        sources = [ssh_setup.MetricSource(
+            None, "127.0.0.1:2112", 19095, {"tunnel": "t1"}, "targets/wireguard.json",
+        )]
+        specs = ssh_setup.tunnel_specs_for(inventory, sources)
+        self.assertEqual(specs, [ssh_setup.TunnelSpec(
+            None, "monitor-alias", 19095, "127.0.0.1:2112")])
+        documents = ssh_setup.target_documents_for(inventory, sources)
+        self.assertIn('"127.0.0.1:19095"', documents["targets/wireguard.json"])
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(ssh_setup.subprocess, "run", return_value=completed) as run:
+            ssh_setup.ensure_tunnels(
+                specs, stack=self.foreign_stack(directory))
+        self.assertEqual(len(run.call_args_list), 1)
+        command = run.call_args_list[0].args[0]
+        self.assertEqual(command[command.index("-R") + 1], "127.0.0.1:19095:127.0.0.1:2112")
+        self.assertNotIn("-L", command)
+
+    def test_router_sources_continue_at_the_given_port(self):
+        sources = ssh_setup.router_metric_sources(self.inventory(), 19100)
+        self.assertEqual([source.port for source in sources], [19100])
+        self.assertEqual(sources[0].target_file, "targets/border_routers.json")
+        self.assertEqual(ssh_setup.metric_sources(self.inventory(), self.clients()),
+                         [*ssh_setup.client_metric_sources(self.inventory(), self.clients()),
+                          *ssh_setup.router_metric_sources(self.inventory(), 19091)])
+
+    def test_participant_hosts_decide_setup_and_note_hosts(self):
+        inventory = replace(self.inventory(), participant_hosts=frozenset({"source"}))
+        self.assertEqual(ssh_setup.setup_hosts(inventory), ["source"])
+        self.assertEqual(ssh_setup.note_hosts(inventory), ["monitor", "source"])
+
     def marketplace(self, **changes):
         return replace(orchestration.MarketplaceConfig(
             "alice", "MARKETPLACE_PASSWORD", None, "monitor",

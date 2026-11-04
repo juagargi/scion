@@ -106,6 +106,12 @@ py_test(
 )
 
 py_test(
+    name = "reuse_api_test",
+    srcs = ["scripts/reuse_api_test.py"],
+    deps = [":orchestration"],
+)
+
+py_test(
     name = "ssh_orchestration_test",
     srcs = ["scripts/ssh_orchestration_test.py"],
     deps = [":orchestration"],

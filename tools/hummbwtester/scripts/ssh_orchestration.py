@@ -7,7 +7,8 @@ workload are both read from one experiment configuration.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 import hashlib
 from pathlib import Path
 import re
@@ -79,6 +80,13 @@ class Inventory:
     # SSH deployments always buy reservations from a marketplace reachable from one host.
     marketplace: workload.MarketplaceConfig
     local_prometheus_port: int = DEFAULT_LOCAL_PROMETHEUS_PORT
+    # The hosts that run experiment processes. Empty means server_host and client_hosts' hosts.
+    participant_hosts: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        if not self.participant_hosts and self.server_host:
+            object.__setattr__(self, "participant_hosts", frozenset(
+                {self.server_host, *self.client_hosts.values()}))
 
     @property
     def marketplace_host(self) -> str:
@@ -120,7 +128,33 @@ def load_inventory(
     path: Path, server: workload.Endpoint, clients: list[workload.Client],
 ) -> Inventory:
     """Read SSH deployment details and inline participant placements from one experiment file."""
-    root = workload.read_json(path)
+    server_host = _name(server.node, "server.node")
+    client_hosts = {client.client_id: _name(client.endpoint.node, f"{client.client_id}.node")
+                    for client in clients}
+    participants = {"server": server_host,
+                    **{f"client {name}": host for name, host in client_hosts.items()}}
+    inventory = load_deployment(workload.read_json(path), participants, relay_ports=len(clients))
+    return replace(inventory, server_host=server_host, client_hosts=client_hosts)
+
+
+def load_marketplace(root: dict[str, Any]) -> workload.MarketplaceConfig:
+    """Parse and validate hummingbird.marketplace of an SSH deployment's configuration."""
+    hummingbird = root.get("hummingbird")
+    marketplace = hummingbird.get("marketplace") if isinstance(hummingbird, dict) else None
+    if not isinstance(marketplace, dict):
+        raise workload.ConfigError("SSH deployments require hummingbird.marketplace with a host")
+    return workload.parse_marketplace_config(marketplace, "ssh")
+
+
+def load_deployment(
+    root: dict[str, Any], participants: Mapping[str, str], relay_ports: int | None = None,
+) -> Inventory:
+    """Parse deployment and hummingbird.marketplace of an already loaded configuration.
+
+    participants maps the name of every participant to its node. The inventory's server_host and
+    client_hosts are left empty; participant_hosts holds the participants' hosts. relay_ports is
+    the number of client metric relay ports to reserve (default: one per participant).
+    """
     deployment = root.get("deployment")
     if not isinstance(deployment, dict) or deployment.get("kind") != "ssh":
         raise workload.ConfigError("deployment.kind must be ssh")
@@ -156,15 +190,11 @@ def load_inventory(
         hosts[name] = SSHHost(name, _name(entry["ssh"], f"ssh inventory.hosts.{name}.ssh"), sciond,
                               run_dir, readiness, static_info, control_service)
 
-    server_host = _name(server.node, "server.node")
-    client_hosts = {client.client_id: _name(client.endpoint.node, f"{client.client_id}.node")
-                    for client in clients}
-    for host in [server_host, *client_hosts.values()]:
+    for host in participants.values():
         if host not in hosts:
             raise workload.ConfigError(f"participant node references unknown host {host}")
-    # Every client carries the same global marketplace configuration.
-    marketplace = clients[0].marketplace if clients else None
-    if marketplace is None or marketplace.host is None:
+    marketplace = load_marketplace(root)
+    if marketplace.host is None:
         raise workload.ConfigError("SSH deployments require hummingbird.marketplace with a host")
     if marketplace.host not in hosts:
         raise workload.ConfigError(
@@ -251,19 +281,21 @@ def load_inventory(
         seen_devices.add((shape.host, shape.device))
         seen_names.add((shape.host, shape.name))
         shaping.append(shape)
-    if base + len(clients) + len(routers) > 65535:
+    if relay_ports is None:
+        relay_ports = len(participants)
+    if base + relay_ports + len(routers) > 65535:
         raise workload.ConfigError("SSH metrics tunnel ports exceed 65535")
     local_prometheus_port = metrics.get("local_prometheus_port", DEFAULT_LOCAL_PROMETHEUS_PORT)
     if (not isinstance(local_prometheus_port, int) or isinstance(local_prometheus_port, bool)
             or not 1024 <= local_prometheus_port <= 65535
-            or base <= local_prometheus_port < base + len(clients) + len(routers)):
+            or base <= local_prometheus_port < base + relay_ports + len(routers)):
         raise workload.ConfigError(
             "ssh inventory.metrics.local_prometheus_port must be a port from 1024 through 65535 "
             "outside the relay ports starting at local_port_base",
         )
     return Inventory(
-        hosts, server_host, client_hosts, prometheus_host, base, tuple(routers), tuple(shaping),
-        marketplace, local_prometheus_port,
+        hosts, "", {}, prometheus_host, base, tuple(routers), tuple(shaping),
+        marketplace, local_prometheus_port, frozenset(participants.values()),
     )
 
 
@@ -304,17 +336,22 @@ def remote_dir(host: SSHHost, run_id: str) -> str:
     return f"{host.run_dir}/{RUNS_DIR_NAME}/{run_id}"
 
 
-def preflight(host: SSHHost, dry_run: bool = False) -> None:
+DEFAULT_REQUIRED_TOOLS = ("sha256sum", "nc")
+
+
+def preflight(
+    host: SSHHost, dry_run: bool = False, required_tools: Sequence[str] = DEFAULT_REQUIRED_TOOLS,
+) -> None:
     """Check the host's tools, SCION daemon, and readiness command, and create run_dir.
 
-    A dry run only reports a missing run_dir. The readiness command runs in both modes, so it
-    must be read-only.
+    required_tools are checked with `command -v`; the daemon check always needs nc, so a caller
+    that drops it from required_tools must still have it. A dry run only reports a missing
+    run_dir. The readiness command runs in both modes, so it must be read-only.
     """
     daemon_host, daemon_port = _host_port(host.sciond, f"SSH host {host.name} sciond")
     unreachable = shlex.quote(f"SCION daemon {host.sciond} is not reachable on {host.name}")
     command = " && ".join([
-        "command -v sha256sum >/dev/null",
-        "command -v nc >/dev/null",
+        *(f"command -v {shlex.quote(tool)} >/dev/null" for tool in required_tools),
         "true" if dry_run else f"install -d -m 700 {shlex.quote(host.run_dir)}",
         # Some nc variants report success on stderr; only a failure is worth printing.
         f"{{ nc -z -w 3 {shlex.quote(daemon_host)} {shlex.quote(daemon_port)} >/dev/null 2>&1 "

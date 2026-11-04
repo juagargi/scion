@@ -664,6 +664,38 @@ class DescribeSetupTest(unittest.TestCase):
             self.assertIn(expected, text)
 
 
+class SharedTopologyHelpersTest(unittest.TestCase):
+    def test_monitoring_compose_defaults_and_overrides(self):
+        default = orchestration.monitoring_compose("up", quiet=True)
+        self.assertEqual(default, [
+            "docker", "compose", "--progress", "quiet", "--project-name",
+            orchestration.MONITORING_PROJECT, "-f", str(orchestration.MONITORING_COMPOSE), "up"])
+        other = orchestration.monitoring_compose(
+            "up", compose=Path("/x/compose.yml"), project="other")
+        self.assertEqual(other, ["docker", "compose", "--project-name", "other",
+                                 "-f", "/x/compose.yml", "up"])
+
+    def test_wait_for_scion_pings_from_the_tester_of_the_source(self):
+        done = subprocess.CompletedProcess([], 0)
+        with mock.patch.object(orchestration, "run", return_value=done) as run:
+            orchestration.wait_for_scion("1-ff00:0:111", "1-ff00:0:112,10.0.0.1", timeout=1)
+        arguments = run.call_args.args[0]
+        self.assertIn(orchestration.tester_service("1-ff00:0:111"), arguments)
+        self.assertEqual(arguments[-1], "1-ff00:0:112,10.0.0.1")
+
+    def test_remove_docker_qdiscs_without_state_is_a_no_op_and_deletes_the_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "qdiscs.json"
+            with mock.patch.object(orchestration, "DOCKER_QDISC_STATE", state), \
+                 mock.patch.object(orchestration.subprocess, "run") as run:
+                orchestration.remove_docker_qdiscs()
+                state.write_text(json.dumps({"tc": {}, "peers": {"br1": ["10.0.0.1"]}}))
+                run.return_value = subprocess.CompletedProcess([], 0, "", "")  # not running
+                orchestration.remove_docker_qdiscs()
+                self.assertFalse(state.exists())
+        self.assertEqual(run.call_count, 1)
+
+
 class ReportTest(unittest.TestCase):
     def interfaces(self):
         return [

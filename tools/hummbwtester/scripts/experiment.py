@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -157,27 +156,7 @@ def teardown_local() -> int:
     ) if present]
     if services:
         subprocess.run(_compose("rm", "--stop", "--force", *services), check=True, text=True)
-    try:
-        peers = json.loads(planner.DOCKER_QDISC_STATE.read_text())
-    except FileNotFoundError:
-        return 0
-    if isinstance(peers, dict) and "peers" in peers:
-        peers = peers["peers"]
-    if not isinstance(peers, dict) or not all(
-        isinstance(router, str) and isinstance(addresses, list)
-        and all(isinstance(address, str) for address in addresses)
-        for router, addresses in peers.items()
-    ):
-        raise RuntimeError(f"invalid qdisc manifest: {planner.DOCKER_QDISC_STATE}")
-    for router, addresses in peers.items():
-        running = subprocess.run(planner.dc_args("ps", "-q", router), cwd=planner.ROOT,
-                                 check=True, capture_output=True, text=True)
-        if not running.stdout.strip():
-            continue  # A stopped container has no network namespace or qdisc to remove.
-        subprocess.run(planner.dc_args(
-            "run", "--rm", "--no-deps", planner.tc_helper_name(router), "cleanup", *addresses,
-        ), cwd=planner.ROOT, check=True, text=True)
-    planner.DOCKER_QDISC_STATE.unlink()
+    planner.remove_docker_qdiscs()
     return 0
 
 

@@ -73,6 +73,31 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(inventory.prometheus_host, "b")
         self.assertEqual(inventory.shaping[0].expected_root, "noqueue")
 
+    def test_load_deployment_needs_neither_server_nor_clients(self):
+        inventory = ssh.load_deployment(self.workload(), {"tunnel-a": "a", "tunnel-b": "b"})
+        self.assertEqual(inventory.participant_hosts, frozenset({"a", "b"}))
+        self.assertEqual(inventory.server_host, "")
+        self.assertEqual(inventory.client_hosts, {})
+        self.assertEqual(inventory.marketplace_host, "b")
+
+    def test_load_deployment_rejects_an_unknown_participant_host(self):
+        with self.assertRaisesRegex(orchestration.ConfigError, "unknown host z"):
+            ssh.load_deployment(self.workload(), {"tunnel": "z"})
+
+    def test_marketplace_parsing_is_shared_with_load_config(self):
+        config = self.workload()
+        config["hummingbird"]["marketplace"]["location_override"] = True
+        del config["hummingbird"]["marketplace"]["scion_address"]
+        with self.assertRaisesRegex(orchestration.ConfigError, "requires scion_address"):
+            ssh.load_marketplace(config)
+
+    def test_inventory_participants_are_server_and_clients(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "experiment.json", self.workload())
+            server, clients, _, _ = orchestration.load_config(path)
+            inventory = ssh.load_inventory(path, server, clients)
+        self.assertEqual(inventory.participant_hosts, frozenset({"a", "b"}))
+
     def test_rejects_key_derived_reservations(self):
         with tempfile.TemporaryDirectory() as directory:
             config = self.workload()
@@ -377,6 +402,25 @@ class InventoryTest(unittest.TestCase):
             server, clients, _, _ = orchestration.load_config(path)
             with self.assertRaisesRegex(orchestration.ConfigError, "duplicates a host device"):
                 ssh.load_inventory(path, server, clients)
+
+
+class PreflightTest(unittest.TestCase):
+    def check(self, **kwargs):
+        host = ssh.SSHHost("a", "alias", "127.0.0.1:30255", "/var/tmp/humm", None)
+        with mock.patch.object(ssh, "ssh_command") as run:
+            ssh.preflight(host, **kwargs)
+        return run.call_args_list[0].args[1]
+
+    def test_required_tools_default_to_sha256sum_and_nc(self):
+        command = self.check()
+        self.assertIn("command -v sha256sum >/dev/null && command -v nc >/dev/null", command)
+
+    def test_required_tools_can_be_replaced(self):
+        command = self.check(required_tools=("ip", "rsync", "sha256sum"))
+        self.assertIn(
+            "command -v ip >/dev/null && command -v rsync >/dev/null && "
+            "command -v sha256sum >/dev/null && ", command)
+        self.assertNotIn("command -v nc", command)
 
 
 if __name__ == "__main__":

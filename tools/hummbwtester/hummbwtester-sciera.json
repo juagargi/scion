@@ -58,6 +58,7 @@
         "renewal_ahead": "30s",
         "reservation_overlap": "20s",
         "humm_start_offset": "-5s",
+        "partial": "71-1916,71-2:0:5c",
         "path_to_marketplace_filter": "71-1916#3 71-2:0:5c#4"
       }
     }
