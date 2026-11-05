@@ -71,10 +71,19 @@ func (c *Client) findExistingReservations(
 	startsAt int64,
 	stopsAt int64,
 ) ([]*snetpath.Hop, error) {
+	asInterfacesFilters := []*hummingbird.ASInterfaceFilter{}
+	for _, pair := range pairs {
+		asInterfacesFilters = append(asInterfacesFilters, &hummingbird.ASInterfaceFilter{
+			Ia:          pair.IA,
+			IfIdIngress: &pair.Ingress,
+			IfIdEgress:  &pair.Egress,
+		})
+	}
 	req := &hummingbird.FetchReservationsRequest{
-		Bandwidth: &bwInKbps,
-		StartsAt:  &startsAt,
-		StopsAt:   &stopsAt,
+		Bandwidth:  &bwInKbps,
+		StartsAt:   &startsAt,
+		StopsAt:    &stopsAt,
+		Interfaces: asInterfacesFilters,
 	}
 	res, err := c.Marketplace.FetchReservations(
 		ctx, &connect.Request[hummingbird.FetchReservationsRequest]{
@@ -375,9 +384,9 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 	}
 	var resp *connect.Response[hummingbird.SearchAssetsResponse]
 	var err error
-	hops := []*hummingbird.SearchAssetsHops{}
+	asInterfacesFilters := []*hummingbird.ASInterfaceFilter{}
 	for _, hop := range pairs {
-		hops = append(hops, &hummingbird.SearchAssetsHops{
+		asInterfacesFilters = append(asInterfacesFilters, &hummingbird.ASInterfaceFilter{
 			Ia:          hop.IA,
 			IfIdIngress: &hop.Ingress,
 			IfIdEgress:  &hop.Egress,
@@ -392,7 +401,7 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 			Msg: &hummingbird.SearchAssetsRequest{
 				Request: &hummingbird.SearchAssetsRequest_Owned{
 					Owned: &hummingbird.SearchOwnedAssetsRequest{
-						Hops:            hops,
+						Interfaces:      asInterfacesFilters,
 						MinRequiredBw:   &minBW,
 						StartsAtLatest:  &startsAtLatest,
 						StopsAtEarliest: &stop,
@@ -406,7 +415,7 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 			Msg: &hummingbird.SearchAssetsRequest{
 				Request: &hummingbird.SearchAssetsRequest_Listed{
 					Listed: &hummingbird.SearchListedAssetsRequest{
-						Hops:            hops,
+						Interfaces:      asInterfacesFilters,
 						MinRequiredBw:   minBW,
 						StartsAtLatest:  startsAtLatest,
 						StopsAtEarliest: stop,

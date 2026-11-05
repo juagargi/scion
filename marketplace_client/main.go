@@ -734,10 +734,14 @@ func handleReservation(
 	stopsAt = readOptionalTime(reader, "Stops At (2006-01-02T15:04:05Z): ")
 
 	req := &hummingbird.FetchReservationsRequest{
-		Ia:        ia,
-		IngressId: ingress,
-		EgressId:  egress,
 		Bandwidth: bw,
+	}
+	if ia != nil {
+		req.Interfaces = append(req.Interfaces, &hummingbird.ASInterfaceFilter{
+			Ia:          *ia,
+			IfIdIngress: ingress,
+			IfIdEgress:  egress,
+		})
 	}
 	if startsAt != nil {
 		tmp := startsAt.Unix()
@@ -978,9 +982,9 @@ func handleSearch(
 		validityMode = hummingbird.ValidityMode_partial_overlap
 	}
 	if owned {
-		hops := []*hummingbird.SearchAssetsHops{}
+		asInterfacesFilters := []*hummingbird.ASInterfaceFilter{}
 		if ia != nil {
-			hops = append(hops, &hummingbird.SearchAssetsHops{
+			asInterfacesFilters = append(asInterfacesFilters, &hummingbird.ASInterfaceFilter{
 				Ia:          *ia,
 				IfIdIngress: ingress,
 				IfIdEgress:  egress,
@@ -989,7 +993,7 @@ func handleSearch(
 		msg = &hummingbird.SearchAssetsRequest{
 			Request: &hummingbird.SearchAssetsRequest_Owned{
 				Owned: &hummingbird.SearchOwnedAssetsRequest{
-					Hops:            hops,
+					Interfaces:      asInterfacesFilters,
 					MinRequiredBw:   minReqBw,
 					StartsAtLatest:  startsAtLatestUnix,
 					StopsAtEarliest: stopsAtEarliestUnix,
@@ -1014,8 +1018,8 @@ func handleSearch(
 		msg = &hummingbird.SearchAssetsRequest{
 			Request: &hummingbird.SearchAssetsRequest_Listed{
 				Listed: &hummingbird.SearchListedAssetsRequest{
-					Hops: []*hummingbird.SearchAssetsHops{
-						&hummingbird.SearchAssetsHops{
+					Interfaces: []*hummingbird.ASInterfaceFilter{
+						{
 							Ia:          *ia,
 							IfIdIngress: ingress,
 							IfIdEgress:  egress,

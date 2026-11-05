@@ -61,7 +61,7 @@ func (id AssetID) Int64() (int64, error) {
 	return int64(id), nil
 }
 
-type AssetHops struct {
+type ASInterfaceFilter struct {
 	// ISD-AS of the asset
 	IA addr.IA
 	// ingress ID of the asset
@@ -71,7 +71,7 @@ type AssetHops struct {
 }
 
 type ListedAssetQuery struct {
-	Hops []AssetHops
+	Interfaces []ASInterfaceFilter
 	// the minimal required bandwidth of the asset
 	MinRequiredBandwidth uint32
 	// starts at in unix seconds
@@ -85,8 +85,8 @@ type ListedAssetQuery struct {
 
 type OwnedAssetQuery struct {
 	// the account ID of the owner
-	AccountId *int64
-	Hops      []AssetHops
+	AccountId  *int64
+	Interfaces []ASInterfaceFilter
 	// the minimal required bandwidth of the asset
 	MinRequiredBandwidth *uint32
 	// starts at in unix seconds
@@ -135,13 +135,8 @@ type RedemptionDelegation struct {
 
 type ReservationQuery struct {
 	// the account ID
-	AccountId int64
-	// ISD-AS of the reservation
-	IA *addr.IA
-	// ingress ID of the reservation
-	Ingress *uint32
-	// ingress ID of the reservation
-	Egress *uint32
+	AccountId  int64
+	Interfaces []ASInterfaceFilter
 	// reservation starts at latest in unix seconds
 	StartsAt *int64
 	// reservation stops at earliest in unix seconds

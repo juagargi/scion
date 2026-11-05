@@ -208,19 +208,21 @@ func (s *Service) FetchReservations(ctx context.Context, req *connect.Request[hu
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, serrors.New("user_id not provided"))
 	}
-	var ia *addr.IA
-	if req.Msg.Ia != nil {
-		tmp := addr.IA(*req.Msg.Ia)
-		ia = &tmp
+	hopFilter := make([]db.ASInterfaceFilter, 0, len(req.Msg.Interfaces))
+	for _, hop := range req.Msg.Interfaces {
+		hopFilter = append(hopFilter, db.ASInterfaceFilter{
+			IA:      addr.IA(hop.Ia),
+			Ingress: hop.IfIdIngress,
+			Egress:  hop.IfIdEgress,
+		})
 	}
+
 	reservations, err := s.store.FetchReservations(ctx, &db.ReservationQuery{
-		IA:        ia,
-		Ingress:   req.Msg.IngressId,
-		Egress:    req.Msg.EgressId,
-		StartsAt:  req.Msg.StartsAt,
-		StopsAt:   req.Msg.StopsAt,
-		Bandwidth: req.Msg.Bandwidth,
-		AccountId: user,
+		Interfaces: hopFilter,
+		StartsAt:   req.Msg.StartsAt,
+		StopsAt:    req.Msg.StopsAt,
+		Bandwidth:  req.Msg.Bandwidth,
+		AccountId:  user,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -651,22 +653,22 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 	var err error
 	switch t := req.Msg.Request.(type) {
 	case *hummingbird.SearchAssetsRequest_Listed:
-		if len(t.Listed.Hops) == 0 {
+		if len(t.Listed.Interfaces) == 0 {
 			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("at least one hop filter must be provided"))
 		}
-		if len(t.Listed.Hops) > 64 {
+		if len(t.Listed.Interfaces) > 64 {
 			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("too many hop filters"))
 		}
-		hopFilter := make([]db.AssetHops, 0, len(t.Listed.Hops))
-		for _, hop := range t.Listed.Hops {
-			hopFilter = append(hopFilter, db.AssetHops{
+		hopFilter := make([]db.ASInterfaceFilter, 0, len(t.Listed.Interfaces))
+		for _, hop := range t.Listed.Interfaces {
+			hopFilter = append(hopFilter, db.ASInterfaceFilter{
 				IA:      addr.IA(hop.Ia),
 				Ingress: hop.IfIdIngress,
 				Egress:  hop.IfIdEgress,
 			})
 		}
 		assets, err = s.store.SearchListedAssets(ctx, &db.ListedAssetQuery{
-			Hops:                 hopFilter,
+			Interfaces:           hopFilter,
 			MinRequiredBandwidth: t.Listed.MinRequiredBw,
 			Price:                t.Listed.Price,
 			StartsAt:             t.Listed.StartsAtLatest,
@@ -674,12 +676,12 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 			ValidityMode:         db.ValidityMode(req.Msg.ValidityMode),
 		})
 	case *hummingbird.SearchAssetsRequest_Owned:
-		if len(t.Owned.Hops) > 64 {
+		if len(t.Owned.Interfaces) > 64 {
 			return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("too many hop filters"))
 		}
-		hopFilter := make([]db.AssetHops, 0, len(t.Owned.Hops))
-		for _, hop := range t.Owned.Hops {
-			hopFilter = append(hopFilter, db.AssetHops{
+		hopFilter := make([]db.ASInterfaceFilter, 0, len(t.Owned.Interfaces))
+		for _, hop := range t.Owned.Interfaces {
+			hopFilter = append(hopFilter, db.ASInterfaceFilter{
 				IA:      addr.IA(hop.Ia),
 				Ingress: hop.IfIdIngress,
 				Egress:  hop.IfIdEgress,
@@ -687,7 +689,7 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 		}
 		assets, err = s.store.SearchOwnedAssets(ctx, &db.OwnedAssetQuery{
 			AccountId:            owner_id,
-			Hops:                 hopFilter,
+			Interfaces:           hopFilter,
 			MinRequiredBandwidth: t.Owned.MinRequiredBw,
 			Price:                t.Owned.Price,
 			StartsAt:             t.Owned.StartsAtLatest,

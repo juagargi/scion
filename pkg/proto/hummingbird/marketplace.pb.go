@@ -1423,7 +1423,7 @@ func (*SearchAssetsRequest_Owned) isSearchAssetsRequest_Request() {}
 
 func (*SearchAssetsRequest_Listed) isSearchAssetsRequest_Request() {}
 
-type SearchAssetsHops struct {
+type ASInterfaceFilter struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ia            uint64                 `protobuf:"varint,1,opt,name=ia,proto3" json:"ia,omitempty"`
 	IfIdIngress   *uint32                `protobuf:"varint,2,opt,name=if_id_ingress,json=ifIdIngress,proto3,oneof" json:"if_id_ingress,omitempty"`
@@ -1432,20 +1432,20 @@ type SearchAssetsHops struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SearchAssetsHops) Reset() {
-	*x = SearchAssetsHops{}
+func (x *ASInterfaceFilter) Reset() {
+	*x = ASInterfaceFilter{}
 	mi := &file_proto_hummingbird_v1_marketplace_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SearchAssetsHops) String() string {
+func (x *ASInterfaceFilter) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SearchAssetsHops) ProtoMessage() {}
+func (*ASInterfaceFilter) ProtoMessage() {}
 
-func (x *SearchAssetsHops) ProtoReflect() protoreflect.Message {
+func (x *ASInterfaceFilter) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_hummingbird_v1_marketplace_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1457,26 +1457,26 @@ func (x *SearchAssetsHops) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SearchAssetsHops.ProtoReflect.Descriptor instead.
-func (*SearchAssetsHops) Descriptor() ([]byte, []int) {
+// Deprecated: Use ASInterfaceFilter.ProtoReflect.Descriptor instead.
+func (*ASInterfaceFilter) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{21}
 }
 
-func (x *SearchAssetsHops) GetIa() uint64 {
+func (x *ASInterfaceFilter) GetIa() uint64 {
 	if x != nil {
 		return x.Ia
 	}
 	return 0
 }
 
-func (x *SearchAssetsHops) GetIfIdIngress() uint32 {
+func (x *ASInterfaceFilter) GetIfIdIngress() uint32 {
 	if x != nil && x.IfIdIngress != nil {
 		return *x.IfIdIngress
 	}
 	return 0
 }
 
-func (x *SearchAssetsHops) GetIfIdEgress() uint32 {
+func (x *ASInterfaceFilter) GetIfIdEgress() uint32 {
 	if x != nil && x.IfIdEgress != nil {
 		return *x.IfIdEgress
 	}
@@ -1485,7 +1485,7 @@ func (x *SearchAssetsHops) GetIfIdEgress() uint32 {
 
 type SearchOwnedAssetsRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	Hops            []*SearchAssetsHops    `protobuf:"bytes,1,rep,name=hops,proto3" json:"hops,omitempty"`
+	Interfaces      []*ASInterfaceFilter   `protobuf:"bytes,1,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
 	MinRequiredBw   *uint32                `protobuf:"varint,2,opt,name=min_required_bw,json=minRequiredBw,proto3,oneof" json:"min_required_bw,omitempty"`
 	StartsAtLatest  *int64                 `protobuf:"varint,3,opt,name=starts_at_latest,json=startsAtLatest,proto3,oneof" json:"starts_at_latest,omitempty"`
 	StopsAtEarliest *int64                 `protobuf:"varint,4,opt,name=stops_at_earliest,json=stopsAtEarliest,proto3,oneof" json:"stops_at_earliest,omitempty"`
@@ -1524,9 +1524,9 @@ func (*SearchOwnedAssetsRequest) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{22}
 }
 
-func (x *SearchOwnedAssetsRequest) GetHops() []*SearchAssetsHops {
+func (x *SearchOwnedAssetsRequest) GetInterfaces() []*ASInterfaceFilter {
 	if x != nil {
-		return x.Hops
+		return x.Interfaces
 	}
 	return nil
 }
@@ -1561,7 +1561,7 @@ func (x *SearchOwnedAssetsRequest) GetPrice() uint32 {
 
 type SearchListedAssetsRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	Hops            []*SearchAssetsHops    `protobuf:"bytes,1,rep,name=hops,proto3" json:"hops,omitempty"`
+	Interfaces      []*ASInterfaceFilter   `protobuf:"bytes,1,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
 	MinRequiredBw   uint32                 `protobuf:"varint,2,opt,name=min_required_bw,json=minRequiredBw,proto3" json:"min_required_bw,omitempty"`
 	StartsAtLatest  int64                  `protobuf:"varint,3,opt,name=starts_at_latest,json=startsAtLatest,proto3" json:"starts_at_latest,omitempty"`
 	StopsAtEarliest int64                  `protobuf:"varint,4,opt,name=stops_at_earliest,json=stopsAtEarliest,proto3" json:"stops_at_earliest,omitempty"`
@@ -1600,9 +1600,9 @@ func (*SearchListedAssetsRequest) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{23}
 }
 
-func (x *SearchListedAssetsRequest) GetHops() []*SearchAssetsHops {
+func (x *SearchListedAssetsRequest) GetInterfaces() []*ASInterfaceFilter {
 	if x != nil {
-		return x.Hops
+		return x.Interfaces
 	}
 	return nil
 }
@@ -2283,12 +2283,10 @@ func (x *RedeemAssetResponse) GetBwDataplaneEncoding() uint32 {
 
 type FetchReservationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ia            *uint64                `protobuf:"varint,1,opt,name=ia,proto3,oneof" json:"ia,omitempty"`
-	IngressId     *uint32                `protobuf:"varint,2,opt,name=ingress_id,json=ingressId,proto3,oneof" json:"ingress_id,omitempty"`
-	EgressId      *uint32                `protobuf:"varint,3,opt,name=egress_id,json=egressId,proto3,oneof" json:"egress_id,omitempty"`
-	Bandwidth     *uint32                `protobuf:"varint,4,opt,name=bandwidth,proto3,oneof" json:"bandwidth,omitempty"`
-	StartsAt      *int64                 `protobuf:"varint,5,opt,name=starts_at,json=startsAt,proto3,oneof" json:"starts_at,omitempty"`
-	StopsAt       *int64                 `protobuf:"varint,6,opt,name=stops_at,json=stopsAt,proto3,oneof" json:"stops_at,omitempty"`
+	Interfaces    []*ASInterfaceFilter   `protobuf:"bytes,1,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	Bandwidth     *uint32                `protobuf:"varint,2,opt,name=bandwidth,proto3,oneof" json:"bandwidth,omitempty"`
+	StartsAt      *int64                 `protobuf:"varint,3,opt,name=starts_at,json=startsAt,proto3,oneof" json:"starts_at,omitempty"`
+	StopsAt       *int64                 `protobuf:"varint,4,opt,name=stops_at,json=stopsAt,proto3,oneof" json:"stops_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2323,25 +2321,11 @@ func (*FetchReservationsRequest) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{34}
 }
 
-func (x *FetchReservationsRequest) GetIa() uint64 {
-	if x != nil && x.Ia != nil {
-		return *x.Ia
+func (x *FetchReservationsRequest) GetInterfaces() []*ASInterfaceFilter {
+	if x != nil {
+		return x.Interfaces
 	}
-	return 0
-}
-
-func (x *FetchReservationsRequest) GetIngressId() uint32 {
-	if x != nil && x.IngressId != nil {
-		return *x.IngressId
-	}
-	return 0
-}
-
-func (x *FetchReservationsRequest) GetEgressId() uint32 {
-	if x != nil && x.EgressId != nil {
-		return *x.EgressId
-	}
-	return 0
+	return nil
 }
 
 func (x *FetchReservationsRequest) GetBandwidth() uint32 {
@@ -2625,16 +2609,18 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x05owned\x18\x01 \x01(\v2..proto.hummingbird.v1.SearchOwnedAssetsRequestH\x00R\x05owned\x12I\n" +
 	"\x06listed\x18\x02 \x01(\v2/.proto.hummingbird.v1.SearchListedAssetsRequestH\x00R\x06listed\x12G\n" +
 	"\rvalidity_mode\x18\x03 \x01(\x0e2\".proto.hummingbird.v1.ValidityModeR\fvalidityModeB\t\n" +
-	"\arequest\"\x95\x01\n" +
-	"\x10SearchAssetsHops\x12\x0e\n" +
+	"\arequest\"\x96\x01\n" +
+	"\x11ASInterfaceFilter\x12\x0e\n" +
 	"\x02ia\x18\x01 \x01(\x04R\x02ia\x12'\n" +
 	"\rif_id_ingress\x18\x02 \x01(\rH\x00R\vifIdIngress\x88\x01\x01\x12%\n" +
 	"\fif_id_egress\x18\x03 \x01(\rH\x01R\n" +
 	"ifIdEgress\x88\x01\x01B\x10\n" +
 	"\x0e_if_id_ingressB\x0f\n" +
-	"\r_if_id_egress\"\xc7\x02\n" +
-	"\x18SearchOwnedAssetsRequest\x12:\n" +
-	"\x04hops\x18\x01 \x03(\v2&.proto.hummingbird.v1.SearchAssetsHopsR\x04hops\x12+\n" +
+	"\r_if_id_egress\"\xd4\x02\n" +
+	"\x18SearchOwnedAssetsRequest\x12G\n" +
+	"\n" +
+	"interfaces\x18\x01 \x03(\v2'.proto.hummingbird.v1.ASInterfaceFilterR\n" +
+	"interfaces\x12+\n" +
 	"\x0fmin_required_bw\x18\x02 \x01(\rH\x00R\rminRequiredBw\x88\x01\x01\x12-\n" +
 	"\x10starts_at_latest\x18\x03 \x01(\x03H\x01R\x0estartsAtLatest\x88\x01\x01\x12/\n" +
 	"\x11stops_at_earliest\x18\x04 \x01(\x03H\x02R\x0fstopsAtEarliest\x88\x01\x01\x12\x19\n" +
@@ -2642,9 +2628,11 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x10_min_required_bwB\x13\n" +
 	"\x11_starts_at_latestB\x14\n" +
 	"\x12_stops_at_earliestB\b\n" +
-	"\x06_price\"\xfa\x01\n" +
-	"\x19SearchListedAssetsRequest\x12:\n" +
-	"\x04hops\x18\x01 \x03(\v2&.proto.hummingbird.v1.SearchAssetsHopsR\x04hops\x12&\n" +
+	"\x06_price\"\x87\x02\n" +
+	"\x19SearchListedAssetsRequest\x12G\n" +
+	"\n" +
+	"interfaces\x18\x01 \x03(\v2'.proto.hummingbird.v1.ASInterfaceFilterR\n" +
+	"interfaces\x12&\n" +
 	"\x0fmin_required_bw\x18\x02 \x01(\rR\rminRequiredBw\x12(\n" +
 	"\x10starts_at_latest\x18\x03 \x01(\x03R\x0estartsAtLatest\x12*\n" +
 	"\x11stops_at_earliest\x18\x04 \x01(\x03R\x0fstopsAtEarliest\x12\x19\n" +
@@ -2697,19 +2685,14 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x12authentication_key\x18\x01 \x01(\fR\x11authenticationKey\x12%\n" +
 	"\x0ereservation_id\x18\x02 \x01(\rR\rreservationId\x12+\n" +
 	"\x11bandwidth_rounded\x18\x03 \x01(\rR\x10bandwidthRounded\x122\n" +
-	"\x15bw_dataplane_encoding\x18\x04 \x01(\rR\x13bwDataplaneEncoding\"\xa7\x02\n" +
-	"\x18FetchReservationsRequest\x12\x13\n" +
-	"\x02ia\x18\x01 \x01(\x04H\x00R\x02ia\x88\x01\x01\x12\"\n" +
+	"\x15bw_dataplane_encoding\x18\x04 \x01(\rR\x13bwDataplaneEncoding\"\xf1\x01\n" +
+	"\x18FetchReservationsRequest\x12G\n" +
 	"\n" +
-	"ingress_id\x18\x02 \x01(\rH\x01R\tingressId\x88\x01\x01\x12 \n" +
-	"\tegress_id\x18\x03 \x01(\rH\x02R\begressId\x88\x01\x01\x12!\n" +
-	"\tbandwidth\x18\x04 \x01(\rH\x03R\tbandwidth\x88\x01\x01\x12 \n" +
-	"\tstarts_at\x18\x05 \x01(\x03H\x04R\bstartsAt\x88\x01\x01\x12\x1e\n" +
-	"\bstops_at\x18\x06 \x01(\x03H\x05R\astopsAt\x88\x01\x01B\x05\n" +
-	"\x03_iaB\r\n" +
-	"\v_ingress_idB\f\n" +
-	"\n" +
-	"_egress_idB\f\n" +
+	"interfaces\x18\x01 \x03(\v2'.proto.hummingbird.v1.ASInterfaceFilterR\n" +
+	"interfaces\x12!\n" +
+	"\tbandwidth\x18\x02 \x01(\rH\x00R\tbandwidth\x88\x01\x01\x12 \n" +
+	"\tstarts_at\x18\x03 \x01(\x03H\x01R\bstartsAt\x88\x01\x01\x12\x1e\n" +
+	"\bstops_at\x18\x04 \x01(\x03H\x02R\astopsAt\x88\x01\x01B\f\n" +
 	"\n" +
 	"_bandwidthB\f\n" +
 	"\n" +
@@ -2786,7 +2769,7 @@ var file_proto_hummingbird_v1_marketplace_proto_goTypes = []any{
 	(*PublishAssetResponse)(nil),      // 20: proto.hummingbird.v1.PublishAssetResponse
 	(*PublisherAsset)(nil),            // 21: proto.hummingbird.v1.PublisherAsset
 	(*SearchAssetsRequest)(nil),       // 22: proto.hummingbird.v1.SearchAssetsRequest
-	(*SearchAssetsHops)(nil),          // 23: proto.hummingbird.v1.SearchAssetsHops
+	(*ASInterfaceFilter)(nil),         // 23: proto.hummingbird.v1.ASInterfaceFilter
 	(*SearchOwnedAssetsRequest)(nil),  // 24: proto.hummingbird.v1.SearchOwnedAssetsRequest
 	(*SearchListedAssetsRequest)(nil), // 25: proto.hummingbird.v1.SearchListedAssetsRequest
 	(*SearchAssetsResponse)(nil),      // 26: proto.hummingbird.v1.SearchAssetsResponse
@@ -2816,39 +2799,40 @@ var file_proto_hummingbird_v1_marketplace_proto_depIdxs = []int32{
 	24, // 9: proto.hummingbird.v1.SearchAssetsRequest.owned:type_name -> proto.hummingbird.v1.SearchOwnedAssetsRequest
 	25, // 10: proto.hummingbird.v1.SearchAssetsRequest.listed:type_name -> proto.hummingbird.v1.SearchListedAssetsRequest
 	1,  // 11: proto.hummingbird.v1.SearchAssetsRequest.validity_mode:type_name -> proto.hummingbird.v1.ValidityMode
-	23, // 12: proto.hummingbird.v1.SearchOwnedAssetsRequest.hops:type_name -> proto.hummingbird.v1.SearchAssetsHops
-	23, // 13: proto.hummingbird.v1.SearchListedAssetsRequest.hops:type_name -> proto.hummingbird.v1.SearchAssetsHops
+	23, // 12: proto.hummingbird.v1.SearchOwnedAssetsRequest.interfaces:type_name -> proto.hummingbird.v1.ASInterfaceFilter
+	23, // 13: proto.hummingbird.v1.SearchListedAssetsRequest.interfaces:type_name -> proto.hummingbird.v1.ASInterfaceFilter
 	27, // 14: proto.hummingbird.v1.SearchAssetsResponse.assets:type_name -> proto.hummingbird.v1.SearchAsset
 	28, // 15: proto.hummingbird.v1.SearchAsset.intervals:type_name -> proto.hummingbird.v1.SearchAssetInterval
 	30, // 16: proto.hummingbird.v1.BuyAssetsRequest.assets:type_name -> proto.hummingbird.v1.BuyAsset
 	32, // 17: proto.hummingbird.v1.BuyAssetsResponse.assets:type_name -> proto.hummingbird.v1.BoughtAsset
 	34, // 18: proto.hummingbird.v1.RedeemAssetRequest.pair:type_name -> proto.hummingbird.v1.IngressEgressPair
-	38, // 19: proto.hummingbird.v1.FetchReservationsResponse.reservations:type_name -> proto.hummingbird.v1.Reservation
-	17, // 20: proto.hummingbird.v1.MarketplaceService.Info:input_type -> proto.hummingbird.v1.MarketplaceInfoRequest
-	19, // 21: proto.hummingbird.v1.MarketplaceService.PublishAsset:input_type -> proto.hummingbird.v1.PublishAssetRequest
-	22, // 22: proto.hummingbird.v1.MarketplaceService.SearchAssets:input_type -> proto.hummingbird.v1.SearchAssetsRequest
-	29, // 23: proto.hummingbird.v1.MarketplaceService.BuyAssets:input_type -> proto.hummingbird.v1.BuyAssetsRequest
-	33, // 24: proto.hummingbird.v1.MarketplaceService.RedeemAsset:input_type -> proto.hummingbird.v1.RedeemAssetRequest
-	36, // 25: proto.hummingbird.v1.MarketplaceService.FetchReservations:input_type -> proto.hummingbird.v1.FetchReservationsRequest
-	11, // 26: proto.hummingbird.v1.MarketplaceService.SplitAsset:input_type -> proto.hummingbird.v1.SplitAssetRequest
-	15, // 27: proto.hummingbird.v1.MarketplaceService.CombineAssets:input_type -> proto.hummingbird.v1.CombineAssetRequest
-	8,  // 28: proto.hummingbird.v1.MarketplaceService.Statistics:input_type -> proto.hummingbird.v1.StatisticsRequest
-	2,  // 29: proto.hummingbird.v1.MarketplaceService.UpdateAssets:input_type -> proto.hummingbird.v1.UpdateAssetsRequest
-	18, // 30: proto.hummingbird.v1.MarketplaceService.Info:output_type -> proto.hummingbird.v1.MarketplaceInfoResponse
-	20, // 31: proto.hummingbird.v1.MarketplaceService.PublishAsset:output_type -> proto.hummingbird.v1.PublishAssetResponse
-	26, // 32: proto.hummingbird.v1.MarketplaceService.SearchAssets:output_type -> proto.hummingbird.v1.SearchAssetsResponse
-	31, // 33: proto.hummingbird.v1.MarketplaceService.BuyAssets:output_type -> proto.hummingbird.v1.BuyAssetsResponse
-	35, // 34: proto.hummingbird.v1.MarketplaceService.RedeemAsset:output_type -> proto.hummingbird.v1.RedeemAssetResponse
-	37, // 35: proto.hummingbird.v1.MarketplaceService.FetchReservations:output_type -> proto.hummingbird.v1.FetchReservationsResponse
-	14, // 36: proto.hummingbird.v1.MarketplaceService.SplitAsset:output_type -> proto.hummingbird.v1.SplitAssetResponse
-	16, // 37: proto.hummingbird.v1.MarketplaceService.CombineAssets:output_type -> proto.hummingbird.v1.CombineAssetResponse
-	9,  // 38: proto.hummingbird.v1.MarketplaceService.Statistics:output_type -> proto.hummingbird.v1.StatisticsResponse
-	6,  // 39: proto.hummingbird.v1.MarketplaceService.UpdateAssets:output_type -> proto.hummingbird.v1.UpdateAssetsResponse
-	30, // [30:40] is the sub-list for method output_type
-	20, // [20:30] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	23, // 19: proto.hummingbird.v1.FetchReservationsRequest.interfaces:type_name -> proto.hummingbird.v1.ASInterfaceFilter
+	38, // 20: proto.hummingbird.v1.FetchReservationsResponse.reservations:type_name -> proto.hummingbird.v1.Reservation
+	17, // 21: proto.hummingbird.v1.MarketplaceService.Info:input_type -> proto.hummingbird.v1.MarketplaceInfoRequest
+	19, // 22: proto.hummingbird.v1.MarketplaceService.PublishAsset:input_type -> proto.hummingbird.v1.PublishAssetRequest
+	22, // 23: proto.hummingbird.v1.MarketplaceService.SearchAssets:input_type -> proto.hummingbird.v1.SearchAssetsRequest
+	29, // 24: proto.hummingbird.v1.MarketplaceService.BuyAssets:input_type -> proto.hummingbird.v1.BuyAssetsRequest
+	33, // 25: proto.hummingbird.v1.MarketplaceService.RedeemAsset:input_type -> proto.hummingbird.v1.RedeemAssetRequest
+	36, // 26: proto.hummingbird.v1.MarketplaceService.FetchReservations:input_type -> proto.hummingbird.v1.FetchReservationsRequest
+	11, // 27: proto.hummingbird.v1.MarketplaceService.SplitAsset:input_type -> proto.hummingbird.v1.SplitAssetRequest
+	15, // 28: proto.hummingbird.v1.MarketplaceService.CombineAssets:input_type -> proto.hummingbird.v1.CombineAssetRequest
+	8,  // 29: proto.hummingbird.v1.MarketplaceService.Statistics:input_type -> proto.hummingbird.v1.StatisticsRequest
+	2,  // 30: proto.hummingbird.v1.MarketplaceService.UpdateAssets:input_type -> proto.hummingbird.v1.UpdateAssetsRequest
+	18, // 31: proto.hummingbird.v1.MarketplaceService.Info:output_type -> proto.hummingbird.v1.MarketplaceInfoResponse
+	20, // 32: proto.hummingbird.v1.MarketplaceService.PublishAsset:output_type -> proto.hummingbird.v1.PublishAssetResponse
+	26, // 33: proto.hummingbird.v1.MarketplaceService.SearchAssets:output_type -> proto.hummingbird.v1.SearchAssetsResponse
+	31, // 34: proto.hummingbird.v1.MarketplaceService.BuyAssets:output_type -> proto.hummingbird.v1.BuyAssetsResponse
+	35, // 35: proto.hummingbird.v1.MarketplaceService.RedeemAsset:output_type -> proto.hummingbird.v1.RedeemAssetResponse
+	37, // 36: proto.hummingbird.v1.MarketplaceService.FetchReservations:output_type -> proto.hummingbird.v1.FetchReservationsResponse
+	14, // 37: proto.hummingbird.v1.MarketplaceService.SplitAsset:output_type -> proto.hummingbird.v1.SplitAssetResponse
+	16, // 38: proto.hummingbird.v1.MarketplaceService.CombineAssets:output_type -> proto.hummingbird.v1.CombineAssetResponse
+	9,  // 39: proto.hummingbird.v1.MarketplaceService.Statistics:output_type -> proto.hummingbird.v1.StatisticsResponse
+	6,  // 40: proto.hummingbird.v1.MarketplaceService.UpdateAssets:output_type -> proto.hummingbird.v1.UpdateAssetsResponse
+	31, // [31:41] is the sub-list for method output_type
+	21, // [21:31] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_proto_hummingbird_v1_marketplace_proto_init() }

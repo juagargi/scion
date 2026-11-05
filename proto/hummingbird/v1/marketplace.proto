@@ -164,14 +164,14 @@ message SearchAssetsRequest {
     ValidityMode validity_mode = 3;
 }
 
-message SearchAssetsHops {
+message ASInterfaceFilter {
     uint64 ia = 1;
     optional uint32 if_id_ingress = 2;
     optional uint32 if_id_egress = 3;
 }
 
 message SearchOwnedAssetsRequest {
-    repeated SearchAssetsHops hops = 1;
+    repeated ASInterfaceFilter interfaces = 1;
     optional uint32 min_required_bw = 2;
     optional int64 starts_at_latest = 3;
     optional int64 stops_at_earliest = 4;
@@ -179,7 +179,7 @@ message SearchOwnedAssetsRequest {
 }
 
 message SearchListedAssetsRequest {
-    repeated SearchAssetsHops hops = 1;
+    repeated ASInterfaceFilter interfaces = 1;
     uint32 min_required_bw = 2;
     int64 starts_at_latest = 3;
     int64 stops_at_earliest = 4;
@@ -248,12 +248,10 @@ message RedeemAssetResponse {
 }
 
 message FetchReservationsRequest {
-    optional uint64 ia = 1;
-    optional uint32 ingress_id = 2;
-    optional uint32 egress_id = 3;
-    optional uint32 bandwidth = 4;
-    optional int64 starts_at = 5;
-    optional int64 stops_at = 6;
+    repeated ASInterfaceFilter interfaces = 1;
+    optional uint32 bandwidth = 2;
+    optional int64 starts_at = 3;
+    optional int64 stops_at = 4;
 }
 
 message FetchReservationsResponse {
