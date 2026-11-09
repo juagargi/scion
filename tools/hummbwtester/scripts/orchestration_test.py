@@ -715,17 +715,23 @@ class ReportTest(unittest.TestCase):
                  'sizeclass="0_63"} 5'),
                 ('router_dropped_pkts_total{interface="1",reason="busy_forwarder",'
                  'sizeclass="64_127"} 6'),
+                ('router_dropped_pkts_total{interface="1",reason="egress_down",'
+                 'sizeclass="0_63"} 7'),
+                ('router_dropped_pkts_total{interface="1",reason="egress_down",'
+                 'sizeclass="64_127"} 8'),
+                ('router_dropped_pkts_total{interface="1",reason="busy_slow_path",'
+                 'sizeclass="0_63"} 100'),
             ]),
         })
-        self.assertEqual(counters[("br-a", "1")], InterfaceCounters(10, 9, 9, 11))
+        self.assertEqual(counters[("br-a", "1")], InterfaceCounters(10, 9, 9, 11, 15))
         self.assertNotIn(("br-b", "41"), counters)
 
     def test_report_uses_peer_bfd_sent_to_calculate_loss(self):
         interfaces = self.interfaces()
         previous = ReportSnapshot(
             counters={
-                ("br-a", "1"): InterfaceCounters(100, 100, 2, 3),
-                ("br-b", "41"): InterfaceCounters(200, 200, 4, 5),
+                ("br-a", "1"): InterfaceCounters(100, 100, 2, 3, 0),
+                ("br-b", "41"): InterfaceCounters(200, 200, 4, 5, 10),
             },
             tc={
                 ("br-a", "1"): TCStats(10, 20, 30),
@@ -735,8 +741,8 @@ class ReportTest(unittest.TestCase):
         )
         current = ReportSnapshot(
             counters={
-                ("br-a", "1"): InterfaceCounters(110, 118, 3, 7),
-                ("br-b", "41"): InterfaceCounters(225, 210, 4, 5),
+                ("br-a", "1"): InterfaceCounters(110, 118, 3, 7, 0),
+                ("br-b", "41"): InterfaceCounters(225, 210, 4, 5, 34),
             },
             tc={
                 ("br-a", "1"): TCStats(11, 25, 31),
@@ -756,6 +762,7 @@ class ReportTest(unittest.TestCase):
         # # br-a lost 25 BFD packets sent by br-b minus 18 packets received by br-a.
         # self.assertRegex(rendered, r"BFD lost.*\b7\b")
         self.assertRegex(rendered, r"TC dropped.*\b1\b.*\b0\b")
+        self.assertRegex(rendered, r"Egress down drops.*\b0\b.*\b24\b")
         self.assertIn("\n\nHUMMBWTESTER_REPORT observation_error", rendered)
 
 
