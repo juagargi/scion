@@ -530,6 +530,8 @@ type trafficMetrics struct {
 	DroppedPacketsBusyForwarder         prometheus.Counter
 	DroppedPriorityPacketsBusyForwarder prometheus.Counter
 	DroppedPacketsBusySlowPath          prometheus.Counter
+	DroppedPacketsEgressDown            prometheus.Counter
+	DroppedPriorityPacketsEgressDown    prometheus.Counter
 	ProcessedPackets                    prometheus.Counter
 	PriorityForwardedPackets            prometheus.Counter
 	HummProcessedPackets                prometheus.Counter
@@ -617,6 +619,12 @@ func newTrafficMetrics(
 	c.DroppedPacketsBusySlowPath =
 		metrics.DroppedPacketsTotal.MustCurryWith(ifLabels).MustCurryWith(scLabels).With(reasonMap)
 
+	reasonMap["reason"] = "egress_down"
+	c.DroppedPacketsEgressDown =
+		metrics.DroppedPacketsTotal.MustCurryWith(ifLabels).MustCurryWith(scLabels).With(reasonMap)
+	c.DroppedPriorityPacketsEgressDown = metrics.DroppedPriorityPacketsTotal.
+		MustCurryWith(ifLabels).MustCurryWith(scLabels).With(reasonMap)
+
 	c.InputBytesTotal.Add(0)
 	c.InputPacketsTotal.Add(0)
 	c.DroppedPacketsInvalid.Add(0)
@@ -624,6 +632,8 @@ func newTrafficMetrics(
 	c.DroppedPacketsBusyForwarder.Add(0)
 	c.DroppedPriorityPacketsBusyForwarder.Add(0)
 	c.DroppedPacketsBusySlowPath.Add(0)
+	c.DroppedPacketsEgressDown.Add(0)
+	c.DroppedPriorityPacketsEgressDown.Add(0)
 	c.ProcessedPackets.Add(0)
 	c.PriorityForwardedPackets.Add(0)
 	c.HummProcessedPackets.Add(0)

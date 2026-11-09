@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/gopacket/gopacket"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -65,6 +66,7 @@ import (
 //	Invalid outbound destination IA/SCMP  x            x
 //	Ingress router alert                  x            x
 //	Egress router alert                   x            x
+//	Egress link down / SCMP, drop count   x            x
 //	Expired reservation                   N/A          x
 //	Stale/future packet freshness         N/A          x
 //	Reservation exceeds bandwidth         N/A          x
@@ -2354,6 +2356,69 @@ func TestProcessHbirdSCMPASTransitEgress(t *testing.T) {
 // TestProcessHbirdRouterAlert checks that a Hummingbird packet whose current hop
 // field carries a router-alert flag is diverted to the slow path (for a traceroute
 // reply) rather than forwarded on the fast path.
+// TestProcessHbirdEgressDown checks that a Hummingbird packet whose egress link is down is
+// answered with an SCMP error and counted as dropped, with reason egress_down, against the
+// egress link. A flyover packet is also counted as a dropped priority packet.
+func TestProcessHbirdEgressDown(t *testing.T) {
+	key := []byte("testkey_xxxxxxxx")
+	hbirdKey := []byte("test_secretvalue")
+	now := time.Now()
+
+	for name, flyover := range map[string]bool{"best-effort": false, "flyover": true} {
+		t.Run(name, func(t *testing.T) {
+			// Not parallel: links of different dataplanes with the same labels share counters.
+			dp := router.NewDPWithHummingbirdKey(
+				[]uint16{1, 2},
+				map[uint16]topology.LinkType{1: topology.Parent, 2: topology.Child},
+				nil, // No special connOpener.
+				map[uint16]netip.AddrPort{},
+				addr.MustParseIA("1-ff00:0:110"), nil, key, hbirdKey)
+			dp.SetLinkDown(2)
+
+			spkt, dpath := prepHbirdMsg(now)
+			dpath.HopFields = []hummingbird.FlyoverHopField{
+				{HopField: path.HopField{ConsIngress: 31, ConsEgress: 30}},
+				{HopField: path.HopField{ConsIngress: 1, ConsEgress: 2}},
+				{HopField: path.HopField{ConsIngress: 40, ConsEgress: 41}},
+			}
+			dpath.PathMeta.CurrHF = 3
+			priority := pr.WithBestEffort
+			var expectedPriorityDrops float64
+			if flyover {
+				dpath.PathMeta.SegLen[0] = 11
+				dpath.NumLines = 11
+				dpath.HopFields[1].Flyover = true
+				dpath.HopFields[1].Bw = 129
+				dpath.HopFields[1].ResStartTime = 123
+				dpath.HopFields[1].Duration = 304
+				dpath.HopFields[1].HopField.Mac = computeAggregateMac(
+					t, key, hbirdKey, spkt, dpath, dpath.InfoFields[0], dpath.HopFields[1],
+					dpath.PathMeta)
+				priority = pr.WithPriority
+				expectedPriorityDrops = 1
+			} else {
+				dpath.HopFields[1].HopField.Mac =
+					computeMAC(t, key, dpath.InfoFields[0], dpath.HopFields[1].HopField)
+			}
+			pkt := router.NewPacket(toBytes(t, spkt, dpath), nil, nil, 1, 0, priority)
+			pkt.Link = router.ExtractInterfaces(dp)[1]
+
+			egressMetrics := router.ExtractInterfaces(dp)[2].Metrics()
+			sc := router.ClassOfSize(len(pkt.RawPacket))
+			dropped := promtest.ToFloat64(egressMetrics[sc].DroppedPacketsEgressDown)
+			droppedPriority := promtest.ToFloat64(egressMetrics[sc].DroppedPriorityPacketsEgressDown)
+
+			require.Equal(t, router.PSlowPath, dp.ProcessPkt(pkt))
+			assert.Equal(t, int8(slayers.SCMPTypeExternalInterfaceDown),
+				router.ExtractSlowPathRequest(pkt).SPType)
+			assert.Equal(t, dropped+1,
+				promtest.ToFloat64(egressMetrics[sc].DroppedPacketsEgressDown))
+			assert.Equal(t, droppedPriority+expectedPriorityDrops,
+				promtest.ToFloat64(egressMetrics[sc].DroppedPriorityPacketsEgressDown))
+		})
+	}
+}
+
 func TestProcessHbirdRouterAlert(t *testing.T) {
 
 	key := []byte("testkey_xxxxxxxx")
