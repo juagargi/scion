@@ -30,6 +30,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1754,6 +1755,70 @@ func TestProcessPkt(t *testing.T) {
 				return
 			}
 			assertPktEqual(t, want, pkt)
+		})
+	}
+}
+
+// TestProcessPktEgressDown checks that a packet whose egress link is down is answered with an
+// SCMP error and counted as dropped, with reason egress_down, against the egress link.
+func TestProcessPktEgressDown(t *testing.T) {
+	key := []byte("testkey_xxxxxxxx")
+	now := time.Now()
+
+	testCases := map[string]struct {
+		external         []uint16
+		internalNextHops map[uint16]netip.AddrPort
+		egress           uint16
+		expectedSCMPType slayers.SCMPType
+	}{
+		"external egress": {
+			external:         []uint16{1, 2},
+			internalNextHops: map[uint16]netip.AddrPort{},
+			egress:           2,
+			expectedSCMPType: slayers.SCMPTypeExternalInterfaceDown,
+		},
+		"internal egress": {
+			external: []uint16{1},
+			internalNextHops: map[uint16]netip.AddrPort{
+				2: netip.MustParseAddrPort("10.0.200.200:30042"),
+			},
+			egress:           2,
+			expectedSCMPType: slayers.SCMPTypeInternalConnectivityDown,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Not parallel: links of different dataplanes with the same labels share counters.
+			dp := router.NewDP(
+				tc.external,
+				map[uint16]topology.LinkType{1: topology.Core, 2: topology.Core},
+				nil, // No special connOpener.
+				tc.internalNextHops,
+				addr.MustParseIA("1-ff00:0:110"), nil, key)
+			dp.SetLinkDown(tc.egress)
+
+			spkt, dpath := prepBaseMsg(now)
+			dpath.HopFields = []path.HopField{
+				{ConsIngress: 31, ConsEgress: 30},
+				{ConsIngress: 1, ConsEgress: tc.egress},
+				{ConsIngress: 40, ConsEgress: 41},
+			}
+			dpath.HopFields[1].Mac = computeMAC(t, key, dpath.InfoFields[0], dpath.HopFields[1])
+			pkt := router.NewPacket(toBytes(t, spkt, dpath), nil, nil, 1, 0, pr.WithBestEffort)
+			pkt.Link = router.ExtractInterfaces(dp)[1]
+
+			egressMetrics := router.ExtractInterfaces(dp)[tc.egress].Metrics()
+			sc := router.ClassOfSize(len(pkt.RawPacket))
+			dropped := promtest.ToFloat64(egressMetrics[sc].DroppedPacketsEgressDown)
+			droppedPriority := promtest.ToFloat64(egressMetrics[sc].DroppedPriorityPacketsEgressDown)
+
+			require.Equal(t, router.PSlowPath, dp.ProcessPkt(pkt))
+			assert.Equal(t, int8(tc.expectedSCMPType),
+				router.ExtractSlowPathRequest(pkt).SPType)
+			assert.Equal(t, dropped+1,
+				promtest.ToFloat64(egressMetrics[sc].DroppedPacketsEgressDown))
+			assert.Equal(t, droppedPriority,
+				promtest.ToFloat64(egressMetrics[sc].DroppedPriorityPacketsEgressDown))
 		})
 	}
 }

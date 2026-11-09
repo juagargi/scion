@@ -245,8 +245,9 @@ For Docker tiny, the sample configuration places the server in AS112 and both sa
 While clients run, the runner prints one timestamped table per minute. Counter rows are changes
 since the preceding report and TBF backlog is the current number of queued bytes. Columns identify
 external border-router interfaces. The table reports BFD sent, received, and inferred lost packets
-(peer sent minus local received); total Hummingbird demotions; `busy_forwarder` drops; and TBF
-drops, overlimits, and backlog.
+(peer sent minus local received); total Hummingbird demotions; `busy_forwarder` drops;
+`egress_down` drops, i.e. packets refused with an SCMP error because their egress interface was
+down; and TBF drops, overlimits, and backlog.
 
 These values are observation-only: BFD state changes, packet drops, TBF counters, and log entries
 never stop or fail an experiment. Only an experiment client or server process exiting unsuccessfully

@@ -924,6 +924,17 @@ func (d *dataPlane) runProcessor(id int, q <-chan *Packet, slowQ chan<- *Packet)
 	}
 }
 
+// recordEgressDownDrop counts a packet refused because its egress link is down. The packet is
+// counted against the egress link, even though the SCMP error it triggers leaves elsewhere.
+func recordEgressDownDrop(p *Packet, egressLink Link) {
+	sc := ClassOfSize(len(p.RawPacket))
+	metrics := egressLink.Metrics()
+	metrics[sc].DroppedPacketsEgressDown.Inc()
+	if p.PriorityLabel == pr.WithPriority {
+		metrics[sc].DroppedPriorityPacketsEgressDown.Inc()
+	}
+}
+
 func recordBusyForwarderDrop(p *Packet, egressLink Link) {
 	sc := ClassOfSize(len(p.RawPacket))
 	metrics := egressLink.Metrics()
@@ -1702,6 +1713,7 @@ func (p *scionPacketProcessor) validateEgressUp() disposition {
 	egressLink := p.d.interfaces[egressID]
 	if !egressLink.IsUp() {
 		log.Debug("SCMP response", "cause", errBFDSessionDown)
+		recordEgressDownDrop(p.pkt, egressLink)
 		if egressLink.Scope() != External {
 			p.pkt.slowPathRequest = slowPathRequest{
 				spType: slowPathType(slayers.SCMPTypeInternalConnectivityDown),

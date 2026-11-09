@@ -178,6 +178,7 @@ class InterfaceCounters:
     bfd_received: int = 0
     demotions: int = 0
     busy_forwarder_drops: int = 0
+    egress_down_drops: int = 0
 
 
 @dataclass(frozen=True)
@@ -1500,9 +1501,9 @@ def interface_counters(
     interfaces: list[RouterInterface],
     metric_bodies: dict[str, str],
 ) -> dict[tuple[str, str], InterfaceCounters]:
-    """Collect cumulative BFD, demotion, and busy-forwarder counters per external interface."""
+    """Collect cumulative BFD, demotion, and drop counters per external interface."""
     values: dict[tuple[str, str], list[int]] = {
-        interface.key: [0, 0, 0, 0]
+        interface.key: [0, 0, 0, 0, 0]
         for interface in interfaces
         if interface.router in metric_bodies
     }
@@ -1511,6 +1512,7 @@ def interface_counters(
         "router_humm_demoted_expired_total",
         "router_humm_demoted_tokenbucket_total",
     )
+    drop_reasons = {"busy_forwarder": 3, "egress_down": 4}
     for router, body in metric_bodies.items():
         for metric, index in (
             ("router_bfd_sent_packets_total", 0),
@@ -1530,8 +1532,9 @@ def interface_counters(
         for rendered, value in metric_samples(body, "router_dropped_pkts_total").items():
             labels = metric_labels(rendered)
             key = router, labels.get("interface", "")
-            if key in values and labels.get("reason") == "busy_forwarder":
-                values[key][3] += int(value)
+            index = drop_reasons.get(labels.get("reason", ""))
+            if key in values and index is not None:
+                values[key][index] += int(value)
     return {
         key: InterfaceCounters(*counters)
         for key, counters in values.items()
@@ -1666,6 +1669,7 @@ def print_report(
         # ("BFD lost", [bfd_lost(interface) for interface in interfaces]),
         # ("Demotions", counter_row("demotions")),
         # ("Busy forwarder drops", counter_row("busy_forwarder_drops")),
+        ("Egress down drops", counter_row("egress_down_drops")),
         ("TC dropped", tc_row("dropped")),
         # ("TC overlimits", tc_row("overlimits")),
         # ("TC backlog bytes", tc_row("backlog_bytes", current_value=True)),
