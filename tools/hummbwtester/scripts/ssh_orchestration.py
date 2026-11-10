@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 import hashlib
 from pathlib import Path
 import re
+import select
 import shlex
 import signal
 import subprocess
@@ -490,6 +491,98 @@ def cleanup_host(host: SSHHost, run_id: str) -> None:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+# Clock synchronization. The Prometheus agents stamp every sample with their host's clock, and
+# the dashboards compare counters of different hosts minute by minute, so every clock must be
+# NTP-synchronized and close to the controller's.
+CLOCK_MAX_OFFSET_SECONDS = 0.25
+CLOCK_PROBES = 5
+CLOCK_PROBE_TIMEOUT_SECONDS = 30
+# Answers every input line with the host's time; one SSH session serves all probes, so that a
+# probe's round trip is the network's, not the connection setup's.
+_CLOCK_PROBE = (
+    "import sys, time\n"
+    "while sys.stdin.readline():\n"
+    "    print(repr(time.time()), flush=True)\n"
+)
+
+
+def _ntp_synchronized(argv: list[str]) -> bool | None:
+    """Whether timedatectl reports NTPSynchronized=yes; None if it cannot tell."""
+    result = subprocess.run(argv, check=False, capture_output=True, text=True,
+                            stdin=subprocess.DEVNULL)
+    if result.returncode:
+        return None
+    return result.stdout.strip() == "yes"
+
+
+def clock_offset(host: SSHHost) -> tuple[float, float]:
+    """The host's clock minus the controller's, and its uncertainty, in seconds.
+
+    The probe with the shortest round trip wins; its offset is uncertain by half that round trip.
+    """
+    argv = _ssh_argv(host, "exec python3 -c " + shlex.quote(_CLOCK_PROBE))
+    deadline = time.monotonic() + CLOCK_PROBE_TIMEOUT_SECONDS
+    best: tuple[float, float] | None = None
+    with subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL, text=True, bufsize=1) as process:
+        assert process.stdin is not None and process.stdout is not None
+        try:
+            for _ in range(CLOCK_PROBES):
+                sent = time.time()
+                process.stdin.write("\n")
+                process.stdin.flush()
+                ready, _, _ = select.select([process.stdout], [], [],
+                                            max(0.0, deadline - time.monotonic()))
+                line = process.stdout.readline() if ready else ""
+                received = time.time()
+                if not line:
+                    raise SSHError(f"clock probe on {host.name} did not answer")
+                sample = (received - sent, float(line) - (sent + received) / 2)
+                if best is None or sample[0] < best[0]:
+                    best = sample
+        finally:
+            process.stdin.close()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+    assert best is not None
+    return best[1], best[0] / 2
+
+
+def check_clocks(hosts: Sequence[SSHHost]) -> None:
+    """Require NTP-synchronized clocks on the controller and every host, within the tolerance.
+
+    Every host's offset to the controller must be at most CLOCK_MAX_OFFSET_SECONDS beyond the
+    measurement's uncertainty. Raises SSHError naming every host that fails.
+    """
+    problems = []
+    controller = _ntp_synchronized(["timedatectl", "show", "-p", "NTPSynchronized", "--value"])
+    if controller is not True:
+        problems.append("the controller's clock is not NTP-synchronized"
+                        if controller is False else "cannot tell whether the controller's clock "
+                        "is NTP-synchronized (timedatectl failed)")
+    for host in hosts:
+        synchronized = _ntp_synchronized(_ssh_argv(
+            host, "timedatectl show -p NTPSynchronized --value"))
+        try:
+            offset, uncertainty = clock_offset(host)
+        except (SSHError, ValueError, OSError) as err:
+            problems.append(f"{host.name}: {err}")
+            continue
+        state = {True: "NTP-synchronized", False: "NOT NTP-synchronized",
+                 None: "NTP state unknown"}[synchronized]
+        print(f"clock of {host.name}: {state}, offset {offset:+.3f} s "
+              f"(±{uncertainty:.3f} s) from the controller")
+        if synchronized is not True:
+            problems.append(f"{host.name}: clock is {state.lower()} (timedatectl NTPSynchronized)")
+        if abs(offset) > CLOCK_MAX_OFFSET_SECONDS + uncertainty:
+            problems.append(f"{host.name}: clock is {offset:+.3f} s off the controller's "
+                            f"(tolerance {CLOCK_MAX_OFFSET_SECONDS} s)")
+    if problems:
+        raise SSHError("clocks are not synchronized: " + "; ".join(problems))
+
+
 def run_experiment(
     config_path: Path,
     config: tuple[
@@ -501,6 +594,8 @@ def run_experiment(
     server, clients, _, _ = config if config is not None else workload.load_config(config_path)
     if inventory is None:
         inventory = load_inventory(config_path, server, clients)
+    # The metrics of every host are compared second by second: refuse to run on drifted clocks.
+    check_clocks([inventory.hosts[name] for name in sorted(inventory.hosts)])
     run_id = "hummbwtester-" + uuid.uuid4().hex[:12]
     used_hosts = {inventory.server_host, *inventory.client_hosts.values()}
     digest = sha256(BIN)

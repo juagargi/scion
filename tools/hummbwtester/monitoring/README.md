@@ -81,6 +81,13 @@ same provisioning and dashboards show the remote experiment. Open the Prometheus
 recreates it when it was started for another port, and for a Docker run restart it with
 `docker compose up -d grafana` from this directory.
 
+Metric sources on the other hosts are scraped there, by a Prometheus agent per host, which
+remote-writes to this Prometheus through an SSH tunnel and keeps what it could not deliver until
+it is accepted (see "How SSH setup works" in `../README.md`). The agents' series carry the same
+job names and labels as if this Prometheus had scraped them. For that, `prometheus.yml` sets
+`storage.tsdb.out_of_order_time_window`, so that a delayed backlog is accepted; the Docker mode
+reads the same file and is unaffected by it.
+
 ## Use
 
 Prometheus is exposed on [http://localhost:8090](http://localhost:8090). The Prometheus UI is
