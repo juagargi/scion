@@ -104,7 +104,10 @@ class HummingbirdReservation:
 
 @dataclass(frozen=True)
 class MarketplaceConfig:
-    """The non-secret marketplace identity and location for one workload."""
+    """The non-secret marketplace identity and location for one workload.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
 
     username: str
     password_env: str
@@ -200,12 +203,18 @@ class ReportSnapshot:
 
 
 def join_host_port(host: str, port: int) -> str:
-    """Format an IP address and port, adding brackets for IPv6 addresses."""
+    """Format an IP address and port, adding brackets for IPv6 addresses.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     return f"[{host}]:{port}" if ipaddress.ip_address(host).version == 6 else f"{host}:{port}"
 
 
 def tester_service(ia: str) -> str:
-    """Return the generated Docker Compose tester service name for an IA."""
+    """Return the generated Docker Compose tester service name for an IA.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     return "tester_" + ia.replace(":", "_")
 
 
@@ -939,14 +948,20 @@ def compose_with_tc_helpers(
 def run(
     command: list[str], *, check: bool = True, **kwargs: Any,
 ) -> subprocess.CompletedProcess[str]:
-    """Print and run a command, forwarding subprocess keyword arguments to subprocess.run."""
+    """Print and run a command, forwarding subprocess keyword arguments to subprocess.run.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     # Print shell-escaped commands so setup failures can be reproduced manually.
     print("+", shlex.join(command))
     return subprocess.run(command, check=check, text=True, **kwargs)
 
 
 def dc_args(*args: str) -> list[str]:
-    """Build a Docker Compose command targeting the generated SCION Compose file."""
+    """Build a Docker Compose command targeting the generated SCION Compose file.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     return ["docker", "compose", "-f", str(COMPOSE), *args]
 
 
@@ -973,7 +988,10 @@ def monitoring_compose(
 
 
 def local_container_owner(container: str) -> str | None:
-    """The compose project/service of a local container, or None if it does not exist."""
+    """The compose project/service of a local container, or None if it does not exist.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     result = subprocess.run(
         ["docker", "inspect", "--format",
          '{{index .Config.Labels "com.docker.compose.project"}}/'
@@ -1339,7 +1357,10 @@ def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
 
 
 def marketplace_registration_website() -> str:
-    """Find the unique TCP registration website advertised by the generated Docker topology."""
+    """Find the unique TCP registration website advertised by the generated Docker topology.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     websites: set[str] = set()
     for path in sorted(GEN.glob("AS*/staticInfoConfig.json")):
         try:
@@ -1386,7 +1407,10 @@ def require_marketplace_password(marketplace: MarketplaceConfig) -> None:
 
 def obtain_marketplace_jwt(marketplace: MarketplaceConfig, url: str) -> str:
     """Request the configured user's JWT from the web app at url, without exposing its password
-    or token in argv."""
+    or token in argv.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     require_marketplace_password(marketplace)
     command = [sys.executable, str(ROOT / "marketplace" / "tools" / "get_jwt.py"),
                marketplace.username, "--url", url,
@@ -1406,7 +1430,10 @@ def obtain_marketplace_jwt(marketplace: MarketplaceConfig, url: str) -> str:
 
 
 def write_private_jwt(token: str) -> Path:
-    """Write token to an owner-only temporary file and return its path."""
+    """Write token to an owner-only temporary file and return its path.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     fd, name = tempfile.mkstemp(prefix="hummbwtester-jwt-", text=True)
     path = Path(name)
     try:
@@ -1421,7 +1448,10 @@ def write_private_jwt(token: str) -> Path:
 
 
 def install_docker_jwt(token: str, services: set[str]) -> tuple[Path, str]:
-    """Copy a private JWT file to selected containers and return local/remote paths."""
+    """Copy a private JWT file to selected containers and return local/remote paths.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     local = write_private_jwt(token)
     remote = "/tmp/hummbwtester-marketplace.jwt"
     try:
@@ -1435,7 +1465,10 @@ def install_docker_jwt(token: str, services: set[str]) -> tuple[Path, str]:
 
 
 def remove_docker_jwt(services: set[str], remote: str) -> None:
-    """Best-effort removal of an experiment's JWT from its containers."""
+    """Best-effort removal of an experiment's JWT from its containers.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     for service in sorted(services):
         run(dc_args("exec", "-T", service, "rm", "-f", remote), cwd=ROOT,
             check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

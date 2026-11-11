@@ -711,32 +711,53 @@ The dashboard groups client series by `client_id`.
 Other experiment runners import the infrastructure code of `scripts/orchestration.py`,
 `scripts/ssh_orchestration.py` and `scripts/ssh_setup.py` (the `scripts` directory on `sys.path`,
 or the package `tools.hummbwtester.scripts`). The following names are that API;
-`scripts/reuse_api_test.py` checks their signatures, so renaming one fails a test here.
-Every parameter added for reuse defaults to hummbwtester's own behaviour.
+`scripts/reuse_api_test.py` checks their signatures, dataclass fields and properties, and the
+constants below, so renaming one fails a test here; its `ReuseBehaviorTest` checks the behavior
+listed here with another tool's `MonitoringStack`. Every parameter added for reuse defaults to
+hummbwtester's own behavior.
 
 - Docker topology and shaping (`orchestration`): `patch_router_configs`, `compose_data`,
   `inter_as_router_peers`, `patch_compose`, `ensure_docker_qdiscs`, `remove_docker_qdiscs`
   (shared state file `DOCKER_QDISC_STATE`), `border_router_targets`, `wait_for_scion`,
-  `monitoring_compose` (`compose`/`project` select another stack).
+  `monitoring_compose` (`compose`/`project` select another stack), and the helpers `run`,
+  `dc_args`, `tester_service`, `join_host_port`, `local_container_owner`; the constants `ROOT`,
+  `GEN` and `COMPOSE` (`GEN / "scion-dc.yml"`).
+- Marketplace JWT in Docker (`orchestration`): `MarketplaceConfig` (with the property `url`),
+  `marketplace_registration_website`, `obtain_marketplace_jwt(marketplace, url)`,
+  `write_private_jwt`, `install_docker_jwt` and `remove_docker_jwt`.
 - Deployment parsing: `orchestration.parse_marketplace_config`, `ssh_orchestration.load_marketplace`
   and `load_deployment(root, participants)`, which parse `hummingbird.marketplace` and `deployment`
   without a server and clients; `Inventory.participant_hosts` holds the participants' hosts, while
   `server_host` and `client_hosts` stay empty.
 - Marketplace, Notes and shaping over SSH (`ssh_setup`): `ensure_marketplace`,
   `obtain_marketplace_jwt`, `ensure_marketplace_notes`, `stop_marketplace`,
-  `ensure_selective_qdiscs`, `remove_selective_qdiscs`, `copy_if_changed`, `print_manual_steps`.
+  `ensure_selective_qdiscs`, `remove_selective_qdiscs`, `copy_if_changed`, `print_manual_steps`,
+  `setup_hosts`, and the constant `SCION_CONFIG_DIR` (`/etc/scion`).
 - Monitoring over SSH (`ssh_setup`): `ensure_prometheus`, `stop_prometheus`, `ensure_tunnels`,
   `stop_tunnels` and `ensure_grafana` take `stack=`, a `MonitoringStack` naming the containers,
   Compose project, remote port, remote directory and relay state of one tool, so that two tools
   do not replace each other's. `None` (the default) is `HUMMBWTESTER_STACK`, read from the module
   constants at call time. Metric sources are `MetricSource` values: `client_metric_sources`,
   `router_metric_sources`, then `target_documents_for` and `tunnel_specs_for`. A source with
-  `host=None` is on the controller and only gets the `-R` half of a relay. hummbwtester itself
-  scrapes remote hosts with Prometheus agents (`agent_specs_for`, `ensure_agents`,
-  `agent_tunnel_specs`, `check_agents_delivering`, `stop_agents`); the relay functions stay for
-  tools that still use them.
-- Hosts and commands (`ssh_orchestration`): `SSHHost`, `Inventory`, `ssh_command`, `scp_to`, and
-  `preflight(host, required_tools=...)` (the daemon check still runs `nc`).
+  `host=None` is on the controller and only gets the `-R` half of a relay. `prometheus_forward`
+  returns the controller's `PrometheusForward`. Remote hosts are scraped by Prometheus agents:
+  `agent_specs_for` (`AgentSpec`; `write_port` is the relay port of the host's first source),
+  `central_sources` (what the central Prometheus still scrapes, including every `host=None`
+  source, which stays relayed), `agent_tunnel_specs`, `ensure_agents`, `check_agents_delivering`,
+  `stop_agents` and `agent_delivery` (`AgentDelivery` with the property `backlog`, or `None` when
+  the agent does not answer). The agent functions take `stack=` like the other monitoring
+  functions: the agent container is `<stack.prometheus_container>-agent`, with its files in
+  `stack.remote_dir`, listening on `stack.remote_prometheus_port`, in the Compose project
+  `stack.prometheus_project`, and scraping with the `scrape_configs` of
+  `stack.prometheus_config` (job names and file-SD files unchanged). The central Prometheus
+  always accepts remote write. The relay functions stay for tools that still use them.
+- Hosts and commands (`ssh_orchestration`): `SSHHost`, `Inventory`, `ssh_command`, `scp_to`,
+  `preflight(host, required_tools=...)` (the daemon check still runs `nc`; the default is
+  `DEFAULT_REQUIRED_TOOLS`), `SSH_OPTIONS`, `setup_dir`, `jwt_path`, and `check_clocks(hosts)`,
+  which raises `SSHError` naming every host whose clock fails.
+- Router display (`ssh_orchestration.DISPLAY_LABEL`): routers with display false carry the label
+  `display="false"`; dashboards select the others with `display!="false"`, so the label name and
+  that value are part of the API.
 
 Running two tools against the same hosts at the same time is not supported: both deploy the same
 marketplace service.

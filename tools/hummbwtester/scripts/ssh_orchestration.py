@@ -53,7 +53,8 @@ class SSHHost:
 
 
 # The label that marks the series of a router with display false; the dashboard's router queries
-# match display!="false", so displayed routers keep the labels they always had.
+# match display!="false", so displayed routers keep the labels they always had. Other tools'
+# dashboards filter on the same label and value: part of the reuse API (README.md).
 DISPLAY_LABEL = "display"
 
 
@@ -347,6 +348,10 @@ def sha256(path: Path) -> str:
 
 
 def setup_dir(host: SSHHost) -> str:
+    """The directory on host that holds what setup deploys, such as the marketplace JWT.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     return f"{host.run_dir}/{SETUP_DIR_NAME}"
 
 
@@ -383,6 +388,10 @@ def preflight(
 
 
 def jwt_path(host: SSHHost) -> str:
+    """Where setup leaves the marketplace JWT on host, in setup_dir.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     return setup_dir(host) + "/marketplace.jwt"
 
 
@@ -571,7 +580,8 @@ def check_clocks(hosts: Sequence[SSHHost]) -> None:
     """Require NTP-synchronized clocks on the controller and every host, within the tolerance.
 
     Every host's offset to the controller must be at most CLOCK_MAX_OFFSET_SECONDS beyond the
-    measurement's uncertainty. Raises SSHError naming every host that fails.
+    measurement's uncertainty. Raises SSHError naming every host that fails, not only the
+    first. Part of the reuse API (README.md, "Reuse from other tools").
     """
     problems = []
     controller = _ntp_synchronized(["timedatectl", "show", "-p", "NTPSynchronized", "--value"])
