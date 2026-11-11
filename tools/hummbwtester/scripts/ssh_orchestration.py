@@ -52,11 +52,19 @@ class SSHHost:
     control_service: str | None = None
 
 
+# The label that marks the series of a router with display false; the dashboard's router queries
+# match display!="false", so displayed routers keep the labels they always had.
+DISPLAY_LABEL = "display"
+
+
 @dataclass(frozen=True)
 class RouterMetrics:
     host: str
     address: str
     labels: dict[str, str]
+    # False: scraped and stored for later analysis, but labeled display="false", which the
+    # dashboard excludes.
+    display: bool = True
 
 
 @dataclass(frozen=True)
@@ -221,7 +229,8 @@ def load_deployment(
     seen_routers: set[tuple[str | None, str | None]] = set()
     for index, raw in enumerate(raw_routers):
         entry = _object(raw, f"ssh inventory.metrics.routers[{index}]")
-        _fields(entry, {"host", "address", "labels"}, f"ssh inventory.metrics.routers[{index}]")
+        _fields(entry, {"host", "address", "labels"}, f"ssh inventory.metrics.routers[{index}]",
+                {"display"})
         host, address = (_name(entry["host"], f"ssh inventory.metrics.routers[{index}].host"),
                          _name(entry["address"], f"ssh inventory.metrics.routers[{index}].address"))
         if host not in hosts:
@@ -233,6 +242,14 @@ def load_deployment(
                    for key, value in labels.items()):
             raise workload.ConfigError(
                 f"ssh inventory.metrics.routers[{index}].labels must be string pairs")
+        if DISPLAY_LABEL in labels:
+            raise workload.ConfigError(
+                f"ssh inventory.metrics.routers[{index}].labels must not set {DISPLAY_LABEL}; "
+                "use the display field")
+        display = entry.get("display", True)
+        if not isinstance(display, bool):
+            raise workload.ConfigError(
+                f"ssh inventory.metrics.routers[{index}].display must be a boolean")
         # The dashboard groups router series by (as, br); BR names are unique only within an AS.
         router_key = labels.get("as"), labels.get("br")
         if router_key in seen_routers:
@@ -241,7 +258,7 @@ def load_deployment(
                 "another router's as and br labels",
             )
         seen_routers.add(router_key)
-        routers.append(RouterMetrics(host, address, labels))
+        routers.append(RouterMetrics(host, address, labels, display))
 
     raw_shaping = deployment["shaping"]
     if not isinstance(raw_shaping, list):

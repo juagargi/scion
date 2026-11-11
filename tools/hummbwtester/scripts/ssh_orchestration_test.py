@@ -256,6 +256,28 @@ class InventoryTest(unittest.TestCase):
             with self.assertRaisesRegex(orchestration.ConfigError, r"routers\[1\].*as and br"):
                 ssh.load_inventory(path, server, clients)
 
+    def test_router_display_defaults_to_true_and_must_be_boolean(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            routers = config["deployment"]["metrics"]["routers"]
+            routers.append({"host": "b", "address": "127.0.0.1:30442",
+                            "labels": {"as": "71_2_0_152", "br": "br-1"}, "display": False})
+            path = self.write_json(directory, "experiment.json", config)
+            server, clients, _, _ = orchestration.load_config(path)
+            inventory = ssh.load_inventory(path, server, clients)
+            self.assertEqual([router.display for router in inventory.routers], [True, False])
+
+            for display, labels, message in (
+                ("false", {"as": "71_2_0_152", "br": "br-1"}, r"routers\[1\]\.display.*boolean"),
+                (False, {"as": "71_2_0_152", "br": "br-1", "display": "false"},
+                 r"routers\[1\]\.labels must not set display"),
+            ):
+                routers[1].update(display=display, labels=labels)
+                path = self.write_json(directory, "experiment.json", config)
+                with self.subTest(display=display, labels=labels), \
+                        self.assertRaisesRegex(orchestration.ConfigError, message):
+                    ssh.load_inventory(path, server, clients)
+
     def test_ssh_command_quotes_script_for_remote_shell(self):
         host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
         script = "test -f /etc/hosts && printf '%s' 'quoted value'"

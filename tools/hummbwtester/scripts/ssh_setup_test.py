@@ -1,6 +1,7 @@
 from dataclasses import replace
 import json
 from pathlib import Path
+import re
 import shlex
 import socket
 import subprocess
@@ -12,6 +13,9 @@ from unittest import mock
 from tools.hummbwtester.scripts import orchestration
 from tools.hummbwtester.scripts import ssh_orchestration as remote
 from tools.hummbwtester.scripts import ssh_setup
+
+DASHBOARD = (Path(__file__).resolve().parent.parent
+             / "monitoring/grafana/dashboards/hummbwtester-overview.json")
 
 
 class SSHSetupTest(unittest.TestCase):
@@ -348,6 +352,43 @@ class SSHSetupTest(unittest.TestCase):
         self.assertEqual(ssh_setup.metric_sources(self.inventory(), self.clients()),
                          [*ssh_setup.client_metric_sources(self.inventory(), self.clients()),
                           *ssh_setup.router_metric_sources(self.inventory(), 19091)])
+
+    def test_hidden_routers_are_scraped_with_a_display_label(self):
+        inventory = replace(self.inventory(), routers=(
+            remote.RouterMetrics("monitor", "127.0.0.1:30442", {"br": "br-1"}),
+            remote.RouterMetrics("monitor", "127.0.0.1:30443", {"br": "br-2"}, display=False),
+        ))
+        documents = ssh_setup.target_documents(inventory, self.clients())
+        self.assertEqual(json.loads(documents["targets/border_routers.json"]), [
+            {"targets": ["127.0.0.1:30442"], "labels": {"br": "br-1"}},
+            {"targets": ["127.0.0.1:30443"], "labels": {"br": "br-2", "display": "false"}},
+        ])
+
+    def test_dashboard_router_queries_leave_out_hidden_routers(self):
+        dashboard = json.loads(DASHBOARD.read_text())
+        exprs: list[str] = []
+
+        def collect(value: object) -> None:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if key == "expr" and isinstance(item, str):
+                        exprs.append(item)
+                    else:
+                        collect(item)
+            elif isinstance(value, list):
+                for item in value:
+                    collect(item)
+
+        collect(dashboard)
+        selectors = [
+            (expr, match.group(0)) for expr in exprs
+            for match in re.finditer(r'\b(?:router_\w+|up(?=\{job="scion-border-routers"))'
+                                     r'(?:\{[^}]*\})?', expr)
+        ]
+        self.assertTrue(selectors)
+        for expr, selector in selectors:
+            with self.subTest(expr=expr):
+                self.assertIn('display!="false"', selector)
 
     def test_participant_hosts_decide_setup_and_note_hosts(self):
         inventory = replace(self.inventory(), participant_hosts=frozenset({"source"}))

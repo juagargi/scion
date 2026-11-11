@@ -89,6 +89,11 @@ Each run uses one self-contained JSON file.
   Grafana, and the agents' tunnels reach Prometheus. The
   dashboard tells routers apart by their `as` and `br` labels, so no two `routers` may share both
   (BR names such as `br-2` repeat across ASes).
+  Each `routers` entry is `host`, `address`, `labels`, and an optional boolean `display` (default
+  `true`). A router with `display: false` is scraped and stored like any other, for later
+  analysis, but the dashboard leaves it out: its series carry the label `display="false"`, and
+  every router query of the dashboard matches `display!="false"`. `labels` cannot set `display`
+  itself.
 
 Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
 send buffer and uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should

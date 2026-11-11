@@ -136,6 +136,33 @@
             "as": "71_2_0_5c",
             "br": "br-2"
           }
+        },
+        {
+          "host": "rnp",
+          "address": "127.0.0.1:30401",
+          "labels": {
+            "as": "71_1916",
+            "br": "br-1"
+          },
+          "display": false
+        },
+        {
+          "host": "ufes",
+          "address": "127.0.0.1:30401",
+          "labels": {
+            "as": "71_2_0_152",
+            "br": "br-1"
+          },
+          "display": false
+        },
+        {
+          "host": "ufms",
+          "address": "127.0.0.1:30401",
+          "labels": {
+            "as": "71_2_0_5c",
+            "br": "br-1"
+          },
+          "display": false
         }
       ]
     },

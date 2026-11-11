@@ -120,6 +120,7 @@ py_test(
 py_test(
     name = "ssh_setup_test",
     srcs = ["scripts/ssh_setup_test.py"],
+    data = ["monitoring/grafana/dashboards/hummbwtester-overview.json"],
     deps = [":orchestration"],
 )
 

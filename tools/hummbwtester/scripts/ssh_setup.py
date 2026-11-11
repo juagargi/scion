@@ -970,7 +970,9 @@ def client_metric_sources(
 def router_metric_sources(inventory: remote.Inventory, first_port: int) -> list[MetricSource]:
     """Every router target, each with relay port first_port + i."""
     return [
-        MetricSource(router.host, router.address, first_port + index, router.labels,
+        MetricSource(router.host, router.address, first_port + index,
+                     router.labels if router.display
+                     else {**router.labels, remote.DISPLAY_LABEL: "false"},
                      ROUTER_TARGETS_FILE)
         for index, router in enumerate(inventory.routers)
     ]

@@ -166,6 +166,9 @@ That dashboard includes:
   Minutes in which a router scrape failed have no network-loss value (a missing sample shows up as
   a large false difference); the second panel marks them. The pairing assumes one scraped link per
   AS pair.
+- every router query matches `display!="false"`, so routers that an SSH manifest lists with
+  `display: false` (kept only for later analysis) never appear in it. When you query them in
+  Prometheus, add the same matcher to leave them out, or `display="false"` to see only them.
 
 If you want to build your own panels, create a new dashboard in Grafana and query the same
 metrics that appear in `./tools/hummbwtester/metrics.go`.
