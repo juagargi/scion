@@ -230,7 +230,10 @@ class MetricSource:
 
 @dataclass(frozen=True)
 class PrometheusForward:
-    """Controller port, bound on each address of binds, forwarded to the remote Prometheus."""
+    """Controller port, bound on each address of binds, forwarded to the remote Prometheus.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     alias: str
     port: int
     binds: tuple[str, ...]
@@ -246,7 +249,10 @@ class TunnelSpec:
 
 
 def setup_hosts(inventory: remote.Inventory) -> list[str]:
-    """The hosts that receive the binary and helpers: participants and shaping hosts."""
+    """The hosts that receive the binary and helpers: participants and shaping hosts.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     return sorted({
         *inventory.participant_hosts,
         *(shape.host for shape in inventory.shaping),
@@ -1216,7 +1222,7 @@ class AgentSpec:
 
     write_port is the loopback port, on the agent's host, of the -R tunnel to the controller's
     Prometheus forward. It is the relay port reserved for the host's first source, which needs
-    no relay any more.
+    no relay any more. Part of the reuse API (README.md, "Reuse from other tools").
     """
     host: str
     sources: tuple[MetricSource, ...]
@@ -1225,7 +1231,10 @@ class AgentSpec:
 
 @dataclass(frozen=True)
 class AgentDelivery:
-    """What an agent reports about its remote write (prometheus_remote_storage_* metrics)."""
+    """What an agent reports about its remote write (prometheus_remote_storage_* metrics).
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     # Timestamp of the newest sample scraped, and of the newest sample sent, in seconds.
     newest_scraped: float
     newest_sent: float
@@ -1242,7 +1251,11 @@ class AgentDelivery:
 def agent_specs_for(
     inventory: remote.Inventory, sources: list[MetricSource],
 ) -> list[AgentSpec]:
-    """One agent per host with metric sources, except the Prometheus host and the controller."""
+    """One agent per host with metric sources, except the Prometheus host and the controller.
+
+    The agent's write_port is the relay port of the host's first source.
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     by_host: dict[str, list[MetricSource]] = {}
     for source in sources:
         if source.host is not None and source.host != inventory.prometheus_host:
@@ -1252,7 +1265,11 @@ def agent_specs_for(
 
 
 def central_sources(inventory: remote.Inventory, sources: list[MetricSource]) -> list[MetricSource]:
-    """The sources the central Prometheus scrapes itself: on its host, or on the controller."""
+    """The sources the central Prometheus scrapes itself: on its host, or on the controller.
+
+    Sources with host=None (the controller's) stay here and keep their relay.
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     return [source for source in sources
             if source.host is None or source.host == inventory.prometheus_host]
 
@@ -1265,6 +1282,8 @@ def agent_tunnel_specs(
     The controller forwards that port to the central Prometheus (prometheus_forward), so the
     agent's remote write reaches it through the controller. A TunnelSpec without source_alias is
     exactly that: only the -R half, on the host named by prometheus_alias.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
     """
     return [TunnelSpec(None, inventory.hosts[agent.host].alias, agent.write_port,
                        f"127.0.0.1:{forward_port}")
@@ -1378,7 +1397,11 @@ _REMOTE_WRITE_METRICS = (
 def agent_delivery(
     host: remote.SSHHost, stack: MonitoringStack | None = None,
 ) -> AgentDelivery | None:
-    """The agent's remote-write state from its /metrics, or None if it does not answer."""
+    """The agent's remote-write state from its /metrics, or None if it does not answer.
+
+    An agent that does not answer is never an error here. The agent listens on
+    stack.remote_prometheus_port. Part of the reuse API (README.md, "Reuse from other tools").
+    """
     stack = _stack(stack)
     url = f"http://127.0.0.1:{stack.remote_prometheus_port}/metrics"
     result = remote.ssh_command(
@@ -1450,6 +1473,10 @@ def ensure_agents(
     Like the central Prometheus: files in stack.remote_dir, a compose project named after the
     stack, host networking, a config hash label. Docker is used directly or through sudo -n. A
     running agent is recreated only after it has sent its backlog (_flush_and_remove_agent).
+
+    The container is agent_container(stack), named after stack.prometheus_container, and its
+    scrape configs are those of stack.prometheus_config, job names and file-SD files unchanged.
+    Part of the reuse API (README.md, "Reuse from other tools").
     """
     stack = _stack(stack)
     container = agent_container(stack)
@@ -1492,6 +1519,8 @@ def check_agents_delivering(
     persistent cause, usually a central Prometheus without the remote-write receiver or the
     out-of-order window, drops every batch. Earlier drops, counted since the agent started, are
     reported as a warning.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
     """
     problems = []
     for agent in agents:
@@ -1520,7 +1549,10 @@ def check_agents_delivering(
 def stop_agents(
     inventory: remote.Inventory, agents: list[AgentSpec], stack: MonitoringStack | None = None,
 ) -> None:
-    """Remove each agent once it has sent its backlog, with its volume and files."""
+    """Remove each agent once it has sent its backlog, with its volume and files.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     stack = _stack(stack)
     container = agent_container(stack)
     expected = f"{stack.prometheus_project}/{AGENT_SERVICE}"
@@ -1571,7 +1603,10 @@ def docker_bridge_gateway() -> str | None:
 
 
 def prometheus_forward(inventory: remote.Inventory) -> PrometheusForward:
-    """Forward for the browser (127.0.0.1) and for local Grafana containers (bridge gateway)."""
+    """Forward for the browser (127.0.0.1) and for local Grafana containers (bridge gateway).
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
     gateway = docker_bridge_gateway()
     return PrometheusForward(
         inventory.hosts[inventory.prometheus_host].alias, inventory.local_prometheus_port,
