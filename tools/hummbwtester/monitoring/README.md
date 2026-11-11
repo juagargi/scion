@@ -81,6 +81,13 @@ same provisioning and dashboards show the remote experiment. Open the Prometheus
 recreates it when it was started for another port, and for a Docker run restart it with
 `docker compose up -d grafana` from this directory.
 
+Metric sources on the other hosts are scraped there, by a Prometheus agent per host, which
+remote-writes to this Prometheus through an SSH tunnel and keeps what it could not deliver until
+it is accepted (see "How SSH setup works" in `../README.md`). The agents' series carry the same
+job names and labels as if this Prometheus had scraped them. For that, `prometheus.yml` sets
+`storage.tsdb.out_of_order_time_window`, so that a delayed backlog is accepted; the Docker mode
+reads the same file and is unaffected by it.
+
 ## Use
 
 Prometheus is exposed on [http://localhost:8090](http://localhost:8090). The Prometheus UI is
@@ -151,6 +158,17 @@ That dashboard includes:
 - total and per-socket Linux UDP receive-queue overflows for the border routers
 - aggregate BFD packet-loss and state-change counts per minute, plus current per-interface counters
 - pong request-to-reply gaps for remote-sent and client-received replies
+- at the bottom, network packet loss on each link between two scraped border routers (packets
+  the sender wrote to its interface minus packets the neighbor read from it, paired by
+  `isd_as`/`neighbor_isd_as`; only minutes with at least 30 lost packets, the noise floor), and a
+  panel that puts each priority drop (by reason) next to the network loss and the BFD state changes
+  of the same minute, to tell drops caused by the network apart from drops caused by the routers.
+  Minutes in which a router scrape failed have no network-loss value (a missing sample shows up as
+  a large false difference); the second panel marks them. The pairing assumes one scraped link per
+  AS pair.
+- every router query matches `display!="false"`, so routers that an SSH manifest lists with
+  `display: false` (kept only for later analysis) never appear in it. When you query them in
+  Prometheus, add the same matcher to leave them out, or `display="false"` to see only them.
 
 If you want to build your own panels, create a new dashboard in Grafana and query the same
 metrics that appear in `./tools/hummbwtester/metrics.go`.

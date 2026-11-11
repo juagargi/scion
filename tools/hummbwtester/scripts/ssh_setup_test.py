@@ -1,6 +1,7 @@
 from dataclasses import replace
 import json
 from pathlib import Path
+import re
 import shlex
 import socket
 import subprocess
@@ -12,6 +13,9 @@ from unittest import mock
 from tools.hummbwtester.scripts import orchestration
 from tools.hummbwtester.scripts import ssh_orchestration as remote
 from tools.hummbwtester.scripts import ssh_setup
+
+DASHBOARD = (Path(__file__).resolve().parent.parent
+             / "monitoring/grafana/dashboards/hummbwtester-overview.json")
 
 
 class SSHSetupTest(unittest.TestCase):
@@ -49,6 +53,142 @@ class SSHSetupTest(unittest.TestCase):
             "source-alias", "monitor-alias", 19090, "127.0.0.1:9090",
         )])
 
+    def test_agents_scrape_other_hosts_and_write_through_a_tunnel(self):
+        # The client is on source; Prometheus and the router are on monitor.
+        inventory = self.inventory()
+        sources = ssh_setup.metric_sources(inventory, self.clients())
+        agents = ssh_setup.agent_specs_for(inventory, sources)
+        self.assertEqual(agents, [ssh_setup.AgentSpec("source", (sources[0],), 19090)])
+        self.assertEqual(ssh_setup.central_sources(inventory, sources), [sources[1]])
+        self.assertEqual(ssh_setup.agent_tunnel_specs(inventory, agents, 8090), [
+            ssh_setup.TunnelSpec(None, "source-alias", 19090, "127.0.0.1:8090")])
+
+        documents, config_hash = ssh_setup.agent_documents(agents[0])
+        self.assertEqual(json.loads(documents["targets/clients.json"]), [
+            {"targets": ["127.0.0.1:9090"], "labels": {"client_id": "client-1"}}])
+        self.assertEqual(json.loads(documents["targets/border_routers.json"]), [])
+        config = ssh_setup.yaml.safe_load(documents["prometheus.yml"])
+        central = ssh_setup.yaml.safe_load(ssh_setup.PROMETHEUS_CONFIG.read_text())
+        self.assertEqual(config["scrape_configs"], central["scrape_configs"])
+        # Fixed shards: a resharding queue drops its in-flight batches while it cannot deliver.
+        self.assertEqual(config["remote_write"], [{
+            "url": "http://127.0.0.1:19090/api/v1/write",
+            "queue_config": {"min_shards": ssh_setup.AGENT_SHARDS,
+                             "max_shards": ssh_setup.AGENT_SHARDS},
+        }])
+        self.assertNotIn("storage", config)  # agent mode refuses TSDB settings
+        compose = documents["docker-compose.yml"]
+        for expected in ("container_name: hummbwtester-prometheus-agent", "- --agent",
+                         "--storage.agent.retention.max-time=180d",
+                         "--web.listen-address=127.0.0.1:8090", f'"{config_hash}"'):
+            self.assertIn(expected, compose)
+
+    def test_central_prometheus_accepts_the_agents_delayed_samples(self):
+        documents, _ = ssh_setup.prometheus_documents({})
+        self.assertIn("--web.enable-remote-write-receiver", documents["docker-compose.yml"])
+        config = ssh_setup.yaml.safe_load(documents["prometheus.yml"])
+        self.assertEqual(config["storage"]["tsdb"]["out_of_order_time_window"],
+                         ssh_setup.AGENT_RETENTION)
+
+    def test_config_files_survive_a_reboot_and_are_never_created_by_docker(self):
+        # A reboot empties /tmp; Docker then restarts the containers, and with short-syntax
+        # mounts it would create each missing file as an empty root-owned directory.
+        self.assertFalse(ssh_setup.REMOTE_PROMETHEUS_DIR.startswith("/tmp/"))
+        agent = ssh_setup.AgentSpec("source", (), 19090)
+        for compose in (ssh_setup.prometheus_documents({})[0]["docker-compose.yml"],
+                        ssh_setup.agent_documents(agent)[0]["docker-compose.yml"]):
+            service, = ssh_setup.yaml.safe_load(compose)["services"].values()
+            binds = [volume for volume in service["volumes"] if isinstance(volume, dict)]
+            self.assertEqual(sorted(bind["target"] for bind in binds),
+                             ["/etc/prometheus/prometheus.yml", "/etc/prometheus/targets"])
+            for bind in binds:
+                with self.subTest(target=bind["target"]):
+                    self.assertTrue(
+                        bind["source"].startswith(ssh_setup.REMOTE_PROMETHEUS_DIR + "/"))
+                    self.assertEqual((bind["type"], bind["read_only"], bind["bind"]),
+                                     ("bind", True, {"create_host_path": False}))
+
+    def test_agent_delivery_is_read_from_its_remote_write_metrics(self):
+        metrics = "\n".join([
+            "prometheus_remote_storage_highest_timestamp_in_seconds 1000",
+            'prometheus_remote_storage_queue_highest_sent_timestamp_seconds{remote_name="a"} 994',
+            'prometheus_remote_storage_samples_failed_total{remote_name="a"} 3',
+            "prometheus_remote_storage_samples_pending 12",
+        ])
+        host = self.inventory().hosts["source"]
+        with mock.patch.object(ssh_setup.remote, "ssh_command",
+                               return_value=subprocess.CompletedProcess([], 0, metrics, "")):
+            delivery = ssh_setup.agent_delivery(host)
+        self.assertEqual((delivery.backlog, delivery.failed), (6, 3))
+        self.assertEqual(ssh_setup.AgentDelivery(1000, 0, 0).backlog, float("inf"))
+        with mock.patch.object(ssh_setup.remote, "ssh_command",
+                               return_value=subprocess.CompletedProcess([], 1, "", "")):
+            self.assertIsNone(ssh_setup.agent_delivery(host))
+
+    def test_running_agent_sends_its_backlog_before_it_is_recreated(self):
+        inventory = self.inventory()
+        agents = ssh_setup.agent_specs_for(
+            inventory, ssh_setup.metric_sources(inventory, self.clients()))
+        events = []
+        completed = subprocess.CompletedProcess([], 0, "", "")
+
+        def ssh(host, command, **kwargs):
+            events.append(command)
+            return completed
+
+        backlog = iter([ssh_setup.AgentDelivery(100, 50, 0), ssh_setup.AgentDelivery(100, 99, 0)])
+        with mock.patch.object(ssh_setup, "_docker_command", return_value="sudo -n docker"), \
+             mock.patch.object(ssh_setup.remote, "ssh_command", side_effect=ssh), \
+             mock.patch.object(ssh_setup.remote, "scp_to"), \
+             mock.patch.object(ssh_setup, "_remote_documents_current", return_value=False), \
+             mock.patch.object(ssh_setup, "_container_current", return_value=True), \
+             mock.patch.object(ssh_setup, "_owned_container_exists", return_value=True), \
+             mock.patch.object(ssh_setup, "agent_delivery",
+                               side_effect=lambda *a: events.append("delivery") or next(backlog)), \
+             mock.patch.object(ssh_setup.time, "sleep"), \
+             mock.patch("builtins.print"):
+            ssh_setup.ensure_agents(inventory, agents)
+        removal = next(i for i, event in enumerate(events)
+                       if "rm -f hummbwtester-prometheus-agent" in event)
+        self.assertEqual(events[:removal].count("delivery"), 2)  # waited until the backlog drained
+        self.assertTrue(events[removal].startswith("sudo -n docker rm -f"))
+        self.assertFalse(any("volume rm" in event for event in events))  # the WAL volume stays
+        self.assertTrue(any(event.startswith("sudo -n docker compose") and "up -d" in event
+                            for event in events[removal:]))
+
+    def test_samples_dropped_during_the_check_fail_it_and_earlier_ones_warn(self):
+        inventory = self.inventory()
+        agents = [ssh_setup.AgentSpec("source", (), 19090)]
+        # Before the wait, then after it.
+        dropping = [ssh_setup.AgentDelivery(100, 99, 0), ssh_setup.AgentDelivery(100, 100, 5)]
+        with mock.patch.object(ssh_setup, "agent_delivery", side_effect=dropping):
+            with self.assertRaisesRegex(remote.SSHError, "dropped 5 samples"):
+                ssh_setup.check_agents_delivering(inventory, agents)
+        earlier = [ssh_setup.AgentDelivery(100, 99, 7), ssh_setup.AgentDelivery(100, 99, 7)]
+        with mock.patch.object(ssh_setup, "agent_delivery", side_effect=earlier), \
+             mock.patch("builtins.print") as output:
+            ssh_setup.check_agents_delivering(inventory, agents)
+        lines = [call.args[0] for call in output.call_args_list]
+        self.assertIn("warning: the Prometheus agent on source has dropped 7 samples since it "
+                      "started; see its log", lines)
+
+    def test_teardown_removes_the_agents_before_their_tunnels(self):
+        inventory = self.inventory()
+        config = (None, self.clients(), {}, {})
+        order = []
+        with mock.patch.object(ssh_setup, "stop_marketplace"), \
+             mock.patch.object(ssh_setup, "remove_selective_qdiscs"), \
+             mock.patch.object(ssh_setup, "stop_agents",
+                               side_effect=lambda inv, agents: order.append(("agents", agents))), \
+             mock.patch.object(ssh_setup, "stop_tunnels",
+                               side_effect=lambda: order.append(("tunnels", None))), \
+             mock.patch.object(ssh_setup, "stop_prometheus",
+                               side_effect=lambda host: order.append(("prometheus", None))), \
+             mock.patch.object(ssh_setup.remote, "ssh_command"):
+            ssh_setup.teardown(Path("config.json"), config, inventory)
+        self.assertEqual([name for name, _ in order], ["agents", "tunnels", "prometheus"])
+        self.assertEqual([agent.host for agent in order[0][1]], ["source"])
+
     def test_remote_prometheus_listens_on_loopback_only(self):
         documents, _ = ssh_setup.prometheus_documents({})
         self.assertIn("--web.listen-address=127.0.0.1:8090", documents["docker-compose.yml"])
@@ -78,6 +218,18 @@ class SSHSetupTest(unittest.TestCase):
             forward = ssh_setup.PrometheusForward("a", busy.getsockname()[1], ("127.0.0.1",))
             with self.assertRaisesRegex(remote.SSHError, "local_prometheus_port"):
                 ssh_setup._check_local_port_free(forward)
+
+    def test_a_just_closed_forward_port_is_waited_for(self):
+        forward = ssh_setup.PrometheusForward("a", 8090, ("127.0.0.1",))
+        busy = remote.SSHError("controller port 127.0.0.1:8090 ... is in use")
+        with mock.patch.object(ssh_setup, "_check_local_port_free",
+                               side_effect=[busy, busy, None]) as check, \
+             mock.patch.object(ssh_setup.time, "sleep") as sleep:
+            ssh_setup._wait_local_port_free(forward, 10)
+        self.assertEqual((check.call_count, sleep.call_count), (3, 2))
+        with mock.patch.object(ssh_setup, "_check_local_port_free", side_effect=busy):
+            with self.assertRaisesRegex(remote.SSHError, "in use"):
+                ssh_setup._wait_local_port_free(forward, 0)
 
     def test_prometheus_is_unchanged_when_files_and_container_are_current(self):
         inventory = self.inventory()
@@ -161,7 +313,7 @@ class SSHSetupTest(unittest.TestCase):
         self.assertIn("container_name: other-prometheus", compose)
         self.assertIn("--web.listen-address=127.0.0.1:8091", compose)
         self.assertIn(f'org.other.config-sha256: "{config_hash}"', compose)
-        self.assertIn("/tmp/other/prometheus/targets:/etc/prometheus/targets:ro", compose)
+        self.assertIn("source: /tmp/other/prometheus/targets\n", compose)
         self.assertNotIn("hummbwtester", compose)
 
     def test_monitoring_stack_ownership_check_uses_the_stack_project(self):
@@ -218,6 +370,43 @@ class SSHSetupTest(unittest.TestCase):
         self.assertEqual(ssh_setup.metric_sources(self.inventory(), self.clients()),
                          [*ssh_setup.client_metric_sources(self.inventory(), self.clients()),
                           *ssh_setup.router_metric_sources(self.inventory(), 19091)])
+
+    def test_hidden_routers_are_scraped_with_a_display_label(self):
+        inventory = replace(self.inventory(), routers=(
+            remote.RouterMetrics("monitor", "127.0.0.1:30442", {"br": "br-1"}),
+            remote.RouterMetrics("monitor", "127.0.0.1:30443", {"br": "br-2"}, display=False),
+        ))
+        documents = ssh_setup.target_documents(inventory, self.clients())
+        self.assertEqual(json.loads(documents["targets/border_routers.json"]), [
+            {"targets": ["127.0.0.1:30442"], "labels": {"br": "br-1"}},
+            {"targets": ["127.0.0.1:30443"], "labels": {"br": "br-2", "display": "false"}},
+        ])
+
+    def test_dashboard_router_queries_leave_out_hidden_routers(self):
+        dashboard = json.loads(DASHBOARD.read_text())
+        exprs: list[str] = []
+
+        def collect(value: object) -> None:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if key == "expr" and isinstance(item, str):
+                        exprs.append(item)
+                    else:
+                        collect(item)
+            elif isinstance(value, list):
+                for item in value:
+                    collect(item)
+
+        collect(dashboard)
+        selectors = [
+            (expr, match.group(0)) for expr in exprs
+            for match in re.finditer(r'\b(?:router_\w+|up(?=\{job="scion-border-routers"))'
+                                     r'(?:\{[^}]*\})?', expr)
+        ]
+        self.assertTrue(selectors)
+        for expr, selector in selectors:
+            with self.subTest(expr=expr):
+                self.assertIn('display!="false"', selector)
 
     def test_participant_hosts_decide_setup_and_note_hosts(self):
         inventory = replace(self.inventory(), participant_hosts=frozenset({"source"}))
@@ -403,9 +592,11 @@ class SSHSetupTest(unittest.TestCase):
              mock.patch.object(ssh_setup, "_check_local_port_free"), \
              mock.patch.object(ssh_setup.workload, "local_container_owner", return_value=None), \
              mock.patch.object(ssh_setup.subprocess, "run") as local_run, \
+             mock.patch.object(ssh_setup.remote, "check_clocks") as clocks, \
              mock.patch("builtins.print") as output:
             self.assertEqual(
                 ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 0)
+        clocks.assert_called_once()
         scp.assert_not_called()
         write_targets.assert_not_called()
         local_run.assert_not_called()  # no ssh-control-master is started or stopped
@@ -425,9 +616,14 @@ class SSHSetupTest(unittest.TestCase):
                          "would upload marketplace JWT to source",
                          "would install selective qdisc source-peer on source",
                          "would advertise marketplace",
-                         "would create hummbwtester-prometheus",
-                         "would start 1 Prometheus metric relays (2 ssh-control-masters) and "
+                         "would create hummbwtester-prometheus and its files in "
+                         "/var/tmp/hummbwtester-prometheus on monitor",
+                         # The client on source is scraped by an agent there, not relayed.
+                         "would create hummbwtester-prometheus-agent and its files in "
+                         "/var/tmp/hummbwtester-prometheus on source",
+                         "would start 1 Prometheus metric relays (1 ssh-control-masters) and "
                          "forward controller port 8090 to Prometheus",
+                         "would check that 1 Prometheus agents deliver",
                          "would start Grafana http://127.0.0.1:3000 with Prometheus at "
                          "controller port 8090",
                          "would install marketplace binary /usr/local/bin/hummingbird-marketplace",
@@ -452,6 +648,7 @@ class SSHSetupTest(unittest.TestCase):
                                side_effect=self.fake_hosts(commands)), \
              mock.patch.object(ssh_setup, "obtain_marketplace_jwt",
                                side_effect=orchestration.ConfigError("cannot reach marketplace")), \
+             mock.patch.object(ssh_setup.remote, "check_clocks"), \
              mock.patch("builtins.print") as output:
             self.assertEqual(
                 ssh_setup.setup(Path("config.json"), config, inventory, dry_run=True), 1)
@@ -459,13 +656,14 @@ class SSHSetupTest(unittest.TestCase):
         self.assertTrue(any(" diagnose " in command for _, command in commands))
         self.assertTrue(any("docker info" in command for _, command in commands))
         lines = [str(call.args[0]) for call in output.call_args_list if call.args]
-        self.assertIn("  - 3. marketplace JWT: cannot reach marketplace", lines)
+        self.assertIn("  - 4. marketplace JWT: cannot reach marketplace", lines)
         self.assertEqual(lines[-1], orchestration.DRY_RUN_NOTICE)
 
     def test_real_setup_stops_at_the_first_failed_step(self):
         clients = [SimpleNamespace(client_id="client-1", metrics_port=9090, hummingbird=True)]
         config = (None, clients, {}, {"rate": "10mbit", "burst": "50kb", "limit": "1mb"})
         with mock.patch.object(ssh_setup.workload, "require_built_binary"), \
+             mock.patch.object(ssh_setup.remote, "check_clocks"), \
              mock.patch.object(ssh_setup.remote, "stop_stray_testers"), \
              mock.patch.object(ssh_setup.remote, "preflight"), \
              mock.patch.object(ssh_setup, "deploy_binary"), \

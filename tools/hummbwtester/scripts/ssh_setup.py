@@ -8,55 +8,71 @@ with the desired one first, so a repeated setup only changes what differs.
 
 setup performs, in this order:
 
-1. Binary: on every host, report and kill running hummbwtester processes (SIGTERM, then
+1. Clocks: the controller and every host must be NTP-synchronized (timedatectl NTPSynchronized),
+   and each host's clock within ssh_orchestration.CLOCK_MAX_OFFSET_SECONDS of the controller's,
+   measured over one SSH session. The Prometheus agents stamp samples with their host's clock.
+   `run` repeats this check.
+2. Binary: on every host, report and kill running hummbwtester processes (SIGTERM, then
    SIGKILL after 5 s). Then, on the server, client and shaping hosts, preflight checks (tools,
    run_dir, SCION daemon, readiness_command), and copy bin/hummbwtester to <run_dir>/setup/
    unless its SHA-256 already matches. Copies are atomic: scp to a .tmp file, verify its digest,
    chmod, mv.
-2. Marketplace service: on hummingbird.marketplace.host, install bin/marketplace as
+3. Marketplace service: on hummingbird.marketplace.host, install bin/marketplace as
    /usr/local/bin/hummingbird-marketplace and the hummingbird-marketplace.service unit with sudo,
    and its config (/etc/scion/marketplace/) and database directory (/var/lib/scion/marketplace/)
    for the SSH user, which the service runs as. Each is replaced only when it differs. The
    service is never enabled and does not restart by itself. It is (re)started, with a database
    rebuilt from the Docker topology's default entries, only when something was replaced, it is
    not running, or its APIs are unreachable; setup then waits until both APIs answer.
-3. Marketplace JWT: open a temporary ssh-control-master that forwards a free controller loopback
+4. Marketplace JWT: open a temporary ssh-control-master that forwards a free controller loopback
    port to the host and port of hummingbird.marketplace.scion_address, as seen from
    hummingbird.marketplace.host (its TLS web app), log in through
    it with marketplace/tools/get_jwt.py, close it, and copy the JWT (mode 600) to the hosts of the
    Hummingbird clients. The controller's copy is deleted.
-4. Selective qdiscs: on each shaping host, copy selective_qdisc.py to <run_dir>/setup/ and run it
+5. Selective qdiscs: on each shaping host, copy selective_qdisc.py to <run_dir>/setup/ and run it
    with sudo -n, unless its recorded state and the live root qdisc already match.
-5. Static info Note: on the server, client and marketplace hosts, pipe static_info_note.py to
+6. Static info Note: on the server, client and marketplace hosts, pipe static_info_note.py to
    `sudo -n python3 -` to insert or update the hummbwtester entry of the Note's hummingbird list.
    With hummingbird.marketplace.location_override, remove it instead, and any entry for the same
    api_address, so that no path announces the marketplace's location.
    Control services are never restarted; a changed file becomes a manual step.
-6. Prometheus: write the file-SD targets locally and to /tmp/hummbwtester/prometheus/ on the
-   Prometheus host, and (re)create the hummbwtester-prometheus container (host networking,
-   listening on 127.0.0.1:8090 only, data in the prometheus-data volume) when files or its
-   configuration hash differ.
-7. Metric relays: Prometheus scrapes sources on its own host directly. Every other source gets
-   two ssh-control-masters, an -L to the source host and an -R to the Prometheus host, so that
-   Prometheus scrapes its own loopback. One more ssh-control-master forwards controller port
+7. Prometheus: write the file-SD targets of the sources on the Prometheus host locally and to
+   /var/tmp/hummbwtester-prometheus/ on that host, and (re)create the hummbwtester-prometheus
+   container (host networking, listening on 127.0.0.1:8090 only, remote-write receiver on, data
+   in the prometheus-data volume) when files or its configuration hash differ.
+8. Prometheus agents: every other host with metric sources (clients, routers) runs a Prometheus
+   agent, hummbwtester-prometheus-agent: same compose project, files in
+   /var/tmp/hummbwtester-prometheus/ there, host networking, listening on 127.0.0.1:8090, WAL in the
+   agent-data volume. It scrapes the host's sources with the central configuration's jobs and
+   remote-writes them to the central Prometheus. It keeps what it could not deliver until it is
+   sent and accepted (up to AGENT_RETENTION; the central Prometheus accepts samples that old
+   through out_of_order_time_window). Docker is used directly or with sudo -n. An agent is
+   recreated only when its files changed, and only after it has sent its backlog: remote write
+   never sends what a stopped agent left unsent.
+9. Metric tunnels: each agent's host gets an ssh-control-master with an -R from its loopback
+   write port (the relay port reserved for its first source) to the controller's Prometheus
+   forward. A metric source on the controller itself would still get an -R relay to the
+   Prometheus host. One more ssh-control-master forwards controller port
    deployment.metrics.local_prometheus_port (default 8090), on 127.0.0.1 and on the Docker
    bridge gateway, to the remote Prometheus. Their sockets and a manifest live in
-   /tmp/hummbwtester/ssh-tunnels/ on the controller.
-8. Grafana: run the monitoring stack's hummbwtester-grafana container on the controller, with the
+   /tmp/hummbwtester/ssh-tunnels/ on the controller. Then check that every agent delivers.
+10. Grafana: run the monitoring stack's hummbwtester-grafana container on the controller, with the
    Docker mode's provisioning, dashboards, and volume, and PROMETHEUS_PORT set to that forward;
    its data source host.docker.internal resolves to the bridge gateway. A running Grafana with
    that setting is kept. Then check that Grafana and its data source answer.
-9. Print the manual steps, e.g. restarting a control service whose static info file changed.
+11. Print the manual steps, e.g. restarting a control service whose static info file changed.
 
 teardown stops the marketplace service and waits until it is unreachable, removes the qdiscs,
-closes the ssh-control-masters of the manifest (relays and Prometheus forward; Grafana keeps
-running, as in the Docker mode), removes the Prometheus container and files, and
+removes the Prometheus agents (each after it has sent its backlog, up to AGENT_FLUSH_WAIT_SECONDS)
+with their volumes and files, closes the ssh-control-masters of the manifest (tunnels and
+Prometheus forward; Grafana keeps running, as in the Docker mode), removes the central
+Prometheus container and files, and
 deletes <run_dir>/setup/ (binary, JWT, helpers). It keeps the static info Note and the
 marketplace's binary, unit, config, and database.
 
 With dry_run (`experiment.py setup --dry-run`), every step runs its checks and reads and prints
 what it would change ("dry-run: would ..."), but nothing is written on the hosts, no service or
-container is started, stopped, or restarted, and no relay is started or stopped. The qdisc and
+container is started, stopped, or restarted, and no tunnel is started or stopped. The qdisc and
 Note helpers are piped in instead of copied, and run read-only (diagnose/status, --dry-run). The
 marketplace step still reads the hosts' topologies and derived secret values, and the login of
 step 3 still happens, because issuing a JWT only reads the marketplace.
@@ -86,6 +102,8 @@ from types import SimpleNamespace
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import yaml
 
 try:  # Support both ``python -m``/tests and the small direct entrypoint scripts.
     from . import orchestration as workload
@@ -119,7 +137,9 @@ STATIC_INFO_HELPER = workload.ROOT / "tools" / "hummbwtester" / "scripts" / "sta
 NOTE_NAME = "hummbwtester"
 NOTE_PROTOCOL = "connectrpc/TLS/QUIC/SCION"
 PROMETHEUS_CONFIG = workload.ROOT / "tools" / "hummbwtester" / "monitoring" / "prometheus.yml"
-REMOTE_PROMETHEUS_DIR = "/tmp/hummbwtester/prometheus"
+# Outside /tmp, which a reboot empties: Docker restarts the containers at boot, and their files
+# must still be there (a missing bind source fails the start, see _config_mounts).
+REMOTE_PROMETHEUS_DIR = "/var/tmp/hummbwtester-prometheus"
 PROMETHEUS_CONTAINER = "hummbwtester-prometheus"
 PROMETHEUS_PROJECT = "hummbwtester-ssh"
 PROMETHEUS_IMAGE = "prom/prometheus:latest"
@@ -130,6 +150,27 @@ GRAFANA_CONTAINER = "hummbwtester-grafana"
 GRAFANA_WAIT_SECONDS = 30
 TUNNEL_STATE_DIR = Path("/tmp/hummbwtester/ssh-tunnels")
 TUNNEL_MANIFEST = TUNNEL_STATE_DIR / "manifest.json"
+# How long setup waits for the controller port of a Prometheus forward it has just closed.
+PORT_RELEASE_WAIT_SECONDS = 10
+# Prometheus agents (one per host with metric sources, other than the Prometheus host) scrape
+# their host's sources and remote-write them to the central Prometheus. An agent keeps samples it
+# has not delivered in its WAL until they are sent and accepted, up to AGENT_RETENTION; the
+# central Prometheus accepts samples that old (out_of_order_time_window in prometheus.yml).
+AGENT_SERVICE = "agent"
+AGENT_RETENTION = "180d"
+# Fixed number of remote-write shards. With a variable number, the queue reshards on its own,
+# and stopping the old shards cancels their in-flight batches after the flush deadline (1 min):
+# while the central Prometheus is unreachable those batches are dropped ("context canceled"),
+# never retried. One shard sends about 2000 samples per round trip through the tunnel; four
+# work off a backlog of an hour in minutes (an agent scrapes about 1200 samples/s on SCIERA).
+AGENT_SHARDS = 4
+# How long setup waits for a new agent to deliver, and setup or teardown for an agent to send its
+# backlog before it is recreated or removed: remote write only resends the WAL of a running agent.
+AGENT_DELIVERY_WAIT_SECONDS = 60
+AGENT_FLUSH_WAIT_SECONDS = 120
+# An agent counts as delivering when the newest sample it sent is at most this much older than
+# the newest it scraped.
+AGENT_MAX_BACKLOG_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -299,10 +340,8 @@ def obtain_marketplace_jwt(inventory: remote.Inventory) -> str:
     url = marketplace.url
     assert url is not None  # load_config requires scion_address for SSH deployments.
     host = inventory.hosts[inventory.marketplace_host]
-    if not os.environ.get(marketplace.password_env):
-        # Checked before the tunnel is opened, which would be pointless without a password.
-        raise workload.ConfigError(
-            f"marketplace password environment variable {marketplace.password_env} is not set")
+    # Checked before the tunnel is opened, which would be pointless without a password.
+    workload.require_marketplace_password(marketplace)
     with marketplace_tunnel(host, url) as local_url:
         try:
             return workload.obtain_marketplace_jwt(marketplace, local_url)
@@ -931,7 +970,9 @@ def client_metric_sources(
 def router_metric_sources(inventory: remote.Inventory, first_port: int) -> list[MetricSource]:
     """Every router target, each with relay port first_port + i."""
     return [
-        MetricSource(router.host, router.address, first_port + index, router.labels,
+        MetricSource(router.host, router.address, first_port + index,
+                     router.labels if router.display
+                     else {**router.labels, remote.DISPLAY_LABEL: "false"},
                      ROUTER_TARGETS_FILE)
         for index, router in enumerate(inventory.routers)
     ]
@@ -984,6 +1025,22 @@ def _configuration_hash(documents: dict[str, str]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _config_mounts(stack: MonitoringStack) -> str:
+    """The compose volume entries that mount prometheus.yml and targets/ from stack.remote_dir.
+
+    The long syntax with create_host_path false: with the short one, Docker creates a missing
+    source as an empty root-owned directory (even for prometheus.yml) when it starts the
+    container, for example at boot after the files were lost, and setup can then no longer
+    write them. Without it, the start fails and the next setup rewrites the files.
+    """
+    return "\n".join(f"""      - type: bind
+        source: {stack.remote_dir}/{source}
+        target: /etc/prometheus/{source}
+        read_only: true
+        bind:
+          create_host_path: false""" for source in ("prometheus.yml", "targets"))
+
+
 def _compose_document(config_hash: str, stack: MonitoringStack | None = None) -> str:
     stack = _stack(stack)
     return f"""services:
@@ -996,11 +1053,12 @@ def _compose_document(config_hash: str, stack: MonitoringStack | None = None) ->
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=180d
       - --web.listen-address=127.0.0.1:{stack.remote_prometheus_port}
+      # The hosts' Prometheus agents deliver their samples by remote write.
+      - --web.enable-remote-write-receiver
     labels:
       {stack.config_hash_label}: "{config_hash}"
     volumes:
-      - {stack.remote_dir}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - {stack.remote_dir}/targets:/etc/prometheus/targets:ro
+{_config_mounts(stack)}
       - prometheus-data:/prometheus
 
 volumes:
@@ -1018,52 +1076,90 @@ def prometheus_documents(
     return documents, config_hash
 
 
-def _remote_prometheus_files_current(
-    host: remote.SSHHost, documents: dict[str, str], stack: MonitoringStack | None = None,
+def _remote_documents_current(
+    host: remote.SSHHost, documents: dict[str, str], remote_dir: str,
 ) -> bool:
-    stack = _stack(stack)
     return _remote_test(host, " && ".join(
-        remote.digest_matches(f"{stack.remote_dir}/{relative}",
+        remote.digest_matches(f"{remote_dir}/{relative}",
                               hashlib.sha256(content.encode()).hexdigest())
         for relative, content in sorted(documents.items())
     ))
+
+
+def _remote_prometheus_files_current(
+    host: remote.SSHHost, documents: dict[str, str], stack: MonitoringStack | None = None,
+) -> bool:
+    return _remote_documents_current(host, documents, _stack(stack).remote_dir)
+
+
+def _upload_documents(host: remote.SSHHost, documents: dict[str, str], remote_dir: str) -> None:
+    """Write each document to remote_dir/<relative> atomically (scp to .tmp, chmod, mv)."""
+    with tempfile.TemporaryDirectory() as directory:
+        staging = Path(directory)
+        for relative, content in documents.items():
+            local = staging / relative
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_text(content)
+            target = f"{remote_dir}/{relative}"
+            remote.scp_to(host, local, target + ".tmp")
+            remote.ssh_command(host, " && ".join([
+                f"chmod 644 {shlex.quote(target + '.tmp')}",
+                f"mv -f {shlex.quote(target + '.tmp')} {shlex.quote(target)}",
+            ]))
+
+
+def _container_current(
+    host: remote.SSHHost, docker: str, container: str, label: str, config_hash: str,
+) -> bool:
+    """Whether the container runs and carries config_hash in its label."""
+    result = remote.ssh_command(
+        host,
+        f"{docker} inspect --format "
+        + shlex.quote(f'{{{{.State.Running}}}} {{{{index .Config.Labels "{label}"}}}}')
+        + " " + shlex.quote(container),
+        check=False, capture_output=True,
+    )
+    return result.returncode == 0 and result.stdout.strip() == f"true {config_hash}"
+
+
+def _owned_container_exists(
+    host: remote.SSHHost, docker: str, container: str, expected: str,
+) -> bool:
+    """Whether the container exists and is the compose service expected (project/service).
+
+    Raises if a container with that name belongs to anything else.
+    """
+    owner = remote.ssh_command(
+        host,
+        f"{docker} inspect --format "
+        + shlex.quote('{{index .Config.Labels "com.docker.compose.project"}}/'
+                      '{{index .Config.Labels "com.docker.compose.service"}}')
+        + " " + shlex.quote(container),
+        check=False, capture_output=True,
+    )
+    if owner.returncode:
+        return False
+    if owner.stdout.strip() != expected:
+        raise remote.SSHError(
+            f"refusing to stop {container} on {host.name}: "
+            f"container belongs to {owner.stdout.strip()!r}, not {expected}",
+        )
+    return True
 
 
 def _prometheus_container_current(
     host: remote.SSHHost, config_hash: str, stack: MonitoringStack | None = None,
 ) -> bool:
     stack = _stack(stack)
-    result = remote.ssh_command(
-        host,
-        "docker inspect --format "
-        + shlex.quote(f'{{{{.State.Running}}}} '
-                      f'{{{{index .Config.Labels "{stack.config_hash_label}"}}}}')
-        + " " + shlex.quote(stack.prometheus_container),
-        check=False, capture_output=True,
-    )
-    return result.returncode == 0 and result.stdout.strip() == f"true {config_hash}"
+    return _container_current(host, "docker", stack.prometheus_container, stack.config_hash_label,
+                              config_hash)
 
 
 def _owned_prometheus_exists(host: remote.SSHHost, stack: MonitoringStack | None = None) -> bool:
     """Whether our Prometheus container exists; raise if a foreign one has its name."""
     stack = _stack(stack)
-    owner = remote.ssh_command(
-        host,
-        "docker inspect --format "
-        + shlex.quote('{{index .Config.Labels "com.docker.compose.project"}}/'
-                      '{{index .Config.Labels "com.docker.compose.service"}}')
-        + " " + shlex.quote(stack.prometheus_container),
-        check=False, capture_output=True,
-    )
-    if owner.returncode:
-        return False
-    expected = f"{stack.prometheus_project}/prometheus"
-    if owner.stdout.strip() != expected:
-        raise remote.SSHError(
-            f"refusing to stop {stack.prometheus_container} on {host.name}: "
-            f"container belongs to {owner.stdout.strip()!r}, not {expected}",
-        )
-    return True
+    return _owned_container_exists(host, "docker", stack.prometheus_container,
+                                   f"{stack.prometheus_project}/prometheus")
 
 
 def stop_prometheus(host: remote.SSHHost, stack: MonitoringStack | None = None) -> None:
@@ -1100,18 +1196,7 @@ def ensure_prometheus(
         return
 
     stop_prometheus(host, **given)
-    with tempfile.TemporaryDirectory() as directory:
-        staging = Path(directory)
-        for relative, content in documents.items():
-            local = staging / relative
-            local.parent.mkdir(parents=True, exist_ok=True)
-            local.write_text(content)
-            target = f"{stack.remote_dir}/{relative}"
-            remote.scp_to(host, local, target + ".tmp")
-            remote.ssh_command(host, " && ".join([
-                f"chmod 644 {shlex.quote(target + '.tmp')}",
-                f"mv -f {shlex.quote(target + '.tmp')} {shlex.quote(target)}",
-            ]))
+    _upload_documents(host, documents, stack.remote_dir)
     compose = f"{stack.remote_dir}/docker-compose.yml"
     remote.ssh_command(
         host,
@@ -1123,6 +1208,330 @@ def ensure_prometheus(
     if not _prometheus_container_current(host, config_hash, stack):
         raise remote.SSHError(f"Prometheus container failed to start on {host.name}")
     print(f"started Prometheus on {host.name}")
+
+
+@dataclass(frozen=True)
+class AgentSpec:
+    """A Prometheus agent: its host, the metric sources it scrapes there, its remote-write port.
+
+    write_port is the loopback port, on the agent's host, of the -R tunnel to the controller's
+    Prometheus forward. It is the relay port reserved for the host's first source, which needs
+    no relay any more.
+    """
+    host: str
+    sources: tuple[MetricSource, ...]
+    write_port: int
+
+
+@dataclass(frozen=True)
+class AgentDelivery:
+    """What an agent reports about its remote write (prometheus_remote_storage_* metrics)."""
+    # Timestamp of the newest sample scraped, and of the newest sample sent, in seconds.
+    newest_scraped: float
+    newest_sent: float
+    # Samples dropped for good since the agent started: refused by the central Prometheus (a 4xx
+    # answer) or cancelled in flight (prometheus_remote_storage_samples_failed_total).
+    failed: float
+
+    @property
+    def backlog(self) -> float:
+        """Seconds of scraped samples not yet sent; infinite before the first send."""
+        return self.newest_scraped - self.newest_sent if self.newest_sent > 0 else float("inf")
+
+
+def agent_specs_for(
+    inventory: remote.Inventory, sources: list[MetricSource],
+) -> list[AgentSpec]:
+    """One agent per host with metric sources, except the Prometheus host and the controller."""
+    by_host: dict[str, list[MetricSource]] = {}
+    for source in sources:
+        if source.host is not None and source.host != inventory.prometheus_host:
+            by_host.setdefault(source.host, []).append(source)
+    return [AgentSpec(host, tuple(found), found[0].port)
+            for host, found in sorted(by_host.items())]
+
+
+def central_sources(inventory: remote.Inventory, sources: list[MetricSource]) -> list[MetricSource]:
+    """The sources the central Prometheus scrapes itself: on its host, or on the controller."""
+    return [source for source in sources
+            if source.host is None or source.host == inventory.prometheus_host]
+
+
+def agent_tunnel_specs(
+    inventory: remote.Inventory, agents: list[AgentSpec], forward_port: int,
+) -> list[TunnelSpec]:
+    """For each agent, an -R tunnel from its host's write_port to the controller forward_port.
+
+    The controller forwards that port to the central Prometheus (prometheus_forward), so the
+    agent's remote write reaches it through the controller. A TunnelSpec without source_alias is
+    exactly that: only the -R half, on the host named by prometheus_alias.
+    """
+    return [TunnelSpec(None, inventory.hosts[agent.host].alias, agent.write_port,
+                       f"127.0.0.1:{forward_port}")
+            for agent in agents]
+
+
+def agent_container(stack: MonitoringStack | None = None) -> str:
+    return f"{_stack(stack).prometheus_container}-agent"
+
+
+def _agent_volume(stack: MonitoringStack) -> str:
+    # docker compose names a project's volume <project>_<volume>.
+    return f"{stack.prometheus_project}_agent-data"
+
+
+def _file_sd_files(config: dict[str, object]) -> list[str]:
+    """The file-SD files a Prometheus configuration reads, relative to /etc/prometheus/."""
+    files = []
+    for scrape in config.get("scrape_configs") or []:
+        for discovery in (scrape or {}).get("file_sd_configs") or []:
+            for path in (discovery or {}).get("files") or []:
+                if isinstance(path, str) and path.startswith("/etc/prometheus/"):
+                    files.append(path.removeprefix("/etc/prometheus/"))
+    return files
+
+
+def agent_config(write_port: int, stack: MonitoringStack | None = None) -> str:
+    """The agent's configuration: the central one's global and scrape configs, plus remote write.
+
+    The scrape configs (job names, file-SD files) are the central Prometheus's, so the agents'
+    series are named and labeled as if the central Prometheus had scraped them.
+    """
+    central = yaml.safe_load(_stack(stack).prometheus_config.read_text()) or {}
+    return yaml.safe_dump({
+        "global": central.get("global") or {},
+        "scrape_configs": central.get("scrape_configs") or [],
+        "remote_write": [{
+            "url": f"http://127.0.0.1:{write_port}/api/v1/write",
+            "queue_config": {"min_shards": AGENT_SHARDS, "max_shards": AGENT_SHARDS},
+        }],
+    }, sort_keys=False)
+
+
+def _agent_compose_document(config_hash: str, stack: MonitoringStack) -> str:
+    return f"""services:
+  {AGENT_SERVICE}:
+    image: {PROMETHEUS_IMAGE}
+    container_name: {agent_container(stack)}
+    network_mode: host
+    restart: unless-stopped
+    command:
+      - --agent
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.agent.path=/prometheus
+      # Keep samples that could not be delivered until they are, up to the central retention.
+      - --storage.agent.retention.max-time={AGENT_RETENTION}
+      - --web.listen-address=127.0.0.1:{stack.remote_prometheus_port}
+    labels:
+      {stack.config_hash_label}: "{config_hash}"
+    volumes:
+{_config_mounts(stack)}
+      - agent-data:/prometheus
+
+volumes:
+  agent-data:
+"""
+
+
+def agent_documents(
+    agent: AgentSpec, stack: MonitoringStack | None = None,
+) -> tuple[dict[str, str], str]:
+    """The agent's files (file-SD targets, prometheus.yml, docker-compose.yml) and their hash.
+
+    Every file-SD file of the central configuration is written, listing this host's sources
+    at their own addresses; the agent scrapes them on its host.
+    """
+    stack = _stack(stack)
+    central = yaml.safe_load(stack.prometheus_config.read_text()) or {}
+    targets: dict[str, list[dict[str, object]]] = {
+        name: [] for name in _file_sd_files(central)}
+    for source in agent.sources:
+        targets.setdefault(source.target_file, []).append(
+            {"targets": [source.address], "labels": source.labels})
+    documents = {name: json.dumps(entries, indent=2) + "\n" for name, entries in targets.items()}
+    documents["prometheus.yml"] = agent_config(agent.write_port, stack)
+    config_hash = _configuration_hash(documents)
+    documents["docker-compose.yml"] = _agent_compose_document(config_hash, stack)
+    return documents, config_hash
+
+
+def _docker_command(host: remote.SSHHost) -> str:
+    """How the SSH user runs Docker with compose on host: directly, or through sudo -n."""
+    for docker in ("docker", "sudo -n docker"):
+        if remote.ssh_command(
+            host, f"{docker} info >/dev/null 2>&1 && {docker} compose version >/dev/null 2>&1",
+            check=False,
+        ).returncode == 0:
+            return docker
+    raise remote.SSHError(
+        f"{host.name}: the SSH user can use Docker with compose neither directly nor with sudo -n")
+
+
+_REMOTE_WRITE_METRICS = (
+    "import sys, urllib.request\n"
+    "text = urllib.request.urlopen(sys.argv[1], timeout=5).read().decode()\n"
+    "lines = text.splitlines()\n"
+    "print('\\n'.join(l for l in lines if l.startswith('prometheus_remote_storage_')))\n"
+)
+
+
+def agent_delivery(
+    host: remote.SSHHost, stack: MonitoringStack | None = None,
+) -> AgentDelivery | None:
+    """The agent's remote-write state from its /metrics, or None if it does not answer."""
+    stack = _stack(stack)
+    url = f"http://127.0.0.1:{stack.remote_prometheus_port}/metrics"
+    result = remote.ssh_command(
+        host, f"python3 -c {shlex.quote(_REMOTE_WRITE_METRICS)} {shlex.quote(url)}",
+        check=False, capture_output=True,
+    )
+    if result.returncode:
+        return None
+    newest_scraped, newest_sent, failed = 0.0, 0.0, 0.0
+    for line in result.stdout.splitlines():
+        name, _, value = line.rpartition(" ")
+        try:
+            number = float(value)
+        except ValueError:
+            continue
+        metric = name.split("{", 1)[0]
+        if metric == "prometheus_remote_storage_highest_timestamp_in_seconds":
+            newest_scraped = max(newest_scraped, number)
+        elif metric == "prometheus_remote_storage_queue_highest_sent_timestamp_seconds":
+            newest_sent = max(newest_sent, number)
+        elif metric == "prometheus_remote_storage_samples_failed_total":
+            failed += number
+    return AgentDelivery(newest_scraped, newest_sent, failed)
+
+
+def _wait_agent_flushed(
+    host: remote.SSHHost, seconds: int, stack: MonitoringStack | None = None,
+) -> AgentDelivery | None:
+    """Wait until the agent has sent what it scraped; return its last state (None: no answer)."""
+    deadline = time.monotonic() + seconds
+    while True:
+        delivery = agent_delivery(host, stack)
+        if delivery is None or delivery.backlog <= AGENT_MAX_BACKLOG_SECONDS \
+                or time.monotonic() >= deadline:
+            return delivery
+        time.sleep(2)
+
+
+def _flush_and_remove_agent(
+    host: remote.SSHHost, docker: str, stack: MonitoringStack, remove_volume: bool,
+) -> None:
+    """Remove the agent container once it has sent its backlog.
+
+    Remote write only sends what a running agent recorded after it started: samples still unsent
+    when the agent stops are never sent. So this waits up to AGENT_FLUSH_WAIT_SECONDS for the
+    backlog to drain, and reports what is lost if it does not.
+    """
+    delivery = _wait_agent_flushed(host, AGENT_FLUSH_WAIT_SECONDS, stack)
+    if delivery is None:
+        print(f"warning: the Prometheus agent on {host.name} does not answer; "
+              "samples it had not sent are lost")
+    elif delivery.backlog > AGENT_MAX_BACKLOG_SECONDS:
+        print(f"warning: the Prometheus agent on {host.name} still had "
+              f"{delivery.backlog:.0f} s of samples unsent after {AGENT_FLUSH_WAIT_SECONDS} s; "
+              "they are lost")
+    container = agent_container(stack)
+    remote.ssh_command(host, f"{docker} rm -f {shlex.quote(container)} >/dev/null")
+    if remove_volume:
+        remote.ssh_command(host, f"{docker} volume rm -f {shlex.quote(_agent_volume(stack))} "
+                                 ">/dev/null")
+
+
+def ensure_agents(
+    inventory: remote.Inventory, agents: list[AgentSpec], dry_run: bool = False,
+    stack: MonitoringStack | None = None,
+) -> None:
+    """Run a Prometheus agent on each agent host, (re)created only when its files changed.
+
+    Like the central Prometheus: files in stack.remote_dir, a compose project named after the
+    stack, host networking, a config hash label. Docker is used directly or through sudo -n. A
+    running agent is recreated only after it has sent its backlog (_flush_and_remove_agent).
+    """
+    stack = _stack(stack)
+    container = agent_container(stack)
+    expected = f"{stack.prometheus_project}/{AGENT_SERVICE}"
+    for agent in agents:
+        host = inventory.hosts[agent.host]
+        docker = _docker_command(host)
+        remote.ssh_command(host, "command -v sha256sum >/dev/null && command -v python3 >/dev/null")
+        documents, config_hash = agent_documents(agent, stack)
+        if (_remote_documents_current(host, documents, stack.remote_dir)
+                and _container_current(host, docker, container, stack.config_hash_label,
+                                       config_hash)):
+            print(f"Prometheus agent on {host.name} is current")
+            continue
+        exists = _owned_container_exists(host, docker, container, expected)
+        if dry_run:
+            print(f"dry-run: would {'replace' if exists else 'create'} {container} "
+                  f"and its files in {stack.remote_dir} on {host.name}")
+            continue
+        if exists:
+            _flush_and_remove_agent(host, docker, stack, remove_volume=False)
+        remote.ssh_command(host, f"install -d -m 755 {shlex.quote(stack.remote_dir + '/targets')}")
+        _upload_documents(host, documents, stack.remote_dir)
+        remote.ssh_command(
+            host,
+            f"{docker} compose --progress quiet --project-name {stack.prometheus_project} "
+            f"-f {shlex.quote(stack.remote_dir + '/docker-compose.yml')} up -d --force-recreate",
+        )
+        if not _container_current(host, docker, container, stack.config_hash_label, config_hash):
+            raise remote.SSHError(f"Prometheus agent failed to start on {host.name}")
+        print(f"started the Prometheus agent on {host.name}")
+
+
+def check_agents_delivering(
+    inventory: remote.Inventory, agents: list[AgentSpec], stack: MonitoringStack | None = None,
+) -> None:
+    """Wait until every agent has delivered recent samples and dropped none meanwhile.
+
+    A dropped sample (failed) is gone for good. Drops while this check waits are an error: a
+    persistent cause, usually a central Prometheus without the remote-write receiver or the
+    out-of-order window, drops every batch. Earlier drops, counted since the agent started, are
+    reported as a warning.
+    """
+    problems = []
+    for agent in agents:
+        host = inventory.hosts[agent.host]
+        before = agent_delivery(host, stack)
+        delivery = _wait_agent_flushed(host, AGENT_DELIVERY_WAIT_SECONDS, stack)
+        if delivery is None:
+            problems.append(f"{host.name}: the Prometheus agent does not answer")
+        elif before is not None and delivery.failed > before.failed:
+            problems.append(f"{host.name}: the Prometheus agent dropped "
+                            f"{delivery.failed - before.failed:.0f} samples; see its log")
+        elif delivery.backlog > AGENT_MAX_BACKLOG_SECONDS:
+            problems.append(f"{host.name}: the Prometheus agent has not delivered for "
+                            f"{delivery.backlog:.0f} s" if delivery.newest_sent else
+                            f"{host.name}: the Prometheus agent has delivered nothing yet")
+        else:
+            print(f"the Prometheus agent on {host.name} delivers "
+                  f"(backlog {delivery.backlog:.1f} s)")
+            if delivery.failed:
+                print(f"warning: the Prometheus agent on {host.name} has dropped "
+                      f"{delivery.failed:.0f} samples since it started; see its log")
+    if problems:
+        raise remote.SSHError("Prometheus agents are not delivering: " + "; ".join(problems))
+
+
+def stop_agents(
+    inventory: remote.Inventory, agents: list[AgentSpec], stack: MonitoringStack | None = None,
+) -> None:
+    """Remove each agent once it has sent its backlog, with its volume and files."""
+    stack = _stack(stack)
+    container = agent_container(stack)
+    expected = f"{stack.prometheus_project}/{AGENT_SERVICE}"
+    for agent in agents:
+        host = inventory.hosts[agent.host]
+        docker = _docker_command(host)
+        if _owned_container_exists(host, docker, container, expected):
+            _flush_and_remove_agent(host, docker, stack, remove_volume=True)
+            print(f"stopped the Prometheus agent on {host.name}")
+        remote.ssh_command(host, f"rm -rf {shlex.quote(stack.remote_dir)}",
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def tunnel_specs_for(
@@ -1273,6 +1682,19 @@ def _check_local_port_free(forward: PrometheusForward) -> None:
                 ) from err
 
 
+def _wait_local_port_free(forward: PrometheusForward, seconds: float) -> None:
+    """_check_local_port_free, retried for up to seconds while the port is still taken."""
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            _check_local_port_free(forward)
+            return
+        except remote.SSHError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.5)
+
+
 def ensure_tunnels(
     specs: list[TunnelSpec], forward: PrometheusForward | None = None, dry_run: bool = False,
     stack: MonitoringStack | None = None,
@@ -1311,13 +1733,16 @@ def ensure_tunnels(
             # Only without our own relays could the port be taken by something else.
             _check_local_port_free(forward)
         print(f"dry-run: would {'replace the relays and ' if manifest is not None else ''}"
-              f"start {len(specs)} Prometheus metric relays ({2 * len(specs)} ssh-control-masters)"
+              f"start {len(specs)} Prometheus metric relays "
+              # A spec without source_alias has only the -R half.
+              f"({sum(2 if spec.source_alias else 1 for spec in specs)} ssh-control-masters)"
               f"{forwarding}")
         return
 
     stop_tunnels(stack)
     if forward is not None:
-        _check_local_port_free(forward)
+        # `ssh -O exit` returns before the old forward's process has released its port.
+        _wait_local_port_free(forward, PORT_RELEASE_WAIT_SECONDS if manifest is not None else 0)
     stack.tunnel_state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     control_masters: list[ControlMaster] = []
     try:
@@ -1476,23 +1901,41 @@ def setup(
             local_jwt = workload.write_private_jwt(obtain_marketplace_jwt(inventory))
             deploy_jwt(inventory, clients, local_jwt, dry_run)
 
+    sources = metric_sources(inventory, clients)
+    agents = agent_specs_for(inventory, sources)
+    # The central Prometheus scrapes what is on its host (and relayed controller sources); the
+    # agents scrape everything else and remote-write it.
+    central = central_sources(inventory, sources)
+
     def prometheus() -> None:
-        targets = target_documents(inventory, clients)
+        targets = target_documents_for(inventory, central)
         if not dry_run:
             write_local_targets(targets)
         ensure_prometheus(inventory, targets, dry_run)
 
+    def tunnels() -> None:
+        forward = prometheus_forward(inventory)
+        ensure_tunnels([*tunnel_specs_for(inventory, central),
+                        *agent_tunnel_specs(inventory, agents, forward.port)], forward, dry_run)
+        if dry_run:
+            if agents:
+                print(f"dry-run: would check that {len(agents)} Prometheus agents deliver")
+            return
+        check_agents_delivering(inventory, agents)
+
     steps = [
-        ("1. binary", binary),
-        ("2. marketplace service", lambda: ensure_marketplace(inventory, dry_run)),
-        ("3. marketplace JWT", marketplace_jwt),
-        ("4. selective qdiscs", lambda: ensure_selective_qdiscs(inventory, tc, dry_run)),
-        ("5. static info Note",
+        ("1. clocks", lambda: remote.check_clocks(
+            [inventory.hosts[name] for name in sorted(inventory.hosts)])),
+        ("2. binary", binary),
+        ("3. marketplace service", lambda: ensure_marketplace(inventory, dry_run)),
+        ("4. marketplace JWT", marketplace_jwt),
+        ("5. selective qdiscs", lambda: ensure_selective_qdiscs(inventory, tc, dry_run)),
+        ("6. static info Note",
          lambda: manual.extend(ensure_marketplace_notes(inventory, dry_run))),
-        ("6. Prometheus", prometheus),
-        ("7. metric relays", lambda: ensure_tunnels(
-            tunnel_specs(inventory, clients), prometheus_forward(inventory), dry_run)),
-        ("8. Grafana", lambda: ensure_grafana(prometheus_forward(inventory), dry_run)),
+        ("7. Prometheus", prometheus),
+        ("8. Prometheus agents", lambda: ensure_agents(inventory, agents, dry_run)),
+        ("9. metric tunnels", tunnels),
+        ("10. Grafana", lambda: ensure_grafana(prometheus_forward(inventory), dry_run)),
     ]
     failures: list[str] = []
     completed = False
@@ -1512,7 +1955,7 @@ def setup(
             local_jwt.unlink(missing_ok=True)
         # A later failure must not hide the steps that files already changed on the hosts need.
         if completed or manual:
-            # 9. Manual steps.
+            # 11. Manual steps.
             print_manual_steps("setup", manual, dry_run)
     if failures:
         print(f"dry-run: setup would fail; {len(failures)} step(s) failed:")
@@ -1538,10 +1981,13 @@ def teardown(
     if inventory is None:
         inventory = remote.load_inventory(config_path, server, clients)
     errors = []
-    # The static info Note that setup advertised is deliberately kept.
+    agents = agent_specs_for(inventory, metric_sources(inventory, clients))
+    # The static info Note that setup advertised is deliberately kept. The agents go before the
+    # tunnels, so that they can still send their backlog to the central Prometheus.
     actions = [
         lambda: stop_marketplace(inventory),
         lambda: remove_selective_qdiscs(inventory, tc),
+        lambda: stop_agents(inventory, agents),
         stop_tunnels,
         lambda: stop_prometheus(inventory.hosts[inventory.prometheus_host]),
     ]

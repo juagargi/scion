@@ -10,6 +10,39 @@ from tools.hummbwtester.scripts import orchestration
 from tools.hummbwtester.scripts import ssh_orchestration as ssh
 
 
+class ClockTest(unittest.TestCase):
+    hosts = [ssh.SSHHost("a", "a-alias", "127.0.0.1:30255", "/var/tmp/humm", None),
+             ssh.SSHHost("b", "b-alias", "127.0.0.1:30255", "/var/tmp/humm", None)]
+
+    def check(self, synchronized, offsets):
+        """Run check_clocks with controller-first NTP states and per-host (offset, uncertainty)."""
+        with mock.patch.object(ssh, "_ntp_synchronized", side_effect=synchronized), \
+             mock.patch.object(ssh, "clock_offset", side_effect=offsets), \
+             mock.patch("builtins.print"):
+            ssh.check_clocks(self.hosts)
+
+    def test_synchronized_clocks_within_tolerance_pass(self):
+        self.check([True, True, True], [(0.01, 0.1), (-0.3, 0.1)])
+
+    def test_offset_beyond_tolerance_and_uncertainty_fails(self):
+        with self.assertRaisesRegex(ssh.SSHError, r"b: clock is \+7.300 s off"):
+            self.check([True, True, True], [(0.0, 0.1), (7.3, 0.1)])
+
+    def test_unsynchronized_host_or_controller_fails(self):
+        with self.assertRaisesRegex(ssh.SSHError, "a: clock is not ntp-synchronized"):
+            self.check([True, False, True], [(0.0, 0.1), (0.0, 0.1)])
+        with self.assertRaisesRegex(ssh.SSHError, "controller's clock is not NTP-synchronized"):
+            self.check([False, True, True], [(0.0, 0.1), (0.0, 0.1)])
+
+    def test_clock_offset_probes_over_one_session(self):
+        # The probe runs locally here: same clock, so the offset is within its uncertainty.
+        with mock.patch.object(ssh, "_ssh_argv",
+                               side_effect=lambda host, command: ["sh", "-c", command]):
+            offset, uncertainty = ssh.clock_offset(self.hosts[0])
+        self.assertLess(abs(offset), uncertainty + 0.01)
+        self.assertLess(uncertainty, 0.5)
+
+
 class InventoryTest(unittest.TestCase):
     def write_json(self, directory, name, value):
         path = Path(directory) / name
@@ -223,6 +256,28 @@ class InventoryTest(unittest.TestCase):
             with self.assertRaisesRegex(orchestration.ConfigError, r"routers\[1\].*as and br"):
                 ssh.load_inventory(path, server, clients)
 
+    def test_router_display_defaults_to_true_and_must_be_boolean(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            routers = config["deployment"]["metrics"]["routers"]
+            routers.append({"host": "b", "address": "127.0.0.1:30442",
+                            "labels": {"as": "71_2_0_152", "br": "br-1"}, "display": False})
+            path = self.write_json(directory, "experiment.json", config)
+            server, clients, _, _ = orchestration.load_config(path)
+            inventory = ssh.load_inventory(path, server, clients)
+            self.assertEqual([router.display for router in inventory.routers], [True, False])
+
+            for display, labels, message in (
+                ("false", {"as": "71_2_0_152", "br": "br-1"}, r"routers\[1\]\.display.*boolean"),
+                (False, {"as": "71_2_0_152", "br": "br-1", "display": "false"},
+                 r"routers\[1\]\.labels must not set display"),
+            ):
+                routers[1].update(display=display, labels=labels)
+                path = self.write_json(directory, "experiment.json", config)
+                with self.subTest(display=display, labels=labels), \
+                        self.assertRaisesRegex(orchestration.ConfigError, message):
+                    ssh.load_inventory(path, server, clients)
+
     def test_ssh_command_quotes_script_for_remote_shell(self):
         host = ssh.SSHHost("a", "sciera-rnp", "127.0.0.1:30255", "/var/tmp/humm", None)
         script = "test -f /etc/hosts && printf '%s' 'quoted value'"
@@ -283,8 +338,11 @@ class InventoryTest(unittest.TestCase):
              mock.patch.object(ssh.time, "sleep", side_effect=sleep), \
              mock.patch.object(ssh, "stop") as stop, \
              mock.patch.object(ssh, "cleanup_host") as cleanup, \
+             mock.patch.object(ssh, "check_clocks") as clocks, \
              mock.patch("builtins.print") as output:
             status = ssh.run_experiment(path, config, inventory)
+        # Every host's clock is checked before anything starts.
+        self.assertEqual([host.name for host in clocks.call_args.args[0]], ["a", "b"])
         self.assertEqual([call.args[0].name for call in strays.call_args_list], ["a", "b"])
         self.assertEqual(stop.call_count, 3)
         self.assertEqual(cleanup.call_count, 2)

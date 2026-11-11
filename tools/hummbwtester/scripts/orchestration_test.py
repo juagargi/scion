@@ -322,6 +322,22 @@ class ConfigTest(unittest.TestCase):
         self.assertIn("MARKETPLACE_PASSWORD", command)
         self.assertNotIn("secret", command)
 
+    def test_marketplace_password_defaults_only_for_the_default_variable(self):
+        default = orchestration.MarketplaceConfig(
+            "alice", orchestration.DEFAULT_PASSWORD_ENV, None, None, "[71-2:0:5c,127.0.0.1]:31888")
+        other = orchestration.MarketplaceConfig(
+            "alice", "MARKETPLACE_PASSWORD", None, None, "[71-2:0:5c,127.0.0.1]:31888")
+        with mock.patch.dict(orchestration.os.environ, {}, clear=True):
+            orchestration.require_marketplace_password(default)
+            self.assertEqual(orchestration.os.environ[orchestration.DEFAULT_PASSWORD_ENV], "1234")
+            with self.assertRaisesRegex(orchestration.ConfigError,
+                                        "MARKETPLACE_PASSWORD is not set"):
+                orchestration.require_marketplace_password(other)
+        with mock.patch.dict(orchestration.os.environ,
+                             {orchestration.DEFAULT_PASSWORD_ENV: "secret"}, clear=True):
+            orchestration.require_marketplace_password(default)
+            self.assertEqual(orchestration.os.environ[orchestration.DEFAULT_PASSWORD_ENV], "secret")
+
     def test_marketplace_username_and_password_env_are_required(self):
         config = self.base_config()
         config["hummingbird"] = {

@@ -1367,12 +1367,27 @@ def marketplace_registration_website() -> str:
     return next(iter(websites))
 
 
-def obtain_marketplace_jwt(marketplace: MarketplaceConfig, url: str) -> str:
-    """Request the configured user's JWT from the web app at url, without exposing its password
-    or token in argv."""
+# The marketplace that the experiments deploy (and the Docker topology's) has the users alice and
+# bob, both with this development-only password. It is the default of DEFAULT_PASSWORD_ENV only.
+DEFAULT_PASSWORD_ENV = "HUMMBWTESTER_MARKETPLACE_PASSWORD"
+DEFAULT_MARKETPLACE_PASSWORD = "1234"
+
+
+def require_marketplace_password(marketplace: MarketplaceConfig) -> None:
+    """Fail unless marketplace.password_env is set; DEFAULT_PASSWORD_ENV defaults to
+    DEFAULT_MARKETPLACE_PASSWORD (set in os.environ, where get_jwt.py reads it)."""
+    if (marketplace.password_env == DEFAULT_PASSWORD_ENV
+            and not os.environ.get(DEFAULT_PASSWORD_ENV)):
+        os.environ[DEFAULT_PASSWORD_ENV] = DEFAULT_MARKETPLACE_PASSWORD
     if not os.environ.get(marketplace.password_env):
         raise ConfigError(
             f"marketplace password environment variable {marketplace.password_env} is not set")
+
+
+def obtain_marketplace_jwt(marketplace: MarketplaceConfig, url: str) -> str:
+    """Request the configured user's JWT from the web app at url, without exposing its password
+    or token in argv."""
+    require_marketplace_password(marketplace)
     command = [sys.executable, str(ROOT / "marketplace" / "tools" / "get_jwt.py"),
                marketplace.username, "--url", url,
                "--password-env", marketplace.password_env]

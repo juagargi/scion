@@ -81,12 +81,19 @@ Each run uses one self-contained JSON file.
   There is no `url` field: where a login URL is needed, it is the `https://host:port` of
   `scion_address`. The Docker runner discovers the reachable registration URL from `gen/`, unless
   `location_override` is `true`.
-- `deployment.metrics` (SSH): `prometheus` is the host that runs Prometheus, `local_port_base` the
-  first controller and Prometheus-host loopback port of the metric relays, `routers` the extra
-  border-router targets, and the optional `local_prometheus_port` (default `8090`, outside the
-  relay ports) the controller port through which the browser and Grafana reach Prometheus. The
+- `deployment.metrics` (SSH): `prometheus` is the host that runs the central Prometheus (every
+  other host with metric sources runs a Prometheus agent), `local_port_base` the first of the
+  reserved loopback ports (each agent's host uses the one of its first source for its remote-write
+  tunnel), `routers` the extra border-router targets, and the optional `local_prometheus_port`
+  (default `8090`, outside the reserved ports) the controller port through which the browser,
+  Grafana, and the agents' tunnels reach Prometheus. The
   dashboard tells routers apart by their `as` and `br` labels, so no two `routers` may share both
   (BR names such as `br-2` repeat across ASes).
+  Each `routers` entry is `host`, `address`, `labels`, and an optional boolean `display` (default
+  `true`). A router with `display: false` is scraped and stored like any other, for later
+  analysis, but the dashboard leaves it out: its series carry the label `display="false"`, and
+  every router query of the dashboard matches `display!="false"`. `labels` cannot set `display`
+  itself.
 
 Linux doubles the requested `SO_SNDBUF` and `SO_RCVBUF` internally. The sample requests a 16 KiB
 send buffer and uses a deliberately larger 256 KiB TBF limit, so socket-memory backpressure should
@@ -329,9 +336,12 @@ Place every endpoint with `node` on a declared host and give it the IA of that h
 declare only the exact egress flows that may be shaped.
 SSH aliases may use `ProxyJump`; the runner uses them unchanged.
 
-Set the password named by `hummingbird.marketplace.password_env` (the marketplace that setup
-deploys has the Docker topology's users `alice` and `bob`, both with password `1234`), build the
-artifacts, set up the persistent SSH resources, and then run the experiment:
+The marketplace password is read from the environment variable named by
+`hummingbird.marketplace.password_env`. The marketplace that setup deploys has the Docker
+topology's users `alice` and `bob`, both with password `1234`, so `HUMMBWTESTER_MARKETPLACE_PASSWORD`
+(the name the sample configurations use) defaults to `1234` when it is unset or empty; any other
+name must be set. Build the artifacts, set up the persistent SSH resources, and then run the
+experiment:
 
 ```bash
 make build-dev
@@ -347,7 +357,7 @@ python3 tools/hummbwtester/experiment.py setup --dry-run --config tools/hummbwte
 
 A dry run performs every check and read of the steps below and prints what a real setup would
 change (`dry-run: would ...`), including the manual steps it would require. It writes nothing on the
-hosts and starts, stops, or restarts no service, container, qdisc, or relay: the qdisc and Note
+hosts and starts, stops, or restarts no service, container, qdisc, or tunnel: the qdisc and Note
 helpers are piped in rather than copied and run read-only (`diagnose`/`status` and `--dry-run`),
 and the local Prometheus targets are not written. It still reads the hosts' topologies and derived
 secret values for the marketplace database, and logs in to the marketplace through the temporary
@@ -365,14 +375,20 @@ It reaches the hosts only through their configured SSH aliases: commands run as
 Every step first compares the current state with the desired one, so repeating setup only changes
 what differs. Setup performs these steps in order:
 
-1. **Binary.** On every host it reports running `hummbwtester` processes, e.g. left over by an
+1. **Clocks.** The Prometheus agents (step 8) stamp every sample with their host's clock, and the
+   dashboards compare counters of different hosts minute by minute. Setup therefore requires
+   `timedatectl` to report `NTPSynchronized=yes` on the controller and on every host, and measures
+   each host's offset to the controller over one SSH session (the probe with the shortest round
+   trip wins). An offset larger than 0.25 s plus half that round trip fails setup. `run` repeats
+   the check before it starts anything.
+2. **Binary.** On every host it reports running `hummbwtester` processes, e.g. left over by an
    interrupted run, and kills them (`SIGTERM`, then `SIGKILL` after 5 s; a dry run only reports
    them). On the server, client, and shaping hosts it then checks for `sha256sum` and `nc`,
    creates `run_dir`, checks that the SCION daemon port is open, and runs the optional
    `readiness_command`. It then copies `bin/hummbwtester` to `<run_dir>/setup/hummbwtester` unless
    the remote SHA-256 already matches. Copies are atomic: `scp` to a `.tmp` file, verify its digest,
    `chmod`, and `mv`.
-2. **Marketplace service.** On `hummingbird.marketplace.host` it checks that `scion_address`
+3. **Marketplace service.** On `hummingbird.marketplace.host` it checks that `scion_address`
    names that host's AS and a port in its `dispatched_ports` range, then installs, each only when
    it differs:
    - `bin/marketplace` (from `make build-dev`) as `/usr/local/bin/hummingbird-marketplace`, with
@@ -397,17 +413,17 @@ what differs. Setup performs these steps in order:
    (`interfaces`) the database was built from in `/var/lib/scion/marketplace/assets.json`; when
    they change, it counts as something replaced. The database is rebuilt only for such a
    (re)start, so earlier purchases are lost then.
-3. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
+4. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
    loopback port to the host and port of `hummingbird.marketplace.scion_address` as seen from
    `hummingbird.marketplace.host`,
    logs in through it with `marketplace/tools/get_jwt.py`, and closes it. The JWT is copied with
    mode `600` to `<run_dir>/setup/marketplace.jwt` on the Hummingbird client hosts, and the
    controller's copy is deleted. The SSH launch shell reads the JWT file only immediately before
    `exec`; it is never placed in command arguments or the configuration.
-4. **Selective qdiscs.** On each shaping host it copies `scripts/selective_qdisc.py` to
+5. **Selective qdiscs.** On each shaping host it copies `scripts/selective_qdisc.py` to
    `<run_dir>/setup/` and runs it with `sudo -n`, unless the recorded state in
    `/run/hummbwtester-qdisc/` and the live root qdisc already match (see below).
-5. **Static info Note.** Clients find the marketplace of a path in the static info Note that every
+6. **Static info Note.** Clients find the marketplace of a path in the static info Note that every
    on-path AS puts into its beacons. When `hummingbird.marketplace.scion_address` is set, setup
    pipes `scripts/static_info_note.py` to `sudo -n python3 -` on the server, client, and
    marketplace hosts. The helper inserts or updates one entry named `hummbwtester` at the front of
@@ -420,29 +436,50 @@ what differs. Setup performs these steps in order:
    marketplace's location; a host whose file changes gets the same control-service restart step.
    The file keeps its owner and mode and is created if missing. Each host's file is `static_info`
    (default `/etc/scion/staticInfoConfig.json`).
-6. **Prometheus.** It writes the file-SD targets to `gen/hummbwtester-prometheus/` locally and, with
-   a Prometheus configuration and a Docker Compose file, to `/tmp/hummbwtester/prometheus/` on
-   `deployment.metrics.prometheus`, where it runs the `hummbwtester-prometheus` container
-   (`prom/prometheus`, as in the Docker mode) with host networking, listening on `127.0.0.1:8090`
-   only, and its data in the `prometheus-data` Docker volume. It first checks that `docker`,
+7. **Prometheus.** It writes the file-SD targets of the sources on the Prometheus host to
+   `gen/hummbwtester-prometheus/` locally and, with a Prometheus configuration and a Docker Compose
+   file, to `/var/tmp/hummbwtester-prometheus/` on `deployment.metrics.prometheus`, where it runs the
+   `hummbwtester-prometheus` container (`prom/prometheus`, as in the Docker mode) with host
+   networking, listening on `127.0.0.1:8090` only, its remote-write receiver on for the agents of
+   step 8, and its data in the `prometheus-data` Docker volume. It first checks that `docker`,
    `docker compose`, and access to the Docker daemon (`docker info`) work for the SSH user. If the
    files or the container's configuration hash differ, setup removes the old container, replaces
    the files, and starts it again; otherwise it leaves both alone.
-7. **Metric relays.** Each client metrics port and each `deployment.metrics.routers` address gets
-   relay port `local_port_base + i`. Prometheus uses host networking, so a source on its own host is
-   scraped directly at its address. Every other source is carried by two ssh-control-masters: one
-   to the source host with `-L 127.0.0.1:<port>:<source address>`, and one to the Prometheus host
-   with `-R 127.0.0.1:<port>:127.0.0.1:<port>`. Prometheus scrapes its own `127.0.0.1:<port>`, and
-   the traffic flows Prometheus host → controller → source host, so the controller must stay
-   connected while metrics are collected. One more ssh-control-master forwards controller port
-   `deployment.metrics.local_prometheus_port` (default `8090`, as in the Docker mode) on
-   `127.0.0.1` and on the Docker bridge gateway to the remote `127.0.0.1:8090`: open
-   `http://127.0.0.1:8090` for the Prometheus UI. Setup checks that this port is free first, so it
-   fails while the Docker mode's Prometheus or another service uses it. The control sockets and a manifest (a hash of
-   the relay list and the forward, and every ssh-control-master) live in
-   `/tmp/hummbwtester/ssh-tunnels/` on the controller. If the hash matches and every
-   ssh-control-master answers `-O check`, they are kept; otherwise all of them are replaced.
-8. **Grafana.** It runs the Docker mode's Grafana on the controller: the `hummbwtester-grafana`
+8. **Prometheus agents.** Every other host with metric sources (client metrics ports,
+   `deployment.metrics.routers` addresses) runs a Prometheus agent, `hummbwtester-prometheus-agent`
+   (`prom/prometheus --agent`), in the same Compose project, with its files in
+   `/var/tmp/hummbwtester-prometheus/` on that host, host networking, listening on `127.0.0.1:8090`, and
+   its write-ahead log in the `agent-data` volume. It scrapes the host's sources every second with
+   the central configuration's jobs and labels, and remote-writes the samples to the central
+   Prometheus. Scraping on the host means a scrape never crosses the network, so it does not fail
+   or arrive late, and every sample carries the time at which it was read. What the agent cannot
+   deliver stays in its write-ahead log until it is sent and accepted, up to 180 days
+   (`--storage.agent.retention.max-time`); the central Prometheus accepts samples that old through
+   `out_of_order_time_window` in `monitoring/prometheus.yml`, and refuses nothing for being late.
+   Docker is used directly or with `sudo -n`, whichever works for the SSH user. An agent is
+   recreated only when its files change, and only after it has sent its backlog (setup waits up to
+   2 minutes): Prometheus remote write never sends what an agent left unsent when it stopped, so a
+   reboot of an agent's host while it cannot deliver loses that backlog. The files of the agents
+   and of the central Prometheus are kept outside `/tmp`, so that they survive a reboot, after
+   which Docker restarts the containers (they keep scraping, and deliver once setup has restored
+   the tunnels). If the files are missing anyway, the container does not start (its bind mounts
+   set `create_host_path: false`, so Docker does not replace them with empty root-owned
+   directories), and the next setup writes them and recreates it.
+9. **Metric tunnels.** Each agent's host gets one ssh-control-master with
+   `-R 127.0.0.1:<write port>:127.0.0.1:<local_prometheus_port>`, the write port being the
+   relay port `local_port_base + i` reserved for the host's first source. Its remote writes thus
+   reach the controller's Prometheus forward and, through it, the central Prometheus. A metric
+   source on the controller itself would still be relayed (`-R` to the Prometheus host). One more
+   ssh-control-master forwards controller port `deployment.metrics.local_prometheus_port`
+   (default `8090`, as in the Docker mode) on `127.0.0.1` and on the Docker bridge gateway to the
+   remote `127.0.0.1:8090`: open `http://127.0.0.1:8090` for the Prometheus UI. Setup checks that
+   this port is free first, so it fails while the Docker mode's Prometheus or another service uses
+   it. The control sockets and a manifest (a hash of the tunnel list and the forward, and every
+   ssh-control-master) live in `/tmp/hummbwtester/ssh-tunnels/` on the controller. If the hash
+   matches and every ssh-control-master answers `-O check`, they are kept; otherwise all of them
+   are replaced. Setup then waits until every agent has delivered recent samples, and fails if
+   the central Prometheus refused any (the agent drops refused samples).
+10. **Grafana.** It runs the Docker mode's Grafana on the controller: the `hummbwtester-grafana`
    service of `monitoring/docker-compose.yml` (project `monitoring`), with the same provisioning,
    dashboards, and `grafana-data` volume, started with `docker compose up -d --no-deps grafana` so
    that the local Prometheus service stays stopped. Its provisioned data source is
@@ -452,7 +489,7 @@ what differs. Setup performs these steps in order:
    recreated, and a container of that name from another project is refused. Setup then waits
    until Grafana (`http://127.0.0.1:${GRAFANA_PORT:-3000}`, `admin`/`admin`) and its data source
    answer.
-9. **Manual steps.** Setup never restarts host services other than the marketplace. It ends by printing the steps that must be
+11. **Manual steps.** Setup never restarts host services other than the marketplace. It ends by printing the steps that must be
    done manually, or that none are required; if it fails after changing a file, it still prints the
    steps that change needs. The control service reads its static info file only at startup, so
    every host whose Note changed gets a step to restart its control service, for example:
@@ -469,14 +506,15 @@ what differs. Setup performs these steps in order:
 An ssh-control-master is a background `ssh -M -S <socket> -f -N` connection that only carries one
 port forward. Its control socket lets setup check (`ssh -S <socket> -O check -- <alias>`) and close
 (`-O exit`) the connection without tracking process IDs. The marketplace forward of step 3 is a
-temporary one whose socket lives in a private temporary directory; the relays of step 7 persist
+temporary one whose socket lives in a private temporary directory; the tunnels of step 9 persist
 until teardown.
 
 ### Running and tearing down
 
 The SSH runner only launches the already-deployed server and clients.
-It fails with an instruction to rerun setup if the deployed binary is missing or differs
-from the local build. Before launching, it reports and kills `hummbwtester` processes still
+It first checks the clocks as setup's step 1 does, and refuses to run if they are not
+synchronized. It fails with an instruction to rerun setup if the deployed binary is missing or
+differs from the local build. Before launching, it reports and kills `hummbwtester` processes still
 running on the server and client hosts, as setup does.
 
 While running, it prints a line when the server or a client exits. It stops when the server
@@ -490,8 +528,11 @@ python3 tools/hummbwtester/experiment.py teardown --config tools/hummbwtester/hu
 ```
 
 Teardown stops `hummingbird-marketplace.service` and waits until neither marketplace API answers,
-removes configured selective qdiscs, closes the ssh-control-masters recorded in the
-manifest (relays and the Prometheus forward; Grafana keeps running, as in the Docker mode), removes the Prometheus container and its files under `/tmp`, and deletes
+removes configured selective qdiscs, removes the Prometheus agents with their volumes and files
+(each only after it has sent its backlog, waiting up to 2 minutes; whatever is still unsent then
+is reported as lost), closes the ssh-control-masters recorded in the manifest (tunnels and the
+Prometheus forward; Grafana keeps running, as in the Docker mode), removes the central Prometheus
+container and its files under `/tmp`, and deletes
 `<run_dir>/setup/` (binary, JWT, and helpers). The marketplace's binary, unit, configuration, and
 database stay, so `ssh -t <alias> sudo systemctl start hummingbird-marketplace.service` restarts it
 with its data. It continues past failures and reports them at the end.
@@ -690,7 +731,10 @@ Every parameter added for reuse defaults to hummbwtester's own behaviour.
   do not replace each other's. `None` (the default) is `HUMMBWTESTER_STACK`, read from the module
   constants at call time. Metric sources are `MetricSource` values: `client_metric_sources`,
   `router_metric_sources`, then `target_documents_for` and `tunnel_specs_for`. A source with
-  `host=None` is on the controller and only gets the `-R` half of a relay.
+  `host=None` is on the controller and only gets the `-R` half of a relay. hummbwtester itself
+  scrapes remote hosts with Prometheus agents (`agent_specs_for`, `ensure_agents`,
+  `agent_tunnel_specs`, `check_agents_delivering`, `stop_agents`); the relay functions stay for
+  tools that still use them.
 - Hosts and commands (`ssh_orchestration`): `SSHHost`, `Inventory`, `ssh_command`, `scp_to`, and
   `preflight(host, required_tools=...)` (the daemon check still runs `nc`).
 
