@@ -90,6 +90,24 @@ class SSHSetupTest(unittest.TestCase):
         self.assertEqual(config["storage"]["tsdb"]["out_of_order_time_window"],
                          ssh_setup.AGENT_RETENTION)
 
+    def test_config_files_survive_a_reboot_and_are_never_created_by_docker(self):
+        # A reboot empties /tmp; Docker then restarts the containers, and with short-syntax
+        # mounts it would create each missing file as an empty root-owned directory.
+        self.assertFalse(ssh_setup.REMOTE_PROMETHEUS_DIR.startswith("/tmp/"))
+        agent = ssh_setup.AgentSpec("source", (), 19090)
+        for compose in (ssh_setup.prometheus_documents({})[0]["docker-compose.yml"],
+                        ssh_setup.agent_documents(agent)[0]["docker-compose.yml"]):
+            service, = ssh_setup.yaml.safe_load(compose)["services"].values()
+            binds = [volume for volume in service["volumes"] if isinstance(volume, dict)]
+            self.assertEqual(sorted(bind["target"] for bind in binds),
+                             ["/etc/prometheus/prometheus.yml", "/etc/prometheus/targets"])
+            for bind in binds:
+                with self.subTest(target=bind["target"]):
+                    self.assertTrue(
+                        bind["source"].startswith(ssh_setup.REMOTE_PROMETHEUS_DIR + "/"))
+                    self.assertEqual((bind["type"], bind["read_only"], bind["bind"]),
+                                     ("bind", True, {"create_host_path": False}))
+
     def test_agent_delivery_is_read_from_its_remote_write_metrics(self):
         metrics = "\n".join([
             "prometheus_remote_storage_highest_timestamp_in_seconds 1000",
@@ -295,7 +313,7 @@ class SSHSetupTest(unittest.TestCase):
         self.assertIn("container_name: other-prometheus", compose)
         self.assertIn("--web.listen-address=127.0.0.1:8091", compose)
         self.assertIn(f'org.other.config-sha256: "{config_hash}"', compose)
-        self.assertIn("/tmp/other/prometheus/targets:/etc/prometheus/targets:ro", compose)
+        self.assertIn("source: /tmp/other/prometheus/targets\n", compose)
         self.assertNotIn("hummbwtester", compose)
 
     def test_monitoring_stack_ownership_check_uses_the_stack_project(self):
@@ -599,10 +617,10 @@ class SSHSetupTest(unittest.TestCase):
                          "would install selective qdisc source-peer on source",
                          "would advertise marketplace",
                          "would create hummbwtester-prometheus and its files in "
-                         "/tmp/hummbwtester/prometheus on monitor",
+                         "/var/tmp/hummbwtester-prometheus on monitor",
                          # The client on source is scraped by an agent there, not relayed.
                          "would create hummbwtester-prometheus-agent and its files in "
-                         "/tmp/hummbwtester/prometheus on source",
+                         "/var/tmp/hummbwtester-prometheus on source",
                          "would start 1 Prometheus metric relays (1 ssh-control-masters) and "
                          "forward controller port 8090 to Prometheus",
                          "would check that 1 Prometheus agents deliver",

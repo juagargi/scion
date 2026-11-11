@@ -336,9 +336,12 @@ Place every endpoint with `node` on a declared host and give it the IA of that h
 declare only the exact egress flows that may be shaped.
 SSH aliases may use `ProxyJump`; the runner uses them unchanged.
 
-Set the password named by `hummingbird.marketplace.password_env` (the marketplace that setup
-deploys has the Docker topology's users `alice` and `bob`, both with password `1234`), build the
-artifacts, set up the persistent SSH resources, and then run the experiment:
+The marketplace password is read from the environment variable named by
+`hummingbird.marketplace.password_env`. The marketplace that setup deploys has the Docker
+topology's users `alice` and `bob`, both with password `1234`, so `HUMMBWTESTER_MARKETPLACE_PASSWORD`
+(the name the sample configurations use) defaults to `1234` when it is unset or empty; any other
+name must be set. Build the artifacts, set up the persistent SSH resources, and then run the
+experiment:
 
 ```bash
 make build-dev
@@ -435,7 +438,7 @@ what differs. Setup performs these steps in order:
    (default `/etc/scion/staticInfoConfig.json`).
 7. **Prometheus.** It writes the file-SD targets of the sources on the Prometheus host to
    `gen/hummbwtester-prometheus/` locally and, with a Prometheus configuration and a Docker Compose
-   file, to `/tmp/hummbwtester/prometheus/` on `deployment.metrics.prometheus`, where it runs the
+   file, to `/var/tmp/hummbwtester-prometheus/` on `deployment.metrics.prometheus`, where it runs the
    `hummbwtester-prometheus` container (`prom/prometheus`, as in the Docker mode) with host
    networking, listening on `127.0.0.1:8090` only, its remote-write receiver on for the agents of
    step 8, and its data in the `prometheus-data` Docker volume. It first checks that `docker`,
@@ -445,7 +448,7 @@ what differs. Setup performs these steps in order:
 8. **Prometheus agents.** Every other host with metric sources (client metrics ports,
    `deployment.metrics.routers` addresses) runs a Prometheus agent, `hummbwtester-prometheus-agent`
    (`prom/prometheus --agent`), in the same Compose project, with its files in
-   `/tmp/hummbwtester/prometheus/` on that host, host networking, listening on `127.0.0.1:8090`, and
+   `/var/tmp/hummbwtester-prometheus/` on that host, host networking, listening on `127.0.0.1:8090`, and
    its write-ahead log in the `agent-data` volume. It scrapes the host's sources every second with
    the central configuration's jobs and labels, and remote-writes the samples to the central
    Prometheus. Scraping on the host means a scrape never crosses the network, so it does not fail
@@ -456,7 +459,12 @@ what differs. Setup performs these steps in order:
    Docker is used directly or with `sudo -n`, whichever works for the SSH user. An agent is
    recreated only when its files change, and only after it has sent its backlog (setup waits up to
    2 minutes): Prometheus remote write never sends what an agent left unsent when it stopped, so a
-   reboot of an agent's host while it cannot deliver loses that backlog.
+   reboot of an agent's host while it cannot deliver loses that backlog. The files of the agents
+   and of the central Prometheus are kept outside `/tmp`, so that they survive a reboot, after
+   which Docker restarts the containers (they keep scraping, and deliver once setup has restored
+   the tunnels). If the files are missing anyway, the container does not start (its bind mounts
+   set `create_host_path: false`, so Docker does not replace them with empty root-owned
+   directories), and the next setup writes them and recreates it.
 9. **Metric tunnels.** Each agent's host gets one ssh-control-master with
    `-R 127.0.0.1:<write port>:127.0.0.1:<local_prometheus_port>`, the write port being the
    relay port `local_port_base + i` reserved for the host's first source. Its remote writes thus

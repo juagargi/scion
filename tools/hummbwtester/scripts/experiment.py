@@ -161,11 +161,6 @@ def teardown_local() -> int:
 
 
 def run_local(plan: ExperimentPlan) -> int:
-    # The generated local marketplace account uses this development-only password.
-    hummingbird_clients = [client for client in plan.config[1] if client.hummingbird]
-    marketplace = hummingbird_clients[0].marketplace if hummingbird_clients else None
-    if marketplace is not None and marketplace.password_env == "HUMMBWTESTER_MARKETPLACE_PASSWORD":
-        os.environ.setdefault("HUMMBWTESTER_MARKETPLACE_PASSWORD", "1234")
     return planner.run_experiment(plan.path, plan.config)
 
 

@@ -37,12 +37,12 @@ setup performs, in this order:
    api_address, so that no path announces the marketplace's location.
    Control services are never restarted; a changed file becomes a manual step.
 7. Prometheus: write the file-SD targets of the sources on the Prometheus host locally and to
-   /tmp/hummbwtester/prometheus/ on that host, and (re)create the hummbwtester-prometheus
+   /var/tmp/hummbwtester-prometheus/ on that host, and (re)create the hummbwtester-prometheus
    container (host networking, listening on 127.0.0.1:8090 only, remote-write receiver on, data
    in the prometheus-data volume) when files or its configuration hash differ.
 8. Prometheus agents: every other host with metric sources (clients, routers) runs a Prometheus
    agent, hummbwtester-prometheus-agent: same compose project, files in
-   /tmp/hummbwtester/prometheus/ there, host networking, listening on 127.0.0.1:8090, WAL in the
+   /var/tmp/hummbwtester-prometheus/ there, host networking, listening on 127.0.0.1:8090, WAL in the
    agent-data volume. It scrapes the host's sources with the central configuration's jobs and
    remote-writes them to the central Prometheus. It keeps what it could not deliver until it is
    sent and accepted (up to AGENT_RETENTION; the central Prometheus accepts samples that old
@@ -137,7 +137,9 @@ STATIC_INFO_HELPER = workload.ROOT / "tools" / "hummbwtester" / "scripts" / "sta
 NOTE_NAME = "hummbwtester"
 NOTE_PROTOCOL = "connectrpc/TLS/QUIC/SCION"
 PROMETHEUS_CONFIG = workload.ROOT / "tools" / "hummbwtester" / "monitoring" / "prometheus.yml"
-REMOTE_PROMETHEUS_DIR = "/tmp/hummbwtester/prometheus"
+# Outside /tmp, which a reboot empties: Docker restarts the containers at boot, and their files
+# must still be there (a missing bind source fails the start, see _config_mounts).
+REMOTE_PROMETHEUS_DIR = "/var/tmp/hummbwtester-prometheus"
 PROMETHEUS_CONTAINER = "hummbwtester-prometheus"
 PROMETHEUS_PROJECT = "hummbwtester-ssh"
 PROMETHEUS_IMAGE = "prom/prometheus:latest"
@@ -338,10 +340,8 @@ def obtain_marketplace_jwt(inventory: remote.Inventory) -> str:
     url = marketplace.url
     assert url is not None  # load_config requires scion_address for SSH deployments.
     host = inventory.hosts[inventory.marketplace_host]
-    if not os.environ.get(marketplace.password_env):
-        # Checked before the tunnel is opened, which would be pointless without a password.
-        raise workload.ConfigError(
-            f"marketplace password environment variable {marketplace.password_env} is not set")
+    # Checked before the tunnel is opened, which would be pointless without a password.
+    workload.require_marketplace_password(marketplace)
     with marketplace_tunnel(host, url) as local_url:
         try:
             return workload.obtain_marketplace_jwt(marketplace, local_url)
@@ -1025,6 +1025,22 @@ def _configuration_hash(documents: dict[str, str]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _config_mounts(stack: MonitoringStack) -> str:
+    """The compose volume entries that mount prometheus.yml and targets/ from stack.remote_dir.
+
+    The long syntax with create_host_path false: with the short one, Docker creates a missing
+    source as an empty root-owned directory (even for prometheus.yml) when it starts the
+    container, for example at boot after the files were lost, and setup can then no longer
+    write them. Without it, the start fails and the next setup rewrites the files.
+    """
+    return "\n".join(f"""      - type: bind
+        source: {stack.remote_dir}/{source}
+        target: /etc/prometheus/{source}
+        read_only: true
+        bind:
+          create_host_path: false""" for source in ("prometheus.yml", "targets"))
+
+
 def _compose_document(config_hash: str, stack: MonitoringStack | None = None) -> str:
     stack = _stack(stack)
     return f"""services:
@@ -1042,8 +1058,7 @@ def _compose_document(config_hash: str, stack: MonitoringStack | None = None) ->
     labels:
       {stack.config_hash_label}: "{config_hash}"
     volumes:
-      - {stack.remote_dir}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - {stack.remote_dir}/targets:/etc/prometheus/targets:ro
+{_config_mounts(stack)}
       - prometheus-data:/prometheus
 
 volumes:
@@ -1310,8 +1325,7 @@ def _agent_compose_document(config_hash: str, stack: MonitoringStack) -> str:
     labels:
       {stack.config_hash_label}: "{config_hash}"
     volumes:
-      - {stack.remote_dir}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - {stack.remote_dir}/targets:/etc/prometheus/targets:ro
+{_config_mounts(stack)}
       - agent-data:/prometheus
 
 volumes:
