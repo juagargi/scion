@@ -39,6 +39,15 @@ FUNCTIONS = [
     (orchestration, "join_host_port", ["host", "port"]),
     (orchestration, "dc_args", ["args"]),
     (orchestration, "run", ["command", "check", "kwargs"]),
+    (orchestration, "check_local_owner", ["container", "project", "service"]),
+    (orchestration, "container_running", ["container"]),
+    (orchestration, "http_answers", ["url"]),
+    (orchestration, "require_container_running", ["container"]),
+    (orchestration, "wait_service", ["container", "url", "seconds", "settle"]),
+    (orchestration, "docker_file_state", ["service", "target", "digest"]),
+    (orchestration, "install_docker_binary", ["service", "local", "target", "dry_run"]),
+    (orchestration.InterruptGuard, "__init__", ["self", "signals"]),
+    (orchestration.InterruptGuard, "interruptible", ["self"]),
     (remote, "load_deployment", ["root", "participants", "relay_ports"]),
     (remote, "load_marketplace", ["root"]),
     (remote, "preflight", ["host", "dry_run", "required_tools"]),
@@ -133,6 +142,13 @@ class ReuseAPITest(unittest.TestCase):
         self.assertIsInstance(remote.SSH_OPTIONS, list)
         self.assertTrue(all(isinstance(option, str) for option in remote.SSH_OPTIONS))
         self.assertEqual(ssh_setup.SCION_CONFIG_DIR, "/etc/scion")
+        self.assertIsInstance(orchestration.MONITORING_WAIT_SECONDS, int)
+        self.assertIsInstance(orchestration.MONITORING_SETTLE_SECONDS, (int, float))
+        # The guard handles both by default, and records later signals in `interrupted`.
+        self.assertEqual(
+            inspect.signature(orchestration.InterruptGuard).parameters["signals"].default,
+            (orchestration.signal.SIGINT, orchestration.signal.SIGTERM))
+        self.assertIs(orchestration.InterruptGuard().interrupted, False)
         # Dashboards (hummbwtester's and other tools') select routers with display!="false".
         self.assertEqual(remote.DISPLAY_LABEL, "display")
 

@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, replace
@@ -38,11 +39,17 @@ COMPOSE = GEN / "scion-dc.yml"
 SCIOND_ADDRESSES = GEN / "sciond_addresses.json"
 CONFIG_DEFAULT = ROOT / "tools" / "hummbwtester" / "hummbwtester.json"
 BIN = ROOT / "bin" / "hummbwtester"
+# Where setup installs BIN in the tester containers.
+TESTER_BINARY = "/share/bin/hummbwtester"
 TC_SCRIPT = ROOT / "tools" / "hummbwtester" / "scripts" / "tc_setup.sh"
 TARGET_DIR = GEN / "hummbwtester-prometheus"
 # The controller's monitoring stack: the Docker-mode Prometheus and the Grafana of both modes.
 MONITORING_COMPOSE = ROOT / "tools" / "hummbwtester" / "monitoring" / "docker-compose.yml"
 MONITORING_PROJECT = "monitoring"
+# How long wait_service waits for a started monitoring container to answer, and how long it then
+# lets the container settle before checking that it still runs.
+MONITORING_WAIT_SECONDS = 30
+MONITORING_SETTLE_SECONDS = 2
 DOCKER_QDISC_STATE = GEN / "hummbwtester-docker-qdiscs.json"
 # Metrics ports are intentionally derived rather than stored in the JSON file.
 METRICS_BASE_PORT = 9090
@@ -967,8 +974,8 @@ def dc_args(*args: str) -> list[str]:
 
 
 class InterruptGuard:
-    """Turns the first SIGINT of an experiment run into a single KeyboardInterrupt, raised only
-    inside interruptible(), so that a runner's cleanup cannot be cut short.
+    """Turns the first SIGINT or SIGTERM of an experiment run into a single KeyboardInterrupt,
+    raised only inside interruptible(), so that a runner's cleanup cannot be cut short.
 
     Use it as::
 
@@ -979,30 +986,35 @@ class InterruptGuard:
             except KeyboardInterrupt:
                 ...
             finally:
-                ...  # stop the testers; a SIGINT here is only recorded
+                ...  # stop the testers; a signal here is only recorded
 
     Python raises KeyboardInterrupt at any bytecode boundary of the main thread, so a cleanup that
     switches SIGINT off as its first step still has a window in which an interrupt aborts it and
     strands the testers: a second Ctrl-C, or one that arrives while the run ends by itself. Ctrl-C
     and `timeout` signal the whole process group, so a single interrupt can also end the
-    run (its child processes exit) before the runner's own KeyboardInterrupt lands. Here the
-    handler is installed before the try and raises only while interruptible() is active; it
+    run (its child processes exit) before the runner's own KeyboardInterrupt lands. SIGTERM (a
+    `kill`, or `timeout` without -s) would otherwise end the runner with no cleanup at all. Here
+    the handler is installed before the try and raises only while interruptible() is active; it
     disarms itself before raising, and interruptible() is left inside the try, so every
-    KeyboardInterrupt it raises reaches the except clause. Later interrupts are only recorded in
-    `interrupted`. The previous handler is restored when the guard exits.
+    KeyboardInterrupt it raises reaches the except clause. Later signals are only recorded in
+    `interrupted`. The previous handlers are restored when the guard exits.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, signals: tuple[int, ...] = (signal.SIGINT, signal.SIGTERM)) -> None:
         self.interrupted = False
+        self._signals = signals
         self._armed = False
-        self._previous: Any = signal.SIG_DFL
+        self._previous: dict[int, Any] = {}
 
     def __enter__(self) -> InterruptGuard:
-        self._previous = signal.signal(signal.SIGINT, self._handle)
+        for signum in self._signals:
+            self._previous[signum] = signal.signal(signum, self._handle)
         return self
 
     def __exit__(self, *_: object) -> None:
-        signal.signal(signal.SIGINT, self._previous)
+        for signum, previous in self._previous.items():
+            signal.signal(signum, previous)
+        self._previous.clear()
 
     def _handle(self, _signum: int, _frame: object) -> None:
         self.interrupted = True
@@ -1012,7 +1024,7 @@ class InterruptGuard:
 
     @contextlib.contextmanager
     def interruptible(self) -> Iterator[None]:
-        """Raise KeyboardInterrupt on the first SIGINT, also on one that arrived before."""
+        """Raise KeyboardInterrupt on the first signal, also on one that arrived before."""
         self._armed = True
         try:
             if self.interrupted:
@@ -1049,6 +1061,121 @@ def local_container_owner(container: str) -> str | None:
         check=False, capture_output=True, text=True,
     )
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+def check_local_owner(container: str, project: str, service: str) -> bool:
+    """Whether the local container exists; raise RuntimeError if it is not project/service.
+
+    Keeps one tool from replacing another tool's monitoring container that has the same name.
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
+    owner = local_container_owner(container)
+    expected = f"{project}/{service}"
+    if owner is not None and owner != expected:
+        raise RuntimeError(f"{container} exists but belongs to {owner}, not {expected}")
+    return owner is not None
+
+
+def container_running(container: str) -> bool:
+    """Whether the local container exists and runs.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
+    result = subprocess.run(["docker", "inspect", "--format", "{{.State.Running}}", container],
+                            check=False, capture_output=True, text=True)
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def http_answers(url: str) -> bool:
+    """Whether url answers with a success status; an error status means not (yet) healthy.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
+    try:
+        urllib.request.urlopen(url, timeout=3)
+    except urllib.error.HTTPError:
+        return False
+    except (urllib.error.URLError, OSError):
+        return False
+    return True
+
+
+def require_container_running(container: str) -> None:
+    """Raise RuntimeError, with the container's last log lines, unless it runs.
+
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
+    if container_running(container):
+        return
+    logs = subprocess.run(["docker", "logs", "--tail", "5", container], check=False,
+                          capture_output=True, text=True)
+    raise RuntimeError(
+        f"{container} is not running; last log lines:\n{logs.stdout}{logs.stderr}".rstrip(),
+    )
+
+
+def wait_service(
+    container: str, url: str, seconds: int = MONITORING_WAIT_SECONDS,
+    settle: float = MONITORING_SETTLE_SECONDS,
+) -> None:
+    """Wait until the local container runs and answers at url; raise RuntimeError otherwise.
+
+    The container must keep running: another process holding the port would answer too, while
+    the container itself has already exited (for example on a bind failure). Such a failure comes
+    right after the start, so the container is checked again once the url answered and the
+    startup settled for `settle` seconds.
+    Part of the reuse API (README.md, "Reuse from other tools").
+    """
+    for _ in range(seconds):
+        require_container_running(container)
+        if http_answers(url):
+            time.sleep(settle)
+            require_container_running(container)
+            return
+        time.sleep(1)
+    raise RuntimeError(f"{container} does not answer at {url} after {seconds}s")
+
+
+def docker_file_state(service: str, target: str, digest: str) -> str:
+    """Compare target in the container of a Compose service with a SHA-256 digest.
+
+    Returns "current", "differs", "missing", or "unreadable" (for example, the container does
+    not run). Only reads. Part of the reuse API (README.md, "Reuse from other tools").
+    """
+    # No shell: sha256sum's own error tells a missing file apart from an unreachable container.
+    current = run(dc_args("exec", "-T", service, "sha256sum", target),
+                  cwd=ROOT, check=False, capture_output=True)
+    if current.returncode == 0:
+        return "current" if current.stdout.split()[:1] == [digest] else "differs"
+    if "No such file or directory" in current.stderr:
+        return "missing"
+    return "unreadable"
+
+
+def install_docker_binary(
+    service: str, local: Path, target: str, dry_run: bool = False,
+) -> bool:
+    """Copy the executable local to target in the container of a Compose service, unless it
+    already has the same SHA-256 digest; return whether it was (or, in a dry run, would be)
+    replaced.
+
+    The copy goes to target.new first and is then renamed over target, so a process still
+    running the old binary keeps its file and none ever starts a partial one. Raises
+    subprocess.CalledProcessError if the container cannot be written or the result is not
+    executable. Part of the reuse API (README.md, "Reuse from other tools").
+    """
+    with Path(local).open("rb") as binary:
+        digest = hashlib.file_digest(binary, "sha256").hexdigest()
+    if docker_file_state(service, target, digest) == "current":
+        return False
+    if dry_run:
+        return True
+    staged = f"{target}.new"
+    run(dc_args("cp", str(local), f"{service}:{staged}"), cwd=ROOT)
+    run(dc_args("exec", "-T", service, "chmod", "755", staged), cwd=ROOT)
+    run(dc_args("exec", "-T", service, "mv", "-f", staged, target), cwd=ROOT)
+    run(dc_args("exec", "-T", service, "test", "-x", target), cwd=ROOT)
+    return True
 
 
 def require_built_binary() -> None:
@@ -1145,16 +1272,11 @@ def setup(
     ensure_docker_qdiscs(compose, tc, peers)
     for client in clients:
         print(f"client_id={client.client_id} metrics_port={client.metrics_port}")
-    with BIN.open("rb") as binary:
-        digest = hashlib.file_digest(binary, "sha256").hexdigest()
     services = {tester_service(server.isd_as),
                 *(tester_service(c.endpoint.isd_as) for c in clients)}
     for service in sorted(services):
-        current = run(dc_args("exec", "-T", service, "sha256sum", "/share/bin/hummbwtester"),
-                      cwd=ROOT, check=False, capture_output=True)
-        if current.returncode or not current.stdout.split() or current.stdout.split()[0] != digest:
-            run(dc_args("cp", str(BIN), f"{service}:/share/bin/hummbwtester"), cwd=ROOT)
-        run(dc_args("exec", "-T", service, "test", "-x", "/share/bin/hummbwtester"), cwd=ROOT)
+        install_docker_binary(service, BIN, TESTER_BINARY)
+        run(dc_args("exec", "-T", service, "test", "-x", TESTER_BINARY), cwd=ROOT)
     write_targets(compose, clients)
     return 0
 
@@ -1296,18 +1418,15 @@ def describe_setup(
 
     with BIN.open("rb") as binary:
         digest = hashlib.file_digest(binary, "sha256").hexdigest()
-    target = "/share/bin/hummbwtester"
+    target = TESTER_BINARY
     for service in sorted({tester_service(server.isd_as),
                            *(tester_service(c.endpoint.isd_as) for c in clients)}):
-        # The tester image has no shell; sha256sum's own error tells a missing binary apart
-        # from a container that cannot be reached.
-        current = run(dc_args("exec", "-T", service, "sha256sum", target),
-                      cwd=ROOT, check=False, capture_output=True)
-        if current.returncode == 0 and current.stdout.split()[:1] == [digest]:
+        state = docker_file_state(service, target, digest)
+        if state == "current":
             steps.append(f"keep {target} in {service}: it matches bin/hummbwtester")
-        elif current.returncode == 0:
+        elif state == "differs":
             steps.append(f"would copy bin/hummbwtester to {target} in {service}: it differs")
-        elif "No such file or directory" in current.stderr:
+        elif state == "missing":
             steps.append(f"would copy bin/hummbwtester to {target} in {service}: it is missing")
         else:
             steps.append(f"would copy bin/hummbwtester to {target} in {service} unless it "
@@ -1327,7 +1446,7 @@ def verify_binaries(server: Endpoint, clients: list[Client]) -> None:
     services = {tester_service(server.isd_as)}
     services.update(tester_service(client.endpoint.isd_as) for client in clients)
     for service in sorted(services):
-        run(dc_args("exec", "-T", service, "test", "-x", "/share/bin/hummbwtester"), cwd=ROOT)
+        run(dc_args("exec", "-T", service, "test", "-x", TESTER_BINARY), cwd=ROOT)
 
 
 def launch(
@@ -1362,14 +1481,14 @@ def stop_remote(service: str, pidfile: str) -> None:
 def server_args(server: Endpoint, sciond: str) -> list[str]:
     """Build the hummbwtester command-line arguments for the configured server."""
     return [
-        "/share/bin/hummbwtester", "-mode", "server", "-local", server.local(),
+        TESTER_BINARY, "-mode", "server", "-local", server.local(),
         "-sciond", sciond, "-receive-buffer-size", str(server.receive_buffer_size),
     ]
 
 
 def client_args(client: Client, server: Endpoint, sciond: str) -> list[str]:
     """Build the hummbwtester command-line arguments for one configured client."""
-    args = ["/share/bin/hummbwtester", "-mode", "client", "-local", client.endpoint.local(),
+    args = [TESTER_BINARY, "-mode", "client", "-local", client.endpoint.local(),
             "-remote", server.local(), "-sciond", sciond,
             "-bandwidth", client.bandwidth, "-maxburst", client.maxburst,
             "-duration", client.duration,

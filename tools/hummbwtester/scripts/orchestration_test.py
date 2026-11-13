@@ -279,24 +279,121 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "merge SSH inventory"):
             load_config(self.write_config(config))
 
-    def guarded_run(self, before=0, during=0, cleanup=0):
-        """Send SIGINTs to this process before, during, and after an interruptible run; return
+    def test_wait_service_fails_when_container_exited_even_if_port_answers(self):
+        logs = mock.Mock(stdout="bind: address already in use", stderr="")
+        with mock.patch.object(orchestration, "container_running", return_value=False), \
+             mock.patch.object(orchestration, "http_answers", return_value=True), \
+             mock.patch.object(orchestration.subprocess, "run", return_value=logs):
+            with self.assertRaisesRegex(RuntimeError, "(?s)not running.*address already in use"):
+                orchestration.wait_service("hummbwtester-prometheus", "http://x/-/ready")
+
+    def test_wait_service_returns_when_running_and_answering(self):
+        with mock.patch.object(orchestration, "container_running", return_value=True), \
+             mock.patch.object(orchestration, "http_answers", return_value=True), \
+             mock.patch.object(orchestration.time, "sleep"):
+            orchestration.wait_service("hummbwtester-grafana", "http://x/api/health")
+
+    def test_wait_service_fails_when_container_exits_right_after_the_port_answered(self):
+        # The port is held by another process, which answers at once; the container fails to bind
+        # it and exits only a moment after it was seen running.
+        logs = mock.Mock(stdout="bind: address already in use", stderr="")
+        with mock.patch.object(orchestration, "container_running", side_effect=[True, False]), \
+             mock.patch.object(orchestration, "http_answers", return_value=True), \
+             mock.patch.object(orchestration.time, "sleep") as sleep, \
+             mock.patch.object(orchestration.subprocess, "run", return_value=logs):
+            with self.assertRaisesRegex(RuntimeError, "(?s)not running.*address already in use"):
+                orchestration.wait_service("hummbwtester-prometheus", "http://x/-/ready",
+                                           settle=0.5)
+        sleep.assert_called_once_with(0.5)
+
+    def test_wait_service_times_out_when_running_but_silent(self):
+        with mock.patch.object(orchestration, "container_running", return_value=True), \
+             mock.patch.object(orchestration, "http_answers", return_value=False), \
+             mock.patch.object(orchestration.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "does not answer"):
+                orchestration.wait_service("hummbwtester-grafana", "http://x/api/health", 2)
+
+    def test_check_local_owner_refuses_another_projects_container(self):
+        with mock.patch.object(orchestration, "local_container_owner",
+                               return_value="other/prometheus"):
+            with self.assertRaisesRegex(RuntimeError, "belongs to other/prometheus"):
+                orchestration.check_local_owner("wgexp-prometheus", "wgexp", "prometheus")
+        with mock.patch.object(orchestration, "local_container_owner",
+                               return_value="wgexp/prometheus"):
+            self.assertTrue(
+                orchestration.check_local_owner("wgexp-prometheus", "wgexp", "prometheus"))
+        with mock.patch.object(orchestration, "local_container_owner", return_value=None):
+            self.assertFalse(
+                orchestration.check_local_owner("wgexp-prometheus", "wgexp", "prometheus"))
+
+    def docker_binary(self, sha256sum, dry_run=False):
+        """Run install_docker_binary against a container whose sha256sum answers as given;
+        return whether it replaced the binary and the commands it ran."""
+        with tempfile.TemporaryDirectory() as directory:
+            local = Path(directory) / "tool"
+            local.write_bytes(b"binary")
+            digest = "ab51f1b6d3ce5ef2a1a7d8c2a6e8c3a2b2f8fa8b5c0dc3e0b2b8a3f4b9c4f1e3"
+            with mock.patch.object(orchestration.hashlib, "file_digest",
+                                   return_value=mock.Mock(hexdigest=lambda: digest)), \
+                 mock.patch.object(orchestration, "run",
+                                   side_effect=[sha256sum(digest)] + [mock.Mock()] * 4) as run:
+                replaced = orchestration.install_docker_binary(
+                    "tester_1-ff00_0_111", local, "/share/bin/tool", dry_run)
+        return replaced, [call.args[0] for call in run.call_args_list]
+
+    def test_install_docker_binary_keeps_a_current_binary(self):
+        replaced, commands = self.docker_binary(
+            lambda digest: mock.Mock(returncode=0, stdout=f"{digest}  /share/bin/tool\n"))
+        self.assertFalse(replaced)
+        self.assertEqual(len(commands), 1)
+
+    def test_install_docker_binary_renames_a_staged_copy_over_the_target(self):
+        replaced, commands = self.docker_binary(
+            lambda _: mock.Mock(returncode=1, stdout="", stderr="No such file or directory"))
+        self.assertTrue(replaced)
+        self.assertEqual([command[4:] for command in commands[1:]], [
+            ["cp", commands[1][5], "tester_1-ff00_0_111:/share/bin/tool.new"],
+            ["exec", "-T", "tester_1-ff00_0_111", "chmod", "755", "/share/bin/tool.new"],
+            ["exec", "-T", "tester_1-ff00_0_111", "mv", "-f", "/share/bin/tool.new",
+             "/share/bin/tool"],
+            ["exec", "-T", "tester_1-ff00_0_111", "test", "-x", "/share/bin/tool"],
+        ])
+
+    def test_install_docker_binary_dry_run_only_reads(self):
+        replaced, commands = self.docker_binary(
+            lambda _: mock.Mock(returncode=0, stdout="0000  /share/bin/tool\n"), dry_run=True)
+        self.assertTrue(replaced)
+        self.assertEqual(len(commands), 1)
+
+    def test_docker_file_state_tells_missing_from_unreadable(self):
+        for result, state in (
+            (mock.Mock(returncode=0, stdout="d  /t\n"), "current"),
+            (mock.Mock(returncode=0, stdout="x  /t\n"), "differs"),
+            (mock.Mock(returncode=1, stderr="sha256sum: /t: No such file or directory"),
+             "missing"),
+            (mock.Mock(returncode=1, stderr="service is not running"), "unreadable"),
+        ):
+            with mock.patch.object(orchestration, "run", return_value=result):
+                self.assertEqual(orchestration.docker_file_state("s", "/t", "d"), state)
+
+    def guarded_run(self, before=0, during=0, cleanup=0, signum=signal.SIGINT):
+        """Send signals to this process before, during, and after an interruptible run; return
         whether the run was interrupted, whether its cleanup completed, and the guard."""
         interrupted = cleaned = False
         with orchestration.InterruptGuard() as guard:
             for _ in range(before):
-                os.kill(os.getpid(), signal.SIGINT)
+                os.kill(os.getpid(), signum)
             try:
                 with guard.interruptible():
                     for _ in range(during):
-                        os.kill(os.getpid(), signal.SIGINT)
+                        os.kill(os.getpid(), signum)
                     for _ in range(1000):
                         pass  # Bytecode boundaries at which a pending handler runs.
             except KeyboardInterrupt:
                 interrupted = True
             finally:
                 for _ in range(cleanup):
-                    os.kill(os.getpid(), signal.SIGINT)
+                    os.kill(os.getpid(), signum)
                 for _ in range(1000):
                     pass
                 cleaned = True
@@ -315,10 +412,15 @@ class ConfigTest(unittest.TestCase):
     def test_interrupt_guard_raises_for_an_interrupt_before_the_run(self):
         self.assertEqual(self.guarded_run(before=1)[:2], (True, True))
 
-    def test_interrupt_guard_restores_the_previous_handler(self):
-        previous = signal.getsignal(signal.SIGINT)
+    def test_interrupt_guard_handles_sigterm_like_sigint(self):
+        self.assertEqual(self.guarded_run(during=2, cleanup=2, signum=signal.SIGTERM)[:2],
+                         (True, True))
+
+    def test_interrupt_guard_restores_the_previous_handlers(self):
+        previous = {signum: signal.getsignal(signum)
+                    for signum in (signal.SIGINT, signal.SIGTERM)}
         self.assertEqual(self.guarded_run()[:2], (False, True))
-        self.assertIs(signal.getsignal(signal.SIGINT), previous)
+        self.assertEqual({signum: signal.getsignal(signum) for signum in previous}, previous)
 
     def test_rejects_marketplace_configuration_in_keys_mode(self):
         config = self.base_config()
