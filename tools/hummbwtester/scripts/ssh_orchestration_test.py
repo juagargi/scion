@@ -1,6 +1,8 @@
 import json
+import os
 from pathlib import Path
 import shlex
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -321,9 +323,9 @@ class InventoryTest(unittest.TestCase):
         "experiment stopped",
     ]
 
-    def run_with(self, processes, sleep):
+    def run_with(self, processes, sleep, on_stop=None):
         """Run the experiment with the given server and client processes; return the status and
-        the printed messages."""
+        the printed messages. on_stop runs whenever the cleanup stops a tester."""
         with tempfile.TemporaryDirectory() as directory:
             path = self.write_json(directory, "experiment.json", self.workload())
             config = orchestration.load_config(path)
@@ -336,7 +338,7 @@ class InventoryTest(unittest.TestCase):
              mock.patch.object(ssh, "stop_stray_testers") as strays, \
              mock.patch.object(ssh, "launch", side_effect=processes), \
              mock.patch.object(ssh.time, "sleep", side_effect=sleep), \
-             mock.patch.object(ssh, "stop") as stop, \
+             mock.patch.object(ssh, "stop", side_effect=on_stop) as stop, \
              mock.patch.object(ssh, "cleanup_host") as cleanup, \
              mock.patch.object(ssh, "check_clocks") as clocks, \
              mock.patch("builtins.print") as output:
@@ -371,6 +373,28 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(status, 130)
         self.assertEqual(messages, ["interrupted, stopping the experiment",
                                     *self.CLEANUP_MESSAGES])
+
+    def test_interrupts_never_cut_short_the_cleanup(self):
+        def interrupt(*_):
+            os.kill(os.getpid(), signal.SIGINT)
+
+        def sleep(_):
+            sleeps.append(None)
+            if len(sleeps) > 1:  # Not during the server's head start: all testers run.
+                interrupt()
+
+        # A Ctrl-C while the testers run, and more while each of them is stopped.
+        sleeps = []
+        processes, _ = self.processes(None, None, None)
+        status, messages = self.run_with(processes, sleep, on_stop=interrupt)
+        self.assertEqual(status, 130)
+        self.assertEqual(messages, ["interrupted, stopping the experiment",
+                                    *self.CLEANUP_MESSAGES])
+        # A Ctrl-C that also ended the clients lands only once the cleanup has begun.
+        processes, sleep = self.processes(None, (0, 1), (0, 1))
+        status, messages = self.run_with(processes, sleep, on_stop=interrupt)
+        self.assertEqual(status, 0)
+        self.assertEqual(messages[-len(self.CLEANUP_MESSAGES):], self.CLEANUP_MESSAGES)
 
     def test_run_reports_each_client_exit_and_stops_the_server(self):
         # The server never exits by itself; hummingbird-1 fails before best-effort-1 finishes.

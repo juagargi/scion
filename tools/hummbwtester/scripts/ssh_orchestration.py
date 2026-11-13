@@ -14,7 +14,6 @@ from pathlib import Path
 import re
 import select
 import shlex
-import signal
 import subprocess
 import time
 import uuid
@@ -627,42 +626,43 @@ def run_experiment(
     used_hosts = {inventory.server_host, *inventory.client_hosts.values()}
     digest = sha256(BIN)
     processes: list[tuple[SSHHost, str, subprocess.Popen[str]]] = []
-    try:
-        jwt_hosts = hummingbird_hosts(inventory, clients)
-        for name in sorted(used_hosts):
-            host = inventory.hosts[name]
-            preflight(host)
-            stop_stray_testers(host)
-            verify_setup(host, digest, name in jwt_hosts)
-            ssh_command(host, f"install -d -m 700 {shlex.quote(remote_dir(host, run_id))}")
-        server_host = inventory.hosts[inventory.server_host]
-        processes.append((server_host, "server", launch(
-            server_host, run_id, "server", workload.server_args(server, server_host.sciond),
-            log_path("server"))))
-        time.sleep(2)
-        for client in clients:
-            host = inventory.hosts[inventory.client_hosts[client.client_id]]
-            jwt_file = jwt_path(host) if client.hummingbird else None
-            processes.append((host, client.client_id, launch(
-                host, run_id, client.client_id, workload.client_args(client, server, host.sciond),
-                log_path(client.client_id), jwt_file)))
-        exited: set[str] = set()
-        while any(process.poll() is None for _, _, process in processes[1:]):
-            report_exits(processes, exited)
-            if processes[0][2].poll() is not None:
-                print("the server stopped, stopping the experiment", flush=True)
-                return 1
-            time.sleep(0.25)
-        report_exits(processes, exited)
-        print("all clients exited, stopping the experiment", flush=True)
-        # The server runs until it is signalled; the cleanup below stops it.
-        return 1 if any(process.wait() != 0 for _, _, process in processes[1:]) else 0
-    except KeyboardInterrupt:
-        print("interrupted, stopping the experiment", flush=True)
-        return 130
-    finally:
-        previous_sigint = workload.ignore_sigint_during_cleanup()
+    with workload.InterruptGuard() as guard:
         try:
+            with guard.interruptible():
+                jwt_hosts = hummingbird_hosts(inventory, clients)
+                for name in sorted(used_hosts):
+                    host = inventory.hosts[name]
+                    preflight(host)
+                    stop_stray_testers(host)
+                    verify_setup(host, digest, name in jwt_hosts)
+                    ssh_command(host, f"install -d -m 700 {shlex.quote(remote_dir(host, run_id))}")
+                server_host = inventory.hosts[inventory.server_host]
+                processes.append((server_host, "server", launch(
+                    server_host, run_id, "server", workload.server_args(server, server_host.sciond),
+                    log_path("server"))))
+                time.sleep(2)
+                for client in clients:
+                    host = inventory.hosts[inventory.client_hosts[client.client_id]]
+                    jwt_file = jwt_path(host) if client.hummingbird else None
+                    processes.append((host, client.client_id, launch(
+                        host, run_id, client.client_id,
+                        workload.client_args(client, server, host.sciond),
+                        log_path(client.client_id), jwt_file)))
+                exited: set[str] = set()
+                while any(process.poll() is None for _, _, process in processes[1:]):
+                    report_exits(processes, exited)
+                    if processes[0][2].poll() is not None:
+                        print("the server stopped, stopping the experiment", flush=True)
+                        return 1
+                    time.sleep(0.25)
+                report_exits(processes, exited)
+                print("all clients exited, stopping the experiment", flush=True)
+                # The server runs until it is signalled; the cleanup below stops it.
+                return 1 if any(process.wait() != 0 for _, _, process in processes[1:]) else 0
+        except KeyboardInterrupt:
+            print("interrupted, stopping the experiment", flush=True)
+            return 130
+        finally:
             # Always signal the remote tester: an interrupted local ssh client leaves it running.
             for host, name, process in processes:
                 print(f"stopping {name} on {host.name}", flush=True)
@@ -682,5 +682,3 @@ def run_experiment(
                 print(f"removing run directory on {name}", flush=True)
                 cleanup_host(inventory.hosts[name], run_id)
             print("experiment stopped", flush=True)
-        finally:
-            signal.signal(signal.SIGINT, previous_sigint)

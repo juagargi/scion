@@ -409,10 +409,12 @@ what differs. Setup performs these steps in order:
    every interface pair (or only for pairs of `hummingbird.marketplace.interfaces`), and
    redemption delegations. Each delegation holds the AS's Hummingbird
    secret value, which is derived on its host from `/etc/scion/keys/master0.key` with `sudo`;
-   the master key itself never leaves the host. Setup records the asset settings
-   (`interfaces`) the database was built from in `/var/lib/scion/marketplace/assets.json`; when
-   they change, it counts as something replaced. The database is rebuilt only for such a
-   (re)start, so earlier purchases are lost then.
+   the master key itself never leaves the host. Users start with 10^12 credits (prices are
+   credits per kbps per second). Setup records the settings the database was built from
+   (`interfaces` and `initial_user_balance`, the starting balance, not what users have left) in
+   `/var/lib/scion/marketplace/assets.json`; when they change, it counts as something replaced.
+   The database is rebuilt only for such a (re)start, so earlier balances, purchases, and
+   reservations are lost then. Spending credits does not trigger a rebuild.
 4. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
    loopback port to the host and port of `hummingbird.marketplace.scion_address` as seen from
    `hummingbird.marketplace.host`,
@@ -518,8 +520,9 @@ differs from the local build. Before launching, it reports and kills `hummbwtest
 running on the server and client hosts, as setup does.
 
 While running, it prints a line when the server or a client exits. It stops when the server
-exits, when all clients have exited, or on Ctrl-C, and then stops the remote processes and
-deletes their run directory, printing each step.
+exits, when all clients have exited, or on Ctrl-C or `SIGTERM`, and then stops the remote
+processes and deletes their run directory, printing each step. Further interrupts are ignored
+until that cleanup is done, so it always completes. The Docker runner behaves the same way.
 
 When finished, remove the persistent setup with:
 
@@ -722,6 +725,20 @@ hummbwtester's own behavior.
   `monitoring_compose` (`compose`/`project` select another stack), and the helpers `run`,
   `dc_args`, `tester_service`, `join_host_port`, `local_container_owner`; the constants `ROOT`,
   `GEN` and `COMPOSE` (`GEN / "scion-dc.yml"`).
+- Docker binaries (`orchestration`): `docker_file_state(service, target, digest)` (`current`,
+  `differs`, `missing` or `unreadable`, only reading) and `install_docker_binary(service, local,
+  target, dry_run)`, which copies only a differing binary, to `target.new` first and then renames
+  it over `target`.
+- Local monitoring containers (`orchestration`): `check_local_owner(container, project, service)`
+  (refuses a container of another Compose project), `container_running`, `http_answers` (a
+  success status only), `require_container_running` (raises with the last log lines) and
+  `wait_service(container, url, seconds, settle)`, which also fails when the container exits
+  right after the url answered; the constants `MONITORING_WAIT_SECONDS` and
+  `MONITORING_SETTLE_SECONDS` are its defaults. They raise `RuntimeError`.
+- Interrupts (`orchestration.InterruptGuard`): a runner's cleanup cannot be cut short by SIGINT or
+  SIGTERM (`signals=`). Install the guard before the `try` and run the interruptible part in
+  `guard.interruptible()` inside it: the first signal raises one `KeyboardInterrupt` there, and
+  later ones, also during cleanup, are only recorded in `guard.interrupted`.
 - Marketplace JWT in Docker (`orchestration`): `MarketplaceConfig` (with the property `url`),
   `marketplace_registration_website`, `obtain_marketplace_jwt(marketplace, url)`,
   `write_private_jwt`, `install_docker_jwt` and `remove_docker_jwt`.

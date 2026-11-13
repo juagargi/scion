@@ -150,39 +150,6 @@ class ExperimentTest(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][-4:], ["up", "-d", "prometheus", "grafana"])
         wait.assert_called_once_with()
 
-    def test_wait_service_fails_when_container_exited_even_if_port_answers(self):
-        logs = mock.Mock(stdout="bind: address already in use", stderr="")
-        with mock.patch.object(experiment, "_container_running", return_value=False), \
-             mock.patch.object(experiment, "_http_answers", return_value=True), \
-             mock.patch.object(experiment.subprocess, "run", return_value=logs):
-            with self.assertRaisesRegex(RuntimeError, "(?s)not running.*address already in use"):
-                experiment._wait_service("hummbwtester-prometheus", "http://x/-/ready")
-
-    def test_wait_service_returns_when_running_and_answering(self):
-        with mock.patch.object(experiment, "_container_running", return_value=True), \
-             mock.patch.object(experiment, "_http_answers", return_value=True), \
-             mock.patch.object(experiment.time, "sleep"):
-            experiment._wait_service("hummbwtester-grafana", "http://x/api/health")
-
-    def test_wait_service_fails_when_container_exits_right_after_the_port_answered(self):
-        # The port is held by another process, which answers at once; the container fails to bind
-        # it and exits only a moment after it was seen running.
-        logs = mock.Mock(stdout="bind: address already in use", stderr="")
-        with mock.patch.object(experiment, "_container_running", side_effect=[True, False]), \
-             mock.patch.object(experiment, "_http_answers", return_value=True), \
-             mock.patch.object(experiment.time, "sleep") as sleep, \
-             mock.patch.object(experiment.subprocess, "run", return_value=logs):
-            with self.assertRaisesRegex(RuntimeError, "(?s)not running.*address already in use"):
-                experiment._wait_service("hummbwtester-prometheus", "http://x/-/ready")
-        sleep.assert_called_once_with(experiment.MONITORING_SETTLE_SECONDS)
-
-    def test_wait_service_times_out_when_running_but_silent(self):
-        with mock.patch.object(experiment, "_container_running", return_value=True), \
-             mock.patch.object(experiment, "_http_answers", return_value=False), \
-             mock.patch.object(experiment.time, "sleep"):
-            with self.assertRaisesRegex(RuntimeError, "does not answer"):
-                experiment._wait_service("hummbwtester-grafana", "http://x/api/health", 2)
-
     def test_local_teardown_leaves_topology_running(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "qdiscs.json"

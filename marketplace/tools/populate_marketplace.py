@@ -22,7 +22,7 @@ Example JSON file:
     "accounts": [
         {
             "user": "Alice",
-            "balance": 1000000000
+            "balance": 1000000000000
         },
         {
             "user": "Alice",
