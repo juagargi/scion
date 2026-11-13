@@ -409,10 +409,12 @@ what differs. Setup performs these steps in order:
    every interface pair (or only for pairs of `hummingbird.marketplace.interfaces`), and
    redemption delegations. Each delegation holds the AS's Hummingbird
    secret value, which is derived on its host from `/etc/scion/keys/master0.key` with `sudo`;
-   the master key itself never leaves the host. Setup records the asset settings
-   (`interfaces`) the database was built from in `/var/lib/scion/marketplace/assets.json`; when
-   they change, it counts as something replaced. The database is rebuilt only for such a
-   (re)start, so earlier purchases are lost then.
+   the master key itself never leaves the host. Users start with 10^12 credits (prices are
+   credits per kbps per second). Setup records the settings the database was built from
+   (`interfaces` and `initial_user_balance`, the starting balance, not what users have left) in
+   `/var/lib/scion/marketplace/assets.json`; when they change, it counts as something replaced.
+   The database is rebuilt only for such a (re)start, so earlier balances, purchases, and
+   reservations are lost then. Spending credits does not trigger a rebuild.
 4. **Marketplace JWT.** It starts a temporary ssh-control-master that forwards a free controller
    loopback port to the host and port of `hummingbird.marketplace.scion_address` as seen from
    `hummingbird.marketplace.host`,

@@ -320,7 +320,10 @@ def supervisordProgram(config_path: str):
 
 DEFAULT_PASSWORD = "1234"
 DEFAULT_USERS = ["alice", "bob"]
-DEFAULT_USER_BALANCE = 10**9
+# Asset prices are in credits per kbps per second, so a client reserving a few Mbps continuously
+# spends tens of millions of credits per hour (about 47.6 M for the SCIERA wgexp client: 5 Mbps
+# forward and 1 Mbps reverse over two ASes). This balance lasts years of such reservations.
+DEFAULT_USER_BALANCE = 10**12
 DEFAULT_AS_BALANCE = 0
 DEFAULT_ASSET_BANDWIDTH = 1000000
 DEFAULT_ASSET_BANDWIDTH_MIN = 10

@@ -787,7 +787,16 @@ class MarketplaceServiceTest(unittest.TestCase):
         assets_check = mocks["copy"].call_args_list[1]
         self.assertEqual(assets_check.args[2], "/var/lib/scion/marketplace/assets.json")
         self.assertIs(assets_check.kwargs["dry_run"], True)
-        self.assertEqual(json.loads(mocks["database"].call_args.args[2]), {"interfaces": None})
+        self.assertEqual(json.loads(mocks["database"].call_args.args[2]),
+                         {"interfaces": None, "initial_user_balance": 10**12})
+
+    def test_database_settings_include_the_initial_user_balance(self):
+        marketplace = SSHSetupTest.marketplace(SSHSetupTest())
+        settings = ssh_setup.marketplace_assets(marketplace)
+        self.assertEqual(json.loads(settings)["initial_user_balance"], 10**12)
+        # A different balance must record different settings, which rebuilds the database.
+        with mock.patch.object(ssh_setup._topology_marketplace(), "DEFAULT_USER_BALANCE", 10**9):
+            self.assertNotEqual(ssh_setup.marketplace_assets(marketplace), settings)
 
     def test_rebuilt_database_is_installed_before_its_asset_settings(self):
         with mock.patch.object(ssh_setup.remote, "ssh_command"), \

@@ -126,7 +126,8 @@ REMOTE_MARKETPLACE_CONFIG_DIR = "/etc/scion/marketplace"
 REMOTE_MARKETPLACE_CONFIG = f"{REMOTE_MARKETPLACE_CONFIG_DIR}/marketplace.toml"
 REMOTE_MARKETPLACE_DB_DIR = "/var/lib/scion/marketplace"
 REMOTE_MARKETPLACE_DB = f"{REMOTE_MARKETPLACE_DB_DIR}/marketplace.db"
-# The asset settings the database was built from; a change rebuilds the database.
+# The settings the database was built from (asset interfaces, initial user
+# balance); a change rebuilds the database.
 REMOTE_MARKETPLACE_ASSETS = f"{REMOTE_MARKETPLACE_DB_DIR}/assets.json"
 # The SCION configuration of every host: topology.json, certs/, and keys/master0.key.
 SCION_CONFIG_DIR = "/etc/scion"
@@ -538,10 +539,15 @@ def _secret_value(host: remote.SSHHost) -> bytes:
 
 
 def marketplace_assets(marketplace: workload.MarketplaceConfig) -> str:
-    """The configured settings that determine which assets the marketplace database offers."""
+    """The settings the marketplace database is built from: the configured interfaces, which
+    determine the assets it offers, and the initial balance of its users."""
     interfaces = (None if marketplace.interfaces is None
                   else {ia: list(ids) for ia, ids in marketplace.interfaces.items()})
-    return json.dumps({"interfaces": interfaces}, indent=2, sort_keys=True) + "\n"
+    settings = {
+        "interfaces": interfaces,
+        "initial_user_balance": _topology_marketplace().DEFAULT_USER_BALANCE,
+    }
+    return json.dumps(settings, indent=2, sort_keys=True) + "\n"
 
 
 def marketplace_entries(inventory: remote.Inventory) -> dict[str, object]:
@@ -582,7 +588,7 @@ def _reconfigure_marketplace_db(
     host: remote.SSHHost, entries: dict[str, object], assets: str,
 ) -> None:
     """Replace the database of the stopped marketplace with one built from entries and record
-    the asset settings it was built from."""
+    the settings it was built from."""
     with tempfile.TemporaryDirectory(prefix="hummbwtester-market-db-") as directory:
         database = Path(directory) / "marketplace.db"
         _topology_marketplace().populateDB(str(database), str(MARKETPLACE_SCHEMA), entries)
@@ -655,7 +661,7 @@ def ensure_marketplace(inventory: remote.Inventory, dry_run: bool = False) -> No
         assets = Path(directory) / "assets.json"
         assets.write_text(marketplace_assets(marketplace))
         if copy_if_changed(host, assets, REMOTE_MARKETPLACE_ASSETS, "600", dry_run=True):
-            changed.append(f"asset settings {REMOTE_MARKETPLACE_ASSETS}")
+            changed.append(f"database settings {REMOTE_MARKETPLACE_ASSETS}")
     for name in ("topology.json", "certs"):
         if _ensure_symlink(host, f"{REMOTE_MARKETPLACE_CONFIG_DIR}/{name}",
                            f"{SCION_CONFIG_DIR}/{name}", dry_run):
@@ -676,7 +682,8 @@ def ensure_marketplace(inventory: remote.Inventory, dry_run: bool = False) -> No
     if dry_run:
         print(f"dry-run: would {'restart' if active else 'start'} {MARKETPLACE_SERVICE} on "
               f"{host.name} with a rebuilt database ({len(entries['assets'])} assets of "
-              f"{len(entries['ases'])} ASes) and wait until it is reachable")
+              f"{len(entries['ases'])} ASes; it resets balances, purchases, and reservations) "
+              "and wait until it is reachable")
         return
     if active:
         _systemctl(host, "stop")
