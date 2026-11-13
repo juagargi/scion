@@ -69,6 +69,7 @@ func printOptions(t jwtType) {
 		fmt.Println("-> password")
 	case RedemptionService:
 		fmt.Println("-> delegate")
+		fmt.Println("-> reprovision")
 	}
 	fmt.Println("-> reset")
 	fmt.Println("-> exit")
@@ -288,6 +289,8 @@ func userInteraction() {
 			if success := handleResetJwt(ctx, reader, accountClient, t); success {
 				return
 			}
+		case option == "reprovision":
+			handleReprovision(ctx, reader, redemptionClient)
 		case option == "exit":
 			return
 		}
@@ -335,6 +338,70 @@ func handleResetJwt(
 	}
 	fmt.Println("token reseted")
 	return true
+}
+
+func handleReprovision(
+	ctx context.Context,
+	reader *bufio.Reader,
+	c hummingbirdconnect.RedemptionServiceClient,
+) {
+	operation := readString(reader, "operation [start,status,cancel]: ")
+	switch operation {
+	case "start":
+		fmt.Println("Warning! Starting the reprovision will replace all not yet expired reservations!")
+		if !readConfirm(reader, nil) {
+			return
+		}
+		_, err := c.ReprovisionReservations(ctx, &connect.Request[hummingbird.ReprovisionReservationRequest]{
+			Msg: &hummingbird.ReprovisionReservationRequest{
+				Operation: &hummingbird.ReprovisionReservationRequest_Start{
+					Start: &hummingbird.ReprovisionStartRequest{},
+				},
+			},
+		})
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println("Reservation reprovision succeeded")
+	case "status":
+		resp, err := c.ReprovisionReservations(ctx, &connect.Request[hummingbird.ReprovisionReservationRequest]{
+			Msg: &hummingbird.ReprovisionReservationRequest{
+				Operation: &hummingbird.ReprovisionReservationRequest_Status{
+					Status: &hummingbird.ReprovisionStatusRequest{},
+				},
+			},
+		})
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		status, ok := resp.Msg.Operation.(*hummingbird.ReprovisionReservationResponse_Status)
+		if !ok {
+			fmt.Println("invalid response")
+			return
+		}
+		fmt.Printf("State: %s, Processed: %d / %d\n", status.Status.State, status.Status.Processed, status.Status.Total)
+	case "cancel":
+		if !readConfirm(reader, nil) {
+			return
+		}
+		_, err := c.ReprovisionReservations(ctx, &connect.Request[hummingbird.ReprovisionReservationRequest]{
+			Msg: &hummingbird.ReprovisionReservationRequest{
+				Operation: &hummingbird.ReprovisionReservationRequest_Cancel{
+					Cancel: &hummingbird.ReprovisionCancelRequest{},
+				},
+			},
+		})
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println("Reprovision canceled")
+	default:
+		fmt.Println("invalid operation")
+		return
+	}
 }
 
 func handleDelegate(

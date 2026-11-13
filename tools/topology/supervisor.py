@@ -131,7 +131,7 @@ class SupervisorGenerator(object):
             "--interval",
             "1",
             "--",
-            "bin/hummingbird", "--config",
+            "bin/redemption_server", "--config",
             os.path.join(base, HBIRD_CONFIG_NAME),
         ]
         entries.append((name, self._common_entry(name, cmd_args)))

@@ -80,6 +80,7 @@ type ConnectionDispatcher struct {
 // Run accepts connections and dispatches them to the appropriate server
 // handler.
 func (d ConnectionDispatcher) Run(ctx context.Context) error {
+	var appErr *quic.ApplicationError
 	for {
 		conn, err := d.Listener.Accept(ctx)
 		if err == quic.ErrServerClosed {
@@ -95,10 +96,18 @@ func (d ConnectionDispatcher) Run(ctx context.Context) error {
 			defer log.HandlePanic()
 			if d.Connect != nil && conn.ConnectionState().TLS.NegotiatedProtocol == "h3" {
 				if err := d.Connect.ServeQUICConn(conn); err != nil {
+					if errors.As(err, &appErr) && appErr.ErrorCode == 0 {
+						// Remote peer closed normally with application error code 0.
+						return
+					}
 					d.Error(err)
 				}
 			} else if d.Grpc != nil {
 				if err := d.Grpc.ServeQUICConn(conn); err != nil {
+					if errors.As(err, &appErr) && appErr.ErrorCode == 0 {
+						// Remote peer closed normally with application error code 0.
+						return
+					}
 					d.Error(err)
 				}
 			} else {

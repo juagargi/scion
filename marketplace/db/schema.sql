@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS Reservations(
     FOREIGN KEY (account_id) REFERENCES Accounts(id)
 );
 CREATE INDEX IF NOT EXISTS idx_reservations_owner ON Reservations(account_id);
-CREATE INDEX IF NOT EXISTS idx_reservations_used ON Reservations(isd_id, as_id, starts_at, stops_at);
+CREATE INDEX IF NOT EXISTS idx_reservations_used ON Reservations(isd_id, as_id, stops_at, starts_at);
 CREATE TABLE IF NOT EXISTS Users(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
