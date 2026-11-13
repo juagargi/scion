@@ -1,6 +1,8 @@
 import json
 import io
+import os
 from pathlib import Path
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -277,13 +279,46 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "merge SSH inventory"):
             load_config(self.write_config(config))
 
-    def test_cleanup_ignores_an_interrupt_burst(self):
-        with mock.patch.object(orchestration.signal, "signal", side_effect=[
-            KeyboardInterrupt(), mock.sentinel.previous_handler,
-        ]) as set_handler:
-            self.assertIs(orchestration.ignore_sigint_during_cleanup(),
-                          mock.sentinel.previous_handler)
-        self.assertEqual(set_handler.call_count, 2)
+    def guarded_run(self, before=0, during=0, cleanup=0):
+        """Send SIGINTs to this process before, during, and after an interruptible run; return
+        whether the run was interrupted, whether its cleanup completed, and the guard."""
+        interrupted = cleaned = False
+        with orchestration.InterruptGuard() as guard:
+            for _ in range(before):
+                os.kill(os.getpid(), signal.SIGINT)
+            try:
+                with guard.interruptible():
+                    for _ in range(during):
+                        os.kill(os.getpid(), signal.SIGINT)
+                    for _ in range(1000):
+                        pass  # Bytecode boundaries at which a pending handler runs.
+            except KeyboardInterrupt:
+                interrupted = True
+            finally:
+                for _ in range(cleanup):
+                    os.kill(os.getpid(), signal.SIGINT)
+                for _ in range(1000):
+                    pass
+                cleaned = True
+        return interrupted, cleaned, guard
+
+    def test_interrupt_guard_raises_once_and_never_during_cleanup(self):
+        self.assertEqual(self.guarded_run(during=3, cleanup=2)[:2], (True, True))
+
+    def test_interrupt_guard_does_not_cut_short_the_cleanup_of_a_finished_run(self):
+        # The race of a run that ends by itself (its child processes got the SIGINT) just before
+        # the runner's own SIGINT lands.
+        interrupted, cleaned, guard = self.guarded_run(cleanup=1)
+        self.assertEqual((interrupted, cleaned), (False, True))
+        self.assertTrue(guard.interrupted)
+
+    def test_interrupt_guard_raises_for_an_interrupt_before_the_run(self):
+        self.assertEqual(self.guarded_run(before=1)[:2], (True, True))
+
+    def test_interrupt_guard_restores_the_previous_handler(self):
+        previous = signal.getsignal(signal.SIGINT)
+        self.assertEqual(self.guarded_run()[:2], (False, True))
+        self.assertIs(signal.getsignal(signal.SIGINT), previous)
 
     def test_rejects_marketplace_configuration_in_keys_mode(self):
         config = self.base_config()

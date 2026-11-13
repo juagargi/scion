@@ -7,6 +7,7 @@ the generated Docker topology so that a stopped topology can be brought back wit
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
 import hashlib
 import copy
@@ -25,7 +26,7 @@ import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 
@@ -965,13 +966,61 @@ def dc_args(*args: str) -> list[str]:
     return ["docker", "compose", "-f", str(COMPOSE), *args]
 
 
-def ignore_sigint_during_cleanup() -> object:
-    """Handle a burst of terminal interrupts before cleanup can begin."""
-    while True:
+class InterruptGuard:
+    """Turns the first SIGINT of an experiment run into a single KeyboardInterrupt, raised only
+    inside interruptible(), so that a runner's cleanup cannot be cut short.
+
+    Use it as::
+
+        with InterruptGuard() as guard:
+            try:
+                with guard.interruptible():
+                    ...  # launch and watch the testers
+            except KeyboardInterrupt:
+                ...
+            finally:
+                ...  # stop the testers; a SIGINT here is only recorded
+
+    Python raises KeyboardInterrupt at any bytecode boundary of the main thread, so a cleanup that
+    switches SIGINT off as its first step still has a window in which an interrupt aborts it and
+    strands the testers: a second Ctrl-C, or one that arrives while the run ends by itself. Ctrl-C
+    and `timeout` signal the whole process group, so a single interrupt can also end the
+    run (its child processes exit) before the runner's own KeyboardInterrupt lands. Here the
+    handler is installed before the try and raises only while interruptible() is active; it
+    disarms itself before raising, and interruptible() is left inside the try, so every
+    KeyboardInterrupt it raises reaches the except clause. Later interrupts are only recorded in
+    `interrupted`. The previous handler is restored when the guard exits.
+    """
+
+    def __init__(self) -> None:
+        self.interrupted = False
+        self._armed = False
+        self._previous: Any = signal.SIG_DFL
+
+    def __enter__(self) -> InterruptGuard:
+        self._previous = signal.signal(signal.SIGINT, self._handle)
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        signal.signal(signal.SIGINT, self._previous)
+
+    def _handle(self, _signum: int, _frame: object) -> None:
+        self.interrupted = True
+        if self._armed:
+            self._armed = False
+            raise KeyboardInterrupt
+
+    @contextlib.contextmanager
+    def interruptible(self) -> Iterator[None]:
+        """Raise KeyboardInterrupt on the first SIGINT, also on one that arrived before."""
+        self._armed = True
         try:
-            return signal.signal(signal.SIGINT, signal.SIG_IGN)
-        except KeyboardInterrupt:
-            continue
+            if self.interrupted:
+                self._armed = False
+                raise KeyboardInterrupt
+            yield
+        finally:
+            self._armed = False
 
 
 def monitoring_compose(
@@ -1754,54 +1803,59 @@ def run_experiment(
     marketplace_services: set[str] = set()
     hummingbird_clients = [client for client in clients if client.hummingbird]
     server_process: subprocess.Popen[str] | None = None
-    try:
-        if hummingbird_clients and hummingbird_clients[0].reservation_source == "marketplace":
-            client = hummingbird_clients[0]
-            assert client.marketplace is not None
-            marketplace_services = {tester_service(client.endpoint.isd_as)
-                                    for client in hummingbird_clients}
-            # A Docker topology advertises the registration endpoint that is actually reachable
-            # from this controller. With the location overridden, the topology need not advertise
-            # any marketplace, and the endpoint is the one of the marketplace's scion_address.
-            url = client.marketplace.url
-            if not client.marketplace.location_override:
-                url = marketplace_registration_website()
-            assert url is not None  # load_config requires scion_address with the override.
-            marketplace_jwt_file, remote_jwt_file = install_docker_jwt(
-                obtain_marketplace_jwt(client.marketplace, url), marketplace_services)
-        server_process = launch(server_service, server_pidfile, args, log_dir / "server.log")
-        # Give the server a predictable head start before clients begin selecting paths and dialing.
-        time.sleep(2)
-        for client in clients:
-            suffix = client.client_id
-            args = client_args(client, server, endpoint_sciond(client.endpoint, daemons))
-            pidfile = f"/tmp/hummbwtester-{suffix}.pid"
-            jwt_file = remote_jwt_file if client.hummingbird else None
-            process = launch(tester_service(client.endpoint.isd_as), pidfile, args,
-                             log_dir / f"{suffix}.log", jwt_file)
-            processes.append((client, pidfile, process))
-        failure = False
-        previous_report = report_snapshot(compose, interfaces)
-        next_report = time.monotonic() + 60
-        # A prematurely exited server invalidates the experiment even if clients are still alive.
-        while any(process.poll() is None for _, _, process in processes):
-            if server_process.poll() is not None:
-                failure = True
-                break
-            if time.monotonic() >= next_report:
-                current_report = report_snapshot(compose, interfaces)
-                print_report(previous_report, current_report, interfaces)
-                previous_report = current_report
-                next_report += 60
-            time.sleep(0.25)
-        failure = failure or any(process.wait() != 0 for _, _, process in processes)
-        return 1 if failure else 0
-    except KeyboardInterrupt:
-        return 130
-    finally:
-        # A second Ctrl-C while cleanup is running must not strand tester processes or a JWT.
-        previous_sigint = ignore_sigint_during_cleanup()
+    with InterruptGuard() as guard:
         try:
+            with guard.interruptible():
+                if (hummingbird_clients
+                        and hummingbird_clients[0].reservation_source == "marketplace"):
+                    client = hummingbird_clients[0]
+                    assert client.marketplace is not None
+                    marketplace_services = {tester_service(client.endpoint.isd_as)
+                                            for client in hummingbird_clients}
+                    # A Docker topology advertises the registration endpoint that is actually
+                    # reachable from this controller. With the location overridden, the topology
+                    # need not advertise any marketplace, and the endpoint is the one of the
+                    # marketplace's scion_address.
+                    url = client.marketplace.url
+                    if not client.marketplace.location_override:
+                        url = marketplace_registration_website()
+                    # load_config requires scion_address with the override.
+                    assert url is not None
+                    marketplace_jwt_file, remote_jwt_file = install_docker_jwt(
+                        obtain_marketplace_jwt(client.marketplace, url), marketplace_services)
+                server_process = launch(server_service, server_pidfile, args,
+                                        log_dir / "server.log")
+                # Give the server a predictable head start before clients begin selecting paths
+                # and dialing.
+                time.sleep(2)
+                for client in clients:
+                    suffix = client.client_id
+                    args = client_args(client, server, endpoint_sciond(client.endpoint, daemons))
+                    pidfile = f"/tmp/hummbwtester-{suffix}.pid"
+                    jwt_file = remote_jwt_file if client.hummingbird else None
+                    process = launch(tester_service(client.endpoint.isd_as), pidfile, args,
+                                     log_dir / f"{suffix}.log", jwt_file)
+                    processes.append((client, pidfile, process))
+                failure = False
+                previous_report = report_snapshot(compose, interfaces)
+                next_report = time.monotonic() + 60
+                # A prematurely exited server invalidates the experiment even if clients are still
+                # alive.
+                while any(process.poll() is None for _, _, process in processes):
+                    if server_process.poll() is not None:
+                        failure = True
+                        break
+                    if time.monotonic() >= next_report:
+                        current_report = report_snapshot(compose, interfaces)
+                        print_report(previous_report, current_report, interfaces)
+                        previous_report = current_report
+                        next_report += 60
+                    time.sleep(0.25)
+                failure = failure or any(process.wait() != 0 for _, _, process in processes)
+                return 1 if failure else 0
+        except KeyboardInterrupt:
+            return 130
+        finally:
             for client, pidfile, process in processes:
                 # The pidfile is authoritative even if the Compose wrapper exited already.
                 stop_remote(tester_service(client.endpoint.isd_as), pidfile)
@@ -1818,5 +1872,3 @@ def run_experiment(
                 remove_docker_jwt(marketplace_services, remote_jwt_file)
             if marketplace_jwt_file is not None:
                 marketplace_jwt_file.unlink(missing_ok=True)
-        finally:
-            signal.signal(signal.SIGINT, previous_sigint)
