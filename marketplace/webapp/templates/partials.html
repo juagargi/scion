@@ -1,0 +1,61 @@
+{{/*
+    Shared page parts. Every page includes "head" in its <head> and one of the
+    navigation bars at the top of <body>:
+      "nav-user": user pages (account, assets, reservations, login, register)
+      "nav-as":   AS pages (balance, assets, setup, AS login)
+    Both expect the page data, i.e. call them with ".".
+*/}}
+
+{{define "head"}}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/app.js" defer></script>
+{{end}}
+
+{{define "nav-guest"}}
+            <a href="/aslogin">AS Login</a>
+            <a href="/login">Login</a>
+            <a href="/register">Register</a>
+{{end}}
+
+{{define "nav-session"}}
+        {{if .Username}}
+        <div class="nav-right">
+            <span class="nav-user" title="Signed in">👤 {{.Username}}</span>
+            <a class="logout-link" href="/logout">Logout</a>
+        </div>
+        {{end}}
+{{end}}
+
+{{define "nav-user"}}
+    <nav>
+        <div class="nav-left">
+            <span class="nav-brand">Marketplace</span>
+            {{if .Username}}
+            <a href="/account">Account</a>
+            <a href="/assets">Assets</a>
+            <a href="/reservations">Reservations</a>
+            {{else}}
+            {{template "nav-guest" .}}
+            {{end}}
+        </div>
+        {{template "nav-session" .}}
+    </nav>
+{{end}}
+
+{{define "nav-as"}}
+    <nav>
+        <div class="nav-left">
+            <span class="nav-brand">Marketplace <span class="nav-badge">AS</span></span>
+            {{if .Username}}
+            <a href="/asbalance">Balance</a>
+            <a href="/asassets">Assets</a>
+            <a href="/assetup">Setup</a>
+            {{else}}
+            {{template "nav-guest" .}}
+            {{end}}
+        </div>
+        {{template "nav-session" .}}
+    </nav>
+{{end}}

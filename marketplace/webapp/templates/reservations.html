@@ -2,38 +2,18 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <title>Accounts</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <script type="text/javascript" src="/static/script.js"></script>
+    <title>Reservations · Marketplace</title>
+    {{template "head" .}}
 </head>
 
 <body>
-    <nav>
-        <div class="nav-left">
-            {{if .Username}}
-            <a href="/account">Account</a>
-            <a href="/assets">Assets</a>
-            <a href="/reservations">Reservations</a>
-            {{else}}
-            <a href="/aslogin">AS Login</a>
-            <a href="/login">Login</a>
-            <a href="/register">Register</a>
-            {{end}}
-        </div>
-        {{if .Username}}
-        <div class="nav-right">
-            👤 {{.Username}}
-            <a class="logout-link" href="/logout">Logout</a>
-        </div>
-        {{end}}
-    </nav>
-    <div class="page">
+    {{template "nav-user" .}}
+    <main class="page">
         <h2>Reservations</h2>
-        <p class="error" id="error">{{.Error}}</p>
+        <p class="error" id="error" role="alert">{{.Error}}</p>
         <section class="card">
             <h3>Filter by account</h3>
-            <select onchange="reloadWithId(this.value)">
+            <select onchange="reloadWithId(this.value)" aria-label="Account">
                 {{range $.Accounts}}
                 <option value="{{.ID}}" {{if eq .ID $.Account.ID}}selected{{end}}>
                     {{.Scope}}
@@ -43,44 +23,51 @@
         </section>
         <section class="card">
             <h3>Reservations</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>IA</th>
-                        <th>Ingress</th>
-                        <th>Egress</th>
-                        <th>Starts at</th>
-                        <th>Stops at</th>
-                        <th>Bandwidth</th>
-                        <th>Account</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range $reservation := .Reservations}}
-                    <tr>
-                        <td>{{.ReservationID}}</td>
-                        <td>{{.IA}}</td>
-                        <td>{{.Ingress}}</td>
-                        <td>{{.Egress}}</td>
-                        <td>{{.StartsAt}}</td>
-                        <td>{{.StopsAt}}</td>
-                        <td>{{.Bandwidth}}</td>
-                        <td>
-                            <select onchange="assignReservation('{{.ID}}','{{.AccountId}}', this)" autocomplete="off">
-                                {{range $.Accounts}}
-                                <option value="{{.ID}}" {{if eq .ID $reservation.AccountId}}selected{{end}}>
-                                    {{.Scope}}
-                                </option>
-                                {{end}}
-                            </select>
-                        </td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>IA</th>
+                            <th>Ingress</th>
+                            <th>Egress</th>
+                            <th>Starts at</th>
+                            <th>Stops at</th>
+                            <th>Bandwidth</th>
+                            <th>Account</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range $reservation := .Reservations}}
+                        <tr>
+                            <td>{{.ReservationID}}</td>
+                            <td>{{.IA}}</td>
+                            <td>{{.Ingress}}</td>
+                            <td>{{.Egress}}</td>
+                            <td>{{.StartsAt}}</td>
+                            <td>{{.StopsAt}}</td>
+                            <td>{{.Bandwidth}}</td>
+                            <td>
+                                <select onchange="assignReservation('{{.ID}}','{{.AccountId}}', this)"
+                                    autocomplete="off" aria-label="Assign to account">
+                                    {{range $.Accounts}}
+                                    <option value="{{.ID}}" {{if eq .ID $reservation.AccountId}}selected{{end}}>
+                                        {{.Scope}}
+                                    </option>
+                                    {{end}}
+                                </select>
+                            </td>
+                        </tr>
+                        {{else}}
+                        <tr>
+                            <td colspan="8" class="empty">No reservations for this account.</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
         </section>
-    </div>
+    </main>
 </body>
 
 </html>

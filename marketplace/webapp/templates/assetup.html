@@ -2,40 +2,19 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <title>Setup</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <!-- defer: the script runs after the DOM is parsed, so it can find the elements below -->
-    <script type="text/javascript" src="/static/setup-assets.js" defer></script>
+    <title>Setup · Marketplace</title>
+    {{template "head" .}}
 </head>
 
 <body>
-    <nav>
-        <div class="nav-left">
-            {{if .Username}}
-            <a href="/asbalance">Balance</a>
-            <a href="/asassets">Assets</a>
-            <a href="/assetup">Setup</a>
-            {{else}}
-            <a href="/aslogin">AS Login</a>
-            <a href="/login">Login</a>
-            <a href="/register">Register</a>
-            {{end}}
-        </div>
-        {{if .Username}}
-        <div class="nav-right">
-            👤 {{.Username}}
-            <a class="logout-link" href="/logout">Logout</a>
-        </div>
-        {{end}}
-    </nav>
-    <div class="page">
+    {{template "nav-as" .}}
+    <main class="page">
         <h2>Setup</h2>
-        <p class="error" id="error">{{.Error}}</p>
+        <p class="error" id="error" role="alert">{{.Error}}</p>
 
         <!-- Step 1: files and settings (files are read locally, never uploaded) -->
         <section class="card" id="file-dialog">
-            <h3>Setup</h3>
+            <h3>Files and settings</h3>
             <form id="topo-form" novalidate>
                 <fieldset>
                     <legend>Files</legend>
@@ -210,11 +189,13 @@
                 <p>These directions still need a bandwidth:</p>
                 <div id="bw-missing-list" class="chips"></div>
             </div>
-            <table id="bw-table" class="bw-table">
-                <thead></thead>
-                <tbody></tbody>
-            </table>
-            <p id="bw-empty" class="muted">No bandwidths configured yet.</p>
+            <div class="table-wrap">
+                <table id="bw-table" class="bw-table">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <p id="bw-empty" class="empty">No bandwidths configured yet.</p>
             <!-- Sends validity period, redemption settings and all entries to /assetup/create -->
             <div class="actions submit-row">
                 <label class="checkbox">
@@ -225,9 +206,7 @@
             </div>
             <p id="submit-status" role="status"></p>
         </section>
-    </div>
-
-
+    </main>
 </body>
 
 </html>

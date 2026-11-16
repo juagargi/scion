@@ -2,38 +2,18 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <title>Accounts</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <script type="text/javascript" src="/static/script.js"></script>
+    <title>Assets · Marketplace</title>
+    {{template "head" .}}
 </head>
 
 <body>
-    <nav>
-        <div class="nav-left">
-            {{if .Username}}
-            <a href="/account">Account</a>
-            <a href="/assets">Assets</a>
-            <a href="/reservations">Reservations</a>
-            {{else}}
-            <a href="/aslogin">AS Login</a>
-            <a href="/login">Login</a>
-            <a href="/register">Register</a>
-            {{end}}
-        </div>
-        {{if .Username}}
-        <div class="nav-right">
-            👤 {{.Username}}
-            <a class="logout-link" href="/logout">Logout</a>
-        </div>
-        {{end}}
-    </nav>
-    <div class="page">
+    {{template "nav-user" .}}
+    <main class="page">
         <h2>Assets</h2>
-        <p class="error" id="error">{{.Error}}</p>
+        <p class="error" id="error" role="alert">{{.Error}}</p>
         <section class="card">
             <h3>Filter by account</h3>
-            <select onchange="reloadWithId(this.value)">
+            <select onchange="reloadWithId(this.value)" aria-label="Account">
                 {{range $.Accounts}}
                 <option value="{{.ID}}" {{if eq .ID $.Account.ID}}selected{{end}}>
                     {{.Scope}}
@@ -43,52 +23,59 @@
         </section>
         <section class="card">
             <h3>Assets</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>IA</th>
-                        <th>Ingress</th>
-                        <th>Egress</th>
-                        <th>Starts at</th>
-                        <th>Stops at</th>
-                        <th>Bandwidth</th>
-                        <th>Account</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range $asset := .Assets}}
-                    <tr>
-                        <td>{{.ID}}</td>
-                        <td>{{.IA}}</td>
-                        <td>
-                            {{with .IfIdIngress}}
-                            {{.Value}}
-                            {{end}}
-                        </td>
-                        <td>
-                            {{with .IfIdEgress}}
-                            {{.Value}}
-                            {{end}}
-                        </td>
-                        <td>{{.StartsAt}}</td>
-                        <td>{{.StopsAt}}</td>
-                        <td>{{.Bandwidth}}</td>
-                        <td>
-                            <select onchange="assignAsset('{{.ID}}','{{.AccountId.Value}}', this)" autocomplete="off">
-                                {{range $.Accounts}}
-                                <option value="{{.ID}}" {{if eq .ID $asset.AccountId.Value}}selected{{end}}>
-                                    {{.Scope}}
-                                </option>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>IA</th>
+                            <th>Ingress</th>
+                            <th>Egress</th>
+                            <th>Starts at</th>
+                            <th>Stops at</th>
+                            <th>Bandwidth</th>
+                            <th>Account</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range $asset := .Assets}}
+                        <tr>
+                            <td>{{.ID}}</td>
+                            <td>{{.IA}}</td>
+                            <td>
+                                {{with .IfIdIngress}}
+                                {{.Value}}
                                 {{end}}
-                            </select>
-                        </td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
+                            </td>
+                            <td>
+                                {{with .IfIdEgress}}
+                                {{.Value}}
+                                {{end}}
+                            </td>
+                            <td>{{.StartsAt}}</td>
+                            <td>{{.StopsAt}}</td>
+                            <td>{{.Bandwidth}}</td>
+                            <td>
+                                <select onchange="assignAsset('{{.ID}}','{{.AccountId.Value}}', this)"
+                                    autocomplete="off" aria-label="Assign to account">
+                                    {{range $.Accounts}}
+                                    <option value="{{.ID}}" {{if eq .ID $asset.AccountId.Value}}selected{{end}}>
+                                        {{.Scope}}
+                                    </option>
+                                    {{end}}
+                                </select>
+                            </td>
+                        </tr>
+                        {{else}}
+                        <tr>
+                            <td colspan="8" class="empty">No assets for this account.</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
         </section>
-    </div>
+    </main>
 </body>
 
 </html>

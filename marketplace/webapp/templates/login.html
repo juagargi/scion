@@ -2,48 +2,32 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <title>Login</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>Login · Marketplace</title>
+    {{template "head" .}}
 </head>
 
 <body>
-    <nav>
-        <div class="nav-left">
-            {{if .Username}}
-            <a href="/account">Account</a>
-            <a href="/assets">Assets</a>
-            <a href="/reservations">Reservations</a>
-            {{else}}
-            <a href="/aslogin">AS Login</a>
-            <a href="/login">Login</a>
-            <a href="/register">Register</a>
-            {{end}}
-        </div>
-        {{if .Username}}
-        <div class="nav-right">
-            👤 {{.Username}}
-            <a class="logout-link" href="/logout">Logout</a>
-        </div>
-        {{end}}
-    </nav>
-    <div class="page">
+    {{template "nav-user" .}}
+    <main class="page">
         <section class="card small">
             <h2>Login</h2>
             {{if .Error}}
-            <p class="error">{{.Error}}</p>
+            <p class="error" role="alert">{{.Error}}</p>
             {{end}}
             <form class="form-vertical" method="POST" action="/login">
-                <label>User ID</label>
-                <input name="username">
-
-                <label>Password</label>
-                <input name="password" type="password">
-
+                <label>
+                    User ID
+                    <input name="username" autocomplete="username">
+                </label>
+                <label>
+                    Password
+                    <input name="password" type="password" autocomplete="current-password">
+                </label>
                 <button type="submit">Login</button>
             </form>
+            <p class="form-footer">No account yet? <a href="/register">Register</a></p>
         </section>
-    </div>
+    </main>
 </body>
 
 </html>

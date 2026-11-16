@@ -1,9 +1,25 @@
+/*
+ * Marketplace web UI styles.
+ *
+ *   Theme       colors, radii and shadows used everywhere
+ *   Base        typography, links, layout, cards, navigation
+ *   Components  buttons, form controls, tables, messages
+ *   Pages       account (JWT, balance), utilization chart, setup
+ */
+
 /* ---------- Reset ---------- */
 
-* {
+*,
+*::before,
+*::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+}
+
+/* Make the hidden attribute win over display rules like flex/table */
+[hidden] {
+    display: none !important;
 }
 
 /* ---------- Theme ---------- */
@@ -11,27 +27,52 @@
 :root {
     --bg: #f4f7fa;
     --surface: #ffffff;
+    --surface-alt: #f8fafc;
+    --surface-muted: #f1f5f9;
+
     --text: #334155;
     --heading: #1e293b;
+    --muted: #64748b;
+    --subtle: #94a3b8;
 
     --primary: #2563eb;
     --primary-hover: #1d4ed8;
+    --primary-soft: #eef2ff;
+    --primary-ring: rgba(37, 99, 235, .15);
 
     --danger: #dc2626;
     --danger-hover: #b91c1c;
+    --danger-soft: #fef2f2;
+    --danger-ring: rgba(220, 38, 38, .15);
+
+    --success: #15803d;
+
+    --warning-text: #92400e;
+    --warning-accent: #b45309;
+    --warning-bg: #fffbeb;
+    --warning-border: #fde68a;
 
     --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+
+    --nav-bg: var(--heading);
+    --nav-text: #ffffff;
 
     --shadow: 0 8px 25px rgba(0, 0, 0, .08);
     --radius: 12px;
+    --radius-md: 8px;
+    --radius-sm: 6px;
 
-    --page-width: 950px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+
+    --page-width: 1200px;
 }
 
 /* ---------- Base ---------- */
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--font);
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
@@ -39,60 +80,143 @@ body {
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
     color: var(--heading);
     margin-bottom: 1rem;
+    line-height: 1.25;
+}
+
+h2 {
+    font-size: 1.6rem;
+}
+
+h3 {
+    font-size: 1.15rem;
 }
 
 p {
     margin-bottom: .75rem;
 }
 
+a {
+    color: var(--primary);
+}
+
+a:hover {
+    color: var(--primary-hover);
+}
+
+code {
+    font-family: var(--font-mono);
+    font-size: .9em;
+}
+
+strong {
+    color: var(--heading);
+}
+
+.muted {
+    color: var(--muted);
+    font-weight: normal;
+}
+
+.req {
+    color: var(--danger);
+}
+
+.hint {
+    font-size: .9rem;
+    color: var(--muted);
+}
+
+.desc {
+    font-size: .85rem;
+    margin: 0 0 6px;
+}
+
 /* ---------- Navigation ---------- */
 
 nav {
-    background: var(--heading);
-    color: white;
+    background: var(--nav-bg);
+    color: var(--nav-text);
 
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
+    gap: 12px 24px;
 
-    padding: 16px 32px;
+    padding: 12px 32px;
 }
 
-.nav-left {
+.nav-left,
+.nav-right {
     display: flex;
-    gap: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
 }
 
 .nav-right {
-    display: flex;
-    align-items: center;
     gap: 16px;
 }
 
+.nav-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 18px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: .01em;
+}
+
+.nav-badge {
+    font-size: .7rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--primary);
+}
+
+.nav-user {
+    opacity: .85;
+}
+
 nav a {
-    color: white;
+    color: var(--nav-text);
     text-decoration: none;
     font-weight: 500;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    transition: background .15s;
 }
 
 nav a:hover {
-    text-decoration: underline;
+    color: var(--nav-text);
+    background: rgba(255, 255, 255, .1);
+}
+
+nav a[aria-current="page"] {
+    background: rgba(255, 255, 255, .16);
+}
+
+.logout-link {
+    border: 1px solid rgba(255, 255, 255, .3);
 }
 
 /* ---------- Layout ---------- */
 
 .page {
-    width: min(1200px, calc(100% - 40px));
+    width: min(var(--page-width), calc(100% - 40px));
     margin: 40px auto;
 }
 
 .card {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
     padding: 30px;
     margin-bottom: 24px;
 }
@@ -103,23 +227,161 @@ nav a:hover {
     margin-right: auto;
 }
 
+.card.small h2 {
+    text-align: center;
+}
+
+/* Header row of a card: title on the left, actions on the right */
+.card-header,
+.util-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 1rem;
+}
+
+.card-header h3,
+.util-head h3 {
+    margin: 0;
+}
+
+.actions,
+.table-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ---------- Buttons ---------- */
+
+button {
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+
+    background: var(--primary);
+    color: white;
+
+    cursor: pointer;
+
+    padding: 10px 16px;
+    font-family: inherit;
+    font-size: .95rem;
+    font-weight: 500;
+    line-height: 1.2;
+
+    transition: background .15s, border-color .15s;
+}
+
+button:hover {
+    background: var(--primary-hover);
+}
+
+button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--primary-ring);
+}
+
+button.secondary {
+    background: var(--surface-muted);
+    color: var(--heading);
+    border-color: var(--border-strong);
+}
+
+button.secondary:hover {
+    background: var(--border);
+}
+
+button.danger {
+    background: var(--danger);
+}
+
+button.danger:hover {
+    background: var(--danger-hover);
+}
+
+button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 /* ---------- Forms ---------- */
 
 label {
     font-weight: 500;
 }
 
-input {
-    padding: 10px 12px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
+input,
+select {
+    font-family: inherit;
     font-size: 1rem;
+    color: var(--text);
+    background-color: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
 }
 
-input:focus {
+select {
+    padding-right: 40px;
+    cursor: pointer;
+}
+
+select:hover {
+    border-color: var(--subtle);
+}
+
+input:focus,
+select:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+    box-shadow: 0 0 0 3px var(--primary-ring);
+}
+
+input:disabled {
+    background: var(--surface-muted);
+    color: var(--subtle);
+    cursor: not-allowed;
+}
+
+input[type=checkbox],
+input[type=radio] {
+    padding: 0;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--primary);
+}
+
+[aria-invalid="true"],
+[aria-invalid="true"]:focus {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px var(--danger-ring);
+}
+
+select option {
+    padding: 8px;
+}
+
+fieldset {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px 20px 6px;
+    margin-bottom: 20px;
+}
+
+legend {
+    padding: 0 6px;
+    font-weight: 600;
+    color: var(--heading);
+}
+
+/* Number input with a unit select next to it */
+.unit-input {
+    display: flex;
+    gap: 8px;
 }
 
 .form-vertical {
@@ -127,6 +389,7 @@ input:focus {
     flex-direction: column;
     gap: 15px;
     width: fit-content;
+    max-width: 100%;
     margin: 0 auto;
 }
 
@@ -143,11 +406,20 @@ input:focus {
 
 .form-vertical button {
     width: auto;
+    margin-top: 5px;
+}
+
+.form-footer {
+    margin: 20px 0 0;
+    text-align: center;
+    font-size: .9rem;
+    color: var(--muted);
 }
 
 .form-horizontal {
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
     gap: 16px;
     align-items: end;
 }
@@ -157,36 +429,14 @@ input:focus {
     flex-direction: column;
     gap: 6px;
     flex: 1;
-}
-
-/* ---------- Buttons ---------- */
-
-button {
-    border: none;
-    border-radius: 6px;
-
-    background: var(--primary);
-    color: white;
-
-    cursor: pointer;
-
-    padding: 10px 16px;
-    font-size: .95rem;
-    font-weight: 500;
-
-    transition: background .15s;
-}
-
-button:hover {
-    background: var(--primary-hover);
-}
-
-.table-actions {
-    display: flex;
-    gap: 8px;
+    min-width: 200px;
 }
 
 /* ---------- Table ---------- */
+
+.table-wrap {
+    overflow-x: auto;
+}
 
 table {
     width: 100%;
@@ -196,9 +446,10 @@ table {
 th {
     text-align: left;
     padding: 14px;
-    background: #f8fafc;
+    background: var(--surface-alt);
     color: var(--heading);
     border-bottom: 2px solid var(--border);
+    white-space: nowrap;
 }
 
 td {
@@ -207,20 +458,69 @@ td {
 }
 
 tbody tr:hover {
-    background: #f8fafc;
+    background: var(--surface-alt);
 }
 
-/* ---------- JWT ---------- */
+/* Placeholder for an empty table or list */
+.empty,
+td.empty {
+    color: var(--muted);
+}
+
+td.empty {
+    text-align: center;
+    padding: 28px 14px;
+}
+
+tbody tr:hover td.empty {
+    background: var(--surface);
+}
+
+/* ---------- Messages ---------- */
+
+.error {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.error:empty {
+    display: none;
+}
+
+/* Page-level errors are shown as a callout */
+.page>.error,
+.card.small>.error {
+    background: var(--danger-soft);
+    border: 1px solid var(--danger-ring);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    margin: 0 0 24px;
+}
+
+.success {
+    color: var(--success);
+    font-weight: 600;
+}
+
+/* ---------- Account page ---------- */
+
+.balance {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 20px;
+}
 
 #jwt-token {
-    background: #f8fafc;
+    background: var(--surface-alt);
     border: 1px solid var(--border);
 
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
 
     padding: 16px;
+    margin-bottom: .75rem;
 
-    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: .9rem;
 
     word-break: break-all;
@@ -230,66 +530,10 @@ tbody tr:hover {
 }
 
 #jwt-token:hover {
-    background: #eef2ff;
+    background: var(--primary-soft);
 }
 
-/* ---------- Balance ---------- */
-
-#balance-value {
-    width: 180px;
-    margin-bottom: 16px;
-}
-
-/* ---------- Messages ---------- */
-
-.error {
-    margin-top: 16px;
-
-    color: var(--danger);
-    font-weight: 600;
-}
-
-.balance {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #2563eb;
-    margin-bottom: 20px;
-}
-
-button.danger {
-    background: var(--danger);
-}
-
-button.danger:hover {
-    background: var(--danger-hover);
-}
-
-select {
-    background-color: white;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    padding: 10px 40px 10px 12px;
-    font-size: 1rem;
-    color: var(--text);
-    cursor: pointer;
-}
-
-select:hover {
-    border-color: #94a3b8;
-}
-
-select:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
-}
-
-select option {
-    padding: 8px;
-}
-
-
-/* viz section */
+/* ---------- Utilization chart (AS assets page) ---------- */
 .util {
     --util-low: #5fa58f;
     --util-mid: #d4a73c;
@@ -325,22 +569,10 @@ select option {
     --c: var(--util-full);
 }
 
-/* header, controls, stats */
-.util-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1em;
-    margin-bottom: 1em;
-}
-
-.util-head h2 {
-    margin: 0;
-}
+/* controls, stats */
 
 .util-error {
     margin: 0 0 .75em;
-    color: var(--util-full);
 }
 
 .util-controls {
@@ -521,40 +753,9 @@ tr.util-active {
     background: color-mix(in srgb, currentColor 8%, transparent);
 }
 
-/* ---------- Setup page ---------- */
-/* Everything below is either new class names or scoped to the setup sections,
-   so no existing rule above is overridden. */
-
-/* Make the hidden attribute win over display rules like flex/table */
-[hidden] {
-    display: none !important;
-}
-
-.muted {
-    color: #64748b;
-    font-weight: normal;
-}
-
-.req {
-    color: var(--danger);
-}
-
-button.secondary {
-    background: #f1f5f9;
-    color: var(--heading);
-    border: 1px solid #cbd5e1;
-}
-
-button.secondary:hover {
-    background: var(--border);
-}
-
-#file-dialog button:disabled,
-#bandwidth-config button:disabled {
-    opacity: .5;
-    cursor: not-allowed;
-    pointer-events: none;
-}
+/* ---------- Setup page (AS setup) ---------- */
+/* Generic parts (fieldsets, disabled controls, checkboxes, radios, .unit-input,
+   .card-header, ...) are defined in the component sections above. */
 
 /* Step 1: file selection */
 #topo-form .field {
@@ -571,22 +772,7 @@ button.secondary:hover {
     cursor: pointer;
 }
 
-#topo-form .hint {
-    font-size: .9rem;
-}
-
 /* Step 2: topology view */
-#topology-view .card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 1rem;
-}
-
-#topology-view .card-header h3 {
-    margin: 0;
-}
 
 .topology-svg {
     overflow-x: auto;
@@ -594,8 +780,8 @@ button.secondary:hover {
 
 /* Diagram colors: default ink and the highlight for the selected interface(s) */
 .topo {
-    --topo-ink: #111827;
-    --topo-hl: #2563eb;
+    --topo-ink: var(--heading);
+    --topo-hl: var(--primary);
 }
 
 .topo {
@@ -612,7 +798,7 @@ button.secondary:hover {
 
 .topo .as-frame {
     fill: var(--bg);
-    stroke: #94a3b8;
+    stroke: var(--subtle);
     stroke-dasharray: 6 4;
 }
 
@@ -623,7 +809,7 @@ button.secondary:hover {
 
 .topo .br-box {
     fill: var(--surface);
-    stroke: #94a3b8;
+    stroke: var(--subtle);
 }
 
 .topo .br-name {
@@ -637,7 +823,7 @@ button.secondary:hover {
 
 .topo .small {
     font-size: 11px;
-    fill: #64748b;
+    fill: var(--muted);
 }
 
 /* Everything is black by default; only the selected interfaces get a color */
@@ -711,13 +897,6 @@ button.secondary:hover {
     cursor: pointer;
 }
 
-#bandwidth-config input[type=checkbox] {
-    padding: 0;
-    width: 1rem;
-    height: 1rem;
-    accent-color: var(--primary);
-}
-
 #submit-status {
     margin: 12px 0 0;
     text-align: right;
@@ -727,19 +906,9 @@ button.secondary:hover {
     display: none;
 }
 
-#submit-status.error {
-    color: var(--danger);
-    font-weight: 600;
-}
-
-#submit-status.success {
-    color: #15803d;
-    font-weight: 600;
-}
-
 .topo .link-label {
     font-size: 11px;
-    fill: #475569;
+    fill: var(--muted);
     paint-order: stroke;
     stroke: var(--surface);
     stroke-width: 4px;
@@ -784,7 +953,7 @@ button.secondary:hover {
 }
 
 #bandwidth-config td.unset {
-    color: #b45309;
+    color: var(--warning-accent);
     font-style: italic;
 }
 
@@ -803,23 +972,6 @@ button.secondary:hover {
 }
 
 /* Step 1: settings in the dialog */
-#topo-form fieldset {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px 20px 6px;
-    margin-bottom: 20px;
-}
-
-#topo-form legend {
-    padding: 0 6px;
-    font-weight: 600;
-    color: var(--heading);
-}
-
-#topo-form .desc {
-    font-size: .85rem;
-    margin: 0 0 6px;
-}
 
 #topo-form .field-row {
     display: flex;
@@ -843,11 +995,6 @@ button.secondary:hover {
     margin: 0;
 }
 
-#topo-form .unit-input {
-    display: flex;
-    gap: 8px;
-}
-
 #topo-form .unit-input input {
     flex: 1;
     min-width: 0;
@@ -859,18 +1006,7 @@ button.secondary:hover {
 }
 
 #topo-form .ratio-input .unit {
-    color: #64748b;
-}
-
-#topo-form input:disabled {
-    background: #f1f5f9;
-    color: #94a3b8;
-    cursor: not-allowed;
-}
-
-#topo-form code {
-    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-    font-size: .9em;
+    color: var(--muted);
 }
 
 #topo-form .radio {
@@ -880,20 +1016,8 @@ button.secondary:hover {
     cursor: pointer;
 }
 
-#topo-form input[type=radio] {
-    padding: 0;
-    width: 1rem;
-    height: 1rem;
-    accent-color: var(--primary);
-}
-
 #topo-form .radio+.desc {
     margin: 2px 0 12px 1.5rem;
-}
-
-#topo-form [aria-invalid="true"] {
-    border-color: var(--danger);
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, .15);
 }
 
 #form-error {
@@ -915,10 +1039,10 @@ button.secondary:hover {
 }
 
 #bandwidth-config .bw-missing {
-    background: #fffbeb;
-    border: 1px solid #fde68a;
-    border-radius: 8px;
-    color: #92400e;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-md);
+    color: var(--warning-text);
     padding: 12px 16px;
     margin-bottom: 16px;
 }
@@ -936,11 +1060,6 @@ button.secondary:hover {
 #bandwidth-config .chips button {
     padding: 4px 10px;
     font-size: .85rem;
-}
-
-#bandwidth-config .unit-input {
-    display: flex;
-    gap: 8px;
 }
 
 #bandwidth-config .unit-input input {

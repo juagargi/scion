@@ -2,47 +2,31 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <title>Login</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>AS Login · Marketplace</title>
+    {{template "head" .}}
 </head>
 
 <body>
-    <nav>
-        <div class="nav-left">
-            {{if .Username}}
-            <a href="/asbalance">Balance</a>
-            {{else}}
-            <a href="/aslogin">AS Login</a>
-            <a href="/login">Login</a>
-            <a href="/register">Register</a>
-            {{end}}
-        </div>
-        {{if .Username}}
-        <div class="nav-right">
-            👤 {{.Username}}
-            <a class="logout-link" href="/logout">Logout</a>
-        </div>
-        {{end}}
-    </nav>
-    <div class="page">
+    {{template "nav-as" .}}
+    <main class="page">
         <section class="card small">
-            <h2>Login</h2>
+            <h2>AS Login</h2>
             {{if .Error}}
-            <p class="error">{{.Error}}</p>
+            <p class="error" role="alert">{{.Error}}</p>
             {{end}}
             <form class="form-vertical" method="POST" action="/aslogin">
-                <label>ISD-AS Number (1-ff00:0:110)</label>
-                <input name="username">
-
-                <label>Password</label>
-                <input name="password" type="password">
-
+                <label>
+                    ISD-AS number
+                    <input name="username" placeholder="1-ff00:0:110" autocomplete="username">
+                </label>
+                <label>
+                    Password
+                    <input name="password" type="password" autocomplete="current-password">
+                </label>
                 <button type="submit">Login</button>
             </form>
         </section>
-    </div>
-
+    </main>
 </body>
 
 </html>
