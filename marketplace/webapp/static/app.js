@@ -5,9 +5,10 @@
  *   2. Accounts:      account, asset and reservation actions (account / assets / reservations pages)
  *   3. Utilization:   asset utilization chart (AS assets page)
  *   4. Setup:         topology based asset setup (AS setup page)
+ *   5. Table filters: ingress / egress / time / bandwidth filters (assets, reservations, AS assets pages)
  *
  * Functions in sections 2 and 3 are global because the templates call them from inline handlers.
- * Section 4 only initializes itself when the setup form is on the page.
+ * Sections 4 and 5 only initialize themselves when their elements are on the page.
  */
 
 // ===================================================================== 1. Common
@@ -1560,4 +1561,113 @@ const Utilization = (() => {
 
     // For the later request: getConfig() returns the object above, validate() lists what is missing.
     window.setupAssets = { getConfig: configObject, validate };
+})();
+
+
+// ===================================================================== 5. Table filters
+
+// A <form class="filter-form" data-filter-table="<table id>"> filters the rows of that table that carry
+// data-filter-row. Each row describes itself with data-ingress, data-egress, data-starts-at and
+// data-stops-at (unix seconds) and data-bandwidth. Empty fields do not filter:
+//   ingress, egress  exact match (a row without the interface never matches)
+//   starts_at        row starts at or after the given time (UTC)
+//   stops_at         row stops at or before the given time (UTC)
+//   bandwidth        row bandwidth is at least the given value
+// The filter values are kept in the URL query, so they survive reloads and switching the account.
+(function () {
+    'use strict';
+
+    const num = (raw) => {
+        const v = Number(raw);
+        return raw === '' || !Number.isFinite(v) ? null : v;
+    };
+    // datetime-local value, read as UTC like the times shown in the tables -> unix seconds
+    const time = (raw) => {
+        const ms = raw === '' ? NaN : Date.parse(raw + 'Z');
+        return Number.isNaN(ms) ? null : ms / 1000;
+    };
+
+    // name -> [parse the input value, test a row value against the parsed filter value]
+    const FILTERS = {
+        ingress: [num, (row, v) => row === v],
+        egress: [num, (row, v) => row === v],
+        starts_at: [time, (row, v) => row >= v],
+        stops_at: [time, (row, v) => row <= v],
+        bandwidth: [num, (row, v) => row >= v],
+    };
+    // filter name -> data attribute of the row (dataset key)
+    const ATTR = { ingress: 'ingress', egress: 'egress', starts_at: 'startsAt', stops_at: 'stopsAt', bandwidth: 'bandwidth' };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('form[data-filter-table]').forEach(setup);
+    });
+
+    function setup(form) {
+        const table = document.getElementById(form.dataset.filterTable);
+        if (!table) return;
+        const count = form.parentElement.querySelector('[data-filter-count]');
+
+        const params = new URLSearchParams(window.location.search);
+        for (const name of Object.keys(FILTERS)) {
+            const input = form.elements[name];
+            if (input && params.has(name)) input.value = params.get(name);
+        }
+
+        const run = () => apply(form, table, count);
+        form.addEventListener('input', run);
+        form.addEventListener('submit', (ev) => {
+            ev.preventDefault();
+            run();
+        });
+        form.addEventListener('reset', () => setTimeout(run)); // after the browser cleared the fields
+        run();
+    }
+
+    function apply(form, table, count) {
+        const active = [];
+        const params = new URLSearchParams(window.location.search);
+        for (const [name, [parse, test]] of Object.entries(FILTERS)) {
+            const input = form.elements[name];
+            if (!input) continue;
+            const raw = input.value.trim();
+            const value = parse(raw);
+            if (value === null) {
+                params.delete(name);
+                continue;
+            }
+            params.set(name, raw);
+            active.push({ name, value, test });
+        }
+        const query = params.toString();
+        window.history.replaceState(null, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+
+        const rows = [...table.querySelectorAll('tbody tr[data-filter-row]')];
+        let shown = 0;
+        for (const row of rows) {
+            const match = active.every((f) => {
+                const v = num(row.dataset[ATTR[f.name]] || '');
+                return v !== null && f.test(v, f.value);
+            });
+            row.hidden = !match;
+            if (match) shown++;
+        }
+
+        // Message row when the filters hide every row
+        let none = table.querySelector('tbody tr.filter-none');
+        if (!none && rows.length) {
+            none = document.createElement('tr');
+            none.className = 'filter-none';
+            const td = document.createElement('td');
+            td.className = 'empty';
+            td.colSpan = table.querySelectorAll('thead th').length || 1;
+            td.textContent = 'No entries match the filters.';
+            none.appendChild(td);
+            table.tBodies[0].appendChild(none);
+        }
+        if (none) none.hidden = !(rows.length && shown === 0);
+
+        if (count) {
+            count.textContent = active.length ? `Showing ${shown} of ${rows.length} entries.` : '';
+        }
+    }
 })();

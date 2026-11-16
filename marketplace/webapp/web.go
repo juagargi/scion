@@ -47,7 +47,14 @@ var templateFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
-var templates = template.Must(template.ParseFS(templateFS, "templates/*.html"))
+var templates = template.Must(template.New("").Funcs(template.FuncMap{
+	"utc": formatUTC,
+}).ParseFS(templateFS, "templates/*.html"))
+
+// formatUTC formats unix seconds for display, e.g. 2026-11-16T14:05:00Z.
+func formatUTC(unixSeconds int64) string {
+	return time.Unix(unixSeconds, 0).UTC().Format(time.RFC3339)
+}
 
 func Init(signer *registration.Signer, store *storage.MarketplaceStorage, mux *http.ServeMux, disableUserRegistration bool) {
 	sessionKey := make([]byte, 32)

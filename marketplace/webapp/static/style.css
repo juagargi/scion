@@ -432,6 +432,33 @@ legend {
     min-width: 200px;
 }
 
+/* ---------- Table filters ---------- */
+
+.filter-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px;
+}
+
+.filter-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-form input[type=number] {
+    width: 9em;
+}
+
+.filter-count {
+    margin: 12px 0 0;
+}
+
+.filter-count:empty {
+    display: none;
+}
+
 /* ---------- Table ---------- */
 
 .table-wrap {
@@ -459,6 +486,12 @@ td {
 
 tbody tr:hover {
     background: var(--surface-alt);
+}
+
+/* Cells that must stay on one line, e.g. timestamps (the table scrolls instead) */
+td.nowrap {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Placeholder for an empty table or list */

@@ -12,19 +12,40 @@
         <h2>Reservations</h2>
         <p class="error" id="error" role="alert">{{.Error}}</p>
         <section class="card">
-            <h3>Filter by account</h3>
-            <select onchange="reloadWithId(this.value)" aria-label="Account">
-                {{range $.Accounts}}
-                <option value="{{.ID}}" {{if eq .ID $.Account.ID}}selected{{end}}>
-                    {{.Scope}}
-                </option>
-                {{end}}
-            </select>
+            <h3>Filters</h3>
+            <form class="filter-form" data-filter-table="reservations-table" autocomplete="off">
+                <label>Account
+                    <select onchange="reloadWithId(this.value)">
+                        {{range $.Accounts}}
+                        <option value="{{.ID}}" {{if eq .ID $.Account.ID}}selected{{end}}>
+                            {{.Scope}}
+                        </option>
+                        {{end}}
+                    </select>
+                </label>
+                <label>Ingress
+                    <input type="number" name="ingress" min="0" step="1" placeholder="Any">
+                </label>
+                <label>Egress
+                    <input type="number" name="egress" min="0" step="1" placeholder="Any">
+                </label>
+                <label>Starts at or after (UTC)
+                    <input type="datetime-local" name="starts_at" step="1">
+                </label>
+                <label>Stops at or before (UTC)
+                    <input type="datetime-local" name="stops_at" step="1">
+                </label>
+                <label>Bandwidth at least
+                    <input type="number" name="bandwidth" min="0" step="any" placeholder="Any">
+                </label>
+                <button type="reset" class="secondary">Clear filters</button>
+            </form>
+            <p class="hint filter-count" data-filter-count></p>
         </section>
         <section class="card">
             <h3>Reservations</h3>
             <div class="table-wrap">
-                <table>
+                <table id="reservations-table">
                     <thead>
                         <tr>
                             <th>ID</th>
@@ -39,13 +60,14 @@
                     </thead>
                     <tbody>
                         {{range $reservation := .Reservations}}
-                        <tr>
+                        <tr data-filter-row data-ingress="{{.Ingress}}" data-egress="{{.Egress}}"
+                            data-starts-at="{{.StartsAt}}" data-stops-at="{{.StopsAt}}" data-bandwidth="{{.Bandwidth}}">
                             <td>{{.ReservationID}}</td>
                             <td>{{.IA}}</td>
                             <td>{{.Ingress}}</td>
                             <td>{{.Egress}}</td>
-                            <td>{{.StartsAt}}</td>
-                            <td>{{.StopsAt}}</td>
+                            <td class="nowrap"><time datetime="{{utc .StartsAt}}" title="{{.StartsAt}}">{{utc .StartsAt}}</time></td>
+                            <td class="nowrap"><time datetime="{{utc .StopsAt}}" title="{{.StopsAt}}">{{utc .StopsAt}}</time></td>
                             <td>{{.Bandwidth}}</td>
                             <td>
                                 <select onchange="assignReservation('{{.ID}}','{{.AccountId}}', this)"
