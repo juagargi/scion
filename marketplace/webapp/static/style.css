@@ -520,3 +520,437 @@ select option {
 tr.util-active {
     background: color-mix(in srgb, currentColor 8%, transparent);
 }
+
+/* ---------- Setup page ---------- */
+/* Everything below is either new class names or scoped to the setup sections,
+   so no existing rule above is overridden. */
+
+/* Make the hidden attribute win over display rules like flex/table */
+[hidden] {
+    display: none !important;
+}
+
+.muted {
+    color: #64748b;
+    font-weight: normal;
+}
+
+.req {
+    color: var(--danger);
+}
+
+button.secondary {
+    background: #f1f5f9;
+    color: var(--heading);
+    border: 1px solid #cbd5e1;
+}
+
+button.secondary:hover {
+    background: var(--border);
+}
+
+#file-dialog button:disabled,
+#bandwidth-config button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* Step 1: file selection */
+#topo-form .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 15px;
+}
+
+#topo-form input[type=file] {
+    width: 100%;
+    max-width: 450px;
+    background: var(--surface);
+    cursor: pointer;
+}
+
+#topo-form .hint {
+    font-size: .9rem;
+}
+
+/* Step 2: topology view */
+#topology-view .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 1rem;
+}
+
+#topology-view .card-header h3 {
+    margin: 0;
+}
+
+.topology-svg {
+    overflow-x: auto;
+}
+
+/* Diagram colors: default ink and the highlight for the selected interface(s) */
+.topo {
+    --topo-ink: #111827;
+    --topo-hl: #2563eb;
+}
+
+.topo {
+    width: 100%;
+    min-width: 600px;
+    height: auto;
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.topo text {
+    fill: var(--text);
+}
+
+.topo .as-frame {
+    fill: var(--bg);
+    stroke: #94a3b8;
+    stroke-dasharray: 6 4;
+}
+
+.topo .as-name {
+    font-weight: 600;
+    fill: var(--heading);
+}
+
+.topo .br-box {
+    fill: var(--surface);
+    stroke: #94a3b8;
+}
+
+.topo .br-name {
+    font-weight: 600;
+    fill: var(--heading);
+}
+
+.topo .sep {
+    stroke: var(--border);
+}
+
+.topo .small {
+    font-size: 11px;
+    fill: #64748b;
+}
+
+/* Everything is black by default; only the selected interfaces get a color */
+.topo .if-node circle {
+    fill: var(--topo-ink);
+    stroke: var(--surface);
+    stroke-width: 2;
+}
+
+.topo .if-node text {
+    fill: #fff;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.topo .nb rect {
+    fill: var(--surface);
+    stroke: var(--topo-ink);
+}
+
+.topo .nb text {
+    fill: var(--topo-ink);
+    font-weight: 600;
+}
+
+.topo .link {
+    fill: none;
+    stroke: var(--topo-ink);
+    stroke-width: 1.5;
+}
+
+.topo .link-peer {
+    stroke-dasharray: 5 3;
+}
+
+.topo .if-node.hl circle {
+    fill: var(--topo-hl);
+}
+
+.topo .link.hl {
+    stroke: var(--topo-hl);
+    stroke-width: 4;
+}
+
+/* Connection between the two selected interfaces of a pair */
+.topo .pair-link {
+    fill: none;
+    stroke: var(--topo-hl);
+    stroke-width: 4;
+    stroke-linecap: round;
+}
+
+.topo .arrow-head {
+    fill: var(--topo-hl);
+}
+
+/* Create button with the overlap-check checkbox */
+#bandwidth-config .submit-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+}
+
+#bandwidth-config .checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+#bandwidth-config input[type=checkbox] {
+    padding: 0;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--primary);
+}
+
+#submit-status {
+    margin: 12px 0 0;
+    text-align: right;
+}
+
+#submit-status:empty {
+    display: none;
+}
+
+#submit-status.error {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+#submit-status.success {
+    color: #15803d;
+    font-weight: 600;
+}
+
+.topo .link-label {
+    font-size: 11px;
+    fill: #475569;
+    paint-order: stroke;
+    stroke: var(--surface);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}
+
+/* Step 3: bandwidth configuration (table look comes from the global table rules) */
+#bandwidth-config .bw-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+#bandwidth-config .bw-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#bandwidth-config .bw-form input[type=number] {
+    width: 9em;
+}
+
+/* Bandwidth + price of one direction, kept together when the form wraps */
+#bandwidth-config .dir-group {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    padding-left: 16px;
+    border-left: 2px solid var(--border);
+}
+
+#bandwidth-config .bw-form input.price {
+    width: 7em;
+}
+
+#bandwidth-config .price-hint {
+    font-size: .85rem;
+    margin: -12px 0 16px;
+}
+
+#bandwidth-config td.unset {
+    color: #b45309;
+    font-style: italic;
+}
+
+#bandwidth-config .row-actions {
+    text-align: right;
+    white-space: nowrap;
+}
+
+#bandwidth-config .row-actions button {
+    margin-left: 8px;
+    padding: 6px 12px;
+}
+
+#bandwidth-config .actions {
+    margin-top: 16px;
+}
+
+/* Step 1: settings in the dialog */
+#topo-form fieldset {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px 6px;
+    margin-bottom: 20px;
+}
+
+#topo-form legend {
+    padding: 0 6px;
+    font-weight: 600;
+    color: var(--heading);
+}
+
+#topo-form .desc {
+    font-size: .85rem;
+    margin: 0 0 6px;
+}
+
+#topo-form .field-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 24px;
+}
+
+/* Date (required) and time (optional) side by side */
+#topo-form .date-time {
+    display: flex;
+    gap: 8px;
+}
+
+#topo-form .defaults-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0 24px;
+}
+
+#topo-form .defaults-grid .desc {
+    margin: 0;
+}
+
+#topo-form .unit-input {
+    display: flex;
+    gap: 8px;
+}
+
+#topo-form .unit-input input {
+    flex: 1;
+    min-width: 0;
+}
+
+#topo-form .ratio-input {
+    align-items: center;
+    max-width: 160px;
+}
+
+#topo-form .ratio-input .unit {
+    color: #64748b;
+}
+
+#topo-form input:disabled {
+    background: #f1f5f9;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+
+#topo-form code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: .9em;
+}
+
+#topo-form .radio {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+#topo-form input[type=radio] {
+    padding: 0;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--primary);
+}
+
+#topo-form .radio+.desc {
+    margin: 2px 0 12px 1.5rem;
+}
+
+#topo-form [aria-invalid="true"] {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, .15);
+}
+
+#form-error {
+    margin: 0 0 12px;
+}
+
+#form-error:empty {
+    display: none;
+}
+
+/* Step 3: settings summary and required local pairs */
+#bandwidth-config .bw-summary {
+    font-size: .9rem;
+    margin-bottom: 16px;
+}
+
+#bandwidth-config .bw-summary p {
+    margin-bottom: .2rem;
+}
+
+#bandwidth-config .bw-missing {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    color: #92400e;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+}
+
+#bandwidth-config .bw-missing p {
+    margin-bottom: 8px;
+}
+
+#bandwidth-config .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#bandwidth-config .chips button {
+    padding: 4px 10px;
+    font-size: .85rem;
+}
+
+#bandwidth-config .unit-input {
+    display: flex;
+    gap: 8px;
+}
+
+#bandwidth-config .unit-input input {
+    width: 8em;
+}
+
+#bw-error {
+    margin: -8px 0 16px;
+}
+
+#bw-error:empty {
+    display: none;
+}

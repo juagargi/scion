@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Setup</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- defer: the script runs after the DOM is parsed, so it can find the elements below -->
+    <script type="text/javascript" src="/static/setup-assets.js" defer></script>
+</head>
+
+<body>
+    <nav>
+        <div class="nav-left">
+            {{if .Username}}
+            <a href="/asbalance">Balance</a>
+            <a href="/asassets">Assets</a>
+            <a href="/assetup">Setup</a>
+            {{else}}
+            <a href="/aslogin">AS Login</a>
+            <a href="/login">Login</a>
+            <a href="/register">Register</a>
+            {{end}}
+        </div>
+        {{if .Username}}
+        <div class="nav-right">
+            👤 {{.Username}}
+            <a class="logout-link" href="/logout">Logout</a>
+        </div>
+        {{end}}
+    </nav>
+    <div class="page">
+        <h2>Setup</h2>
+        <p class="error" id="error">{{.Error}}</p>
+
+        <!-- Step 1: files and settings (files are read locally, never uploaded) -->
+        <section class="card" id="file-dialog">
+            <h3>Setup</h3>
+            <form id="topo-form" novalidate>
+                <fieldset>
+                    <legend>Files</legend>
+                    <div class="field">
+                        <label for="topo-file">Topology file <span class="req">*</span></label>
+                        <input type="file" id="topo-file" accept=".json,application/json" required>
+                    </div>
+                    <div class="field">
+                        <label for="info-file">Static topology info <span class="muted">(optional)</span></label>
+                        <input type="file" id="info-file" accept=".json,application/json">
+                        <p class="desc muted">Link capacities per interface (the <code>Bandwidth</code> section), used
+                            to pre-fill the bandwidth table.</p>
+                    </div>
+                    <div class="field">
+                        <label for="info-ratio">Bandwidth ratio</label>
+                        <div class="unit-input ratio-input">
+                            <input type="number" id="info-ratio" min="0" max="100" step="any" value="0" disabled>
+                            <span class="unit">%</span>
+                        </div>
+                        <p class="desc muted">Share of each capacity in the static topology info that is pre-filled as
+                            bandwidth. 0% means not specified: the entries are still added, but with 0 kbit/s, and you
+                            set each bandwidth manually.</p>
+                    </div>
+                    <p class="desc muted">Files are read in your browser and are not sent to the server.</p>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Validity period</legend>
+                    <div class="field-row">
+                        <div class="field">
+                            <label for="valid-from-date">Start <span class="req">*</span></label>
+                            <div class="date-time">
+                                <input type="date" id="valid-from-date" required>
+                                <input type="time" id="valid-from-time" step="1" aria-label="Start time (optional)">
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="valid-until-date">End <span class="req">*</span></label>
+                            <div class="date-time">
+                                <input type="date" id="valid-until-date" required>
+                                <input type="time" id="valid-until-time" step="1" aria-label="End time (optional)">
+                            </div>
+                        </div>
+                    </div>
+                    <p class="desc muted">The bandwidth allocation is valid during this period. The time is optional;
+                        without it, 00:00:00 is used. Times are in your time zone (<span id="tz-name"></span>).</p>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Redemption defaults</legend>
+                    <div class="defaults-grid">
+                        <div class="field">
+                            <label for="d-bandwidth-min"><code>bandwidth_min</code> <span class="req">*</span></label>
+                            <p class="desc muted">Minimum bandwidth of an asset to be redeemable.</p>
+                            <div class="unit-input">
+                                <input type="number" id="d-bandwidth-min" min="0" step="any" required>
+                                <select id="d-bandwidth-min-unit" class="unit-bw" aria-label="Unit"></select>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="d-bandwidth-max"><code>bandwidth_max</code> <span class="req">*</span></label>
+                            <p class="desc muted">Maximum bandwidth of an asset to be redeemable.</p>
+                            <div class="unit-input">
+                                <input type="number" id="d-bandwidth-max" min="0" step="any" required>
+                                <select id="d-bandwidth-max-unit" class="unit-bw" aria-label="Unit"></select>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="d-time-granularity"><code>time_granularity</code> <span
+                                    class="req">*</span></label>
+                            <p class="desc muted">A redeemable asset's duration must be a multiple of this.</p>
+                            <div class="unit-input">
+                                <input type="number" id="d-time-granularity" min="0" step="any" required>
+                                <select id="d-time-granularity-unit" class="unit-time" aria-label="Unit"></select>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="d-time-min-duration"><code>time_min_duration</code> <span
+                                    class="req">*</span></label>
+                            <p class="desc muted">Minimum duration of an asset to be redeemable.</p>
+                            <div class="unit-input">
+                                <input type="number" id="d-time-min-duration" min="0" step="any" required>
+                                <select id="d-time-min-duration-unit" class="unit-time" aria-label="Unit"></select>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="d-time-max-duration"><code>time_max_duration</code> <span
+                                    class="req">*</span></label>
+                            <p class="desc muted">Maximum duration of an asset to be redeemable.</p>
+                            <div class="unit-input">
+                                <input type="number" id="d-time-max-duration" min="0" step="any" required>
+                                <select id="d-time-max-duration-unit" class="unit-time" aria-label="Unit"></select>
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Bandwidth allocation</legend>
+                    <label class="radio">
+                        <input type="radio" name="bw-mode" value="pairs" checked>
+                        Per interface pair
+                    </label>
+                    <p class="desc muted">Each pair is set in both directions, which can differ (e.g. 1 → 2 and 2 → 1).
+                        Interface 0 means local: for every interface x used in a pair, 0 ↔ x must be set as well.</p>
+                    <label class="radio">
+                        <input type="radio" name="bw-mode" value="interfaces">
+                        Per interface
+                    </label>
+                    <p class="desc muted">Bandwidth per interface, set separately for ingress and egress.</p>
+                </fieldset>
+
+                <p class="error" id="form-error" role="alert"></p>
+                <button type="submit">Continue</button>
+            </form>
+        </section>
+
+        <!-- Step 2: visualization -->
+        <section class="card" id="topology-view" hidden>
+            <div class="card-header">
+                <h3>Topology <span id="topo-name" class="muted"></span></h3>
+                <button type="button" id="edit-setup" class="secondary">Edit setup</button>
+            </div>
+            <div id="topology-svg" class="topology-svg"></div>
+        </section>
+
+        <!-- Step 3: bandwidth allocation -->
+        <section class="card" id="bandwidth-config" hidden>
+            <h3>Bandwidth allocation</h3>
+            <div id="bw-summary" class="bw-summary muted"></div>
+            <form id="bw-form" class="bw-form" novalidate>
+                <label><span id="bw-a-label">Interface 1</span> <select id="bw-a" required></select></label>
+                <label id="bw-b-wrap"><span id="bw-b-label">Interface 2</span> <select id="bw-b"></select></label>
+                <label id="bw-dir-wrap">Direction
+                    <select id="bw-dir">
+                        <option value="ingress">Ingress</option>
+                        <option value="egress">Egress</option>
+                    </select>
+                </label>
+                <!-- One group per direction: bandwidth and price -->
+                <div class="dir-group">
+                    <label>
+                        <span id="bw-ab-label">Bandwidth</span>
+                        <span class="unit-input">
+                            <input type="number" id="bw-value" min="0" step="any" required>
+                            <select id="bw-unit" class="unit-bw" aria-label="Unit"></select>
+                        </span>
+                    </label>
+                    <label>
+                        <span id="bw-price-label">Price</span>
+                        <input type="number" id="bw-price" class="price" min="0" step="1" required>
+                    </label>
+                </div>
+                <div class="dir-group" id="bw-ba-wrap">
+                    <label>
+                        <span id="bw-ba-label">Bandwidth</span>
+                        <span class="unit-input">
+                            <input type="number" id="bw-value-rev" min="0" step="any">
+                            <select id="bw-unit-rev" class="unit-bw" aria-label="Unit"></select>
+                        </span>
+                    </label>
+                    <label>
+                        <span id="bw-price-rev-label">Price</span>
+                        <input type="number" id="bw-price-rev" class="price" min="0" step="1">
+                    </label>
+                </div>
+                <button type="submit" id="bw-submit">Add</button>
+            </form>
+            <p class="desc muted price-hint">Prices are whole numbers per kbit/s per second.</p>
+            <p class="error" id="bw-error" role="alert"></p>
+            <div id="bw-missing" class="bw-missing" hidden>
+                <p>These directions still need a bandwidth:</p>
+                <div id="bw-missing-list" class="chips"></div>
+            </div>
+            <table id="bw-table" class="bw-table">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+            <p id="bw-empty" class="muted">No bandwidths configured yet.</p>
+            <!-- Sends validity period, redemption settings and all entries to /assetup/create -->
+            <div class="actions submit-row">
+                <label class="checkbox">
+                    <input type="checkbox" id="skip-overlap">
+                    Skip the check for overlapping validity periods
+                </label>
+                <button type="button" id="bw-create">Create</button>
+            </div>
+            <p id="submit-status" role="status"></p>
+        </section>
+    </div>
+
+
+</body>
+
+</html>

@@ -90,31 +90,52 @@ func (s *MarketplaceStorage) FetchReservations(
 	return s.db.FetchReservations(ctx, params)
 }
 
+func (s *MarketplaceStorage) PublishManyAssets(
+	ctx context.Context,
+	assets []*marketplacedb.DBAsset,
+) ([]int64, error) {
+	var err error
+	for _, a := range assets {
+		err := validateAsset(a)
+		if err != nil {
+			return nil, err
+		}
+	}
+	assetIds := make([]int64, 0, len(assets))
+	err = s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
+		for _, a := range assets {
+			var assetId int64
+			assetId, err = tx.InsertAsset(ctx, a)
+			if err != nil {
+				return err
+			}
+			_, err = tx.InsertAssetSegment(ctx, assetId, a.StartsAt, a.StopsAt, a.Bandwidth)
+			if err != nil {
+				return err
+			}
+			_, err = tx.RegisterAssetEvent(ctx, a, marketplacedb.AssetPublished)
+			if err != nil {
+				return err
+			}
+			assetIds = append(assetIds, assetId)
+		}
+		return nil
+	})
+	return assetIds, err
+}
+
 func (s *MarketplaceStorage) PublishAsset(
 	ctx context.Context,
 	a *marketplacedb.DBAsset,
 ) (int64, error) {
-	err := validateAsset(a)
+	assetIds, err := s.PublishManyAssets(ctx, []*marketplacedb.DBAsset{a})
 	if err != nil {
 		return 0, err
 	}
-	var assetId int64
-	err = s.db.WithTx(ctx, func(tx marketplacedb.Repository) error {
-		assetId, err = tx.InsertAsset(ctx, a)
-		if err != nil {
-			return err
-		}
-		_, err = tx.InsertAssetSegment(ctx, assetId, a.StartsAt, a.StopsAt, a.Bandwidth)
-		if err != nil {
-			return err
-		}
-		_, err = tx.RegisterAssetEvent(ctx, a, marketplacedb.AssetPublished)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	return assetId, err
+	if len(assetIds) != 1 {
+		return 0, serrors.New("asset was not created")
+	}
+	return assetIds[0], nil
 }
 func (s *MarketplaceStorage) UpdateListedAsset(
 	ctx context.Context,

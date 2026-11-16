@@ -16,6 +16,7 @@ package webapp
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"embed"
 	"encoding/gob"
 	"encoding/json"
@@ -84,6 +85,8 @@ func Init(signer *registration.Signer, store *storage.MarketplaceStorage, mux *h
 	mux.HandleFunc("/asbalance", h.asBalanceHandler)
 	mux.HandleFunc("/asassets", h.asAssetsHandler)
 	mux.HandleFunc("/asassets/data", h.asAssetsDataHandler)
+	mux.HandleFunc("/assetup", h.asSetupHandler)
+	mux.HandleFunc("/assetup/create", h.asSetupCreateHandler)
 	mux.Handle("/static/", http.FileServerFS(staticFS))
 }
 
@@ -168,7 +171,7 @@ func (h *Handler) asLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/asbalance", http.StatusSeeOther)
+	http.Redirect(w, r, "/asassets", http.StatusSeeOther)
 }
 
 func (h *Handler) asAssetsDataHandler(w http.ResponseWriter, r *http.Request) {
@@ -209,8 +212,7 @@ func (h *Handler) asAssetsDataHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) asAssetsHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("1")
+func (h *Handler) asSetupHandler(w http.ResponseWriter, r *http.Request) {
 	session, err := h.GetSession(r)
 	if err != nil {
 		http.Redirect(w, r, "/aslogin", http.StatusSeeOther)
@@ -221,14 +223,140 @@ func (h *Handler) asAssetsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/aslogin", http.StatusSeeOther)
 		return
 	}
-	fmt.Println("2")
+	err = templates.ExecuteTemplate(w, "assetup.html", map[string]any{
+		"Username": ia.String(),
+	})
+	if err != nil {
+		log.Debug("AS setup handler", "err", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+}
+
+func (h *Handler) asSetupCreateHandler(w http.ResponseWriter, r *http.Request) {
+	type baseConfiguration struct {
+		BandwidthMin    uint32 `json:"bandwidth_min"`
+		BandwidhMax     uint32 `json:"bandwidth_max"`
+		TimeGranularity uint32 `json:"time_granularity"`
+		TimeMinDuration uint32 `json:"time_min_duration"`
+		TimeMaxDuration uint32 `json:"time_max_duration"`
+	}
+	type entry struct {
+		Ingress   *uint32 `json:"ingress"`
+		Egress    *uint32 `json:"egress"`
+		Bandwidth uint32  `json:"kbps"`
+		Price     uint32  `json:"price"`
+	}
+	type setupRequest struct {
+		StartsAt     int64             `json:"starts_at"`
+		StopsAt      int64             `json:"stops_at"`
+		BaseConfig   baseConfiguration `json:"base"`
+		Entries      []entry           `json:"bandwidths"`
+		CheckOverlap bool              `json:"check_overlap"`
+		Mode         string            `json:"mode"`
+	}
+	session, err := h.GetSession(r)
+	if err != nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+	ia, ok := session.Values["user"].(addr.IA)
+	if !ok {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var setup setupRequest
+	if err := json.NewDecoder(r.Body).Decode(&setup); err != nil {
+		log.Debug("AS setup create handler", "err", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if setup.CheckOverlap {
+		interfaces := []db.ASInterfaceFilter{}
+		for _, entry := range setup.Entries {
+			interfaces = append(interfaces, db.ASInterfaceFilter{
+				IA:      ia,
+				Ingress: entry.Ingress,
+				Egress:  entry.Egress,
+			})
+		}
+		foundAssets, err := h.store.SearchListedAssets(r.Context(), &db.ListedAssetQuery{
+			ValidityMode:         db.PartialOverlap,
+			StartsAt:             setup.StartsAt,
+			StopsAt:              setup.StopsAt,
+			MinRequiredBandwidth: 1,
+			Interfaces:           interfaces,
+		})
+		if err != nil {
+			log.Debug("AS setup create handler", "err", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(foundAssets) != 0 {
+			http.Error(w, "overlap detected!", http.StatusBadRequest)
+			return
+		}
+	}
+	dbAssets := make([]*db.DBAsset, 0, len(setup.Entries))
+	for _, entry := range setup.Entries {
+		if entry.Ingress == nil && entry.Egress == nil {
+			http.Error(w, "invalid assets!", http.StatusBadRequest)
+			return
+		}
+		dbAsset := &db.DBAsset{
+			IA:              ia,
+			Bandwidth:       entry.Bandwidth,
+			BandwidthMin:    setup.BaseConfig.BandwidthMin,
+			BandwidthMax:    setup.BaseConfig.BandwidhMax,
+			StartsAt:        setup.StartsAt,
+			StopsAt:         setup.StopsAt,
+			TimeGranularity: setup.BaseConfig.TimeGranularity,
+			TimeMinDuration: setup.BaseConfig.TimeMinDuration,
+			TimeMaxDuration: setup.BaseConfig.TimeMaxDuration,
+			Price:           entry.Price,
+		}
+		if entry.Ingress != nil {
+			dbAsset.IfIdIngress = sql.NullInt32{
+				Int32: int32(*entry.Ingress),
+				Valid: true,
+			}
+		}
+		if entry.Egress != nil {
+			dbAsset.IfIdEgress = sql.NullInt32{
+				Int32: int32(*entry.Egress),
+				Valid: true,
+			}
+		}
+		dbAssets = append(dbAssets, dbAsset)
+	}
+	_, err = h.store.PublishManyAssets(r.Context(), dbAssets)
+	if err != nil {
+		log.Debug("AS setup create handler", "err", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+}
+
+func (h *Handler) asAssetsHandler(w http.ResponseWriter, r *http.Request) {
+	session, err := h.GetSession(r)
+	if err != nil {
+		http.Redirect(w, r, "/aslogin", http.StatusSeeOther)
+		return
+	}
+	ia, ok := session.Values["user"].(addr.IA)
+	if !ok {
+		http.Redirect(w, r, "/aslogin", http.StatusSeeOther)
+		return
+	}
 	assets, err := h.store.LookupAssets(r.Context(), ia)
 	if err != nil {
 		log.Debug("AS asset handler", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	fmt.Println("3", assets)
 	err = templates.ExecuteTemplate(w, "asassets.html", map[string]any{
 		"Assets":   assets,
 		"Username": ia.String(),
