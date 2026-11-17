@@ -406,8 +406,8 @@ func handlePublish(
 ) {
 	fmt.Println("Handle publish asset query.")
 	asset := &hummingbird.PublisherAsset{
-		IfIdIngress:     readOptionalUint32(reader, "ingress: "),
-		IfIdEgress:      readOptionalUint32(reader, "egress: "),
+		Ingress:         readOptionalUint32(reader, "ingress: "),
+		Egress:          readOptionalUint32(reader, "egress: "),
 		Bandwidth:       uint32(readUint64(reader, "bandwidth: ")),
 		BandwidthMin:    uint32(readUint64(reader, "minimum bandwidth: ")),
 		BandwidthMax:    uint32(readUint64(reader, "maximum bandwidth: ")),
@@ -588,11 +588,11 @@ func handleStatistics(
 	}
 	resp, err := c.Statistics(ctx, &connect.Request[hummingbird.StatisticsRequest]{
 		Msg: &hummingbird.StatisticsRequest{
-			Start:       startsAt.Unix(),
-			End:         stopsAt.Unix(),
-			Step:        uint32(stepSize),
-			IfIdIngress: ingress,
-			IfIdEgress:  egress,
+			Start:   startsAt.Unix(),
+			End:     stopsAt.Unix(),
+			Step:    uint32(stepSize),
+			Ingress: ingress,
+			Egress:  egress,
 		},
 	})
 	if err != nil {
@@ -738,9 +738,9 @@ func handleReservation(
 	}
 	if ia != nil {
 		req.Interfaces = append(req.Interfaces, &hummingbird.ASInterfaceFilter{
-			Ia:          *ia,
-			IfIdIngress: ingress,
-			IfIdEgress:  egress,
+			Ia:      *ia,
+			Ingress: ingress,
+			Egress:  egress,
 		})
 	}
 	if startsAt != nil {
@@ -774,8 +774,8 @@ func handleReservation(
 		transformed = append(transformed, &Reservation{
 			ResId:     res.ReservationId,
 			Ia:        addr.IA(res.Ia),
-			IngressId: res.IngressId,
-			EgressId:  res.EgressId,
+			IngressId: res.Ingress,
+			EgressId:  res.Egress,
 			Bw:        res.Bandwidth,
 			EncodedBw: uint16(res.DataplaneEncoding),
 			StartsAt:  time.Unix(res.StartsAt, 0),
@@ -985,9 +985,9 @@ func handleSearch(
 		asInterfacesFilters := []*hummingbird.ASInterfaceFilter{}
 		if ia != nil {
 			asInterfacesFilters = append(asInterfacesFilters, &hummingbird.ASInterfaceFilter{
-				Ia:          *ia,
-				IfIdIngress: ingress,
-				IfIdEgress:  egress,
+				Ia:      *ia,
+				Ingress: ingress,
+				Egress:  egress,
 			})
 		}
 		msg = &hummingbird.SearchAssetsRequest{
@@ -1020,9 +1020,9 @@ func handleSearch(
 				Listed: &hummingbird.SearchListedAssetsRequest{
 					Interfaces: []*hummingbird.ASInterfaceFilter{
 						{
-							Ia:          *ia,
-							IfIdIngress: ingress,
-							IfIdEgress:  egress,
+							Ia:      *ia,
+							Ingress: ingress,
+							Egress:  egress,
 						},
 					},
 					MinRequiredBw:   *minReqBw,
@@ -1059,8 +1059,8 @@ func handleSearch(
 			TimeMinDuration: asset.TimeMinDuration,
 			TimeMaxDuration: asset.TimeMaxDuration,
 			Price:           asset.Price,
-			IfIdIngress:     asset.IfIdIngress,
-			IfIdEgress:      asset.IfIdEgress,
+			IfIdIngress:     asset.Ingress,
+			IfIdEgress:      asset.Egress,
 			TimeGranularity: asset.TimeGranularity,
 			Intervals:       intervals,
 		})

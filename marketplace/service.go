@@ -212,8 +212,8 @@ func (s *Service) FetchReservations(ctx context.Context, req *connect.Request[hu
 	for _, hop := range req.Msg.Interfaces {
 		hopFilter = append(hopFilter, db.ASInterfaceFilter{
 			IA:      addr.IA(hop.Ia),
-			Ingress: hop.IfIdIngress,
-			Egress:  hop.IfIdEgress,
+			Ingress: hop.Ingress,
+			Egress:  hop.Egress,
 		})
 	}
 
@@ -232,8 +232,8 @@ func (s *Service) FetchReservations(ctx context.Context, req *connect.Request[hu
 		resp = append(resp, &hummingbird.Reservation{
 			ReservationId:     reservation.ReservationID,
 			Ia:                uint64(reservation.IA),
-			IngressId:         reservation.Ingress,
-			EgressId:          reservation.Egress,
+			Ingress:           reservation.Ingress,
+			Egress:            reservation.Egress,
 			Bandwidth:         reservation.Bandwidth,
 			DataplaneEncoding: uint32(reservation.EncodedBandwidth),
 			StartsAt:          reservation.StartsAt,
@@ -346,12 +346,12 @@ func (s *Service) PublishAsset(ctx context.Context, req *connect.Request[humming
 	if dbAsset.StopsAt <= dbAsset.StartsAt {
 		return nil, connect.NewError(connect.CodeInvalidArgument, serrors.New("stopsAt must come after startsAt"))
 	}
-	if req.Msg.Asset.IfIdIngress != nil {
-		dbAsset.IfIdIngress.Int32 = int32(*req.Msg.Asset.IfIdIngress)
+	if req.Msg.Asset.Ingress != nil {
+		dbAsset.IfIdIngress.Int32 = int32(*req.Msg.Asset.Ingress)
 		dbAsset.IfIdIngress.Valid = true
 	}
-	if req.Msg.Asset.IfIdEgress != nil {
-		dbAsset.IfIdEgress.Int32 = int32(*req.Msg.Asset.IfIdEgress)
+	if req.Msg.Asset.Egress != nil {
+		dbAsset.IfIdEgress.Int32 = int32(*req.Msg.Asset.Egress)
 		dbAsset.IfIdEgress.Valid = true
 	}
 	assetID, err := s.store.PublishAsset(ctx, dbAsset)
@@ -615,8 +615,8 @@ func (s *Service) Statistics(
 		IA:          ia,
 		WindowStart: windowStart,
 		WindowEnd:   windowEnd,
-		Ingress:     req.Msg.IfIdIngress,
-		Egress:      req.Msg.IfIdEgress,
+		Ingress:     req.Msg.Ingress,
+		Egress:      req.Msg.Egress,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -663,8 +663,8 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 		for _, hop := range t.Listed.Interfaces {
 			hopFilter = append(hopFilter, db.ASInterfaceFilter{
 				IA:      addr.IA(hop.Ia),
-				Ingress: hop.IfIdIngress,
-				Egress:  hop.IfIdEgress,
+				Ingress: hop.Ingress,
+				Egress:  hop.Egress,
 			})
 		}
 		assets, err = s.store.SearchListedAssets(ctx, &db.ListedAssetQuery{
@@ -683,8 +683,8 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 		for _, hop := range t.Owned.Interfaces {
 			hopFilter = append(hopFilter, db.ASInterfaceFilter{
 				IA:      addr.IA(hop.Ia),
-				Ingress: hop.IfIdIngress,
-				Egress:  hop.IfIdEgress,
+				Ingress: hop.Ingress,
+				Egress:  hop.Egress,
 			})
 		}
 		assets, err = s.store.SearchOwnedAssets(ctx, &db.OwnedAssetQuery{
@@ -732,11 +732,11 @@ func (s *Service) SearchAssets(ctx context.Context, req *connect.Request[humming
 			}
 			if asset.IfIdIngress.Valid {
 				ingress := uint32(asset.IfIdIngress.Int32)
-				a.IfIdIngress = &ingress
+				a.Ingress = &ingress
 			}
 			if asset.IfIdEgress.Valid {
 				egress := uint32(asset.IfIdEgress.Int32)
-				a.IfIdEgress = &egress
+				a.Egress = &egress
 			}
 			repAssets = append(repAssets, a)
 			assetMap[asset.ID] = a

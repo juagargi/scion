@@ -473,8 +473,8 @@ func (x *UpdateAssetResult) GetError() string {
 
 type StatisticsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	IfIdIngress   *uint32                `protobuf:"varint,1,opt,name=if_id_ingress,json=ifIdIngress,proto3,oneof" json:"if_id_ingress,omitempty"`
-	IfIdEgress    *uint32                `protobuf:"varint,2,opt,name=if_id_egress,json=ifIdEgress,proto3,oneof" json:"if_id_egress,omitempty"`
+	Ingress       *uint32                `protobuf:"varint,1,opt,name=ingress,proto3,oneof" json:"ingress,omitempty"`
+	Egress        *uint32                `protobuf:"varint,2,opt,name=egress,proto3,oneof" json:"egress,omitempty"`
 	Start         int64                  `protobuf:"varint,3,opt,name=start,proto3" json:"start,omitempty"`
 	End           int64                  `protobuf:"varint,4,opt,name=end,proto3" json:"end,omitempty"`
 	Step          uint32                 `protobuf:"varint,5,opt,name=step,proto3" json:"step,omitempty"`
@@ -512,16 +512,16 @@ func (*StatisticsRequest) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *StatisticsRequest) GetIfIdIngress() uint32 {
-	if x != nil && x.IfIdIngress != nil {
-		return *x.IfIdIngress
+func (x *StatisticsRequest) GetIngress() uint32 {
+	if x != nil && x.Ingress != nil {
+		return *x.Ingress
 	}
 	return 0
 }
 
-func (x *StatisticsRequest) GetIfIdEgress() uint32 {
-	if x != nil && x.IfIdEgress != nil {
-		return *x.IfIdEgress
+func (x *StatisticsRequest) GetEgress() uint32 {
+	if x != nil && x.Egress != nil {
+		return *x.Egress
 	}
 	return 0
 }
@@ -1211,8 +1211,8 @@ func (x *PublishAssetResponse) GetAssetId() []byte {
 
 type PublisherAsset struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	IfIdIngress     *uint32                `protobuf:"varint,1,opt,name=if_id_ingress,json=ifIdIngress,proto3,oneof" json:"if_id_ingress,omitempty"`
-	IfIdEgress      *uint32                `protobuf:"varint,2,opt,name=if_id_egress,json=ifIdEgress,proto3,oneof" json:"if_id_egress,omitempty"`
+	Ingress         *uint32                `protobuf:"varint,1,opt,name=ingress,proto3,oneof" json:"ingress,omitempty"`
+	Egress          *uint32                `protobuf:"varint,2,opt,name=egress,proto3,oneof" json:"egress,omitempty"`
 	Bandwidth       uint32                 `protobuf:"varint,3,opt,name=bandwidth,proto3" json:"bandwidth,omitempty"`
 	BandwidthMin    uint32                 `protobuf:"varint,4,opt,name=bandwidth_min,json=bandwidthMin,proto3" json:"bandwidth_min,omitempty"`
 	BandwidthMax    uint32                 `protobuf:"varint,5,opt,name=bandwidth_max,json=bandwidthMax,proto3" json:"bandwidth_max,omitempty"`
@@ -1256,16 +1256,16 @@ func (*PublisherAsset) Descriptor() ([]byte, []int) {
 	return file_proto_hummingbird_v1_marketplace_proto_rawDescGZIP(), []int{19}
 }
 
-func (x *PublisherAsset) GetIfIdIngress() uint32 {
-	if x != nil && x.IfIdIngress != nil {
-		return *x.IfIdIngress
+func (x *PublisherAsset) GetIngress() uint32 {
+	if x != nil && x.Ingress != nil {
+		return *x.Ingress
 	}
 	return 0
 }
 
-func (x *PublisherAsset) GetIfIdEgress() uint32 {
-	if x != nil && x.IfIdEgress != nil {
-		return *x.IfIdEgress
+func (x *PublisherAsset) GetEgress() uint32 {
+	if x != nil && x.Egress != nil {
+		return *x.Egress
 	}
 	return 0
 }
@@ -1426,8 +1426,8 @@ func (*SearchAssetsRequest_Listed) isSearchAssetsRequest_Request() {}
 type ASInterfaceFilter struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ia            uint64                 `protobuf:"varint,1,opt,name=ia,proto3" json:"ia,omitempty"`
-	IfIdIngress   *uint32                `protobuf:"varint,2,opt,name=if_id_ingress,json=ifIdIngress,proto3,oneof" json:"if_id_ingress,omitempty"`
-	IfIdEgress    *uint32                `protobuf:"varint,3,opt,name=if_id_egress,json=ifIdEgress,proto3,oneof" json:"if_id_egress,omitempty"`
+	Ingress       *uint32                `protobuf:"varint,2,opt,name=ingress,proto3,oneof" json:"ingress,omitempty"`
+	Egress        *uint32                `protobuf:"varint,3,opt,name=egress,proto3,oneof" json:"egress,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1469,16 +1469,16 @@ func (x *ASInterfaceFilter) GetIa() uint64 {
 	return 0
 }
 
-func (x *ASInterfaceFilter) GetIfIdIngress() uint32 {
-	if x != nil && x.IfIdIngress != nil {
-		return *x.IfIdIngress
+func (x *ASInterfaceFilter) GetIngress() uint32 {
+	if x != nil && x.Ingress != nil {
+		return *x.Ingress
 	}
 	return 0
 }
 
-func (x *ASInterfaceFilter) GetIfIdEgress() uint32 {
-	if x != nil && x.IfIdEgress != nil {
-		return *x.IfIdEgress
+func (x *ASInterfaceFilter) GetEgress() uint32 {
+	if x != nil && x.Egress != nil {
+		return *x.Egress
 	}
 	return 0
 }
@@ -1683,8 +1683,8 @@ type SearchAsset struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	AssetId         []byte                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	Ia              uint64                 `protobuf:"varint,2,opt,name=ia,proto3" json:"ia,omitempty"`
-	IfIdIngress     *uint32                `protobuf:"varint,3,opt,name=if_id_ingress,json=ifIdIngress,proto3,oneof" json:"if_id_ingress,omitempty"`
-	IfIdEgress      *uint32                `protobuf:"varint,4,opt,name=if_id_egress,json=ifIdEgress,proto3,oneof" json:"if_id_egress,omitempty"`
+	Ingress         *uint32                `protobuf:"varint,3,opt,name=ingress,proto3,oneof" json:"ingress,omitempty"`
+	Egress          *uint32                `protobuf:"varint,4,opt,name=egress,proto3,oneof" json:"egress,omitempty"`
 	BandwidthMin    uint32                 `protobuf:"varint,5,opt,name=bandwidth_min,json=bandwidthMin,proto3" json:"bandwidth_min,omitempty"`
 	BandwidthMax    uint32                 `protobuf:"varint,6,opt,name=bandwidth_max,json=bandwidthMax,proto3" json:"bandwidth_max,omitempty"`
 	TimeGranularity uint32                 `protobuf:"varint,7,opt,name=time_granularity,json=timeGranularity,proto3" json:"time_granularity,omitempty"`
@@ -1740,16 +1740,16 @@ func (x *SearchAsset) GetIa() uint64 {
 	return 0
 }
 
-func (x *SearchAsset) GetIfIdIngress() uint32 {
-	if x != nil && x.IfIdIngress != nil {
-		return *x.IfIdIngress
+func (x *SearchAsset) GetIngress() uint32 {
+	if x != nil && x.Ingress != nil {
+		return *x.Ingress
 	}
 	return 0
 }
 
-func (x *SearchAsset) GetIfIdEgress() uint32 {
-	if x != nil && x.IfIdEgress != nil {
-		return *x.IfIdEgress
+func (x *SearchAsset) GetEgress() uint32 {
+	if x != nil && x.Egress != nil {
+		return *x.Egress
 	}
 	return 0
 }
@@ -2397,8 +2397,8 @@ type Reservation struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	ReservationId     uint32                 `protobuf:"varint,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
 	Ia                uint64                 `protobuf:"varint,2,opt,name=ia,proto3" json:"ia,omitempty"`
-	IngressId         uint32                 `protobuf:"varint,3,opt,name=ingress_id,json=ingressId,proto3" json:"ingress_id,omitempty"`
-	EgressId          uint32                 `protobuf:"varint,4,opt,name=egress_id,json=egressId,proto3" json:"egress_id,omitempty"`
+	Ingress           uint32                 `protobuf:"varint,3,opt,name=ingress,proto3" json:"ingress,omitempty"`
+	Egress            uint32                 `protobuf:"varint,4,opt,name=egress,proto3" json:"egress,omitempty"`
 	Bandwidth         uint32                 `protobuf:"varint,5,opt,name=bandwidth,proto3" json:"bandwidth,omitempty"`
 	DataplaneEncoding uint32                 `protobuf:"varint,6,opt,name=dataplane_encoding,json=dataplaneEncoding,proto3" json:"dataplane_encoding,omitempty"`
 	StartsAt          int64                  `protobuf:"varint,7,opt,name=starts_at,json=startsAt,proto3" json:"starts_at,omitempty"`
@@ -2452,16 +2452,16 @@ func (x *Reservation) GetIa() uint64 {
 	return 0
 }
 
-func (x *Reservation) GetIngressId() uint32 {
+func (x *Reservation) GetIngress() uint32 {
 	if x != nil {
-		return x.IngressId
+		return x.Ingress
 	}
 	return 0
 }
 
-func (x *Reservation) GetEgressId() uint32 {
+func (x *Reservation) GetEgress() uint32 {
 	if x != nil {
-		return x.EgressId
+		return x.Egress
 	}
 	return 0
 }
@@ -2537,16 +2537,16 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x06result\x18\x01 \x03(\v2'.proto.hummingbird.v1.UpdateAssetResultR\x06result\"8\n" +
 	"\x11UpdateAssetResult\x12\x19\n" +
 	"\x05error\x18\x01 \x01(\tH\x00R\x05error\x88\x01\x01B\b\n" +
-	"\x06_error\"\xc2\x01\n" +
-	"\x11StatisticsRequest\x12'\n" +
-	"\rif_id_ingress\x18\x01 \x01(\rH\x00R\vifIdIngress\x88\x01\x01\x12%\n" +
-	"\fif_id_egress\x18\x02 \x01(\rH\x01R\n" +
-	"ifIdEgress\x88\x01\x01\x12\x14\n" +
+	"\x06_error\"\xa2\x01\n" +
+	"\x11StatisticsRequest\x12\x1d\n" +
+	"\aingress\x18\x01 \x01(\rH\x00R\aingress\x88\x01\x01\x12\x1b\n" +
+	"\x06egress\x18\x02 \x01(\rH\x01R\x06egress\x88\x01\x01\x12\x14\n" +
 	"\x05start\x18\x03 \x01(\x03R\x05start\x12\x10\n" +
 	"\x03end\x18\x04 \x01(\x03R\x03end\x12\x12\n" +
-	"\x04step\x18\x05 \x01(\rR\x04stepB\x10\n" +
-	"\x0e_if_id_ingressB\x0f\n" +
-	"\r_if_id_egress\"c\n" +
+	"\x04step\x18\x05 \x01(\rR\x04stepB\n" +
+	"\n" +
+	"\b_ingressB\t\n" +
+	"\a_egress\"c\n" +
 	"\x12StatisticsResponse\x12M\n" +
 	"\n" +
 	"statistics\x18\x01 \x03(\v2-.proto.hummingbird.v1.StatisticsResponseEntryR\n" +
@@ -2588,11 +2588,10 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x13PublishAssetRequest\x12:\n" +
 	"\x05asset\x18\x01 \x01(\v2$.proto.hummingbird.v1.PublisherAssetR\x05asset\"1\n" +
 	"\x14PublishAssetResponse\x12\x19\n" +
-	"\basset_id\x18\x01 \x01(\fR\aassetId\"\xbc\x03\n" +
-	"\x0ePublisherAsset\x12'\n" +
-	"\rif_id_ingress\x18\x01 \x01(\rH\x00R\vifIdIngress\x88\x01\x01\x12%\n" +
-	"\fif_id_egress\x18\x02 \x01(\rH\x01R\n" +
-	"ifIdEgress\x88\x01\x01\x12\x1c\n" +
+	"\basset_id\x18\x01 \x01(\fR\aassetId\"\x9c\x03\n" +
+	"\x0ePublisherAsset\x12\x1d\n" +
+	"\aingress\x18\x01 \x01(\rH\x00R\aingress\x88\x01\x01\x12\x1b\n" +
+	"\x06egress\x18\x02 \x01(\rH\x01R\x06egress\x88\x01\x01\x12\x1c\n" +
 	"\tbandwidth\x18\x03 \x01(\rR\tbandwidth\x12#\n" +
 	"\rbandwidth_min\x18\x04 \x01(\rR\fbandwidthMin\x12#\n" +
 	"\rbandwidth_max\x18\x05 \x01(\rR\fbandwidthMax\x12\x1b\n" +
@@ -2602,21 +2601,22 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x11time_min_duration\x18\t \x01(\rR\x0ftimeMinDuration\x12*\n" +
 	"\x11time_max_duration\x18\n" +
 	" \x01(\rR\x0ftimeMaxDuration\x12\x14\n" +
-	"\x05price\x18\v \x01(\rR\x05priceB\x10\n" +
-	"\x0e_if_id_ingressB\x0f\n" +
-	"\r_if_id_egress\"\xfc\x01\n" +
+	"\x05price\x18\v \x01(\rR\x05priceB\n" +
+	"\n" +
+	"\b_ingressB\t\n" +
+	"\a_egress\"\xfc\x01\n" +
 	"\x13SearchAssetsRequest\x12F\n" +
 	"\x05owned\x18\x01 \x01(\v2..proto.hummingbird.v1.SearchOwnedAssetsRequestH\x00R\x05owned\x12I\n" +
 	"\x06listed\x18\x02 \x01(\v2/.proto.hummingbird.v1.SearchListedAssetsRequestH\x00R\x06listed\x12G\n" +
 	"\rvalidity_mode\x18\x03 \x01(\x0e2\".proto.hummingbird.v1.ValidityModeR\fvalidityModeB\t\n" +
-	"\arequest\"\x96\x01\n" +
+	"\arequest\"v\n" +
 	"\x11ASInterfaceFilter\x12\x0e\n" +
-	"\x02ia\x18\x01 \x01(\x04R\x02ia\x12'\n" +
-	"\rif_id_ingress\x18\x02 \x01(\rH\x00R\vifIdIngress\x88\x01\x01\x12%\n" +
-	"\fif_id_egress\x18\x03 \x01(\rH\x01R\n" +
-	"ifIdEgress\x88\x01\x01B\x10\n" +
-	"\x0e_if_id_ingressB\x0f\n" +
-	"\r_if_id_egress\"\xd4\x02\n" +
+	"\x02ia\x18\x01 \x01(\x04R\x02ia\x12\x1d\n" +
+	"\aingress\x18\x02 \x01(\rH\x00R\aingress\x88\x01\x01\x12\x1b\n" +
+	"\x06egress\x18\x03 \x01(\rH\x01R\x06egress\x88\x01\x01B\n" +
+	"\n" +
+	"\b_ingressB\t\n" +
+	"\a_egress\"\xd4\x02\n" +
 	"\x18SearchOwnedAssetsRequest\x12G\n" +
 	"\n" +
 	"interfaces\x18\x01 \x03(\v2'.proto.hummingbird.v1.ASInterfaceFilterR\n" +
@@ -2639,13 +2639,12 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x05price\x18\x05 \x01(\rH\x00R\x05price\x88\x01\x01B\b\n" +
 	"\x06_price\"Q\n" +
 	"\x14SearchAssetsResponse\x129\n" +
-	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.SearchAssetR\x06assets\"\xd7\x03\n" +
+	"\x06assets\x18\x01 \x03(\v2!.proto.hummingbird.v1.SearchAssetR\x06assets\"\xb7\x03\n" +
 	"\vSearchAsset\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\fR\aassetId\x12\x0e\n" +
-	"\x02ia\x18\x02 \x01(\x04R\x02ia\x12'\n" +
-	"\rif_id_ingress\x18\x03 \x01(\rH\x00R\vifIdIngress\x88\x01\x01\x12%\n" +
-	"\fif_id_egress\x18\x04 \x01(\rH\x01R\n" +
-	"ifIdEgress\x88\x01\x01\x12#\n" +
+	"\x02ia\x18\x02 \x01(\x04R\x02ia\x12\x1d\n" +
+	"\aingress\x18\x03 \x01(\rH\x00R\aingress\x88\x01\x01\x12\x1b\n" +
+	"\x06egress\x18\x04 \x01(\rH\x01R\x06egress\x88\x01\x01\x12#\n" +
 	"\rbandwidth_min\x18\x05 \x01(\rR\fbandwidthMin\x12#\n" +
 	"\rbandwidth_max\x18\x06 \x01(\rR\fbandwidthMax\x12)\n" +
 	"\x10time_granularity\x18\a \x01(\rR\x0ftimeGranularity\x12*\n" +
@@ -2653,9 +2652,10 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"\x11time_max_duration\x18\t \x01(\rR\x0ftimeMaxDuration\x12\x14\n" +
 	"\x05price\x18\n" +
 	" \x01(\rR\x05price\x12G\n" +
-	"\tintervals\x18\v \x03(\v2).proto.hummingbird.v1.SearchAssetIntervalR\tintervalsB\x10\n" +
-	"\x0e_if_id_ingressB\x0f\n" +
-	"\r_if_id_egress\"k\n" +
+	"\tintervals\x18\v \x03(\v2).proto.hummingbird.v1.SearchAssetIntervalR\tintervalsB\n" +
+	"\n" +
+	"\b_ingressB\t\n" +
+	"\a_egress\"k\n" +
 	"\x13SearchAssetInterval\x12\x1c\n" +
 	"\tbandwidth\x18\x01 \x01(\rR\tbandwidth\x12\x1b\n" +
 	"\tstarts_at\x18\x02 \x01(\x03R\bstartsAt\x12\x19\n" +
@@ -2699,13 +2699,12 @@ const file_proto_hummingbird_v1_marketplace_proto_rawDesc = "" +
 	"_starts_atB\v\n" +
 	"\t_stops_at\"b\n" +
 	"\x19FetchReservationsResponse\x12E\n" +
-	"\freservations\x18\x01 \x03(\v2!.proto.hummingbird.v1.ReservationR\freservations\"\xb4\x02\n" +
+	"\freservations\x18\x01 \x03(\v2!.proto.hummingbird.v1.ReservationR\freservations\"\xaa\x02\n" +
 	"\vReservation\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\rR\rreservationId\x12\x0e\n" +
-	"\x02ia\x18\x02 \x01(\x04R\x02ia\x12\x1d\n" +
-	"\n" +
-	"ingress_id\x18\x03 \x01(\rR\tingressId\x12\x1b\n" +
-	"\tegress_id\x18\x04 \x01(\rR\begressId\x12\x1c\n" +
+	"\x02ia\x18\x02 \x01(\x04R\x02ia\x12\x18\n" +
+	"\aingress\x18\x03 \x01(\rR\aingress\x12\x16\n" +
+	"\x06egress\x18\x04 \x01(\rR\x06egress\x12\x1c\n" +
 	"\tbandwidth\x18\x05 \x01(\rR\tbandwidth\x12-\n" +
 	"\x12dataplane_encoding\x18\x06 \x01(\rR\x11dataplaneEncoding\x12\x1b\n" +
 	"\tstarts_at\x18\a \x01(\x03R\bstartsAt\x12\x19\n" +

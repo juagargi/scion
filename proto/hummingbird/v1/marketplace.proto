@@ -60,8 +60,8 @@ message UpdateAssetResult {
 }
 
 message StatisticsRequest {
-    optional uint32 if_id_ingress = 1;
-    optional uint32 if_id_egress = 2;
+    optional uint32 ingress = 1;
+    optional uint32 egress = 2;
     int64 start = 3;
     int64 end = 4;
     uint32 step = 5;
@@ -138,8 +138,8 @@ message PublishAssetResponse {
     bytes asset_id = 1;
 }
 message PublisherAsset {
-    optional uint32 if_id_ingress = 1;
-    optional uint32 if_id_egress = 2;
+    optional uint32 ingress = 1;
+    optional uint32 egress = 2;
     uint32 bandwidth = 3;
     uint32 bandwidth_min = 4;
     uint32 bandwidth_max = 5;
@@ -166,8 +166,8 @@ message SearchAssetsRequest {
 
 message ASInterfaceFilter {
     uint64 ia = 1;
-    optional uint32 if_id_ingress = 2;
-    optional uint32 if_id_egress = 3;
+    optional uint32 ingress = 2;
+    optional uint32 egress = 3;
 }
 
 message SearchOwnedAssetsRequest {
@@ -192,8 +192,8 @@ message SearchAssetsResponse {
 message SearchAsset {
     bytes asset_id = 1;
     uint64 ia = 2;
-    optional uint32 if_id_ingress = 3;
-    optional uint32 if_id_egress = 4;
+    optional uint32 ingress = 3;
+    optional uint32 egress = 4;
     uint32 bandwidth_min = 5;
     uint32 bandwidth_max = 6;
     uint32 time_granularity = 7;
@@ -261,8 +261,8 @@ message FetchReservationsResponse {
 message Reservation {
     uint32 reservation_id = 1;
     uint64 ia = 2;
-    uint32 ingress_id = 3;
-    uint32 egress_id = 4;
+    uint32 ingress = 3;
+    uint32 egress = 4;
     uint32 bandwidth = 5;
     uint32 dataplane_encoding = 6;
     int64 starts_at = 7;

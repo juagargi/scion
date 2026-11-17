@@ -74,9 +74,9 @@ func (c *Client) findExistingReservations(
 	asInterfacesFilters := []*hummingbird.ASInterfaceFilter{}
 	for _, pair := range pairs {
 		asInterfacesFilters = append(asInterfacesFilters, &hummingbird.ASInterfaceFilter{
-			Ia:          pair.IA,
-			IfIdIngress: &pair.Ingress,
-			IfIdEgress:  &pair.Egress,
+			Ia:      pair.IA,
+			Ingress: &pair.Ingress,
+			Egress:  &pair.Egress,
 		})
 	}
 	req := &hummingbird.FetchReservationsRequest{
@@ -95,12 +95,12 @@ func (c *Client) findExistingReservations(
 	ret := make([]*snetpath.Hop, len(pairs))
 	for i, pair := range pairs {
 		for _, r := range res.Msg.Reservations {
-			if r.Ia == pair.IA && r.IngressId == pair.Ingress && r.EgressId == pair.Egress {
+			if r.Ia == pair.IA && r.Ingress == pair.Ingress && r.Egress == pair.Egress {
 				ret[i] = &snetpath.Hop{
 					BaseHop: snetpath.BaseHop{
 						IA:      addr.IA(r.Ia),
-						Ingress: uint16(r.IngressId),
-						Egress:  uint16(r.EgressId),
+						Ingress: uint16(r.Ingress),
+						Egress:  uint16(r.Egress),
 					},
 					Flyover: &snetpath.FlyoverData{
 						ResID:     r.ReservationId,
@@ -387,9 +387,9 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 	asInterfacesFilters := []*hummingbird.ASInterfaceFilter{}
 	for _, hop := range pairs {
 		asInterfacesFilters = append(asInterfacesFilters, &hummingbird.ASInterfaceFilter{
-			Ia:          hop.IA,
-			IfIdIngress: &hop.Ingress,
-			IfIdEgress:  &hop.Egress,
+			Ia:      hop.IA,
+			Ingress: &hop.Ingress,
+			Egress:  &hop.Egress,
 		})
 	}
 	stop := stopsAtLatest
@@ -434,8 +434,8 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 			u = append(u, &UnwrappedAsset{
 				AssetId:         asset.AssetId,
 				Ia:              asset.Ia,
-				IfIdIngress:     asset.IfIdIngress,
-				IfIdEgress:      asset.IfIdEgress,
+				IfIdIngress:     asset.Ingress,
+				IfIdEgress:      asset.Egress,
 				BandwidthMin:    asset.BandwidthMin,
 				BandwidthMax:    asset.BandwidthMax,
 				TimeGranularity: asset.TimeGranularity,
@@ -461,11 +461,11 @@ func (c *Client) searchAssetsForAllInterfaces(ctx context.Context, owned bool, p
 			}
 			m[ia] = asAssets
 		}
-		if asset.IfIdIngress != nil && asset.IfIdEgress != nil {
+		if asset.Ingress != nil && asset.Egress != nil {
 			asAssets.pairAssets = append(asAssets.pairAssets, unwrapAssets(asset)...)
-		} else if asset.IfIdIngress != nil {
+		} else if asset.Ingress != nil {
 			asAssets.ingressAssets = append(asAssets.ingressAssets, unwrapAssets(asset)...)
-		} else if asset.IfIdEgress != nil {
+		} else if asset.Egress != nil {
 			asAssets.egressAssets = append(asAssets.egressAssets, unwrapAssets(asset)...)
 		} else {
 			log.Debug("invalid asset is returned from marketplace", "id", asset.AssetId)
