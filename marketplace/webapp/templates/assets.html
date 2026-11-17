@@ -14,6 +14,24 @@
         <section class="card">
             <h3>Filters</h3>
             <form class="filter-form" data-filter-table="assets-table" autocomplete="off">
+                <label>IA
+                    <input type="text" name="ia" placeholder="Any, e.g. 1-ff00:0:110">
+                </label>
+                <label>Ingress
+                    <input type="number" name="ingress" min="0" step="1" placeholder="Any">
+                </label>
+                <label>Egress
+                    <input type="number" name="egress" min="0" step="1" placeholder="Any">
+                </label>
+                <label>Active from (UTC)
+                    <input type="datetime-local" name="starts_at" step="1">
+                </label>
+                <label>Active until (UTC)
+                    <input type="datetime-local" name="stops_at" step="1">
+                </label>
+                <label>Bandwidth at least
+                    <input type="number" name="bandwidth" min="0" step="any" placeholder="Any">
+                </label>
                 <label>Account
                     <select onchange="reloadWithId(this.value)">
                         {{range $.Accounts}}
@@ -22,21 +40,6 @@
                         </option>
                         {{end}}
                     </select>
-                </label>
-                <label>Ingress
-                    <input type="number" name="ingress" min="0" step="1" placeholder="Any">
-                </label>
-                <label>Egress
-                    <input type="number" name="egress" min="0" step="1" placeholder="Any">
-                </label>
-                <label>Starts at or after (UTC)
-                    <input type="datetime-local" name="starts_at" step="1">
-                </label>
-                <label>Stops at or before (UTC)
-                    <input type="datetime-local" name="stops_at" step="1">
-                </label>
-                <label>Bandwidth at least
-                    <input type="number" name="bandwidth" min="0" step="any" placeholder="Any">
                 </label>
                 <button type="reset" class="secondary">Clear filters</button>
             </form>
@@ -60,7 +63,7 @@
                     </thead>
                     <tbody>
                         {{range $asset := .Assets}}
-                        <tr data-filter-row
+                        <tr data-filter-row data-ia="{{.IA}}"
                             data-ingress="{{if .IfIdIngress.Valid}}{{.IfIdIngress.Int32}}{{end}}"
                             data-egress="{{if .IfIdEgress.Valid}}{{.IfIdEgress.Int32}}{{end}}"
                             data-starts-at="{{.StartsAt}}" data-stops-at="{{.StopsAt}}" data-bandwidth="{{.Bandwidth}}">

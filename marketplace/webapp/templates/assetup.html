@@ -183,10 +183,11 @@
                 </div>
                 <button type="submit" id="bw-submit">Add</button>
             </form>
-            <p class="desc muted price-hint">Prices are whole numbers per kbit/s per second.</p>
+            <p class="desc muted price-hint">Prices are whole numbers per kbit/s per second. Entries with 0 kbit/s
+                are not submitted.</p>
             <p class="error" id="bw-error" role="alert"></p>
             <div id="bw-missing" class="bw-missing" hidden>
-                <p>These directions still need a bandwidth:</p>
+                <p>These directions have no bandwidth yet (optional, they can be left out):</p>
                 <div id="bw-missing-list" class="chips"></div>
             </div>
             <div class="table-wrap">

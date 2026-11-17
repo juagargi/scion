@@ -669,7 +669,7 @@ const Utilization = (() => {
                 const n = `${added} ${added === 1 ? 'entry' : 'entries'}`;
                 state.prefillNote = ratio > 0
                     ? `Pre-filled ${n} at ${ratio}% of the capacities in ${infoFile.name}.`
-                    : `Added ${n} from ${infoFile.name} with 0 kbit/s (ratio 0%); set their bandwidth before creating.`;
+                    : `Added ${n} from ${infoFile.name} with 0 kbit/s (ratio 0%); entries left at 0 kbit/s are not submitted.`;
             }
             prefilledFor = id;
         }
@@ -1313,10 +1313,19 @@ const Utilization = (() => {
         onPairChanged();
     }
 
-    // Directions that still need a value: the reverse of every configured direction,
-    // and 0 → x / x → 0 for every interface x used in a pair.
+    // Directions that still need a value (shown as a hint, they do not block submitting).
+    //   Pairs: the reverse of every configured direction, and 0 → x / x → 0 for every interface x used in a pair.
+    //   Per interface: the other direction (ingress / egress) of every configured interface.
     function missingDirections() {
-        if (state.mode !== 'pairs') return [];
+        if (state.mode !== 'pairs') {
+            const need = new Map();
+            for (const e of state.bandwidths.values()) {
+                const other = { interface: e.interface, direction: e.direction === 'ingress' ? 'egress' : 'ingress' };
+                const k = keyOf(other);
+                if (!state.bandwidths.has(k)) need.set(k, other);
+            }
+            return [...need.values()].sort(compareEntries);
+        }
         const need = new Map();
         const want = (ingress, egress) => {
             const k = pairKey(ingress, egress);
@@ -1334,8 +1343,14 @@ const Utilization = (() => {
         return [...need.values()].sort(compareEntries);
     }
 
+    // Entries sent to the server: everything with a bandwidth. Entries left at 0 kbit/s
+    // (e.g. pre-filled with ratio 0%) are skipped.
+    function submittedEntries() {
+        return [...state.bandwidths.values()].filter((e) => e.kbps > 0).sort(compareEntries);
+    }
+
     function entriesWithoutPrice() {
-        return [...state.bandwidths.values()].filter((e) => e.price === null).sort(compareEntries);
+        return submittedEntries().filter((e) => e.price === null);
     }
 
     function formatKbps(kbps) {
@@ -1375,6 +1390,11 @@ const Utilization = (() => {
         const missing = missingDirections();
         el.bwMissing.hidden = missing.length === 0;
         el.bwMissingList.replaceChildren(...missing.map((m) => {
+            if (m.interface !== undefined) {
+                const b = button(`${ifcText(m.interface)} ${m.direction}`, 'secondary', () => loadIntoForm(m));
+                b.title = `Interface ${ifcText(m.interface)}, ${m.direction}: fill into the form`;
+                return b;
+            }
             const b = button(`${m.ingress} → ${m.egress}`, 'secondary', () => loadIntoForm(m));
             b.title = `Ingress ${ifcText(m.ingress)}, egress ${ifcText(m.egress)}: fill into the form`;
             return b;
@@ -1431,7 +1451,7 @@ const Utilization = (() => {
             stops_at: Math.floor(state.validUntil.getTime() / 1000),
             base: { ...state.defaults },
             mode: state.mode,
-            bandwidths: [...state.bandwidths.values()].sort(compareEntries).map((e) => {
+            bandwidths: submittedEntries().map((e) => {
                 if (e.interface === undefined) {
                     return { ingress: e.ingress, egress: e.egress, kbps: e.kbps, price: e.price };
                 }
@@ -1443,13 +1463,16 @@ const Utilization = (() => {
     }
 
     // Problems that should block the request; empty when complete.
+    // Missing directions (see missingDirections) and entries at 0 kbit/s do not block:
+    // the latter are simply not submitted.
     function validate() {
         if (!state.defaults) return ['Setup has not been completed.'];
         const problems = [];
-        if (state.bandwidths.size === 0) problems.push('No bandwidth configured.');
-        for (const m of missingDirections()) problems.push(`Missing bandwidth for ${m.ingress} → ${m.egress}.`);
-        const noBandwidth = [...state.bandwidths.values()].filter((e) => e.kbps === 0).sort(compareEntries);
-        if (noBandwidth.length) problems.push(`Bandwidth not set (0 kbit/s) for ${noBandwidth.map(entryText).join(', ')}.`);
+        if (submittedEntries().length === 0) {
+            problems.push(state.bandwidths.size === 0
+                ? 'No bandwidth configured.'
+                : 'No bandwidth configured: entries with 0 kbit/s are not submitted.');
+        }
         const noPrice = entriesWithoutPrice();
         if (noPrice.length) problems.push(`Price not set for ${noPrice.map(entryText).join(', ')}.`);
         return problems;
@@ -1567,11 +1590,13 @@ const Utilization = (() => {
 // ===================================================================== 5. Table filters
 
 // A <form class="filter-form" data-filter-table="<table id>"> filters the rows of that table that carry
-// data-filter-row. Each row describes itself with data-ingress, data-egress, data-starts-at and
-// data-stops-at (unix seconds) and data-bandwidth. Empty fields do not filter:
+// data-filter-row. Each row describes itself with data-ia, data-ingress, data-egress, data-starts-at and
+// data-stops-at (unix seconds) and data-bandwidth. Empty fields and filters without an input do not filter:
+//   ia               the row's ISD-AS contains the given text (case-insensitive), e.g. "ff00:0:110"
 //   ingress, egress  exact match (a row without the interface never matches)
-//   starts_at        row starts at or after the given time (UTC)
-//   stops_at         row stops at or before the given time (UTC)
+//   starts_at        start of the time window (UTC): the row must stop at or after it
+//   stops_at         end of the time window (UTC): the row must start at or before it
+//                    i.e. rows overlapping the window are shown (row.start <= end, row.end >= start)
 //   bandwidth        row bandwidth is at least the given value
 // The filter values are kept in the URL query, so they survive reloads and switching the account.
 (function () {
@@ -1587,16 +1612,21 @@ const Utilization = (() => {
         return Number.isNaN(ms) ? null : ms / 1000;
     };
 
-    // name -> [parse the input value, test a row value against the parsed filter value]
+    const text = (raw) => (raw === '' ? null : raw.toLowerCase());
+
+    // Filter name (= input name and URL parameter) ->
+    //   attr:  data attribute of the row to compare with (dataset key)
+    //   parse: parses the input value and the row value (null = not set)
+    //   test:  (row value, filter value) -> whether the row matches
+    // The time window is an overlap: its start is compared with the row's end and its end with the row's start.
     const FILTERS = {
-        ingress: [num, (row, v) => row === v],
-        egress: [num, (row, v) => row === v],
-        starts_at: [time, (row, v) => row >= v],
-        stops_at: [time, (row, v) => row <= v],
-        bandwidth: [num, (row, v) => row >= v],
+        ia: { attr: 'ia', parse: text, test: (row, v) => row.includes(v) },
+        ingress: { attr: 'ingress', parse: num, test: (row, v) => row === v },
+        egress: { attr: 'egress', parse: num, test: (row, v) => row === v },
+        starts_at: { attr: 'stopsAt', parse: time, rowParse: num, test: (row, v) => row >= v },
+        stops_at: { attr: 'startsAt', parse: time, rowParse: num, test: (row, v) => row <= v },
+        bandwidth: { attr: 'bandwidth', parse: num, test: (row, v) => row >= v },
     };
-    // filter name -> data attribute of the row (dataset key)
-    const ATTR = { ingress: 'ingress', egress: 'egress', starts_at: 'startsAt', stops_at: 'stopsAt', bandwidth: 'bandwidth' };
 
     document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('form[data-filter-table]').forEach(setup);
@@ -1626,17 +1656,17 @@ const Utilization = (() => {
     function apply(form, table, count) {
         const active = [];
         const params = new URLSearchParams(window.location.search);
-        for (const [name, [parse, test]] of Object.entries(FILTERS)) {
+        for (const [name, filter] of Object.entries(FILTERS)) {
             const input = form.elements[name];
             if (!input) continue;
             const raw = input.value.trim();
-            const value = parse(raw);
+            const value = filter.parse(raw);
             if (value === null) {
                 params.delete(name);
                 continue;
             }
             params.set(name, raw);
-            active.push({ name, value, test });
+            active.push({ filter, value });
         }
         const query = params.toString();
         window.history.replaceState(null, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
@@ -1644,9 +1674,9 @@ const Utilization = (() => {
         const rows = [...table.querySelectorAll('tbody tr[data-filter-row]')];
         let shown = 0;
         for (const row of rows) {
-            const match = active.every((f) => {
-                const v = num(row.dataset[ATTR[f.name]] || '');
-                return v !== null && f.test(v, f.value);
+            const match = active.every(({ filter, value }) => {
+                const v = (filter.rowParse || filter.parse)((row.dataset[filter.attr] || '').trim());
+                return v !== null && filter.test(v, value);
             });
             row.hidden = !match;
             if (match) shown++;
