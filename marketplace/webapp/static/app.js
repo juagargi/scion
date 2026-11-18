@@ -212,11 +212,14 @@ const Utilization = (() => {
 
     const pad = (n) => String(n).padStart(2, '0');
 
+    // All dates and times are shown and entered in UTC.
     function toInput(ms) {
         const d = new Date(ms);
-        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-            'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+        return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) +
+            'T' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
     }
+    // datetime-local value ("YYYY-MM-DDTHH:MM[:SS]"), read as UTC -> ms (NaN if invalid)
+    const fromInput = (raw) => (raw === '' ? NaN : Date.parse(raw + 'Z'));
     const fmtFull = (ms) => toInput(ms).replace('T', ' ');
     const fmtNum = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 1 });
     const level = (pct) => (pct >= 95 ? 'full' : pct >= 75 ? 'high' : pct >= 40 ? 'mid' : 'low');
@@ -305,8 +308,8 @@ const Utilization = (() => {
 
     function apply() {
         if (!asset) return;
-        const f = new Date($('from').value).getTime();
-        const t = new Date($('to').value).getTime();
+        const f = fromInput($('from').value);
+        const t = fromInput($('to').value);
         if (Number.isNaN(f) || Number.isNaN(t) || t <= f) {
             showError('Enter a valid range: "To" must be after "From".');
             return;
@@ -397,16 +400,15 @@ const Utilization = (() => {
     function makeTicks(from, to) {
         const sp = to - from;
         const step = STEPS.find((s) => sp / s <= 8) || STEPS[STEPS.length - 1];
-        const off = -new Date(from).getTimezoneOffset() * M; // align ticks to local time
-        const ticks = [];
-        for (let t = Math.ceil((from + off) / step) * step - off; t <= to; t += step) ticks.push(t);
+        const ticks = []; // aligned to UTC
+        for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t);
 
         const label = (t) => {
             const d = new Date(t);
-            const date = d.getDate() + ' ' + MONTHS[d.getMonth()];
-            const hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+            const date = d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+            const hm = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
             if (step >= D) return date;
-            const time = step < M ? hm + ':' + pad(d.getSeconds()) : hm;
+            const time = step < M ? hm + ':' + pad(d.getUTCSeconds()) : hm;
             return sp >= D ? date + ' ' + time : time;
         };
         return ticks.map((t) => ({ t, text: label(t) }));
@@ -532,7 +534,7 @@ const Utilization = (() => {
 
     // Units, largest first. Values are always stored as kbit/s and seconds.
     const BW_UNITS = [[1e6, 'Gbit/s'], [1e3, 'Mbit/s'], [1, 'kbit/s']];
-    const TIME_UNITS = [[86400, 'd'], [3600, 'h'], [60, 'min'], [1, 's']];
+    const TIME_UNITS = [[3600, 'h'], [60, 'min'], [1, 's']];
 
     const DEFAULT_FIELDS = [
         { key: 'bandwidth_min', id: 'd-bandwidth-min', units: BW_UNITS },
@@ -570,7 +572,7 @@ const Utilization = (() => {
             infoRatio: $('info-ratio'),
             validFromDate: $('valid-from-date'), validFromTime: $('valid-from-time'),
             validUntilDate: $('valid-until-date'), validUntilTime: $('valid-until-time'),
-            tzName: $('tz-name'), formError: $('form-error'),
+            formError: $('form-error'),
             view: $('topology-view'), svgHost: $('topology-svg'), topoName: $('topo-name'), editSetup: $('edit-setup'),
             bwSection: $('bandwidth-config'), bwSummary: $('bw-summary'), bwForm: $('bw-form'),
             bwA: $('bw-a'), bwALabel: $('bw-a-label'), bwBWrap: $('bw-b-wrap'), bwB: $('bw-b'),
@@ -592,9 +594,8 @@ const Utilization = (() => {
         for (const f of DEFAULT_FIELDS) {
             el.defaults[f.key] = { input: $(f.id), unit: $(f.id + '-unit') };
         }
-        document.querySelectorAll('select.unit-bw').forEach((s) => fillUnits(s, BW_UNITS, 1e3));
+        document.querySelectorAll('select.unit-bw').forEach((s) => fillUnits(s, BW_UNITS, 1));
         document.querySelectorAll('select.unit-time').forEach((s) => fillUnits(s, TIME_UNITS, 1));
-        el.tzName.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time';
 
         el.topoForm.addEventListener('submit', onContinue);
         // The ratio only matters with a static info file
@@ -760,7 +761,7 @@ const Utilization = (() => {
         input.value = String(value / factor);
     }
 
-    // Date ("YYYY-MM-DD", required) plus time ("HH:MM[:SS]", optional, default 00:00:00), in local time.
+    // Date ("YYYY-MM-DD", required) plus time ("HH:MM[:SS]", optional, default 00:00:00), in UTC.
     function readDateTime(dateInput, timeInput, what) {
         const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateInput.value);
         if (!dm) throw fieldError(`Please enter a valid ${what} date.`, dateInput);
@@ -770,7 +771,7 @@ const Utilization = (() => {
             if (!tm) throw fieldError(`Please enter a valid ${what} time, or leave it empty for 00:00:00.`, timeInput);
             [h, min, s] = [+tm[1], +tm[2], +(tm[3] || 0)];
         }
-        const d = new Date(+dm[1], +dm[2] - 1, +dm[3], h, min, s);
+        const d = new Date(Date.UTC(+dm[1], +dm[2] - 1, +dm[3], h, min, s));
         if (isNaN(d)) throw fieldError(`Please enter a valid ${what} date.`, dateInput);
         return d;
     }
@@ -1089,10 +1090,10 @@ const Utilization = (() => {
     }
 
     function renderSummary() {
-        const fmt = (d) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
+        const fmt = (d) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' });
         const d = state.defaults;
         const lines = [
-            `Valid from ${fmt(state.validFrom)} to ${fmt(state.validUntil)} (${el.tzName.textContent}).`,
+            `Valid from ${fmt(state.validFrom)} to ${fmt(state.validUntil)} (UTC).`,
             `Allocation ${MODE_TEXT[state.mode]}.`,
             `Redeemable assets: ${formatKbps(d.bandwidth_min)} to ${formatKbps(d.bandwidth_max)}, ` +
             `${formatDuration(d.time_min_duration)} to ${formatDuration(d.time_max_duration)} ` +
