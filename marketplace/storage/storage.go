@@ -70,6 +70,12 @@ func NewStorage(
 	}, nil
 }
 
+// Close closes the database. In WAL mode, closing the last connection checkpoints the
+// write-ahead log into the database file and removes the -wal and -shm files.
+func (s *MarketplaceStorage) Close() error {
+	return s.db.Close()
+}
+
 func (s *MarketplaceStorage) Search(
 	ctx context.Context,
 	params *marketplacedb.AssetQuery,

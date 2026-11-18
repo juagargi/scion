@@ -169,7 +169,7 @@ func realMain(ctx context.Context) error {
 	var snetTopo snet.Topology
 	var err error
 	topo, err := topology.NewLoader(topology.LoaderCfg{
-		File:      globalCfg.General.Topology(),
+		File:      globalCfg.TopologyFile(),
 		Validator: &topology.DefaultValidator{},
 	})
 	if err != nil {
@@ -230,6 +230,14 @@ func realMain(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Deferred, so that it runs on every return, after g.Wait() below has waited for the
+	// servers to shut down. Without it the write-ahead log is never checkpointed, and the
+	// database file alone lacks every write since it was created.
+	defer func() {
+		if err := store.Close(); err != nil {
+			log.Error("Closing the marketplace database", "err", err)
+		}
+	}()
 	cert, err := loadOrCreateCertificate(path.Join(globalCfg.General.ConfigDir, "server.crt"), path.Join(globalCfg.General.ConfigDir, "server.key"))
 	if err != nil {
 		return err
