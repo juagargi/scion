@@ -86,7 +86,8 @@ class Inventory:
     local_port_base: int
     routers: tuple[RouterMetrics, ...]
     shaping: tuple[ShapedFlow, ...]
-    # SSH deployments always buy reservations from a marketplace reachable from one host.
+    # SSH deployments always buy reservations from a marketplace: one that setup deploys on one of
+    # the hosts, or an external one (no host) at its scion_address.
     marketplace: workload.MarketplaceConfig
     local_prometheus_port: int = DEFAULT_LOCAL_PROMETHEUS_PORT
     # The hosts that run experiment processes. Empty means server_host and client_hosts' hosts.
@@ -98,8 +99,13 @@ class Inventory:
                 {self.server_host, *self.client_hosts.values()}))
 
     @property
+    def external_marketplace(self) -> bool:
+        """Whether the marketplace runs outside the hosts, so that setup does not manage it."""
+        return self.marketplace.host is None
+
+    @property
     def marketplace_host(self) -> str:
-        assert self.marketplace.host is not None  # load_config requires it for SSH deployments.
+        assert self.marketplace.host is not None, "the marketplace is external"
         return self.marketplace.host
 
 
@@ -151,7 +157,7 @@ def load_marketplace(root: dict[str, Any]) -> workload.MarketplaceConfig:
     hummingbird = root.get("hummingbird")
     marketplace = hummingbird.get("marketplace") if isinstance(hummingbird, dict) else None
     if not isinstance(marketplace, dict):
-        raise workload.ConfigError("SSH deployments require hummingbird.marketplace with a host")
+        raise workload.ConfigError("SSH deployments require hummingbird.marketplace")
     return workload.parse_marketplace_config(marketplace, "ssh")
 
 
@@ -203,9 +209,9 @@ def load_deployment(
         if host not in hosts:
             raise workload.ConfigError(f"participant node references unknown host {host}")
     marketplace = load_marketplace(root)
-    if marketplace.host is None:
-        raise workload.ConfigError("SSH deployments require hummingbird.marketplace with a host")
-    if marketplace.host not in hosts:
+    # Without a host (parse_marketplace_config allows it only with location_override) the
+    # marketplace is external.
+    if marketplace.host is not None and marketplace.host not in hosts:
         raise workload.ConfigError(
             f"hummingbird.marketplace.host references unknown host {marketplace.host}",
         )
@@ -615,7 +621,12 @@ def run_experiment(
         workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str],
     ] | None = None,
     inventory: Inventory | None = None,
+    keep_going: bool = False,
 ) -> int:
+    """Launch the server and all clients, then return their aggregate experiment status.
+
+    The run stops as soon as a tester fails (see workload.newly_failed), unless keep_going is
+    set; it fails if any tester did."""
     workload.require_built_binary()
     server, clients, _, _ = config if config is not None else workload.load_config(config_path)
     if inventory is None:
@@ -649,16 +660,22 @@ def run_experiment(
                         workload.client_args(client, server, host.sciond),
                         log_path(client.client_id), jwt_file)))
                 exited: set[str] = set()
-                while any(process.poll() is None for _, _, process in processes[1:]):
+                failed: set[str] = set()
+
+                def check_failures() -> bool:
                     report_exits(processes, exited)
-                    if processes[0][2].poll() is not None:
-                        print("the server stopped, stopping the experiment", flush=True)
+                    testers = [(name, process.poll()) for _, name, process in processes]
+                    return workload.stop_for_failures(
+                        workload.newly_failed(testers, "server", failed), keep_going)
+
+                while any(process.poll() is None for _, _, process in processes[1:]):
+                    if check_failures():
                         return 1
                     time.sleep(0.25)
-                report_exits(processes, exited)
+                check_failures()
                 print("all clients exited, stopping the experiment", flush=True)
                 # The server runs until it is signalled; the cleanup below stops it.
-                return 1 if any(process.wait() != 0 for _, _, process in processes[1:]) else 0
+                return 1 if failed else 0
         except KeyboardInterrupt:
             print("interrupted, stopping the experiment", flush=True)
             return 130

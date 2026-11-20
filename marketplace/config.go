@@ -54,7 +54,20 @@ func (cfg *Config) Sample(dst io.Writer, path config.Path, _ config.CtxMap) {
 
 }
 
+// TopologyFile returns the path of the topology file: marketplace.topology if it is set,
+// and topology.json in general.config_dir otherwise.
+func (cfg *Config) TopologyFile() string {
+	if cfg.Marketplace.Topology != "" {
+		return cfg.Marketplace.Topology
+	}
+	return cfg.General.Topology()
+}
+
 type MarketplaceConfig struct {
+	// Topology is the path of the AS topology file, so that it need not live in
+	// general.config_dir next to the marketplace's certificates and keys. A relative path is
+	// relative to the working directory. Empty means topology.json in general.config_dir.
+	Topology                     string  `toml:"topology,omitempty"`
 	APIAddr                      string  `toml:"api_addr,omitempty"`
 	SCIONAPIAddr                 string  `toml:"scion_api_addr,omitempty"`
 	Currency                     string  `toml:"currency,omitempty"`

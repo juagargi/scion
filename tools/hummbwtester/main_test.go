@@ -37,6 +37,8 @@ import (
 	"github.com/scionproto/scion/private/path/pathpol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestObserveMarketRoundtrip(t *testing.T) {
@@ -800,8 +802,12 @@ func TestSelectPath(t *testing.T) {
 	for i := range allAttempts {
 		allAttempts[i] = answer{paths: both}
 	}
+	noPaths := make([]answer, 2*pathLookupRetries+2)
+	unverifiable := answer{err: status.Error(codes.Unknown,
+		"fetching failed: processing reply: all segments failed to verify")}
 	testCases := map[string]struct {
 		sequence string
+		patience time.Duration
 		answers  []answer
 		want     snet.Path
 		err      string
@@ -819,10 +825,33 @@ func TestSelectPath(t *testing.T) {
 		"no path at first, then found on a refresh": {
 			sequence: "0-0#103 0*", answers: []answer{{}, {}, {paths: both}}, want: viaBR2,
 		},
+		"no path is retried for as long as there is patience": {
+			sequence: "0-0#103 0*", answers: append(noPaths, answer{paths: both}),
+			want: viaBR2,
+		},
+		"no path until patience runs out": {
+			patience: time.Nanosecond, answers: []answer{{}}, err: "no usable path in time",
+		},
 		"no match after all retries": {
 			sequence: "0-0#7 0*", answers: allAttempts, err: "no path matches",
 		},
-		"daemon errors are not retried": {
+		"daemon failing to fetch the paths is retried": {
+			sequence: "0-0#103 0*", answers: []answer{unverifiable, unverifiable, {paths: both}},
+			want: viaBR2,
+		},
+		"daemon failing to fetch the paths until patience runs out": {
+			patience: time.Nanosecond, answers: []answer{unverifiable},
+			err: "all segments failed to verify",
+		},
+		"unreachable daemon is not retried": {
+			answers: []answer{{err: status.Error(codes.Unavailable, "connection refused")}},
+			err:     "connection refused",
+		},
+		"request rejected by the daemon is not retried": {
+			answers: []answer{{err: status.Error(codes.InvalidArgument, "bad request")}},
+			err:     "bad request",
+		},
+		"errors from outside gRPC are not retried": {
 			answers: []answer{{err: errors.New("daemon down")}}, err: "daemon down",
 		},
 	}
@@ -841,7 +870,8 @@ func TestSelectPath(t *testing.T) {
 			sequence, err := pathpol.NewSequence(tc.sequence)
 			require.NoError(t, err)
 
-			got, err := selectPath(context.Background(), sdConn, src, dst, sequence, "server")
+			got, err := selectPath(context.Background(), sdConn, src, dst, sequence,
+				tc.patience, "server")
 			if tc.err != "" {
 				assert.ErrorContains(t, err, tc.err)
 				return

@@ -26,6 +26,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -91,9 +92,19 @@ func main() {
 	os.Exit(realMain())
 }
 
-func realMain() int {
+// realMain returns the exit status: 0 when the tester ends by itself without error, 1 on an
+// error, and 128 plus the signal number when SIGINT or SIGTERM stopped it, as a shell reports a
+// process killed by that signal. Being stopped is not a normal end: whoever stops a tester knows
+// why and can ignore the status.
+func realMain() (status int) {
 	defer log.HandlePanic()
 	defer log.Flush()
+	var stopSignal atomic.Int32
+	defer func() {
+		if signum := stopSignal.Load(); signum != 0 {
+			status = 128 + int(signum)
+		}
+	}()
 	addFlags()
 	flag.Parse()
 	if err := validateFlags(); err != nil {
@@ -107,8 +118,11 @@ func realMain() int {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-sigCh
-		log.Info("Received shutdown signal")
+		sig := <-sigCh
+		log.Info("Received shutdown signal", "signal", sig)
+		if signum, ok := sig.(syscall.Signal); ok {
+			stopSignal.Store(int32(signum))
+		}
 		cancel()
 	}()
 

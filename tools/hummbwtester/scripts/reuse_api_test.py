@@ -88,7 +88,8 @@ FUNCTIONS = [
 # module, dataclass, its field names
 DATACLASSES = [
     (orchestration, "MarketplaceConfig", ["username", "password_env", "sub_account", "host",
-                                          "scion_address", "interfaces", "location_override"]),
+                                          "scion_address", "interfaces", "location_override",
+                                          "host_ssh"]),
     (remote, "SSHHost", ["name", "alias", "sciond", "run_dir", "readiness_command",
                          "static_info", "control_service"]),
     (remote, "Inventory", ["hosts", "server_host", "client_hosts", "prometheus_host",

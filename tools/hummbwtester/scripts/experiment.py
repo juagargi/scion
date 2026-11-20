@@ -103,8 +103,8 @@ def teardown_local() -> int:
     return 0
 
 
-def run_local(plan: ExperimentPlan) -> int:
-    return planner.run_experiment(plan.path, plan.config)
+def run_local(plan: ExperimentPlan, keep_going: bool = False) -> int:
+    return planner.run_experiment(plan.path, plan.config, keep_going)
 
 
 def show_informative(config_path: Path) -> None:
@@ -115,22 +115,28 @@ def show_informative(config_path: Path) -> None:
         print()
 
 
-def execute(action: str, config_path: Path, dry_run: bool = False) -> int:
+def execute(
+    action: str, config_path: Path, dry_run: bool = False, keep_going: bool = False,
+) -> int:
+    """Perform action. A run goes on when a tester fails if keep_going is set, or the
+    configuration's hummingbird.keep_going."""
     plan = load_plan(config_path, action)
     if action == "setup":
         show_informative(config_path)
+    if action == "run":
+        keep_going = keep_going or planner.keep_going(planner.read_json(config_path))
     if plan.kind == "docker":
         if action == "setup":
             return setup_local(plan, dry_run)
         if action == "run":
-            return run_local(plan)
+            return run_local(plan, keep_going)
         return teardown_local()
     # plan.kind is ssh:
     assert plan.inventory is not None
     if action == "setup":
         return ssh_setup.setup(plan.path, plan.config, plan.inventory, dry_run)
     if action == "run":
-        return ssh.run_experiment(plan.path, plan.config, plan.inventory)
+        return ssh.run_experiment(plan.path, plan.config, plan.inventory, keep_going)
     return ssh_setup.teardown(plan.path, plan.config, plan.inventory)
 
 
@@ -142,11 +148,18 @@ def main() -> int:
         "--dry-run", action="store_true",
         help="setup only: run every check and read, report what would change, change nothing",
     )
+    parser.add_argument(
+        "--keep-going", action="store_true",
+        help="run only: when a client or the server fails, let the others go on instead of "
+             "stopping the experiment; also set by hummingbird.keep_going in the configuration",
+    )
     args = parser.parse_args()
     if args.dry_run and args.action != "setup":
         parser.error("--dry-run is only supported with setup")
+    if args.keep_going and args.action != "run":
+        parser.error("--keep-going is only supported with run")
     try:
-        status = execute(args.action, args.config, args.dry_run)
+        status = execute(args.action, args.config, args.dry_run, args.keep_going)
     except (planner.ConfigError, ssh.SSHError, ssh_setup.selective_qdisc.Error,
             argparse.ArgumentTypeError, subprocess.SubprocessError,
             RuntimeError, OSError, ValueError) as err:

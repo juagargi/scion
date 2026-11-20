@@ -17,7 +17,10 @@ setup performs, in this order:
    run_dir, SCION daemon, readiness_command), and copy bin/hummbwtester to <run_dir>/setup/
    unless its SHA-256 already matches. Copies are atomic: scp to a .tmp file, verify its digest,
    chmod, mv.
-3. Marketplace service: on hummingbird.marketplace.host, install bin/marketplace as
+3. Marketplace service: skipped for an external marketplace, one without
+   hummingbird.marketplace.host (only allowed with location_override), which setup neither
+   installs, starts, stops, nor fills. Otherwise, on hummingbird.marketplace.host, install
+   bin/marketplace as
    /usr/local/bin/hummingbird-marketplace and the hummingbird-marketplace.service unit with sudo,
    and its config (/etc/scion/marketplace/) and database directory (/var/lib/scion/marketplace/)
    for the SSH user, which the service runs as. Each is replaced only when it differs. The
@@ -28,11 +31,14 @@ setup performs, in this order:
    port to the host and port of hummingbird.marketplace.scion_address, as seen from
    hummingbird.marketplace.host (its TLS web app), log in through
    it with marketplace/tools/get_jwt.py, close it, and copy the JWT (mode 600) to the hosts of the
-   Hummingbird clients. The controller's copy is deleted.
+   Hummingbird clients. The controller's copy is deleted. An external marketplace is logged in to
+   through a tunnel to hummingbird.marketplace.host_ssh if it is set, and otherwise directly from
+   the controller, at the host and port of scion_address.
 5. Selective qdiscs: on each shaping host, copy selective_qdisc.py to <run_dir>/setup/ and run it
    with sudo -n, unless its recorded state and the live root qdisc already match.
-6. Static info Note: on the server, client and marketplace hosts, pipe static_info_note.py to
-   `sudo -n python3 -` to insert or update the hummbwtester entry of the Note's hummingbird list.
+6. Static info Note: on the server, client and marketplace (unless external) hosts, pipe
+   static_info_note.py to `sudo -n python3 -` to insert or update the hummbwtester entry of the
+   Note's hummingbird list.
    With hummingbird.marketplace.location_override, remove it instead, and any entry for the same
    api_address, so that no path announces the marketplace's location.
    Control services are never restarted; a changed file becomes a manual step.
@@ -62,7 +68,8 @@ setup performs, in this order:
    that setting is kept. Then check that Grafana and its data source answer.
 11. Print the manual steps, e.g. restarting a control service whose static info file changed.
 
-teardown stops the marketplace service and waits until it is unreachable, removes the qdiscs,
+teardown stops the marketplace service (unless the marketplace is external) and waits until it
+is unreachable, removes the qdiscs,
 removes the Prometheus agents (each after it has sent its backlog, up to AGENT_FLUSH_WAIT_SECONDS)
 with their volumes and files, closes the ssh-control-masters of the manifest (tunnels and
 Prometheus forward; Grafana keeps running, as in the Docker mode), removes the central
@@ -321,8 +328,9 @@ def _tunneled_url(url: str, local_port: int) -> tuple[str, str]:
 
 
 @contextlib.contextmanager
-def marketplace_tunnel(host: remote.SSHHost, url: str) -> Generator[str, None, None]:
-    """Forward a controller loopback port to url as seen from host, yielding the local url.
+def marketplace_tunnel(name: str, alias: str, url: str) -> Generator[str, None, None]:
+    """Forward a controller loopback port to url as seen from the host at the SSH alias, yielding
+    the local url. name is how the host is reported.
 
     The forward is a temporary ssh-control-master whose socket lives in a private temporary
     directory; it exists only inside the with block and is not recorded in the tunnel manifest.
@@ -332,9 +340,9 @@ def marketplace_tunnel(host: remote.SSHHost, url: str) -> Generator[str, None, N
     with tempfile.TemporaryDirectory(prefix="hummbwtester-market-") as directory:
         control_master = _start_ssh_control_master(
             ["-L", f"127.0.0.1:{local_port}:{target}"],
-            Path(directory) / "marketplace.sock", host.alias,
+            Path(directory) / "marketplace.sock", alias,
         )
-        print(f"tunneling 127.0.0.1:{local_port} to marketplace {target} on {host.name}")
+        print(f"tunneling 127.0.0.1:{local_port} to marketplace {target} on {name}")
         try:
             yield local_url
         finally:
@@ -342,20 +350,27 @@ def marketplace_tunnel(host: remote.SSHHost, url: str) -> Generator[str, None, N
 
 
 def obtain_marketplace_jwt(inventory: remote.Inventory) -> str:
-    """Log in at the marketplace web app as seen from its host, through a temporary tunnel."""
+    """Log in at the marketplace web app through a temporary tunnel: to the marketplace's host,
+    or to host_ssh for an external marketplace. An external marketplace without host_ssh is logged
+    in to directly from the controller."""
     marketplace = inventory.marketplace
     url = marketplace.url
     assert url is not None  # load_config requires scion_address for SSH deployments.
-    host = inventory.hosts[inventory.marketplace_host]
+    if not inventory.external_marketplace:
+        host = inventory.hosts[inventory.marketplace_host]
+        name, alias = host.name, host.alias
+    elif marketplace.host_ssh is not None:
+        name = alias = marketplace.host_ssh
+    else:
+        print(f"logging in to external marketplace {url}")
+        return workload.obtain_marketplace_jwt(marketplace, url)
     # Checked before the tunnel is opened, which would be pointless without a password.
     workload.require_marketplace_password(marketplace)
-    with marketplace_tunnel(host, url) as local_url:
+    with marketplace_tunnel(name, alias, url) as local_url:
         try:
             return workload.obtain_marketplace_jwt(marketplace, local_url)
         except workload.ConfigError as err:
-            raise workload.ConfigError(
-                f"{err} (tunneled to {url} on {host.name})",
-            ) from err
+            raise workload.ConfigError(f"{err} (tunneled to {url} on {name})") from err
 
 
 def deploy_jwt(
@@ -631,9 +646,12 @@ def ensure_marketplace(inventory: remote.Inventory, dry_run: bool = False) -> No
     The binary, unit, and config are replaced when they differ. The service is (re)started, with
     a rebuilt database, only when one of them changed, it is not running, or it is unreachable.
     """
+    marketplace = inventory.marketplace
+    if inventory.external_marketplace:
+        print(f"marketplace {marketplace.scion_address} is external; setup does not manage it")
+        return
     if not MARKETPLACE_BIN.is_file():
         raise RuntimeError(f"{MARKETPLACE_BIN} does not exist; run `make build-dev` first")
-    marketplace = inventory.marketplace
     host = inventory.hosts[inventory.marketplace_host]
     _check_marketplace_host(host, marketplace)
     owner = remote.ssh_command(host, "printf '%s:%s' \"$(id -un)\" \"$(id -gn)\"",
@@ -700,7 +718,11 @@ def ensure_marketplace(inventory: remote.Inventory, dry_run: bool = False) -> No
 
 
 def stop_marketplace(inventory: remote.Inventory) -> None:
-    """Stop the marketplace service and wait until neither of its APIs listens anymore."""
+    """Stop the marketplace service and wait until neither of its APIs listens anymore.
+
+    An external marketplace is left running."""
+    if inventory.external_marketplace:
+        return
     host = inventory.hosts[inventory.marketplace_host]
     if _service_active(host):
         _systemctl(host, "stop")
@@ -726,7 +748,10 @@ def note_entry(marketplace: workload.MarketplaceConfig) -> dict[str, str] | None
 
 
 def note_hosts(inventory: remote.Inventory) -> list[str]:
-    """The hosts whose ASes advertise the marketplace: every participant and the marketplace."""
+    """The hosts whose ASes advertise the marketplace: every participant and the marketplace,
+    unless it is external."""
+    if inventory.external_marketplace:
+        return sorted(inventory.participant_hosts)
     return sorted({*inventory.participant_hosts, inventory.marketplace_host})
 
 
