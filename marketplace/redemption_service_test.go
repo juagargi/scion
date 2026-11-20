@@ -29,7 +29,7 @@ func TestEncoding(t *testing.T) {
 	// one of them.
 	encodings := make([]uint32, bwencoding.Codepoints)
 	for codepoint := range encodings {
-		encodings[codepoint] = bwencoding.EncodeBandwidth(uint16(codepoint))
+		encodings[codepoint] = bwencoding.DecodeEncodedBandwidth(uint16(codepoint))
 	}
 	s := &marketplace.RedemptionService{}
 	s.SetEncodingPoints(encodings)

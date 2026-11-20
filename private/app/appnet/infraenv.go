@@ -58,7 +58,8 @@ type NetworkConfig struct {
 	// is behind NAT.
 	Public *net.UDPAddr
 	// QUIC contains configuration details for QUIC servers.
-	QUIC QUIC
+	QUIC       QUIC
+	QUICConfig *quic.Config
 	// SVCResolver is used to discover the underlay addresses of intra-AS SVC
 	// servers.
 	SVCResolver SVCResolver
@@ -108,7 +109,7 @@ func (nc *NetworkConfig) QUICStack(ctx context.Context) (*QUICStack, error) {
 		NextProtos:         []string{"h3", "SCION"},
 	}
 
-	listener, err := quic.Listen(server, serverTLSConfig, nil)
+	listener, err := quic.Listen(server, serverTLSConfig, nc.QUICConfig)
 	if err != nil {
 		return nil, serrors.Wrap("listening QUIC/SCION", err)
 	}
@@ -131,12 +132,14 @@ func (nc *NetworkConfig) QUICStack(ctx context.Context) (*QUICStack, error) {
 	return &QUICStack{
 		Listener: listener,
 		InsecureDialer: &squic.ConnDialer{
-			Transport: clientTransport,
-			TLSConfig: insecureClientTLSConfig,
+			Transport:  clientTransport,
+			TLSConfig:  insecureClientTLSConfig,
+			QUICConfig: nc.QUICConfig,
 		},
 		Dialer: &squic.ConnDialer{
-			Transport: clientTransport,
-			TLSConfig: clientTLSConfig,
+			Transport:  clientTransport,
+			TLSConfig:  clientTLSConfig,
+			QUICConfig: nc.QUICConfig,
 		},
 	}, nil
 }

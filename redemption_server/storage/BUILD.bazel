@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["storage.go"],
+    importpath = "github.com/scionproto/scion/redemption_server/storage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/hummingbird/id_stores:go_default_library",
+        "//private/config:go_default_library",
+        "//private/storage/db:go_default_library",
+        "//redemption_server/db:go_default_library",
+    ],
+)

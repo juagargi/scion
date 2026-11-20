@@ -1,0 +1,20 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["client.go"],
+    importpath = "github.com/scionproto/scion/redemption_server/connector",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/hummingbird/bwencoding:go_default_library",
+        "//pkg/hummingbird/id_stores:go_default_library",
+        "//pkg/log:go_default_library",
+        "//pkg/private/serrors:go_default_library",
+        "//pkg/proto/hummingbird:go_default_library",
+        "//pkg/slayers/path/hummingbird:go_default_library",
+        "//redemption_server/config:go_default_library",
+        "//redemption_server/db:go_default_library",
+        "//redemption_server/storage:go_default_library",
+        "@com_github_scionproto_scion//pkg/proto/hummingbird/v1/hummingbirdconnect:go_default_library",
+    ],
+)

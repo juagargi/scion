@@ -37,6 +37,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/scionproto/scion/marketplace"
 	marketplacestorage "github.com/scionproto/scion/marketplace/storage"
@@ -356,6 +357,9 @@ func StartSCIONServer(ctx context.Context, topo snet.Topology, mtu uint16, addrS
 				return cert, nil
 			},
 		},
+		QUICConfig: &quic.Config{
+			KeepAlivePeriod: time.Second * 15,
+		},
 		Public: addr,
 		MTU:    mtu,
 	}
@@ -365,7 +369,8 @@ func StartSCIONServer(ctx context.Context, topo snet.Topology, mtu uint16, addrS
 	}
 	cleanup.Add(func() error { return quicStack.Listener.Close() })
 	connectServer := &http3.Server{
-		Handler: loggingMiddleware(mux),
+		Handler:    loggingMiddleware(mux),
+		QUICConfig: nc.QUICConfig,
 	}
 	cleanup.Add(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
