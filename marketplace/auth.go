@@ -22,23 +22,25 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/golang-jwt/jwt"
+
 	"github.com/scionproto/scion/marketplace/storage"
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/hummingbird/registration"
 )
 
 var methodScopes = map[string]string{
-	"/proto.hummingbird.v1.MarketplaceService/PublishAsset":      "AssetPublisher",
-	"/proto.hummingbird.v1.MarketplaceService/UpdateAssets":      "AssetPublisher",
-	"/proto.hummingbird.v1.MarketplaceService/Statistics":        "AssetPublisher",
-	"/proto.hummingbird.v1.MarketplaceService/SearchAssets":      "User,AssetPublisher",
-	"/proto.hummingbird.v1.MarketplaceService/SplitAsset":        "User",
-	"/proto.hummingbird.v1.MarketplaceService/CombineAssets":     "User",
-	"/proto.hummingbird.v1.MarketplaceService/BuyAssets":         "User",
-	"/proto.hummingbird.v1.MarketplaceService/FetchReservations": "User",
-	"/proto.hummingbird.v1.MarketplaceService/RedeemAsset":       "User",
-	"/proto.hummingbird.v1.RedemptionService/RedeemASAsset":      "RedemptionService",
-	"/proto.hummingbird.v1.RedemptionService/DelegateRedemption": "RedemptionService",
+	"/proto.hummingbird.v1.MarketplaceService/PublishAsset":           "AssetPublisher",
+	"/proto.hummingbird.v1.MarketplaceService/UpdateAssets":           "AssetPublisher",
+	"/proto.hummingbird.v1.MarketplaceService/Statistics":             "AssetPublisher",
+	"/proto.hummingbird.v1.MarketplaceService/SearchAssets":           "User,AssetPublisher",
+	"/proto.hummingbird.v1.MarketplaceService/SplitAsset":             "User",
+	"/proto.hummingbird.v1.MarketplaceService/CombineAssets":          "User",
+	"/proto.hummingbird.v1.MarketplaceService/BuyAssets":              "User",
+	"/proto.hummingbird.v1.MarketplaceService/FetchReservations":      "User",
+	"/proto.hummingbird.v1.MarketplaceService/RedeemAsset":            "User",
+	"/proto.hummingbird.v1.RedemptionService/RedeemASAsset":           "RedemptionService",
+	"/proto.hummingbird.v1.RedemptionService/DelegateRedemption":      "RedemptionService",
+	"/proto.hummingbird.v1.RedemptionService/ReprovisionReservations": "RedemptionService",
 
 	"/proto.hummingbird.v1.AccountService/ResetJWT":    "User,AssetPublisher,RedemptionService",
 	"/proto.hummingbird.v1.AccountService/SetPassword": "AssetPublisher,RedemptionService",

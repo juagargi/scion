@@ -22,6 +22,61 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ReprovisionState int32
+
+const (
+	ReprovisionState_Idle      ReprovisionState = 0
+	ReprovisionState_Running   ReprovisionState = 1
+	ReprovisionState_Completed ReprovisionState = 2
+	ReprovisionState_Failed    ReprovisionState = 3
+	ReprovisionState_Canceled  ReprovisionState = 4
+)
+
+// Enum value maps for ReprovisionState.
+var (
+	ReprovisionState_name = map[int32]string{
+		0: "Idle",
+		1: "Running",
+		2: "Completed",
+		3: "Failed",
+		4: "Canceled",
+	}
+	ReprovisionState_value = map[string]int32{
+		"Idle":      0,
+		"Running":   1,
+		"Completed": 2,
+		"Failed":    3,
+		"Canceled":  4,
+	}
+)
+
+func (x ReprovisionState) Enum() *ReprovisionState {
+	p := new(ReprovisionState)
+	*p = x
+	return p
+}
+
+func (x ReprovisionState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ReprovisionState) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_hummingbird_v1_redemption_proto_enumTypes[0].Descriptor()
+}
+
+func (ReprovisionState) Type() protoreflect.EnumType {
+	return &file_proto_hummingbird_v1_redemption_proto_enumTypes[0]
+}
+
+func (x ReprovisionState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ReprovisionState.Descriptor instead.
+func (ReprovisionState) EnumDescriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{0}
+}
+
 type DelegateRedemptionRequest struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
 	ExpirationTime          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
@@ -384,6 +439,450 @@ func (x *ReservationInfo) GetAuthenticationKey() []byte {
 	return nil
 }
 
+type ReprovisionReservationRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Operation:
+	//
+	//	*ReprovisionReservationRequest_Start
+	//	*ReprovisionReservationRequest_Status
+	//	*ReprovisionReservationRequest_Cancel
+	Operation     isReprovisionReservationRequest_Operation `protobuf_oneof:"operation"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReprovisionReservationRequest) Reset() {
+	*x = ReprovisionReservationRequest{}
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReprovisionReservationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReprovisionReservationRequest) ProtoMessage() {}
+
+func (x *ReprovisionReservationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReprovisionReservationRequest.ProtoReflect.Descriptor instead.
+func (*ReprovisionReservationRequest) Descriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ReprovisionReservationRequest) GetOperation() isReprovisionReservationRequest_Operation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+func (x *ReprovisionReservationRequest) GetStart() *ReprovisionStartRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*ReprovisionReservationRequest_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *ReprovisionReservationRequest) GetStatus() *ReprovisionStatusRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*ReprovisionReservationRequest_Status); ok {
+			return x.Status
+		}
+	}
+	return nil
+}
+
+func (x *ReprovisionReservationRequest) GetCancel() *ReprovisionCancelRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*ReprovisionReservationRequest_Cancel); ok {
+			return x.Cancel
+		}
+	}
+	return nil
+}
+
+type isReprovisionReservationRequest_Operation interface {
+	isReprovisionReservationRequest_Operation()
+}
+
+type ReprovisionReservationRequest_Start struct {
+	Start *ReprovisionStartRequest `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type ReprovisionReservationRequest_Status struct {
+	Status *ReprovisionStatusRequest `protobuf:"bytes,2,opt,name=status,proto3,oneof"`
+}
+
+type ReprovisionReservationRequest_Cancel struct {
+	Cancel *ReprovisionCancelRequest `protobuf:"bytes,3,opt,name=cancel,proto3,oneof"`
+}
+
+func (*ReprovisionReservationRequest_Start) isReprovisionReservationRequest_Operation() {}
+
+func (*ReprovisionReservationRequest_Status) isReprovisionReservationRequest_Operation() {}
+
+func (*ReprovisionReservationRequest_Cancel) isReprovisionReservationRequest_Operation() {}
+
+type ReprovisionStartRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReprovisionStartRequest) Reset() {
+	*x = ReprovisionStartRequest{}
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReprovisionStartRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReprovisionStartRequest) ProtoMessage() {}
+
+func (x *ReprovisionStartRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReprovisionStartRequest.ProtoReflect.Descriptor instead.
+func (*ReprovisionStartRequest) Descriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{6}
+}
+
+type ReprovisionStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReprovisionStatusRequest) Reset() {
+	*x = ReprovisionStatusRequest{}
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReprovisionStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReprovisionStatusRequest) ProtoMessage() {}
+
+func (x *ReprovisionStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReprovisionStatusRequest.ProtoReflect.Descriptor instead.
+func (*ReprovisionStatusRequest) Descriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{7}
+}
+
+type ReprovisionCancelRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReprovisionCancelRequest) Reset() {
+	*x = ReprovisionCancelRequest{}
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReprovisionCancelRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReprovisionCancelRequest) ProtoMessage() {}
+
+func (x *ReprovisionCancelRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReprovisionCancelRequest.ProtoReflect.Descriptor instead.
+func (*ReprovisionCancelRequest) Descriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{8}
+}
+
+type ReprovisionReservationResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Operation:
+	//
+	//	*ReprovisionReservationResponse_Start
+	//	*ReprovisionReservationResponse_Status
+	//	*ReprovisionReservationResponse_Cancel
+	Operation     isReprovisionReservationResponse_Operation `protobuf_oneof:"operation"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReprovisionReservationResponse) Reset() {
+	*x = ReprovisionReservationResponse{}
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReprovisionReservationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReprovisionReservationResponse) ProtoMessage() {}
+
+func (x *ReprovisionReservationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReprovisionReservationResponse.ProtoReflect.Descriptor instead.
+func (*ReprovisionReservationResponse) Descriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ReprovisionReservationResponse) GetOperation() isReprovisionReservationResponse_Operation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+func (x *ReprovisionReservationResponse) GetStart() *ReprovisionStartResponse {
+	if x != nil {
+		if x, ok := x.Operation.(*ReprovisionReservationResponse_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *ReprovisionReservationResponse) GetStatus() *ReprovisionStatusResponse {
+	if x != nil {
+		if x, ok := x.Operation.(*ReprovisionReservationResponse_Status); ok {
+			return x.Status
+		}
+	}
+	return nil
+}
+
+func (x *ReprovisionReservationResponse) GetCancel() *ReprovisionCancelResponse {
+	if x != nil {
+		if x, ok := x.Operation.(*ReprovisionReservationResponse_Cancel); ok {
+			return x.Cancel
+		}
+	}
+	return nil
+}
+
+type isReprovisionReservationResponse_Operation interface {
+	isReprovisionReservationResponse_Operation()
+}
+
+type ReprovisionReservationResponse_Start struct {
+	Start *ReprovisionStartResponse `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type ReprovisionReservationResponse_Status struct {
+	Status *ReprovisionStatusResponse `protobuf:"bytes,2,opt,name=status,proto3,oneof"`
+}
+
+type ReprovisionReservationResponse_Cancel struct {
+	Cancel *ReprovisionCancelResponse `protobuf:"bytes,3,opt,name=cancel,proto3,oneof"`
+}
+
+func (*ReprovisionReservationResponse_Start) isReprovisionReservationResponse_Operation() {}
+
+func (*ReprovisionReservationResponse_Status) isReprovisionReservationResponse_Operation() {}
+
+func (*ReprovisionReservationResponse_Cancel) isReprovisionReservationResponse_Operation() {}
+
+type ReprovisionStartResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReprovisionStartResponse) Reset() {
+	*x = ReprovisionStartResponse{}
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReprovisionStartResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReprovisionStartResponse) ProtoMessage() {}
+
+func (x *ReprovisionStartResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReprovisionStartResponse.ProtoReflect.Descriptor instead.
+func (*ReprovisionStartResponse) Descriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{10}
+}
+
+type ReprovisionStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         ReprovisionState       `protobuf:"varint,1,opt,name=state,proto3,enum=proto.hummingbird.v1.ReprovisionState" json:"state,omitempty"`
+	Total         uint64                 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	Processed     uint64                 `protobuf:"varint,3,opt,name=processed,proto3" json:"processed,omitempty"`
+	Error         *string                `protobuf:"bytes,4,opt,name=error,proto3,oneof" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReprovisionStatusResponse) Reset() {
+	*x = ReprovisionStatusResponse{}
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReprovisionStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReprovisionStatusResponse) ProtoMessage() {}
+
+func (x *ReprovisionStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReprovisionStatusResponse.ProtoReflect.Descriptor instead.
+func (*ReprovisionStatusResponse) Descriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ReprovisionStatusResponse) GetState() ReprovisionState {
+	if x != nil {
+		return x.State
+	}
+	return ReprovisionState_Idle
+}
+
+func (x *ReprovisionStatusResponse) GetTotal() uint64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *ReprovisionStatusResponse) GetProcessed() uint64 {
+	if x != nil {
+		return x.Processed
+	}
+	return 0
+}
+
+func (x *ReprovisionStatusResponse) GetError() string {
+	if x != nil && x.Error != nil {
+		return *x.Error
+	}
+	return ""
+}
+
+type ReprovisionCancelResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReprovisionCancelResponse) Reset() {
+	*x = ReprovisionCancelResponse{}
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReprovisionCancelResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReprovisionCancelResponse) ProtoMessage() {}
+
+func (x *ReprovisionCancelResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_hummingbird_v1_redemption_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReprovisionCancelResponse.ProtoReflect.Descriptor instead.
+func (*ReprovisionCancelResponse) Descriptor() ([]byte, []int) {
+	return file_proto_hummingbird_v1_redemption_proto_rawDescGZIP(), []int{12}
+}
+
 var File_proto_hummingbird_v1_redemption_proto protoreflect.FileDescriptor
 
 const file_proto_hummingbird_v1_redemption_proto_rawDesc = "" +
@@ -416,10 +915,39 @@ const file_proto_hummingbird_v1_redemption_proto_rawDesc = "" +
 	"\x0ereservation_id\x18\x01 \x01(\rR\rreservationId\x12)\n" +
 	"\x10bandwith_rounded\x18\x02 \x01(\rR\x0fbandwithRounded\x122\n" +
 	"\x15bw_dataplane_encoding\x18\x03 \x01(\rR\x13bwDataplaneEncoding\x12-\n" +
-	"\x12authentication_key\x18\x04 \x01(\fR\x11authenticationKey2\x86\x02\n" +
+	"\x12authentication_key\x18\x04 \x01(\fR\x11authenticationKey\"\x87\x02\n" +
+	"\x1dReprovisionReservationRequest\x12E\n" +
+	"\x05start\x18\x01 \x01(\v2-.proto.hummingbird.v1.ReprovisionStartRequestH\x00R\x05start\x12H\n" +
+	"\x06status\x18\x02 \x01(\v2..proto.hummingbird.v1.ReprovisionStatusRequestH\x00R\x06status\x12H\n" +
+	"\x06cancel\x18\x03 \x01(\v2..proto.hummingbird.v1.ReprovisionCancelRequestH\x00R\x06cancelB\v\n" +
+	"\toperation\"\x19\n" +
+	"\x17ReprovisionStartRequest\"\x1a\n" +
+	"\x18ReprovisionStatusRequest\"\x1a\n" +
+	"\x18ReprovisionCancelRequest\"\x8b\x02\n" +
+	"\x1eReprovisionReservationResponse\x12F\n" +
+	"\x05start\x18\x01 \x01(\v2..proto.hummingbird.v1.ReprovisionStartResponseH\x00R\x05start\x12I\n" +
+	"\x06status\x18\x02 \x01(\v2/.proto.hummingbird.v1.ReprovisionStatusResponseH\x00R\x06status\x12I\n" +
+	"\x06cancel\x18\x03 \x01(\v2/.proto.hummingbird.v1.ReprovisionCancelResponseH\x00R\x06cancelB\v\n" +
+	"\toperation\"\x1a\n" +
+	"\x18ReprovisionStartResponse\"\xb2\x01\n" +
+	"\x19ReprovisionStatusResponse\x12<\n" +
+	"\x05state\x18\x01 \x01(\x0e2&.proto.hummingbird.v1.ReprovisionStateR\x05state\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x04R\x05total\x12\x1c\n" +
+	"\tprocessed\x18\x03 \x01(\x04R\tprocessed\x12\x19\n" +
+	"\x05error\x18\x04 \x01(\tH\x00R\x05error\x88\x01\x01B\b\n" +
+	"\x06_error\"\x1b\n" +
+	"\x19ReprovisionCancelResponse*R\n" +
+	"\x10ReprovisionState\x12\b\n" +
+	"\x04Idle\x10\x00\x12\v\n" +
+	"\aRunning\x10\x01\x12\r\n" +
+	"\tCompleted\x10\x02\x12\n" +
+	"\n" +
+	"\x06Failed\x10\x03\x12\f\n" +
+	"\bCanceled\x10\x042\x8f\x03\n" +
 	"\x11RedemptionService\x12v\n" +
 	"\rRedeemASAsset\x12/.proto.hummingbird.v1.RedeemAssetFromASResponse\x1a..proto.hummingbird.v1.RedeemAssetFromASRequest\"\x00(\x010\x01\x12y\n" +
-	"\x12DelegateRedemption\x12/.proto.hummingbird.v1.DelegateRedemptionRequest\x1a0.proto.hummingbird.v1.DelegateRedemptionResponse\"\x00B3Z1github.com/scionproto/scion/pkg/proto/hummingbirdb\x06proto3"
+	"\x12DelegateRedemption\x12/.proto.hummingbird.v1.DelegateRedemptionRequest\x1a0.proto.hummingbird.v1.DelegateRedemptionResponse\"\x00\x12\x86\x01\n" +
+	"\x17ReprovisionReservations\x123.proto.hummingbird.v1.ReprovisionReservationRequest\x1a4.proto.hummingbird.v1.ReprovisionReservationResponse\"\x00B3Z1github.com/scionproto/scion/pkg/proto/hummingbirdb\x06proto3"
 
 var (
 	file_proto_hummingbird_v1_redemption_proto_rawDescOnce sync.Once
@@ -433,30 +961,49 @@ func file_proto_hummingbird_v1_redemption_proto_rawDescGZIP() []byte {
 	return file_proto_hummingbird_v1_redemption_proto_rawDescData
 }
 
-var file_proto_hummingbird_v1_redemption_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_proto_hummingbird_v1_redemption_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_hummingbird_v1_redemption_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_proto_hummingbird_v1_redemption_proto_goTypes = []any{
-	(*DelegateRedemptionRequest)(nil),  // 0: proto.hummingbird.v1.DelegateRedemptionRequest
-	(*DelegateRedemptionResponse)(nil), // 1: proto.hummingbird.v1.DelegateRedemptionResponse
-	(*RedeemAssetFromASRequest)(nil),   // 2: proto.hummingbird.v1.RedeemAssetFromASRequest
-	(*RedeemAssetFromASResponse)(nil),  // 3: proto.hummingbird.v1.RedeemAssetFromASResponse
-	(*ReservationInfo)(nil),            // 4: proto.hummingbird.v1.ReservationInfo
-	(*timestamppb.Timestamp)(nil),      // 5: google.protobuf.Timestamp
+	(ReprovisionState)(0),                  // 0: proto.hummingbird.v1.ReprovisionState
+	(*DelegateRedemptionRequest)(nil),      // 1: proto.hummingbird.v1.DelegateRedemptionRequest
+	(*DelegateRedemptionResponse)(nil),     // 2: proto.hummingbird.v1.DelegateRedemptionResponse
+	(*RedeemAssetFromASRequest)(nil),       // 3: proto.hummingbird.v1.RedeemAssetFromASRequest
+	(*RedeemAssetFromASResponse)(nil),      // 4: proto.hummingbird.v1.RedeemAssetFromASResponse
+	(*ReservationInfo)(nil),                // 5: proto.hummingbird.v1.ReservationInfo
+	(*ReprovisionReservationRequest)(nil),  // 6: proto.hummingbird.v1.ReprovisionReservationRequest
+	(*ReprovisionStartRequest)(nil),        // 7: proto.hummingbird.v1.ReprovisionStartRequest
+	(*ReprovisionStatusRequest)(nil),       // 8: proto.hummingbird.v1.ReprovisionStatusRequest
+	(*ReprovisionCancelRequest)(nil),       // 9: proto.hummingbird.v1.ReprovisionCancelRequest
+	(*ReprovisionReservationResponse)(nil), // 10: proto.hummingbird.v1.ReprovisionReservationResponse
+	(*ReprovisionStartResponse)(nil),       // 11: proto.hummingbird.v1.ReprovisionStartResponse
+	(*ReprovisionStatusResponse)(nil),      // 12: proto.hummingbird.v1.ReprovisionStatusResponse
+	(*ReprovisionCancelResponse)(nil),      // 13: proto.hummingbird.v1.ReprovisionCancelResponse
+	(*timestamppb.Timestamp)(nil),          // 14: google.protobuf.Timestamp
 }
 var file_proto_hummingbird_v1_redemption_proto_depIdxs = []int32{
-	5, // 0: proto.hummingbird.v1.DelegateRedemptionRequest.expiration_time:type_name -> google.protobuf.Timestamp
-	5, // 1: proto.hummingbird.v1.DelegateRedemptionResponse.expiration_time:type_name -> google.protobuf.Timestamp
-	5, // 2: proto.hummingbird.v1.RedeemAssetFromASRequest.starts_at:type_name -> google.protobuf.Timestamp
-	5, // 3: proto.hummingbird.v1.RedeemAssetFromASRequest.stops_at:type_name -> google.protobuf.Timestamp
-	4, // 4: proto.hummingbird.v1.RedeemAssetFromASResponse.res_info:type_name -> proto.hummingbird.v1.ReservationInfo
-	3, // 5: proto.hummingbird.v1.RedemptionService.RedeemASAsset:input_type -> proto.hummingbird.v1.RedeemAssetFromASResponse
-	0, // 6: proto.hummingbird.v1.RedemptionService.DelegateRedemption:input_type -> proto.hummingbird.v1.DelegateRedemptionRequest
-	2, // 7: proto.hummingbird.v1.RedemptionService.RedeemASAsset:output_type -> proto.hummingbird.v1.RedeemAssetFromASRequest
-	1, // 8: proto.hummingbird.v1.RedemptionService.DelegateRedemption:output_type -> proto.hummingbird.v1.DelegateRedemptionResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	14, // 0: proto.hummingbird.v1.DelegateRedemptionRequest.expiration_time:type_name -> google.protobuf.Timestamp
+	14, // 1: proto.hummingbird.v1.DelegateRedemptionResponse.expiration_time:type_name -> google.protobuf.Timestamp
+	14, // 2: proto.hummingbird.v1.RedeemAssetFromASRequest.starts_at:type_name -> google.protobuf.Timestamp
+	14, // 3: proto.hummingbird.v1.RedeemAssetFromASRequest.stops_at:type_name -> google.protobuf.Timestamp
+	5,  // 4: proto.hummingbird.v1.RedeemAssetFromASResponse.res_info:type_name -> proto.hummingbird.v1.ReservationInfo
+	7,  // 5: proto.hummingbird.v1.ReprovisionReservationRequest.start:type_name -> proto.hummingbird.v1.ReprovisionStartRequest
+	8,  // 6: proto.hummingbird.v1.ReprovisionReservationRequest.status:type_name -> proto.hummingbird.v1.ReprovisionStatusRequest
+	9,  // 7: proto.hummingbird.v1.ReprovisionReservationRequest.cancel:type_name -> proto.hummingbird.v1.ReprovisionCancelRequest
+	11, // 8: proto.hummingbird.v1.ReprovisionReservationResponse.start:type_name -> proto.hummingbird.v1.ReprovisionStartResponse
+	12, // 9: proto.hummingbird.v1.ReprovisionReservationResponse.status:type_name -> proto.hummingbird.v1.ReprovisionStatusResponse
+	13, // 10: proto.hummingbird.v1.ReprovisionReservationResponse.cancel:type_name -> proto.hummingbird.v1.ReprovisionCancelResponse
+	0,  // 11: proto.hummingbird.v1.ReprovisionStatusResponse.state:type_name -> proto.hummingbird.v1.ReprovisionState
+	4,  // 12: proto.hummingbird.v1.RedemptionService.RedeemASAsset:input_type -> proto.hummingbird.v1.RedeemAssetFromASResponse
+	1,  // 13: proto.hummingbird.v1.RedemptionService.DelegateRedemption:input_type -> proto.hummingbird.v1.DelegateRedemptionRequest
+	6,  // 14: proto.hummingbird.v1.RedemptionService.ReprovisionReservations:input_type -> proto.hummingbird.v1.ReprovisionReservationRequest
+	3,  // 15: proto.hummingbird.v1.RedemptionService.RedeemASAsset:output_type -> proto.hummingbird.v1.RedeemAssetFromASRequest
+	2,  // 16: proto.hummingbird.v1.RedemptionService.DelegateRedemption:output_type -> proto.hummingbird.v1.DelegateRedemptionResponse
+	10, // 17: proto.hummingbird.v1.RedemptionService.ReprovisionReservations:output_type -> proto.hummingbird.v1.ReprovisionReservationResponse
+	15, // [15:18] is the sub-list for method output_type
+	12, // [12:15] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_proto_hummingbird_v1_redemption_proto_init() }
@@ -468,18 +1015,30 @@ func file_proto_hummingbird_v1_redemption_proto_init() {
 		(*RedeemAssetFromASResponse_ResInfo)(nil),
 		(*RedeemAssetFromASResponse_Error)(nil),
 	}
+	file_proto_hummingbird_v1_redemption_proto_msgTypes[5].OneofWrappers = []any{
+		(*ReprovisionReservationRequest_Start)(nil),
+		(*ReprovisionReservationRequest_Status)(nil),
+		(*ReprovisionReservationRequest_Cancel)(nil),
+	}
+	file_proto_hummingbird_v1_redemption_proto_msgTypes[9].OneofWrappers = []any{
+		(*ReprovisionReservationResponse_Start)(nil),
+		(*ReprovisionReservationResponse_Status)(nil),
+		(*ReprovisionReservationResponse_Cancel)(nil),
+	}
+	file_proto_hummingbird_v1_redemption_proto_msgTypes[11].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_hummingbird_v1_redemption_proto_rawDesc), len(file_proto_hummingbird_v1_redemption_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   5,
+			NumEnums:      1,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_proto_hummingbird_v1_redemption_proto_goTypes,
 		DependencyIndexes: file_proto_hummingbird_v1_redemption_proto_depIdxs,
+		EnumInfos:         file_proto_hummingbird_v1_redemption_proto_enumTypes,
 		MessageInfos:      file_proto_hummingbird_v1_redemption_proto_msgTypes,
 	}.Build()
 	File_proto_hummingbird_v1_redemption_proto = out.File
