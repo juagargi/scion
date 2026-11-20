@@ -120,11 +120,14 @@ class MarketplaceConfig:
     username: str
     password_env: str
     sub_account: str | None
-    # SSH inventory host the marketplace runs on; None in Docker deployments.
+    # SSH inventory host the marketplace runs on, where setup deploys it. None in Docker
+    # deployments, and for an external marketplace that SSH setup does not manage (SSH
+    # deployments allow that only with location_override).
     host: str | None = None
-    # SCION API address of the marketplace. SSH setup deploys the marketplace there and advertises
-    # it in the static info Note of the participant ASes. Docker deployments have it only with
-    # location_override, otherwise the generated topology advertises the marketplace.
+    # SCION API address of the marketplace. SSH setup deploys the marketplace there (unless it is
+    # external) and advertises it in the static info Note of the participant ASes. Docker
+    # deployments have it only with location_override, otherwise the generated topology
+    # advertises the marketplace.
     scion_address: str | None = None
     # ISD-AS -> IDs of the interfaces that support Hummingbird, 0 standing for flyovers that start
     # or end in the AS. SSH setup offers assets only for pairs of these; None offers every pair.
@@ -132,6 +135,10 @@ class MarketplaceConfig:
     # Whether the clients buy from the marketplace at scion_address instead of the one the ASes of
     # their path advertise.
     location_override: bool = False
+    # SSH alias of a machine from which an external marketplace's web app is reachable at the host
+    # and port of scion_address, e.g. the marketplace's own machine when it is bound to loopback.
+    # SSH setup logs in through a tunnel to it; None logs in directly from the controller.
+    host_ssh: str | None = None
 
     @property
     def url(self) -> str | None:
@@ -535,20 +542,14 @@ def is_loopback(host: str) -> bool:
 
 
 def validate_ssh_marketplace(scion_address: Any) -> None:
-    """SSH setup deploys the marketplace bound to the host and port of this address, which must
-    stay on loopback.
+    """SSH deployments need the address of the marketplace: setup deploys it bound to the host
+    and port of this address, or, for an external marketplace, logs in at that host and port.
 
-    The TLS web app and API are then reachable only on the marketplace host itself (setup uses an
-    SSH forward), and the SCION API only through the border routers of that host.
+    The address may be a loopback one, making the TLS web app and API reachable only on the
+    marketplace host (setup logs in through an SSH forward), or any other.
     """
     if scion_address is None:
         raise ConfigError("hummingbird.marketplace.scion_address is required for SSH deployments")
-    match = SCION_ADDRESS_RE.fullmatch(scion_address)
-    assert match is not None  # validate_scion_address accepted it.
-    if not is_loopback(match.group("host")):
-        raise ConfigError(
-            "hummingbird.marketplace.scion_address must use a loopback host in SSH deployments",
-        )
 
 
 def informative_lines(root: dict[str, Any]) -> list[str]:
@@ -563,7 +564,7 @@ def parse_marketplace_config(marketplace: dict[str, Any], kind: str) -> Marketpl
     """Validate the hummingbird.marketplace object of a `docker` or `ssh` deployment."""
     require_fields(marketplace, {"username", "password_env", "location_override"},
                    "hummingbird.marketplace",
-                   {"sub_account", "host", "scion_address", "interfaces"})
+                   {"sub_account", "host", "host_ssh", "scion_address", "interfaces"})
     username, password_env = marketplace["username"], marketplace["password_env"]
     if not isinstance(username, str) or not username:
         raise ConfigError("hummingbird.marketplace.username must be a non-empty string")
@@ -582,12 +583,16 @@ def parse_marketplace_config(marketplace: dict[str, Any], kind: str) -> Marketpl
             )
         if kind == "docker":
             raise ConfigError("hummingbird.marketplace.host is only valid for SSH deployments")
-    elif kind == "ssh":
-        # SSH setup reaches the marketplace only through a tunnel to the host it runs on.
-        raise ConfigError("hummingbird.marketplace.host is required for SSH deployments")
     location_override = marketplace["location_override"]
     if not isinstance(location_override, bool):
         raise ConfigError("hummingbird.marketplace.location_override must be a boolean")
+    if host is None and kind == "ssh" and not location_override:
+        # Without a host, setup deploys no marketplace and does not advertise one, so the
+        # clients can only find it at the overridden location.
+        raise ConfigError(
+            "hummingbird.marketplace.host is required for SSH deployments, "
+            "unless location_override is true",
+        )
     scion_address = marketplace.get("scion_address")
     if scion_address is not None:
         if kind == "docker" and not location_override:
@@ -602,8 +607,32 @@ def parse_marketplace_config(marketplace: dict[str, Any], kind: str) -> Marketpl
             "hummingbird.marketplace.location_override requires scion_address, "
             "the location the clients buy from",
         )
+    host_ssh = marketplace.get("host_ssh")
+    if host_ssh is not None:
+        if (not isinstance(host_ssh, str) or not host_ssh or host_ssh.startswith("-")
+                or any(char.isspace() for char in host_ssh)):
+            raise ConfigError(
+                "hummingbird.marketplace.host_ssh must be an SSH alias: a non-empty string "
+                "without whitespace that does not start with -",
+            )
+        if kind == "docker":
+            raise ConfigError("hummingbird.marketplace.host_ssh is only valid for SSH deployments")
+        if host is not None:
+            # Setup already logs in through a tunnel to host.
+            raise ConfigError(
+                "hummingbird.marketplace.host_ssh is only valid for an external marketplace, "
+                "without host",
+            )
     if kind == "ssh":
         validate_ssh_marketplace(scion_address)
+        match = SCION_ADDRESS_RE.fullmatch(scion_address)
+        assert match is not None  # validate_scion_address accepted it.
+        if host is None and host_ssh is None and is_loopback(match.group("host")):
+            # The controller would log in at its own loopback, not at the marketplace.
+            raise ConfigError(
+                "hummingbird.marketplace.scion_address of an external marketplace uses a loopback "
+                "host; set host_ssh to the SSH alias of its machine to log in there",
+            )
     interfaces = None
     if "interfaces" in marketplace:
         if kind == "docker":
@@ -614,7 +643,7 @@ def parse_marketplace_config(marketplace: dict[str, Any], kind: str) -> Marketpl
         interfaces = parse_marketplace_interfaces(marketplace["interfaces"])
     return MarketplaceConfig(
         username, password_env, sub_account, host, scion_address, interfaces,
-        location_override,
+        location_override, host_ssh,
     )
 
 

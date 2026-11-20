@@ -163,6 +163,54 @@ class InventoryTest(unittest.TestCase):
                                         "marketplace.host is required for SSH"):
                 orchestration.load_config(path)
 
+    def test_marketplace_without_host_is_external_with_location_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            marketplace = config["hummingbird"]["marketplace"]
+            del marketplace["host"]
+            marketplace["location_override"] = True
+            marketplace["scion_address"] = "[64-2:0:9,129.132.121.169]:8888"
+            path = self.write_json(directory, "experiment.json", config)
+            server, clients, _, _ = orchestration.load_config(path)
+            inventory = ssh.load_inventory(path, server, clients)
+        self.assertTrue(inventory.external_marketplace)
+        self.assertEqual(inventory.marketplace.url, "https://129.132.121.169:8888")
+        self.assertIsNone(inventory.marketplace.host_ssh)
+
+    def external_workload(self, scion_address, **changes):
+        config = self.workload()
+        marketplace = config["hummingbird"]["marketplace"]
+        del marketplace["host"]
+        marketplace.update(location_override=True, scion_address=scion_address, **changes)
+        return config
+
+    def test_external_marketplace_on_loopback_needs_host_ssh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_json(directory, "loopback.json", self.external_workload(
+                "[64-2:0:9,127.0.0.1]:8888"))
+            with self.assertRaisesRegex(orchestration.ConfigError, "set host_ssh"):
+                orchestration.load_config(path)
+            path = self.write_json(directory, "host_ssh.json", self.external_workload(
+                "[64-2:0:9,127.0.0.1]:8888", host_ssh="marketplace-eth"))
+            server, clients, _, _ = orchestration.load_config(path)
+            inventory = ssh.load_inventory(path, server, clients)
+        self.assertTrue(inventory.external_marketplace)
+        self.assertEqual(inventory.marketplace.host_ssh, "marketplace-eth")
+
+    def test_host_ssh_is_rejected_with_host_or_when_invalid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.workload()
+            config["hummingbird"]["marketplace"]["host_ssh"] = "marketplace-eth"
+            path = self.write_json(directory, "with_host.json", config)
+            with self.assertRaisesRegex(orchestration.ConfigError, "without host"):
+                orchestration.load_config(path)
+            for host_ssh in ("", "-oProxyCommand=x", "two words", 7):
+                with self.subTest(host_ssh=host_ssh):
+                    path = self.write_json(directory, "invalid.json", self.external_workload(
+                        "[64-2:0:9,129.132.121.169]:8888", host_ssh=host_ssh))
+                    with self.assertRaisesRegex(orchestration.ConfigError, "host_ssh must be"):
+                        orchestration.load_config(path)
+
     def test_static_info_path_and_control_service_are_per_host(self):
         with tempfile.TemporaryDirectory() as directory:
             config = self.workload()

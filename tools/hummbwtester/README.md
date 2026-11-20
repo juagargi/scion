@@ -62,16 +62,23 @@ Each run uses one self-contained JSON file.
   `location_override`; `sub_account` is optional. The password is read from the named
   environment variable, never from JSON. `location_override` is a boolean, see
   [Marketplace location override](#marketplace-location-override).
-  In SSH deployments, `host` is required: it names the `deployment.hosts` entry the marketplace runs
-  on, e.g. `"host": "ufms"` for a marketplace bound to the loopback of that host. Every SSH command (`setup`, `run`, `teardown`) rejects a configuration
-  without it. Docker deployments reject `host`.
+  In SSH deployments, `host` names the `deployment.hosts` entry the marketplace runs on, e.g.
+  `"host": "ufms"`; setup deploys the marketplace there. It may be left out only with
+  `"location_override": true`: the marketplace is then external, e.g. one run by another
+  organization, and setup neither deploys, fills, starts, nor stops it (see
+  [External marketplace](#external-marketplace)). Every SSH command (`setup`, `run`, `teardown`)
+  rejects a configuration without `host` and without the override. Docker deployments reject `host`.
+  `host_ssh` (SSH deployments, external marketplace only) is the SSH alias of a machine from which
+  the marketplace's web app is reachable at the host and port of `scion_address`; setup logs in
+  through a tunnel to it. It is required when that address is a loopback one.
   In SSH deployments, `scion_address` is required too: the SCION API address of the marketplace,
   e.g. `"[71-2:0:5c,127.0.0.1]:31888"`, whose ISD-AS must be that of `host`. SSH setup deploys the
   marketplace bound to the host and port of `scion_address`, for the TCP (TLS) web app and API
-  and for the UDP (SCION) API alike, so the host must be a loopback address: the web app and API are
-  then reachable only on the marketplace host, and the SCION API only over SCION through that
-  host's border routers. Docker deployments reject `scion_address` unless `location_override` is
-  `true`, because their generated topology otherwise advertises its marketplace.
+  and for the UDP (SCION) API alike. With a loopback address the web app and API are reachable only
+  on the marketplace host, and the SCION API only over SCION through that host's border routers;
+  any other address also exposes the web app and API on that address. Docker deployments reject
+  `scion_address` unless `location_override` is `true`, because their generated topology otherwise
+  advertises its marketplace.
   In SSH deployments, `interfaces` optionally lists the interfaces that support Hummingbird per
   ISD-AS, e.g. `"interfaces": {"71-1916": [0, 103, 106], "71-2:0:5c": [0, 104]}`, where `0` stands
   for flyovers that start or end in the AS. The marketplace database then offers assets only for
@@ -367,6 +374,25 @@ and the dry run ends with a summary and exit status 1. Its last line always says
 a dry run: nothing was modified, and the listed manual steps need not be run. `--dry-run` is
 accepted only with `setup`.
 
+### External marketplace
+
+An SSH experiment can buy its reservations from a marketplace that setup does not manage, e.g.
+one that another organization runs. Leave out `hummingbird.marketplace.host`, set
+`"location_override": true`, and set `scion_address` to the marketplace's SCION API address, e.g.
+`"[64-2:0:9,129.132.121.169]:8888"`. Its TCP (TLS) web app must be at the same host and port,
+reachable from the controller, which logs in there for the JWT. If it is reachable only from some
+other machine, e.g. because the marketplace is bound to loopback, set `host_ssh` to that machine's
+SSH alias (it need not be one of `deployment.hosts`): setup then logs in through a temporary SSH
+forward to it, as for a marketplace on one of the hosts, and runs nothing else there. An external
+marketplace bound to loopback without `host_ssh` is rejected, since the controller would log in at
+its own loopback. Setup then skips the marketplace
+service step and touches nothing of the marketplace: it must already offer assets and redemption
+delegations for the ASes of the reserved paths, and the configured user must exist with enough
+balance (see `marketplace/tools/populate_marketplace.py`). `interfaces` is ignored, since setup
+builds no database. teardown leaves the marketplace running. The Hummingbird clients need a SCION
+path to the marketplace's AS; pin it with `path_to_marketplace_filter` if it must stay off the
+links under test.
+
 ### How SSH setup works
 
 `scripts/ssh_setup.py` runs entirely on the controller, the machine where `experiment.py` is started.
@@ -388,7 +414,8 @@ what differs. Setup performs these steps in order:
    `readiness_command`. It then copies `bin/hummbwtester` to `<run_dir>/setup/hummbwtester` unless
    the remote SHA-256 already matches. Copies are atomic: `scp` to a `.tmp` file, verify its digest,
    `chmod`, and `mv`.
-3. **Marketplace service.** On `hummingbird.marketplace.host` it checks that `scion_address`
+3. **Marketplace service.** Skipped for an [external marketplace](#external-marketplace).
+   On `hummingbird.marketplace.host` it checks that `scion_address`
    names that host's AS and a port in its `dispatched_ports` range, then installs, each only when
    it differs:
    - `bin/marketplace` (from `make build-dev`) as `/usr/local/bin/hummingbird-marketplace`, with
@@ -420,7 +447,9 @@ what differs. Setup performs these steps in order:
    `hummingbird.marketplace.host`,
    logs in through it with `marketplace/tools/get_jwt.py`, and closes it. The JWT is copied with
    mode `600` to `<run_dir>/setup/marketplace.jwt` on the Hummingbird client hosts, and the
-   controller's copy is deleted. The SSH launch shell reads the JWT file only immediately before
+   controller's copy is deleted. An external marketplace is logged in to directly from the
+   controller, at the `https://host:port` of its `scion_address`, without a tunnel.
+   The SSH launch shell reads the JWT file only immediately before
    `exec`; it is never placed in command arguments or the configuration.
 5. **Selective qdiscs.** On each shaping host it copies `scripts/selective_qdisc.py` to
    `<run_dir>/setup/` and runs it with `sudo -n`, unless the recorded state in
@@ -428,7 +457,7 @@ what differs. Setup performs these steps in order:
 6. **Static info Note.** Clients find the marketplace of a path in the static info Note that every
    on-path AS puts into its beacons. When `hummingbird.marketplace.scion_address` is set, setup
    pipes `scripts/static_info_note.py` to `sudo -n python3 -` on the server, client, and
-   marketplace hosts. The helper inserts or updates one entry named `hummbwtester` at the front of
+   marketplace hosts (no marketplace host for an external marketplace). The helper inserts or updates one entry named `hummbwtester` at the front of
    the Note's `hummingbird` list, with `api_protocol` `connectrpc/TLS/QUIC/SCION`, `api_address`
    the `scion_address`, and `client_registration_website` the `https://host:port` of the `scion_address`. Other static info settings,
    other Note keys, and other marketplaces' entries are kept; an entry for the same `api_address`

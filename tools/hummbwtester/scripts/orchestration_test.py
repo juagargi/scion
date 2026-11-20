@@ -236,13 +236,19 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "interfaces is only valid for SSH"):
             load_config(self.write_config(config))
 
-    def test_ssh_marketplace_must_bind_loopback_addresses(self):
-        orchestration.validate_ssh_marketplace("[71-2:0:5c,127.0.0.1]:31888")
-        orchestration.validate_ssh_marketplace("[71-2:0:5c,::1]:31888")
-        for scion_address in ("[71-2:0:5c,10.6.7.1]:31888", "[71-2:0:5c,200.129.206.243]:31888",
-                              None):
-            with self.subTest(scion_address=scion_address), self.assertRaises(ConfigError):
+    def test_ssh_marketplace_may_use_any_address(self):
+        for scion_address in ("[71-2:0:5c,127.0.0.1]:31888", "[71-2:0:5c,::1]:31888",
+                              "[71-2:0:5c,10.6.7.1]:31888", "[64-2:0:9,129.132.121.169]:8888"):
+            with self.subTest(scion_address=scion_address):
                 orchestration.validate_ssh_marketplace(scion_address)
+        with self.assertRaisesRegex(ConfigError, "scion_address is required"):
+            orchestration.validate_ssh_marketplace(None)
+
+    def test_rejects_host_ssh_in_docker_mode(self):
+        config = self.marketplace_config(host_ssh="market", location_override=True,
+                                         scion_address="[1-ff00:0:110,127.0.0.1]:31888")
+        with self.assertRaisesRegex(ConfigError, "host_ssh is only valid for SSH"):
+            load_config(self.write_config(config))
 
     def test_marketplace_url_is_derived_from_the_scion_address(self):
         marketplace = orchestration.MarketplaceConfig(

@@ -426,6 +426,48 @@ class SSHSetupTest(unittest.TestCase):
                 ssh_setup.obtain_marketplace_jwt(self.inventory())
         run.assert_not_called()
 
+    def external_inventory(self):
+        return replace(self.inventory(), marketplace=self.marketplace(
+            host=None, scion_address="[64-2:0:9,129.132.121.169]:8888", location_override=True,
+        ))
+
+    @mock.patch.dict(ssh_setup.os.environ, {"MARKETPLACE_PASSWORD": "secret"})
+    def test_external_marketplace_is_logged_in_to_directly(self):
+        with mock.patch.object(ssh_setup.workload, "obtain_marketplace_jwt",
+                               return_value="jwt") as obtain, \
+             mock.patch.object(ssh_setup, "_start_ssh_control_master") as tunnel:
+            jwt = ssh_setup.obtain_marketplace_jwt(self.external_inventory())
+        self.assertEqual(jwt, "jwt")
+        tunnel.assert_not_called()
+        self.assertEqual(obtain.call_args.args[1], "https://129.132.121.169:8888")
+
+    @mock.patch.dict(ssh_setup.os.environ, {"MARKETPLACE_PASSWORD": "secret"})
+    def test_external_marketplace_with_host_ssh_is_logged_in_to_through_a_tunnel(self):
+        inventory = replace(self.inventory(), marketplace=self.marketplace(
+            host=None, scion_address="[64-2:0:9,127.0.0.1]:8888", location_override=True,
+            host_ssh="marketplace-eth",
+        ))
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with mock.patch.object(ssh_setup, "_free_local_port", return_value=18888), \
+             mock.patch.object(ssh_setup.workload, "obtain_marketplace_jwt",
+                               return_value="jwt") as obtain, \
+             mock.patch.object(ssh_setup.subprocess, "run", return_value=completed) as run:
+            jwt = ssh_setup.obtain_marketplace_jwt(inventory)
+        self.assertEqual(jwt, "jwt")
+        self.assertEqual(obtain.call_args.args[1], "https://127.0.0.1:18888")
+        start = run.call_args_list[0].args[0]
+        self.assertEqual(start[start.index("-L") + 1], "127.0.0.1:18888:127.0.0.1:8888")
+        self.assertEqual(start[-2:], ["--", "marketplace-eth"])
+
+    def test_external_marketplace_is_not_managed(self):
+        inventory = self.external_inventory()
+        with mock.patch.object(ssh_setup.remote, "ssh_command") as run:
+            ssh_setup.ensure_marketplace(inventory)
+            ssh_setup.ensure_marketplace(inventory, dry_run=True)
+            ssh_setup.stop_marketplace(inventory)
+        run.assert_not_called()
+        self.assertEqual(ssh_setup.note_hosts(inventory), ["monitor", "source"])
+
     @mock.patch.dict(ssh_setup.os.environ, {"MARKETPLACE_PASSWORD": "secret"})
     def test_marketplace_on_host_is_reached_through_a_temporary_tunnel(self):
         inventory = self.inventory()
