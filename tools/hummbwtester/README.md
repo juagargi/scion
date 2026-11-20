@@ -88,6 +88,9 @@ Each run uses one self-contained JSON file.
   There is no `url` field: where a login URL is needed, it is the `https://host:port` of
   `scion_address`. The Docker runner discovers the reachable registration URL from `gen/`, unless
   `location_override` is `true`.
+  `keep_going` (optional, default `false`): when `true`, a run goes on when a client or the server
+  fails, instead of stopping the experiment; see
+  [Running and tearing down](#running-and-tearing-down). `run --keep-going` sets it too.
 - `deployment.metrics` (SSH): `prometheus` is the host that runs the central Prometheus (every
   other host with metric sources runs a Prometheus agent), `local_port_base` the first of the
   reserved loopback ports (each agent's host uses the one of its first source for its remote-write
@@ -144,7 +147,7 @@ Hummingbird clients additionally require `hummingbird_reservation`, an object wi
 - `path_to_marketplace_filter` (optional, `marketplace` mode only): hop predicates, with the
   syntax of `path_to_server_filter` below, that the path to a marketplace in another AS must
   match; passed as `-path-to-marketplace-filter`. The client connects over the first matching path of
-  the daemon, with the same refreshing retries as `path_to_server_filter`, and fails the
+  the daemon, waiting for one as described in "Waiting for a path" below, and fails the
   reservation if none matches. Use it to keep the marketplace traffic off the interfaces under
   test. Omitted, the client uses the daemon's first path.
 
@@ -166,6 +169,22 @@ path matches. For example,
 enters 71-2:0:5c through 104. Check a filter with
 `scion showpaths <server ISD-AS> --sequence "<filter>"` on the client's host. Omitted, the client
 uses the daemon's first path.
+
+#### Waiting for a path
+
+The client looks up its paths to the server and to the marketplace the same way. As long as the
+daemon has no path at all, or answers that it could not fetch the paths (its gRPC code is
+`Unknown`, or `DeadlineExceeded`: for instance segments that cannot be verified yet because a core
+AS has just renewed its certificate), the client asks again, forcing the daemon to refresh. The
+pause between attempts starts at 100 ms and doubles up to 1 s. At startup the client waits up to
+30 s (`startupPathTimeout` in `client.go`) for its path to the server, and then as long for its
+path to the marketplace for its first reservation; if either does not come, whatever the cause,
+it exits with status 1. During a renewal, the 5 s deadline of each attempt to renew bounds the
+lookup of the path to the marketplace instead.
+
+If the daemon has paths but none matches the filter, the client retries only twice, since the
+filter is more likely wrong. It does not retry at all when it cannot reach the daemon
+(`Unavailable`) or the daemon rejects the request.
 
 ### Partial reservations (`-partial`)
 
@@ -548,10 +567,23 @@ synchronized. It fails with an instruction to rerun setup if the deployed binary
 differs from the local build. Before launching, it reports and kills `hummbwtester` processes still
 running on the server and client hosts, as setup does.
 
-While running, it prints a line when the server or a client exits. It stops when the server
-exits, when all clients have exited, or on Ctrl-C or `SIGTERM`, and then stops the remote
-processes and deletes their run directory, printing each step. Further interrupts are ignored
-until that cleanup is done, so it always completes. The Docker runner behaves the same way.
+While running, it prints a line when the server or a client exits. A tester fails when it
+exits with a non-zero status, and the server when it exits at all, since it runs until it is
+stopped. The runner stops when a tester fails, when all clients have exited, or on Ctrl-C or
+`SIGTERM`, and then stops the remote processes and deletes their run directory, printing each
+step. Further interrupts are ignored until that cleanup is done, so it always completes. The
+testers it stops then exit non-zero too, but nothing watches them anymore, so they count as no
+failure. The run's status is 0 only if no tester failed (130 when interrupted).
+With `--keep-going` (`run` only) or `"keep_going": true` in `hummingbird`, a failure does not stop
+the experiment: the runner reports it and waits for the remaining clients, and the run still ends
+with status 1. The Docker runner behaves the same way.
+
+A tester exits with status 0 when it ends by itself without error (a client after its
+`duration`), 1 on an error that ends it (such as no path, or no first reservation, see
+[Waiting for a path](#waiting-for-a-path)), and 128 plus the signal number when SIGINT or SIGTERM
+stops it (130 or 143): being stopped is not a normal end. A client keeps running when it fails to
+renew its reservation or the reservation expires, and errors sending or receiving packets are
+only logged.
 
 When finished, remove the persistent setup with:
 

@@ -647,6 +647,45 @@ def parse_marketplace_config(marketplace: dict[str, Any], kind: str) -> Marketpl
     )
 
 
+def keep_going(root: dict[str, Any]) -> bool:
+    """hummingbird.keep_going of a configuration that load_config accepted: whether a run goes on
+    when a tester fails, instead of stopping the experiment."""
+    hummingbird = root.get("hummingbird")
+    return isinstance(hummingbird, dict) and hummingbird.get("keep_going", False) is True
+
+
+def newly_failed(
+    testers: list[tuple[str, int | None]], server: str, failed: set[str],
+) -> list[str]:
+    """The testers that failed since the last call, by name, also added to failed.
+
+    testers holds each tester's name and exit status, None while it runs. A client fails when it
+    exits with a non-zero status. The server, which runs until it is stopped, fails when it exits
+    at all. Only exits seen while watching the run count: the testers that the runner stops at the
+    end are not watched anymore, so their status, non-zero after the signal, is no failure.
+    """
+    found = []
+    for name, status in testers:
+        if status is None or name in failed:
+            continue
+        if status != 0 or name == server:
+            failed.add(name)
+            found.append(name)
+    return found
+
+
+def stop_for_failures(names: list[str], keep_going: bool) -> bool:
+    """Announce the testers that just failed; return whether the experiment must stop."""
+    if not names:
+        return False
+    which = ", ".join(names)
+    if keep_going:
+        print(f"{which} failed; keep_going is set, the experiment goes on", flush=True)
+        return False
+    print(f"{which} failed, stopping the experiment", flush=True)
+    return True
+
+
 def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dict[str, str]]:
     """Parse experiment JSON and derive sorted clients, metrics ports, and tc settings."""
     root = read_json(path)
@@ -671,7 +710,10 @@ def load_config(path: Path) -> tuple[Endpoint, list[Client], dict[str, int], dic
     hummingbird_config = root["hummingbird"]
     if not isinstance(hummingbird_config, dict):
         raise ConfigError("hummingbird must be an object")
-    require_fields(hummingbird_config, {"reservation_source"}, "hummingbird", {"marketplace"})
+    require_fields(hummingbird_config, {"reservation_source"}, "hummingbird",
+                   {"marketplace", "keep_going"})
+    if not isinstance(hummingbird_config.get("keep_going", False), bool):
+        raise ConfigError("hummingbird.keep_going must be a boolean")
     reservation_source = hummingbird_config["reservation_source"]
     if reservation_source not in ("keys", "marketplace"):
         raise ConfigError("hummingbird.reservation_source must be \"keys\" or \"marketplace\"")
@@ -1931,8 +1973,12 @@ def print_report(
 def run_experiment(
     config_path: Path,
     config: tuple[Endpoint, list[Client], dict[str, int], dict[str, str]] | None = None,
+    keep_going: bool = False,
 ) -> int:
-    """Launch the server and all clients, then return their aggregate experiment status."""
+    """Launch the server and all clients, then return their aggregate experiment status.
+
+    The run stops as soon as a tester fails (see newly_failed), unless keep_going is set; it
+    fails if any tester did."""
     server, clients, _, _ = config if config is not None else load_config(config_path)
     compose = compose_data()
     validate_endpoints(compose, server, clients)
@@ -1984,23 +2030,28 @@ def run_experiment(
                     process = launch(tester_service(client.endpoint.isd_as), pidfile, args,
                                      log_dir / f"{suffix}.log", jwt_file)
                     processes.append((client, pidfile, process))
-                failure = False
+                failed: set[str] = set()
+
+                def check_failures() -> bool:
+                    assert server_process is not None
+                    testers = [("server", server_process.poll())]
+                    testers += [(client.client_id, process.poll())
+                                for client, _, process in processes]
+                    return stop_for_failures(newly_failed(testers, "server", failed), keep_going)
+
                 previous_report = report_snapshot(compose, interfaces)
                 next_report = time.monotonic() + 60
-                # A prematurely exited server invalidates the experiment even if clients are still
-                # alive.
                 while any(process.poll() is None for _, _, process in processes):
-                    if server_process.poll() is not None:
-                        failure = True
-                        break
+                    if check_failures():
+                        return 1
                     if time.monotonic() >= next_report:
                         current_report = report_snapshot(compose, interfaces)
                         print_report(previous_report, current_report, interfaces)
                         previous_report = current_report
                         next_report += 60
                     time.sleep(0.25)
-                failure = failure or any(process.wait() != 0 for _, _, process in processes)
-                return 1 if failure else 0
+                check_failures()
+                return 1 if failed else 0
         except KeyboardInterrupt:
             return 130
         finally:

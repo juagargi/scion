@@ -42,14 +42,17 @@ import (
 	snetpath "github.com/scionproto/scion/pkg/snet/path"
 	"github.com/scionproto/scion/private/keyconf"
 	"github.com/scionproto/scion/private/path/pathpol"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // cryptoRandRead is replaceable by tests. Reservation IDs are local client state, rather than a
 // command-line setting, so independently launched clients do not share a token bucket.
 var cryptoRandRead = cryptorand.Read
 
-// pathLookupRetryDelay is the pause before each retry; replaceable by tests.
-var pathLookupRetryDelay = time.Second
+// pathLookupRetryDelay is the pause before the first retry of selectPath; it doubles on every
+// retry, up to pathLookupMaxRetryDelay. Replaceable by tests.
+var pathLookupRetryDelay = 100 * time.Millisecond
 
 func randomHummReservationID() (uint32, error) {
 	var buf [4]byte
@@ -86,9 +89,17 @@ const (
 	// The variable is used only to precompute the size of the first packet.
 	bidirectionalFirstPacketLen = HeaderLen + bidirectionalFirstPacketPayload
 
-	// pathLookupRetries is how many more times selectPath asks the daemon when no path matches the
-	// sequence: a daemon may answer with no path at all until it has fetched the segments anew.
+	// pathLookupRetries is how many more times selectPath asks the daemon when it has paths but
+	// none matches the sequence, which is more likely a wrong sequence than a passing state.
 	pathLookupRetries = 2
+
+	// pathLookupMaxRetryDelay caps the pause between two retries of selectPath.
+	pathLookupMaxRetryDelay = time.Second
+
+	// startupPathTimeout is how long the client waits at startup for its path to the server,
+	// and then to the marketplace for its first reservation, before it quits. A renewal waits
+	// less for the path to the marketplace: at most its attempt's 5 s.
+	startupPathTimeout = 30 * time.Second
 )
 
 // clientConfig collects every value runClient needs, populated from CLI flags in main.go.
@@ -161,11 +172,12 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 	}
 	c.metrics.remoteStatsAge.Set(-1)
 	if cfg.hummEnabled && cfg.hummKeysDir == "" {
-		var querier snet.PathQuerier = daemon.Querier{
-			Connector: cfg.sdConn, IA: sn.Topology.LocalIA}
-		if cfg.marketplaceSequence != nil {
-			querier = sequenceQuerier{
-				sdConn: cfg.sdConn, local: sn.Topology.LocalIA, sequence: cfg.marketplaceSequence}
+		// Without a sequence, the querier returns the daemon's first path, waiting for one.
+		querier := sequenceQuerier{
+			sdConn:   cfg.sdConn,
+			local:    sn.Topology.LocalIA,
+			sequence: cfg.marketplaceSequence,
+			patience: startupPathTimeout,
 		}
 		c.reserver = marketclient.NewReserver(
 			cfg.marketplaceJWT,
@@ -179,7 +191,8 @@ func runClient(ctx context.Context, sn *snet.SCIONNetwork, cfg clientConfig) int
 		}()
 	}
 
-	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA, cfg.sequence, "server")
+	path, err := selectPath(ctx, cfg.sdConn, cfg.local.IA, cfg.remote.IA, cfg.sequence,
+		startupPathTimeout, "server")
 	if err != nil {
 		log.Error("Selecting path", "err", err)
 		return 1
@@ -319,56 +332,101 @@ func wireOverhead(local *net.UDPAddr, remote *snet.UDPAddr) (int, error) {
 
 // selectPath queries the daemon for paths to dst and returns the first one that matches the
 // sequence. The reservations, if any, are then bought for the hops of that path only.
-// Without a matching path it retries up to pathLookupRetries times, forcing a refresh.
+//
+// While there is no path at all, or the daemon could not fetch the paths, it keeps asking the
+// daemon, forcing a refresh, with a growing pause between the attempts. It gives up when ctx is
+// done or when the next attempt would come after patience, counted from the first one; a zero
+// patience waits for as long as ctx lasts. If the daemon has paths but none matches the
+// sequence, it gives up after pathLookupRetries retries. It never retries when the daemon
+// cannot be reached or rejects the request (see transientDaemonError).
 // Purpose names the path's use in the log.
 func selectPath(
 	ctx context.Context, sdConn daemon.Connector, src, dst addr.IA, sequence *pathpol.Sequence,
-	purpose string,
+	patience time.Duration, purpose string,
 ) (snet.Path, error) {
+	start := time.Now()
+	delay := pathLookupRetryDelay
+	mismatches := 0
 	for attempt := 0; ; attempt++ {
 		paths, err := sdConn.Paths(ctx, dst, src, daemontypes.PathReqFlags{Refresh: attempt > 0})
-		if err != nil {
-			return nil, serrors.Wrap("requesting paths", err)
-		}
-		matching := sequence.Eval(paths)
-		if len(matching) > 0 {
-			path := matching[0]
-			if desc, err := pathpol.GetSequence(path); err == nil {
-				log.Info("Selected path", "to", purpose, "sequence", desc,
-					"matching", len(matching),
-					"paths", len(paths), "attempt", attempt+1)
+		switch {
+		case err != nil:
+			transient := ctx.Err() == nil && transientDaemonError(err)
+			err = serrors.Wrap("requesting paths", err)
+			if !transient {
+				return nil, err
 			}
-			return path, nil
-		}
-		if len(paths) == 0 {
-			err = serrors.New("no path found", "src", src, "dst", dst)
-		} else {
+		default:
+			matching := sequence.Eval(paths)
+			if len(matching) > 0 {
+				path := matching[0]
+				if desc, err := pathpol.GetSequence(path); err == nil {
+					log.Info("Selected path", "to", purpose, "sequence", desc,
+						"matching", len(matching),
+						"paths", len(paths), "attempt", attempt+1)
+				}
+				return path, nil
+			}
+			if len(paths) == 0 {
+				err = serrors.New("no path found", "src", src, "dst", dst)
+				break
+			}
 			err = serrors.New("no path matches the sequence",
 				"src", src, "dst", dst, "sequence", sequence.String(), "paths", len(paths))
+			if mismatches == pathLookupRetries {
+				return nil, serrors.Wrap("no usable path after retries", err,
+					"attempts", attempt+1)
+			}
+			mismatches++
 		}
-		if attempt == pathLookupRetries {
-			return nil, serrors.Wrap("no usable path after retries", err, "attempts", attempt+1)
+		waited := time.Since(start)
+		if patience > 0 && waited+delay > patience {
+			return nil, serrors.Wrap("no usable path in time", err,
+				"attempts", attempt+1, "waited", waited, "patience", patience)
 		}
-		log.Info("No usable path, retrying", "to", purpose, "err", err, "retry", attempt+1,
-			"retries", pathLookupRetries)
+		log.Info("No usable path, retrying", "to", purpose, "err", err, "attempt", attempt+1,
+			"in", delay, "waited", waited)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(pathLookupRetryDelay):
+		case <-time.After(delay):
 		}
+		delay = min(2*delay, pathLookupMaxRetryDelay)
 	}
 }
 
-// sequenceQuerier is the path querier of the marketplace connection when its path is
-// restricted: it returns only the first path matching the sequence, as selectPath does.
+// transientDaemonError reports whether a daemon that failed to return paths may well return them
+// when asked again. That is the case when the daemon was reached but could not fetch the paths:
+// its control service did not answer, or the segments it got could not be verified yet (e.g.
+// right after a core AS renewed its certificate). The daemon returns these errors as they are,
+// so they come with the gRPC code Unknown, or DeadlineExceeded if fetching took too long.
+// Every other error is permanent: the daemon cannot be reached (Unavailable), or it rejected
+// the request.
+func transientDaemonError(err error) bool {
+	s, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	switch s.Code() {
+	case codes.Unknown, codes.DeadlineExceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// sequenceQuerier is the path querier of the marketplace connection: it returns only the first
+// path matching the sequence, as selectPath does, waiting for one up to patience.
 type sequenceQuerier struct {
-	sdConn   daemon.Connector
-	local    addr.IA
+	sdConn daemon.Connector
+	local  addr.IA
+	// sequence restricts the paths to the marketplace; nil allows all.
 	sequence *pathpol.Sequence
+	patience time.Duration
 }
 
 func (q sequenceQuerier) Query(ctx context.Context, dst addr.IA) ([]snet.Path, error) {
-	path, err := selectPath(ctx, q.sdConn, q.local, dst, q.sequence, "marketplace")
+	path, err := selectPath(ctx, q.sdConn, q.local, dst, q.sequence, q.patience, "marketplace")
 	if err != nil {
 		return nil, err
 	}

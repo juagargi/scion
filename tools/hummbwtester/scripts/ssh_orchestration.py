@@ -621,7 +621,12 @@ def run_experiment(
         workload.Endpoint, list[workload.Client], dict[str, int], dict[str, str],
     ] | None = None,
     inventory: Inventory | None = None,
+    keep_going: bool = False,
 ) -> int:
+    """Launch the server and all clients, then return their aggregate experiment status.
+
+    The run stops as soon as a tester fails (see workload.newly_failed), unless keep_going is
+    set; it fails if any tester did."""
     workload.require_built_binary()
     server, clients, _, _ = config if config is not None else workload.load_config(config_path)
     if inventory is None:
@@ -655,16 +660,22 @@ def run_experiment(
                         workload.client_args(client, server, host.sciond),
                         log_path(client.client_id), jwt_file)))
                 exited: set[str] = set()
-                while any(process.poll() is None for _, _, process in processes[1:]):
+                failed: set[str] = set()
+
+                def check_failures() -> bool:
                     report_exits(processes, exited)
-                    if processes[0][2].poll() is not None:
-                        print("the server stopped, stopping the experiment", flush=True)
+                    testers = [(name, process.poll()) for _, name, process in processes]
+                    return workload.stop_for_failures(
+                        workload.newly_failed(testers, "server", failed), keep_going)
+
+                while any(process.poll() is None for _, _, process in processes[1:]):
+                    if check_failures():
                         return 1
                     time.sleep(0.25)
-                report_exits(processes, exited)
+                check_failures()
                 print("all clients exited, stopping the experiment", flush=True)
                 # The server runs until it is signalled; the cleanup below stops it.
-                return 1 if any(process.wait() != 0 for _, _, process in processes[1:]) else 0
+                return 1 if failed else 0
         except KeyboardInterrupt:
             print("interrupted, stopping the experiment", flush=True)
             return 130

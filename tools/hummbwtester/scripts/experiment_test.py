@@ -127,6 +127,28 @@ class ExperimentTest(unittest.TestCase):
             experiment.main()
         execute.assert_not_called()
 
+    def test_keep_going_is_only_accepted_for_run(self):
+        with mock.patch.object(experiment.sys, "argv", [
+            "experiment.py", "setup", "--config", "remote.json", "--keep-going",
+        ]), mock.patch.object(experiment, "execute") as execute, \
+             mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            experiment.main()
+        execute.assert_not_called()
+
+    def test_keep_going_comes_from_the_flag_or_the_configuration(self):
+        plan = experiment.ExperimentPlan(Path("local.json"), mock.sentinel.config, "docker", None)
+        for flag, field, want in ((False, None, False), (True, None, True),
+                                  (False, True, True), (False, False, False)):
+            with self.subTest(flag=flag, field=field):
+                root = {"deployment": {"kind": "docker"}, "hummingbird": {}}
+                if field is not None:
+                    root["hummingbird"]["keep_going"] = field
+                with mock.patch.object(experiment, "load_plan", return_value=plan), \
+                        mock.patch.object(experiment.planner, "read_json", return_value=root), \
+                        mock.patch.object(experiment, "run_local", return_value=0) as run:
+                    experiment.execute("run", Path("local.json"), keep_going=flag)
+                run.assert_called_once_with(plan, want)
+
     def test_local_prometheus_refuses_foreign_container(self):
         with mock.patch.object(experiment.planner, "local_container_owner",
                                return_value="other/prometheus"):

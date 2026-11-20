@@ -72,6 +72,17 @@ class ConfigTest(unittest.TestCase):
             "tc": {"rate": "10mbit", "burst": "50kb", "limit": "256kb"},
         }
 
+    def test_keep_going_defaults_to_false_and_must_be_a_boolean(self):
+        config = self.base_config()
+        load_config(self.write_config(config))
+        self.assertFalse(orchestration.keep_going(config))
+        config["hummingbird"]["keep_going"] = True
+        load_config(self.write_config(config))
+        self.assertTrue(orchestration.keep_going(config))
+        config["hummingbird"]["keep_going"] = "yes"
+        with self.assertRaisesRegex(ConfigError, "keep_going must be a boolean"):
+            load_config(self.write_config(config))
+
     def test_marketplace_reservation_config_and_args(self):
         config = self.base_config()
         config["hummingbird"] = {
@@ -923,6 +934,27 @@ class ReportTest(unittest.TestCase):
         self.assertRegex(rendered, r"TC dropped.*\b1\b.*\b0\b")
         self.assertRegex(rendered, r"Egress down drops.*\b0\b.*\b24\b")
         self.assertIn("\n\nHUMMBWTESTER_REPORT observation_error", rendered)
+
+
+class FailureTest(unittest.TestCase):
+    def test_clients_fail_on_a_non_zero_status_and_the_server_on_any_exit(self):
+        failed = set()
+        testers = [("server", None), ("a", 0), ("b", None), ("c", 1)]
+        self.assertEqual(orchestration.newly_failed(testers, "server", failed), ["c"])
+        testers = [("server", 0), ("a", 0), ("b", -15), ("c", 1)]
+        self.assertEqual(orchestration.newly_failed(testers, "server", failed), ["server", "b"])
+        self.assertEqual(orchestration.newly_failed(testers, "server", failed), [])
+        self.assertEqual(failed, {"server", "b", "c"})
+
+    def test_failures_stop_the_experiment_unless_keep_going(self):
+        with mock.patch("builtins.print") as output:
+            self.assertFalse(orchestration.stop_for_failures([], False))
+            output.assert_not_called()
+            self.assertTrue(orchestration.stop_for_failures(["a", "b"], False))
+            output.assert_called_with("a, b failed, stopping the experiment", flush=True)
+            self.assertFalse(orchestration.stop_for_failures(["a"], True))
+            output.assert_called_with("a failed; keep_going is set, the experiment goes on",
+                                      flush=True)
 
 
 if __name__ == "__main__":

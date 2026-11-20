@@ -15,6 +15,7 @@
   ],
   "hummingbird": {
     "reservation_source": "marketplace",
+    "keep_going": true,
     "marketplace": {
       "username": "alice",
       "password_env": "HUMMBWTESTER_MARKETPLACE_PASSWORD",

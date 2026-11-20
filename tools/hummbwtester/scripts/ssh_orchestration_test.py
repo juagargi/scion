@@ -371,7 +371,7 @@ class InventoryTest(unittest.TestCase):
         "experiment stopped",
     ]
 
-    def run_with(self, processes, sleep, on_stop=None):
+    def run_with(self, processes, sleep, on_stop=None, keep_going=False):
         """Run the experiment with the given server and client processes; return the status and
         the printed messages. on_stop runs whenever the cleanup stops a tester."""
         with tempfile.TemporaryDirectory() as directory:
@@ -390,7 +390,7 @@ class InventoryTest(unittest.TestCase):
              mock.patch.object(ssh, "cleanup_host") as cleanup, \
              mock.patch.object(ssh, "check_clocks") as clocks, \
              mock.patch("builtins.print") as output:
-            status = ssh.run_experiment(path, config, inventory)
+            status = ssh.run_experiment(path, config, inventory, keep_going)
         # Every host's clock is checked before anything starts.
         self.assertEqual([host.name for host in clocks.call_args.args[0]], ["a", "b"])
         self.assertEqual([call.args[0].name for call in strays.call_args_list], ["a", "b"])
@@ -445,30 +445,80 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(messages[-len(self.CLEANUP_MESSAGES):], self.CLEANUP_MESSAGES)
 
     def test_run_reports_each_client_exit_and_stops_the_server(self):
-        # The server never exits by itself; hummingbird-1 fails before best-effort-1 finishes.
+        # The server never exits by itself; both clients finish.
+        processes, sleep = self.processes(None, (0, 4), (0, 2))
+        status, messages = self.run_with(processes, sleep)
+        self.assertEqual(status, 0)
+        self.assertEqual(messages, [
+            "hummingbird-1 on b finished; see logs/hummbwtester/ssh-hummingbird-1.log",
+            "best-effort-1 on a finished; see logs/hummbwtester/ssh-best-effort-1.log",
+            "all clients exited, stopping the experiment",
+            *self.CLEANUP_MESSAGES,
+        ])
+
+    def test_a_failed_client_stops_the_experiment(self):
+        # hummingbird-1 fails while best-effort-1 still runs.
         processes, sleep = self.processes(None, (0, 4), (1, 2))
         status, messages = self.run_with(processes, sleep)
         self.assertEqual(status, 1)
         self.assertEqual(messages, [
             "hummingbird-1 on b stopped with exit status 1; "
             "see logs/hummbwtester/ssh-hummingbird-1.log",
+            "hummingbird-1 failed, stopping the experiment",
+            *self.CLEANUP_MESSAGES,
+        ])
+
+    def test_a_failed_client_lets_the_others_go_on_with_keep_going(self):
+        processes, sleep = self.processes(None, (0, 4), (1, 2))
+        status, messages = self.run_with(processes, sleep, keep_going=True)
+        self.assertEqual(status, 1)
+        self.assertEqual(messages, [
+            "hummingbird-1 on b stopped with exit status 1; "
+            "see logs/hummbwtester/ssh-hummingbird-1.log",
+            "hummingbird-1 failed; keep_going is set, the experiment goes on",
             "best-effort-1 on a finished; see logs/hummbwtester/ssh-best-effort-1.log",
             "all clients exited, stopping the experiment",
             *self.CLEANUP_MESSAGES,
         ])
 
+    def test_the_last_client_failing_fails_the_experiment(self):
+        processes, sleep = self.processes(None, (0, 2), (143, 2))
+        status, messages = self.run_with(processes, sleep)
+        self.assertEqual(status, 1)
+        self.assertIn("hummingbird-1 failed, stopping the experiment", messages)
+
     def test_run_reports_a_server_exit_and_stops(self):
-        processes, sleep = self.processes((-15, 3), None, (255, 2))
+        processes, sleep = self.processes((-15, 2), None, (255, 2))
         status, messages = self.run_with(processes, sleep)
         self.assertEqual(status, 1)
         self.assertEqual(messages, [
-            "hummingbird-1 on b stopped: ssh failed (status 255); "
-            "see logs/hummbwtester/ssh-hummingbird-1.log",
             "server on a stopped: its ssh client was killed by signal 15; "
             "see logs/hummbwtester/ssh-server.log",
-            "the server stopped, stopping the experiment",
+            "hummingbird-1 on b stopped: ssh failed (status 255); "
+            "see logs/hummbwtester/ssh-hummingbird-1.log",
+            "server, hummingbird-1 failed, stopping the experiment",
             *self.CLEANUP_MESSAGES,
         ])
+
+    def test_a_server_exiting_without_error_still_stops_the_experiment(self):
+        # The server only ends when it is stopped: an exit of its own leaves the clients without
+        # a server, whatever its status.
+        processes, sleep = self.processes((0, 2), None, None)
+        status, messages = self.run_with(processes, sleep)
+        self.assertEqual(status, 1)
+        self.assertIn("server failed, stopping the experiment", messages)
+
+    def test_testers_stopped_by_the_cleanup_are_no_failures(self):
+        # Every tester exits non-zero once the cleanup signals it; nothing watches them then.
+        processes, sleep = self.processes(None, (0, 2), (0, 2))
+
+        def signalled(*_):
+            for process in processes:
+                if process.poll() is None:
+                    process.poll.side_effect = lambda: 143
+        status, messages = self.run_with(processes, sleep, on_stop=signalled)
+        self.assertEqual(status, 0)
+        self.assertNotIn("failed", " ".join(messages))
 
     def test_cleanup_kills_an_ssh_session_that_does_not_exit(self):
         processes, sleep = self.processes(None, (0, 2), (0, 2))
